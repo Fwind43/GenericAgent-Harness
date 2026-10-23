@@ -19,6 +19,14 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - Hook callbacks returning a dict replace GA's ctx.
 - importing agentmain has side effects (stdout reconfigure, loads GA plugins, creates temp/).
 
-## Next (M0)
-1. Real run: `uv run gah run "..." --ga-root E:/Work/GenericAgent` and compare with plain GA.
-2. Then first real harness plugin layered via patch (e.g. telemetry on ga.tool_before/after).
+## M0 verified (2026-10-23, real LLM via GA mykey.py)
+- Run with GA's venv (harness venv has no GA deps):
+  `$env:PYTHONPATH="<repo>"; E:/Work/GenericAgent/.venv/Scripts/python.exe -m ga_harness.cli run "task" --ga-root E:/Work/GenericAgent`
+- Plain task: 3 turns incl. one code_run, streamed output, exit 0.
+- Probe task (code_run print(1+1)): all 8 GA hook events reached `ga.*` listeners
+  (agent 1/1, turn 2/1, llm 2/2, tool 2/2; tools code_run,no_tool), final "2", dispose clean.
+- Not done: side-by-side diff against plain `agentmain.py` output.
+
+## Next
+1. First real harness plugin layered via patch (e.g. telemetry/tool timer on ga.tool_before/after).
+2. Optional `gah` launcher that auto-uses GA's interpreter.
