@@ -1,0 +1,74 @@
+"""ga-core: run GA's own GenericAgent unmodified inside the harness.
+
+config:
+  ga_root   path of the GenericAgent checkout (default: $GA_ROOT)
+  module    module that defines GenericAgent (default: "agentmain"; tests swap it)
+  inc_out   stream deltas instead of cumulative text (default: true)
+
+Provides
+  ga.agent  the raw GenericAgent instance (escape hatch for compat plugins)
+  agent     AgentHandle: run(query) -> final text, abort()
+Events (emit): agent.chunk(text), agent.done(text, item)
+"""
+from __future__ import annotations
+import importlib
+import os
+import queue
+import sys
+import threading
+
+_STOP = "__ga_harness_stop__"   # GA's run() exits on any str task
+
+
+class AgentHandle:
+    def __init__(self, agent, ctx):
+        self.raw = agent
+        self._ctx = ctx
+
+    def run(self, query: str, source: str = "user", images=None, timeout: float | None = None) -> str:
+        dq = self.raw.put_task(query, source=source, images=images)
+        printed = ""
+        while True:
+            try:
+                item = dq.get(timeout=timeout)
+            except queue.Empty:
+                self.abort()
+                raise TimeoutError(f"no output within {timeout}s")
+            if "next" in item:
+                text = item["next"]
+                if not getattr(self.raw, "inc_out", False):   # cumulative -> delta
+                    text, printed = text[len(printed):], text
+                if text:
+                    self._ctx.emit("agent.chunk", text)
+            if "done" in item:
+                self._ctx.emit("agent.done", item["done"], item)
+                return item["done"]
+
+    def abort(self) -> None:
+        self.raw.abort()
+
+
+def load_module(ga_root: str | None, module: str):
+    if ga_root:
+        ga_root = os.path.abspath(ga_root)
+        if ga_root not in sys.path:
+            sys.path.insert(0, ga_root)
+    return importlib.import_module(module)
+
+
+def apply(ctx, config):
+    mod = load_module(config.get("ga_root") or os.environ.get("GA_ROOT"), config.get("module", "agentmain"))
+    agent = mod.GenericAgent()
+    if not getattr(agent, "llmclients", None):
+        raise RuntimeError("GenericAgent has no LLM client (check mykey.py in GA root)")
+    agent.inc_out = bool(config.get("inc_out", True))
+    t = threading.Thread(target=agent.run, name="ga-core", daemon=True)
+    t.start()
+
+    def stop():
+        agent.abort()
+        agent.task_queue.put(_STOP)
+        t.join(timeout=5)
+    ctx.scope.add(stop)
+    ctx.provide("ga.agent", agent)
+    ctx.provide("agent", AgentHandle(agent, ctx))

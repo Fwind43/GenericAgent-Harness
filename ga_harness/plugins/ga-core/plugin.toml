@@ -1,0 +1,5 @@
+name = "ga-core"
+entry = "main:apply"
+description = "Host an unmodified GenericAgent (agentmain.GenericAgent) and expose it as the `agent` capability."
+inject = []
+provides = ["agent", "ga.agent"]

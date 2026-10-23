@@ -1,0 +1,6 @@
+# Drop-in GA: unmodified GenericAgent + hook bridge. Everything else layers on top via patches.
+[[plugins]]
+name = "ga-hooks"
+
+[[plugins]]
+name = "ga-core"
