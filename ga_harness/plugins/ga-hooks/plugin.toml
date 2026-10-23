@@ -1,0 +1,5 @@
+name = "ga-hooks"
+entry = "main:apply"
+description = "Bridge GA plugins.hooks events (agent/turn/llm/tool before/after) onto the harness bus as ga.<event> waterfalls."
+inject = []
+provides = ["ga.hooks"]
