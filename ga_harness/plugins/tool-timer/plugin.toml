@@ -1,0 +1,5 @@
+name = "tool-timer"
+entry = "main:apply"
+description = "Time every GA tool call via ga.tool_before/after; emits tool.timed and keeps per-tool totals."
+inject = ["ga.hooks"]
+provides = ["tool.timer"]

@@ -1,0 +1,4 @@
+# gah run "task" --patch examples/patches/tool-timer.toml
+[[patch]]
+after = "ga-hooks"
+insert = { name = "tool-timer", config = { print = true } }
