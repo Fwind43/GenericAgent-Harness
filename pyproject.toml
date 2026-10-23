@@ -1,0 +1,19 @@
+[project]
+name = "ga-harness"
+version = "0.0.1"
+description = "Everything-is-a-Plugin harness compatible with GenericAgent"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+gah = "ga_harness.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
