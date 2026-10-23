@@ -3,6 +3,9 @@
   gah run "task" [--profile ga-compat] [--patch file.toml]... [--ga-root DIR]
   gah plugins                       list discovered plugin manifests
   gah tree [--profile ...]          print the resolved plugin tree
+  gah llm show [--file F]           show the LLM config GA would see (secrets masked)
+  gah llm migrate MYKEY_PY [--out F] [--force]
+                                    convert a GA mykey.py into a harness llm.toml
 """
 from __future__ import annotations
 import argparse
@@ -31,6 +34,34 @@ def _tree(args):
     return tree
 
 
+def _llm(args) -> int:
+    import json
+    from . import llmconfig
+    if args.llm_cmd == "show":
+        src = llmconfig.Source(args.file or llmconfig.default_path())
+        if not src.available:
+            print(f"[gah] {src.file} not found -> GA would fall back to its own mykey.py", file=sys.stderr)
+            return 1
+        data = src.load()
+        print(f"# {src.origin}")
+        print("# LLM entries:", [k for k in data if llmconfig.is_llm_key(k)])
+        print(json.dumps(llmconfig.mask(data), ensure_ascii=False, indent=2))
+        return 0
+    out = Path(args.out) if args.out else llmconfig.default_path()
+    if out.exists() and not args.force:
+        print(f"[gah] {out} exists; use --force to overwrite", file=sys.stderr)
+        return 1
+    data = llmconfig.read_mykey_py(args.mykey)
+    skipped = data.pop("_skipped", [])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(llmconfig.to_toml(data), encoding="utf-8")
+    print(f"[gah] wrote {out}: {[k for k in data if llmconfig.is_llm_key(k)]}")
+    if skipped:
+        print(f"[gah] skipped non-config names: {skipped}")
+    print("[gah] tip: replace literal keys with \"${ENV_NAME}\" if you prefer env vars")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="gah")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -43,7 +74,16 @@ def main(argv=None) -> int:
             p.add_argument("task")
             p.add_argument("--timeout", type=float, default=None)
     sub.add_parser("plugins")
+    lp = sub.add_parser("llm").add_subparsers(dest="llm_cmd", required=True)
+    s = lp.add_parser("show")
+    s.add_argument("--file", default=None)
+    m = lp.add_parser("migrate")
+    m.add_argument("mykey")
+    m.add_argument("--out", default=None)
+    m.add_argument("--force", action="store_true")
     args = ap.parse_args(argv)
+    if args.cmd == "llm":
+        return _llm(args)
 
     manifests = discover(PLUGIN_DIRS + _extra_dirs("GAH_PLUGIN_PATH"))
     if args.cmd == "plugins":

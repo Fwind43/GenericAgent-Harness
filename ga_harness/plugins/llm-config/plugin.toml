@@ -1,0 +1,5 @@
+name = "llm-config"
+entry = "main:apply"
+description = "Feed GA its LLM configs from a harness TOML/JSON file or inline profile values instead of mykey.py."
+inject = []
+provides = ["llm.config"]
