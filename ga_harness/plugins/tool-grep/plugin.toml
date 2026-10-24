@@ -1,0 +1,4 @@
+name = "tool-grep"
+entry = "main:apply"
+description = "Read-only regex search tool `grep` registered through ga.tools (example of a harness-owned tool)."
+inject = ["ga.tools"]
