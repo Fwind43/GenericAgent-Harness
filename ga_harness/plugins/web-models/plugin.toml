@@ -1,0 +1,4 @@
+name = "web-models"
+entry = "main:apply"
+description = "Web model picker and model config dialog for ui-web (uses /api/models/*)."
+inject = ["web.host"]

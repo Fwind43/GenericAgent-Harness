@@ -36,8 +36,8 @@ main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) t
 .cursor::after{content:"";display:inline-block;width:7px;height:1em;vertical-align:-2px;margin-left:2px;background:var(--muted);animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 footer{padding:8px 20px 18px;background:var(--bg)}
-form{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;border:1px solid var(--border);background:var(--surface);border-radius:22px;padding:8px 8px 8px 16px}
-form:focus-within{border-color:var(--muted)}
+footer form{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;border:1px solid var(--border);background:var(--surface);border-radius:22px;padding:8px 8px 8px 16px}
+footer form:focus-within{border-color:var(--muted)}
 textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;max-height:40vh;min-height:24px;padding:4px 0;scrollbar-width:thin}
 textarea::placeholder{color:var(--muted)}
 button{font:inherit;font-size:14px;border:0;border-radius:16px;padding:6px 16px;cursor:pointer;background:var(--accent);color:var(--on-accent)}
@@ -71,16 +71,19 @@ details[open]>summary>.chev{transform:none}
 .hint{max-width:820px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
 .toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 20px;border-bottom:1px solid var(--border)}
 .toolbar[hidden],#notice[hidden]{display:none}
+/* toolbar slot: plugins append .gah-group blocks; bar hides itself while empty or all groups hidden */
+.gah-bar:not(:has(.gah-group:not([hidden]))){display:none}
+.gah-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;flex:1 1 auto}.gah-group[hidden]{display:none}
+.gah-group label{font-size:12px;color:var(--muted)}
 .toolbar select{flex:1;min-width:80px;max-width:420px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
 .secondary{background:var(--surface-muted);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px}
 #notice{padding:8px 20px;color:var(--danger);font-size:13px;overflow-wrap:anywhere;border-bottom:1px solid var(--border)}
 button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 @media (max-width:600px){.toolbar{padding:8px 12px;gap:4px}.toolbar select{max-width:none}.toolbar button{padding:6px 8px}header{padding:8px 12px}#thread{padding:16px 12px 8px}footer{padding:6px 10px 12px}.msg.user .body{max-width:88%}.hint{display:none}}
 
-#models[hidden]{display:none}
-#models label{font-size:12px;color:var(--muted)}
-#model-dialog,#plugin-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-#model-dialog::backdrop,#plugin-dialog::backdrop{background:rgba(0,0,0,.35)}
+/* Shared dialog + form kit for web plugins: dialog.gah-dialog > .dialog-head + .dialog-content; .model-grid/.model-field/.model-actions/.model-picker */
+.gah-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-dialog::backdrop{background:rgba(0,0,0,.35)}
 .dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
 .dialog-head h2{font-size:17px;margin:0;font-weight:600}
 .dialog-content{padding:16px 20px 20px}
@@ -91,21 +94,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .model-field input,.model-field select{width:100%;min-width:0;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--text)}
 .model-field input:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 .model-field input:disabled{opacity:.65}.model-field small,.model-help{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-.model-help{margin:0 0 14px}.model-help[hidden],#model-error[hidden]{display:none}
-#model-error{font-size:13px;color:var(--danger);overflow-wrap:anywhere;margin:12px 0}
 .model-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
-#model-save{border:1px solid var(--accent);border-radius:8px;padding:8px 14px;background:var(--accent);color:var(--on-accent);font-size:13px}
-#model-remove{margin-right:auto;color:var(--danger)}
 .secondary:hover:not(:disabled){background:var(--border)}button:disabled{cursor:default;opacity:.5}
-#plugins[hidden],#plugin-fields[hidden]{display:none}
-.plugin-note{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-.plugin-status{font-size:13px;font-weight:600;margin:12px 0 4px}
-.plugin-description{margin:4px 0 12px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
-.plugin-deps{margin:12px 0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px}
-.plugin-deps dt{color:var(--muted)}.plugin-deps dd{margin:0;overflow-wrap:anywhere}
-.plugin-toggle{display:flex;align-items:center;gap:8px;font-size:13px;margin:16px 0}.plugin-toggle input{accent-color:var(--accent)}
-#plugin-reset{margin-right:auto}#plugin-error{color:var(--danger);font-size:13px;overflow-wrap:anywhere}
-#plugin-fields{padding-top:4px}.plugin-actions{flex-wrap:wrap}.plugin-actions button{white-space:normal}
 @media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}
 
 </style>
@@ -117,59 +107,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   <span class="spacer"></span>
   <div class="gah-slot" data-slot="header"></div>
 </header>
-<nav id="sessions" class="toolbar" aria-label="会话管理" hidden>
-  <select id="session-select" aria-label="当前会话"></select>
-  <button id="session-new" class="secondary">新会话</button>
-  <button id="session-rename" class="secondary">重命名</button>
-  <button id="session-delete" class="secondary">删除</button>
-</nav>
-
-<nav id="models" class="toolbar" aria-label="模型管理" hidden>
-  <label for="model-select">模型</label><select id="model-select" aria-label="当前模型"></select>
-  <button id="model-settings" class="secondary">模型配置</button>
-</nav>
-<nav id="plugins" class="toolbar" aria-label="插件管理" hidden>
-  <button id="plugin-settings" class="secondary">插件管理</button><span id="plugin-summary" class="plugin-note">更改在下次启动时生效</span>
-</nav>
-<dialog id="plugin-dialog" aria-labelledby="plugin-heading">
-  <div class="dialog-head"><h2 id="plugin-heading">插件管理</h2><button id="plugin-close" class="secondary" type="button" aria-label="关闭插件管理">关闭</button></div>
-  <div class="dialog-content">
-    <p id="plugin-profile" class="plugin-note"></p>
-    <div class="model-picker"><select id="plugin-entry" aria-label="选择插件"></select><button id="plugin-reload" class="secondary" type="button">刷新</button></div>
-    <p id="plugin-status" class="plugin-status"></p>
-    <p id="plugin-description" class="plugin-description"></p>
-    <dl class="plugin-deps"><dt>依赖能力</dt><dd id="plugin-requires"></dd><dt>提供能力</dt><dd id="plugin-provides"></dd><dt>被插件依赖</dt><dd id="plugin-dependents"></dd></dl>
-    <p id="plugin-warning" class="plugin-note"></p>
-    <form id="plugin-form">
-      <label class="plugin-toggle"><input id="plugin-enabled" type="checkbox">下次启动时启用</label>
-      <div id="plugin-fields" class="model-grid"></div>
-      <p id="plugin-config-note" class="plugin-note"></p>
-      <p id="plugin-error" role="status" hidden></p>
-      <div class="model-actions plugin-actions"><button id="plugin-reset" class="secondary" type="button">恢复启动配置</button><button id="plugin-save" type="submit">保存，下次启动生效</button></div>
-    </form>
-  </div>
-</dialog>
-<dialog id="model-dialog" aria-labelledby="model-heading">
-  <div class="dialog-head"><h2 id="model-heading">模型配置</h2><button id="model-close" class="secondary" type="button">关闭</button></div>
-  <div class="dialog-content">
-    <p class="model-help">配置保存在本机，不会回显已有的 API Key。保存成功后即时生效。</p>
-    <div class="model-picker"><select id="model-entry" aria-label="选择配置"></select><button id="model-add" class="secondary" type="button">新增</button></div>
-    <p id="model-reason" class="model-help" hidden></p>
-    <form id="model-form">
-      <div class="model-grid">
-        <label class="model-field">协议<select id="model-protocol"><option value="oai">OpenAI compatible</option><option value="claude">Anthropic Claude</option></select></label>
-        <label class="model-field">显示名称<input id="model-name" maxlength="120" autocomplete="off"></label>
-        <label class="model-field wide">配置标识<input id="model-key" required pattern="[A-Za-z][A-Za-z0-9_]{0,99}" autocomplete="off"><small>标识需包含 oai 或 claude 及 config。已有配置的标识不可修改。</small></label>
-        <label class="model-field">模型 ID<input id="model-id" required autocomplete="off" placeholder="gpt-4.1"></label>
-        <label class="model-field">上下文窗口<input id="model-context" type="number" min="1024" step="1" placeholder="131072"></label>
-        <label class="model-field wide">API Base URL<input id="model-base" required autocomplete="off" placeholder="https://api.openai.com/v1"><small>支持 ${ENV_NAME} 环境变量引用。</small></label>
-        <label class="model-field wide">API Key<input id="model-secret" type="password" autocomplete="new-password"><small id="model-secret-hint"></small></label>
-      </div>
-      <p id="model-error" role="status" hidden></p>
-      <div class="model-actions"><button id="model-remove" class="secondary" type="button">删除配置</button><button id="model-save" type="submit">保存并生效</button></div>
-    </form>
-  </div>
-</dialog>
+<nav class="toolbar gah-bar" aria-label="工具栏"><div class="gah-slot" data-slot="toolbar"></div></nav>
 
 <div id="notice" role="status" hidden></div>
 <main id="scroll"><div id="thread"></div></main>
@@ -181,6 +119,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   </form>
   <div class="hint">Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务</div>
 </footer>
+<div class="gah-slot" data-slot="overlay"></div>
 <script>
 const $=id=>document.getElementById(id);
 const thread=$('thread'),scroll=$('scroll'),input=$('input'),send=$('send'),stop=$('stop');
@@ -252,165 +191,21 @@ function render(){
   thread.replaceChildren();
   if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,'有什么可以帮你？'),el('span',null,'任务交给本机 GenericAgent 执行'));thread.append(e)}
   state.messages.forEach((m,i)=>thread.append(renderMsg(m,i)));
-  renderSessions();renderModels();syncControls();
+  syncControls();
   if(stick)scroll.scrollTop=scroll.scrollHeight;
 }
 let changing=false;
 function notice(text){$('notice').textContent=text||'';$('notice').hidden=!text}
-function renderSessions(){
-  const entries=state.sessions;$('sessions').hidden=!Array.isArray(entries);
-  if(entries){const s=$('session-select');s.replaceChildren();entries.forEach(x=>{const o=el('option',null,x.title);o.value=x.id;s.append(o)});s.value=state.session_id}
-  if(state.persistence_error)notice(state.persistence_error);
-}
 function syncControls(){
-  syncModelControls();syncPluginControls();
   stop.hidden=!state.running;send.disabled=state.running||changing||!input.value.trim();
-  for(const id of ['session-select','session-new','session-rename','session-delete'])$(id).disabled=state.running||changing;
+  GAH.emitHost('sync',{running:!!state.running,changing});
 }
-async function sessionAction(action,extra={}){
-  changing=true;syncControls();notice('');
-  try{state=await post('/api/sessions',{action,id:state.session_id,...extra});opened.clear();render();scroll.scrollTop=scroll.scrollHeight}
-  catch(e){notice(e.message);renderSessions()}
-  finally{changing=false;syncControls()}
+/* Replace the whole page state (snapshot or a plugin's POST reply) and tell plugins. */
+function applyState(s,reset){
+  state=s;if(reset)opened.clear();render();if(reset)scroll.scrollTop=scroll.scrollHeight;
+  if(state.persistence_error)notice(state.persistence_error);
+  GAH.emitHost('state',state);
 }
-$('session-select').onchange=e=>sessionAction('select',{id:e.target.value});
-$('session-new').onclick=()=>sessionAction('new');
-$('session-rename').onclick=()=>{const old=(state.sessions||[]).find(x=>x.id===state.session_id);const title=prompt('会话名称',old?.title||'');if(title!=null)sessionAction('rename',{title})};
-$('session-delete').onclick=()=>{if(confirm('从会话列表中删除当前会话？记录将保留在本地数据库中。'))sessionAction('delete')};
-
-let modelConfig=null,editingKey=null;
-function renderModels(){
-  const m=state.models;$('models').hidden=!m;
-  if(!m)return;
-  const sel=$('model-select');sel.replaceChildren();
-  m.items.forEach(x=>{const o=el('option',null,x.name+(x.model&&x.name!==x.model?' / '+x.model:''));o.value=x.id;sel.append(o)});
-  sel.value=m.current==null?'':String(m.current);
-}
-function modelError(text){$('model-error').textContent=text||'';$('model-error').hidden=!text}
-function syncModelControls(){
-  const busy=state.running||changing,locked=busy||!modelConfig?.writable;
-  $('model-select').disabled=busy||!state.models?.items.length;
-  $('model-settings').disabled=busy;
-  for(const id of ['model-entry','model-add','model-save','model-name','model-id','model-context','model-base','model-secret'])$(id).disabled=locked;
-  $('model-key').disabled=locked||editingKey!==null;$('model-protocol').disabled=locked||editingKey!==null;
-  $('model-remove').disabled=locked||editingKey===null;
-  $('model-close').disabled=changing;
-}
-function fillModel(key){
-  const entry=modelConfig?.entries.find(x=>x.key===key),v=entry?.values||{};editingKey=entry?.key||null;
-  $('model-entry').value=editingKey||'';
-  $('model-protocol').value=editingKey?.includes('claude')?'claude':'oai';
-  $('model-key').value=editingKey||'native_oai_config_'+Date.now();
-  for(const [id,k] of [['model-name','name'],['model-id','model'],['model-base','apibase'],['model-context','context_win']])$(id).value=v[k]??'';
-  $('model-secret').value='';$('model-secret').required=!entry?.has_key;
-  $('model-secret').placeholder=entry?.has_key?'******':'';
-  $('model-secret-hint').textContent=entry?.has_key?'留空保留原密钥或环境变量引用。':'填写密钥或 ${ENV_NAME}。';
-  modelError(entry?.url_hidden?'原 URL 含敏感信息已隐藏，请重新填写不含密钥的 URL。':'');syncModelControls();
-}
-function fillModelConfig(preferred){
-  const select=$('model-entry');select.replaceChildren(el('option',null,'新增配置'));select.firstChild.value='';
-  modelConfig.entries.forEach(x=>{const o=el('option',null,x.values.name||x.values.model||x.key);o.value=x.key;select.append(o)});
-  $('model-reason').textContent=modelConfig.reason||'';$('model-reason').hidden=modelConfig.writable;
-  fillModel(preferred===null?null:(modelConfig.entries.some(x=>x.key===preferred)?preferred:modelConfig.entries[0]?.key));
-}
-$('model-select').onchange=async e=>{
-  const id=Number(e.target.value);changing=true;syncControls();notice('');
-  try{state=await post('/api/models/select',{id});render()}catch(err){notice(err.message);renderModels()}
-  finally{changing=false;syncControls()}
-};
-$('model-settings').onclick=async()=>{
-  modelConfig=null;editingKey=null;changing=true;syncControls();modelError('');$('model-secret').value='';$('model-dialog').showModal();
-  try{const r=await fetch('/api/models/config');const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);modelConfig=d;fillModelConfig()}
-  catch(e){modelError(e.message)}finally{changing=false;syncControls()}
-};
-$('model-close').onclick=()=>$('model-dialog').close();
-$('model-dialog').oncancel=e=>{if(changing)e.preventDefault()};
-$('model-dialog').onclose=()=>{$('model-secret').value=''};
-$('model-entry').onchange=e=>fillModel(e.target.value);
-$('model-add').onclick=()=>{fillModel(null);$('model-name').focus()};
-$('model-protocol').onchange=e=>{if(editingKey===null)$('model-key').value='native_'+e.target.value+'_config_'+Date.now()};
-async function changeModel(action){
-  if(changing||state.running||!modelConfig?.writable)return;
-  const key=$('model-key').value.trim(),body={action,key,revision:modelConfig.revision};
-  if(action==='save'){
-    body.values={name:$('model-name').value.trim(),model:$('model-id').value.trim(),apibase:$('model-base').value.trim(),apikey:$('model-secret').value};
-    if($('model-context').value)body.values.context_win=Number($('model-context').value);
-  }
-  changing=true;syncControls();modelError('');
-  try{const d=await post('/api/models/config',body);state=d.state;modelConfig=d.config;fillModelConfig(action==='save'?key:undefined);render();modelError('');notice('模型配置已保存并生效')}
-  catch(e){modelError(e.message)}finally{changing=false;syncControls()}
-}
-$('model-form').onsubmit=e=>{e.preventDefault();changeModel('save')};
-$('model-remove').onclick=()=>{if(confirm('删除此模型配置？至少需保留一个模型。'))changeModel('delete')};
-
-let pluginConfig=null,editingPlugin=null;
-const PLUGIN_STATES={active:'运行中',pending:'等待依赖',disabled:'未加载',error:'加载失败',removed:'已移除'};
-function pluginError(text){$('plugin-error').textContent=text||'';$('plugin-error').hidden=!text}
-function selectedPlugin(){return pluginConfig?.items.find(x=>x.name===editingPlugin)}
-function syncPluginControls(){
-  $('plugins').hidden=!state.plugins_enabled;
-  const p=selectedPlugin(),locked=changing||state.running||!p||p.protected;
-  $('plugin-settings').disabled=changing;
-  for(const id of ['plugin-entry','plugin-reload','plugin-close'])$(id).disabled=changing;
-  $('plugin-enabled').disabled=locked;$('plugin-save').disabled=locked;
-  $('plugin-reset').disabled=locked||!p?.overridden;
-  $('plugin-fields').querySelectorAll('input').forEach(x=>x.disabled=locked);
-  $('plugin-config-note').textContent=state.running?'任务运行中，仅可查看；结束后可保存。':p?.protected?'基础能力与前端受保护，请通过启动配置调整。':'仅显示插件声明的公开配置；密钥请到模型配置中管理。';
-}
-function fillPlugin(name){
-  editingPlugin=name;const p=selectedPlugin();$('plugin-fields').replaceChildren();
-  $('plugin-entry').value=p?.name||'';
-  $('plugin-status').textContent=p?(PLUGIN_STATES[p.state]||p.state)+(p.restart_required?' · 待重启生效':'')+(p.protected?' · 受保护':''):'没有发现可管理的插件';
-  $('plugin-description').textContent=p?.description||'';
-  for(const key of ['requires','provides','dependents'])$('plugin-'+key).textContent=p?.[key]?.join('、')||'无';
-  $('plugin-warning').textContent=[p?.missing?.length?'当前缺少：'+p.missing.join('、'):'',p?.error||''].filter(Boolean).join('；');
-  $('plugin-enabled').checked=!!p?.enabled;
-  Object.entries(p?.fields||{}).forEach(([key,spec],i)=>{
-    const label=el('label',spec.type==='boolean'?'plugin-toggle':'model-field'),field=el('input');
-    field.id='plugin-field-'+i;field.dataset.pluginField=key;
-    field.type=spec.type==='boolean'?'checkbox':spec.type==='integer'?'number':'text';
-    if(spec.type==='boolean'){field.checked=!!p.config[key];label.append(field,el('span',null,spec.label||key))}
-    else{field.value=p.config[key]??'';if(spec.type==='integer'){field.step='1';if(spec.min!=null)field.min=spec.min;if(spec.max!=null)field.max=spec.max}label.append(el('span',null,spec.label||key),field)}
-    if(spec.description)label.append(el('small',null,spec.description));
-    $('plugin-fields').append(label);
-  });
-  pluginError('');syncPluginControls();
-}
-function fillPluginCatalog(preferred){
-  const cfg=pluginConfig,sel=$('plugin-entry');sel.replaceChildren();
-  cfg.items.forEach(p=>{const o=el('option',null,p.name+(p.restart_required?' · 待重启':'')+(p.protected?' · 受保护':''));o.value=p.name;sel.append(o)});
-  $('plugin-profile').textContent='配置方案：'+cfg.profile+'。更改仅保存到本地，下次启动生效，不中断当前插件。';
-  $('plugin-summary').textContent=cfg.restart_required?'配置已保存 · 待重启生效':'更改在下次启动时生效';
-  fillPlugin(cfg.items.some(p=>p.name===preferred)?preferred:cfg.items[0]?.name);
-  if(cfg.issues?.length)pluginError('依赖检查：'+cfg.issues.join('；'));
-}
-async function loadPlugins(){
-  if(changing)return;changing=true;syncControls();pluginError('');
-  if(!$('plugin-dialog').open)$('plugin-dialog').showModal();
-  try{const r=await fetch('/api/plugins');const d=await r.json();if(!r.ok)throw new Error(d.error||'插件列表读取失败');pluginConfig=d;fillPluginCatalog(editingPlugin)}
-  catch(e){pluginConfig=null;fillPlugin(null);pluginError(e.message)}finally{changing=false;syncControls()}
-}
-async function changePlugin(action){
-  const p=selectedPlugin();if(changing||state.running||!p||p.protected)return;
-  const body={action,name:p.name,revision:pluginConfig.revision};
-  if(action==='save'){
-    body.enabled=$('plugin-enabled').checked;body.config={};
-    $('plugin-fields').querySelectorAll('input').forEach(field=>{
-      const key=field.dataset.pluginField,kind=p.fields[key].type;
-      if(kind==='boolean')body.config[key]=field.checked;
-      else if(field.value!==''||kind==='string')body.config[key]=kind==='integer'?Number(field.value):field.value;
-    });
-  }
-  changing=true;syncControls();pluginError('');
-  try{pluginConfig=await post('/api/plugins',body);fillPluginCatalog(p.name);pluginError('');notice('插件配置已保存；下次启动时生效')}
-  catch(e){pluginError(e.message)}finally{changing=false;syncControls()}
-}
-$('plugin-settings').onclick=loadPlugins;$('plugin-reload').onclick=loadPlugins;
-$('plugin-entry').onchange=e=>fillPlugin(e.target.value);
-$('plugin-close').onclick=()=>{if(!changing)$('plugin-dialog').close()};
-$('plugin-dialog').oncancel=e=>{if(changing)e.preventDefault()};
-$('plugin-form').onsubmit=e=>{e.preventDefault();changePlugin('save')};
-$('plugin-reset').onclick=()=>{if(confirm('清除这个插件的网页覆盖设置，恢复启动配置？下次启动生效。'))changePlugin('reset')};
 
 // Upstream models deliver text in bursts (often 5-25 chars every ~120ms). Revealing each
 // burst at once looks jerky, so the visible reply chases the received text at a rate
@@ -429,7 +224,7 @@ let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>
 function last(){return state.messages[state.messages.length-1]}
 /* ---- web plugin runtime: plugins call GAH.define(name, api => cleanup?) from their client.js ---- */
 const GAH=(()=>{
-  const defs={},live={},hostSubs=new Set();let manifest=[];
+  const defs={},live={},hostSubs=new Set();let manifest=[],locks=0;
   const by=name=>manifest.find(x=>x.name===name);
   /* h('button',{class:'x',onclick:fn,dataset:{k:1}},'text',childNode,[more]) -> element; null/false children skipped */
   function h(tag,props,...kids){const e=document.createElement(tag);
@@ -446,7 +241,7 @@ const GAH=(()=>{
     if(!r.ok)throw new Error((d&&d.error)||('HTTP '+r.status));return d}
   function start(name){
     const m=by(name);if(!m||live[name]||!defs[name])return;
-    const cleanups=[],subs={};
+    const cleanups=[],subs={};let held=false;cleanups.push(()=>{if(held){held=false;locks--;changing=locks>0;syncControls()}});
     const api={name,
       slot(slotName,node){const s=document.querySelector('.gah-slot[data-slot="'+slotName+'"]');if(!s)throw new Error('unknown slot: '+slotName);
         node.dataset.gahPlugin=name;s.appendChild(node);cleanups.push(()=>node.remove());return node},
@@ -454,6 +249,10 @@ const GAH=(()=>{
       on(kind,fn){(subs[kind]=subs[kind]||[]).push(fn)},
       onHost(type,fn){const h={type,fn};hostSubs.add(h);cleanups.push(()=>hostSubs.delete(h))},
       state:()=>state,notice,el,h,cleanup(fn){cleanups.push(fn)},
+      /* replace page state with a snapshot (e.g. a POST reply); reset=true for a different conversation */
+      setState:(s,reset)=>applyState(s,reset),
+      /* hold the page busy (disables send and other plugins' controls) while an action is in flight */
+      lock(on){if(!!on===held)return;held=!!on;locks+=held?1:-1;changing=locks>0;syncControls()},
       listen(target,type,fn,opt){target.addEventListener(type,fn,opt);cleanups.push(()=>target.removeEventListener(type,fn,opt))},
       every(ms,fn){const t=setInterval(()=>{try{fn()}catch(e){report(name,e)}},ms);cleanups.push(()=>clearInterval(t))},
       host:{post,get:async p=>{const r=await fetch(p);const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}}};
@@ -489,7 +288,7 @@ function connect(){
   const es=new EventSource('/api/events');
   es.onopen=()=>{$('conn').textContent='已连接';$('dot').classList.add('live')};
   es.onerror=()=>{$('conn').textContent='已断开，重连中…';$('dot').classList.remove('live')};
-  es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render();GAH.sync(state.web_plugins);GAH.emitHost('snapshot',state)});
+  es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render();GAH.sync(state.web_plugins);GAH.emitHost('snapshot',state);GAH.emitHost('state',state)});
   es.addEventListener('web.plugins',e=>GAH.sync(JSON.parse(e.data)));
   es.addEventListener('plugin',e=>GAH.dispatch(JSON.parse(e.data)));
   es.addEventListener('start',e=>{const d=JSON.parse(e.data);state.running=true;
@@ -524,5 +323,6 @@ input.oninput=()=>{grow();syncControls()};
 input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('form').requestSubmit()}};
 render();connect();
 </script>
+<div class="gah-slot" data-slot="overlay"></div>
 </body>
 </html>

@@ -288,3 +288,34 @@ def test_web_theme_plugin_registers_and_is_dormant_elsewhere(tmp_path):
     finally:
         off()
         rt.dispose()
+
+def test_ui_web_bundled_web_plugins_mount_and_host_css_scope(tmp_path):
+    import re
+    import sys
+    from tests.test_frontend import PLUGINS, Runtime, _e, discover, mount
+    d = tmp_path / "fake-agent"
+    d.mkdir()
+    (d / "plugin.toml").write_text('name = "fake-agent"\nentry = "main:apply"\nprovides = ["agent"]\n')
+    (d / "main.py").write_text("import sys\ndef apply(ctx, config):\n"
+                               "    ctx.provide('agent', sys.modules['tests_frontend_fake'](ctx))\n")
+    sys.modules["tests_frontend_fake"] = WebAgent
+    rt = Runtime()
+    ui = {"name": "ui-web", "config": {"port": 0, "open_browser": False, "log": lambda m: None}, "disabled": False}
+    names = ["web-sessions", "web-models", "web-plugins"]
+    mount(rt, [_e("fake-agent"), ui] + [_e(n) for n in names], discover([PLUGINS, tmp_path]))
+    fe = rt.ctx.get("frontend")
+    base = fe.start()
+    try:
+        m = fe.web.manifest()
+        assert [x["name"] for x in m] == names
+        page = _get(base)[2]
+        for x in m:
+            st, ct, body = _get(base + x["script"].lstrip("/"))
+            assert st == 200 and ct.startswith("text/javascript") and "GAH.define" in body
+            if "style" in x:
+                assert 'href="%s"' % x["style"] in page and _get(base + x["style"].lstrip("/"))[0] == 200
+        # host chat-form pill styles must not leak into plugin dialogs' forms
+        css = page[page.find("<style"):page.find("</style>")]
+        assert not re.search(r"(?m)(^|[},])\s*form\s*[{:,]", css)  # bare `form` selector
+    finally:
+        rt.dispose()

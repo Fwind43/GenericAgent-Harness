@@ -1,0 +1,4 @@
+name = "web-plugins"
+entry = "main:apply"
+description = "Web plugin manager dialog for ui-web (uses /api/plugins); changes apply on next start."
+inject = ["web.host"]

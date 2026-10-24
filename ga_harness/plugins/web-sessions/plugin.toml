@@ -1,0 +1,4 @@
+name = "web-sessions"
+entry = "main:apply"
+description = "Web session bar for ui-web: switch / new / rename / delete conversations (uses /api/sessions)."
+inject = ["web.host"]

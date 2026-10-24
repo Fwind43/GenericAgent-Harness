@@ -35,3 +35,13 @@ name = "model-store"
 # web page themes; an add-on for ui-web (dormant under other frontends)
 [[plugins]]
 name = "web-theme"
+# web session bar / model picker+config / plugin manager; add-ons for ui-web
+[[plugins]]
+name = "web-sessions"
+
+[[plugins]]
+name = "web-models"
+
+[[plugins]]
+name = "web-plugins"
+
