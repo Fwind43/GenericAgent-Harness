@@ -1,6 +1,7 @@
 """gah - command line entry.
 
   gah run "task" [--profile ga-compat] [--patch file.toml]... [--ga-root DIR]
+                                    (re-runs itself under DIR/.venv python when needed)
   gah plugins                       list discovered plugin manifests
   gah tree [--profile ...]          print the resolved plugin tree
   gah llm show [--file F]           show the LLM config GA would see (secrets masked)
@@ -69,7 +70,8 @@ def main(argv=None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--profile", default="ga-compat")
         p.add_argument("--patch", action="append", default=[])
-        p.add_argument("--ga-root", default=os.environ.get("GA_ROOT"))
+        p.add_argument("--ga-root", default=None,
+                       help="GenericAgent checkout (default: $GA_ROOT, then ~/.ga-harness/config.toml ga_root)")
         if name == "run":
             p.add_argument("task")
             p.add_argument("--timeout", type=float, default=None)
@@ -81,9 +83,17 @@ def main(argv=None) -> int:
     m.add_argument("mykey")
     m.add_argument("--out", default=None)
     m.add_argument("--force", action="store_true")
-    args = ap.parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    args = ap.parse_args(raw)
     if args.cmd == "llm":
         return _llm(args)
+    if args.cmd in ("run", "tree"):
+        from . import launcher
+        args.ga_root = launcher.resolve_ga_root(args.ga_root)
+        if args.cmd == "run":
+            rc = launcher.maybe_reexec(raw, args.ga_root)
+            if rc is not None:
+                return rc
 
     manifests = discover(PLUGIN_DIRS + _extra_dirs("GAH_PLUGIN_PATH"))
     if args.cmd == "plugins":
