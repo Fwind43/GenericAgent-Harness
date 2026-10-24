@@ -132,13 +132,17 @@ function renderStep(t,key,live){
 function renderTurns(m,mi,box){
   const turns=m.turns.filter(Boolean),running=m.status==='running';
   const fin=turns[turns.length-1];
-  const streaming=running&&fin&&fin.status==='running'&&!fin.tools.length&&fin.reply;
-  const finalT=(!running||streaming)&&fin&&!fin.tools.length&&fin.reply?fin:null;
+  // A tool-free last turn is the answer even after its own turn event lands and before the
+  // run's done event; demoting it into the steps list in that gap makes the reply vanish.
+  const finalT=fin&&!fin.tools.length&&fin.reply?fin:null;
+  const streaming=running&&!!finalT;
   const steps=finalT?turns.slice(0,-1):turns;
   if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');
     s.append(chev(),el('span',null,(running?'执行中 · ':'执行过程 · ')+steps.length+' 步'));d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
-  if(finalT)box.append(el('div','body'+(streaming?' cursor':''),finalT.reply));
+  if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
+    const b=el('div','body'+(typing?' cursor':''),typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply);
+    if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
   else if(running)box.append(el('div','body working cursor',''));
   else if(fin&&fin.reply)box.append(el('div','body',fin.reply));
 }
@@ -162,6 +166,19 @@ function render(){
   if(stick)scroll.scrollTop=scroll.scrollHeight;
 }
 function syncControls(){stop.hidden=!state.running;send.disabled=state.running||!input.value.trim()}
+// Upstream models deliver text in bursts (often 5-25 chars every ~120ms). Revealing each
+// burst at once looks jerky, so the visible reply chases the received text at a rate
+// proportional to the backlog: smooth per-frame typing that never lags more than ~0.2s.
+const typer={el:null,t:null,raf:0,ts:0};
+function kickTyper(){if(!typer.raf)typer.raf=requestAnimationFrame(typeTick)}
+function typeTick(now){typer.raf=0;const t=typer.t,b=typer.el;
+  if(!t||!b||!b.isConnected){typer.ts=0;return}
+  const full=t.reply||'';let n=Math.min(t._shown||0,full.length);
+  const dt=typer.ts?Math.min(64,now-typer.ts):16;typer.ts=now;
+  if(n<full.length){n=Math.min(full.length,n+Math.max(1,Math.ceil((full.length-n)*dt/180)));t._shown=n;
+    const stick=nearBottom();b.textContent=full.slice(0,n);if(stick)scroll.scrollTop=scroll.scrollHeight}
+  if(n<full.length)kickTyper();
+  else{typer.ts=0;if(last()&&last().status!=='running')b.classList.remove('cursor')}}
 let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>{pending=0;render()})}
 function last(){return state.messages[state.messages.length-1]}
 function connect(){
@@ -175,7 +192,8 @@ function connect(){
     m.text+=JSON.parse(e.data).text;if(m.turns&&m.turns.length)return;const b=thread.lastElementChild&&thread.lastElementChild.querySelector('.body');
     if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
   es.addEventListener('turn',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
-    (m.turns=m.turns||[])[d.index]=d.turn;render()});
+    const ts=m.turns=m.turns||[],prev=ts[d.index];if(prev&&prev._shown!=null&&d.turn&&(d.turn.reply||'').startsWith((prev.reply||'').slice(0,prev._shown)))d.turn._shown=prev._shown;
+    ts[d.index]=d.turn;render()});
   es.addEventListener('delta',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
     const ts=m.turns=m.turns||[];const t=ts[d.index]||(ts[d.index]={turn:d.turn,summary:'',reply:'',status:'running',tools:[]});
     t[d.part]=(t[d.part]||'')+d.text;schedule()});
