@@ -4,10 +4,15 @@ The task runs on a worker thread; the main thread waits on it so Ctrl+C (or Ctrl
 Windows) lands here and becomes ``agent.abort()``. At the prompt, Ctrl+C / EOF / /exit quit.
 Local commands: /exit /quit /help. Any other line (including GA's own slash commands such as
 ``/session.x=...``) goes to the agent unchanged.
+
+Output is rendered from ga-events by ``ga_harness.textview``; config ``raw = true`` prints
+GA's raw ``agent.chunk`` text instead, ``tool_lines`` limits result lines per tool call.
 """
 import signal
 import sys
 import threading
+
+from ga_harness.textview import TextView
 
 HELP = "commands: /exit /quit /help   Ctrl+C while running = abort the task"
 
@@ -19,6 +24,8 @@ class TuiFrontend:
         self.read = config.get("input") or input
         self.prompt = config.get("prompt", "\n> ")
         self.turns = 0
+        self.view = TextView(ctx, self._w, raw=bool(config.get("raw", False)),
+                             tool_lines=int(config.get("tool_lines", 3)))
 
     def _w(self, text):
         self.out.write(text)
@@ -27,7 +34,7 @@ class TuiFrontend:
     def main(self, task=None, timeout=None) -> int:
         if hasattr(signal, "SIGBREAK") and threading.current_thread() is threading.main_thread():
             signal.signal(signal.SIGBREAK, signal.default_int_handler)
-        off = self.ctx.events.on("agent.chunk", self._w)
+        off = self.view.attach()
         try:
             self._w("[ga-harness tui] " + HELP + "\n")
             pending = task
@@ -53,6 +60,7 @@ class TuiFrontend:
     def _turn(self, line, timeout):
         agent = self.ctx.get("agent")
         box = {}
+        self.view.begin()
 
         def work():
             try:
