@@ -51,6 +51,11 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - `gah.cmd run "task"` - ga_root from `--ga-root` > `$GA_ROOT` > `~/.ga-harness/config.toml` (`ga_root = "E:/Work/GenericAgent"`).
 - `gah.cmd llm migrate E:/Work/GenericAgent/mykey.py [--out F] [--force]` (positional path, default out ~/.ga-harness/llm.toml).
 
+## tool-grep (custom tool via ga.tools)
+- `plugins/tool-grep`: harness-owned read-only `grep` tool (pattern/path/glob/ignore_case/max_results), registered with `ctx.get("ga.tools").register(SCHEMA, do_grep)`; skips .git/node_modules/.venv/binary/>2MB files; dispose removes schema + handler.
+- Patch: `examples/patches/tool-grep.toml` (ga-tools after ga-core, tool-grep after ga-tools).
+- Verified: 28 tests; real GA run -- model called `grep` and reported `ga.py:427` (matches actual `def do_file_read`).
+
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
-2. Pick next plugin (e.g. a harness-owned custom tool via `ga.tools.register`, or session recorder).
+2. Pick next plugin (e.g. session recorder: per-turn JSONL of messages/tool calls/timings).
