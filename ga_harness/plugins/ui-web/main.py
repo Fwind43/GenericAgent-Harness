@@ -5,13 +5,15 @@ if the config sets ``host``). One agent, one task at a time, any number of brows
 
   GET  /              the page
   GET  /api/state     {"running": bool, "messages": [{"role", "text", "status"}]}
-  GET  /api/events    SSE: snapshot | start | chunk | done | ping
+  GET  /api/events    SSE: snapshot | start | chunk | turn | done | ping
+                      (turn = {"index", "turn"} built from ga-events; frontends never parse text)
   POST /api/run       {"task": "..."}  -> 202, or 409 while a task is running
   POST /api/abort     -> 202 (no-op when idle)
 
 Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true).
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
+import copy
 import json
 import queue
 import threading
@@ -21,6 +23,8 @@ from pathlib import Path
 
 PAGE = Path(__file__).with_name("index.html")
 MAX_BODY = 1 << 20
+MAX_TOOL_DATA = 20000
+EVENTS = ("turn.start", "assistant.text", "tool.call", "tool.result", "turn.end")
 
 
 class WebFrontend:
@@ -47,13 +51,54 @@ class WebFrontend:
             q.put(msg)
 
     def snapshot(self):
-        return {"running": self.running, "messages": [dict(m) for m in self.messages]}
+        return copy.deepcopy({"running": self.running, "messages": self.messages})
 
     def _on_chunk(self, text):
         with self.lock:
             if self.running and self.messages and self.messages[-1]["role"] == "assistant":
                 self.messages[-1]["text"] += text
                 self._broadcast("chunk", {"text": text})
+
+    # ---- structured events from ga-events ----
+    def _turns(self):
+        if self.running and self.messages and self.messages[-1]["role"] == "assistant":
+            return self.messages[-1].setdefault("turns", [])
+        return None
+
+    def _push(self, turns, i):
+        self._broadcast("turn", {"index": i, "turn": turns[i]})
+
+    def _find(self, turns, n):
+        for i in range(len(turns) - 1, -1, -1):
+            if turns[i]["turn"] == n:
+                return i
+        turns.append({"turn": n, "summary": "", "reply": "", "status": "running", "tools": []})
+        return len(turns) - 1
+
+    def _on_event(self, name, d):
+        d = d if isinstance(d, dict) else {}
+        with self.lock:
+            turns = self._turns()
+            if turns is None:
+                return
+            i = self._find(turns, d.get("turn"))
+            t = turns[i]
+            if name == "assistant.text":
+                t["summary"] = d.get("summary") or ""
+                t["reply"] = d.get("reply") or ""
+            elif name == "tool.call":
+                t["tools"].append({"id": d.get("id"), "name": d.get("name"), "args": d.get("args"),
+                                   "status": "running"})
+            elif name == "tool.result":
+                tool = next((x for x in t["tools"] if x["id"] == d.get("id")), None)
+                if tool is None:
+                    tool = {"id": d.get("id"), "name": d.get("name"), "args": None}
+                    t["tools"].append(tool)
+                tool.update(status="done", ok=bool(d.get("ok", True)),
+                            data=_clip(d.get("data")), seconds=d.get("seconds"))
+            elif name == "turn.end":
+                t["status"] = "done"
+            self._push(turns, i)
 
     def submit(self, task):
         task = (task or "").strip() if isinstance(task, str) else ""
@@ -82,6 +127,20 @@ class WebFrontend:
             last["status"] = status
             if error:
                 last["error"] = error
+            # GA never fires turn.end for the final, tool-less turn (and an
+            # abort/error can cut any turn short): settle whatever is open.
+            turns = last.get("turns") or []
+            for i, turn in enumerate(turns):
+                if not isinstance(turn, dict):
+                    continue
+                open_tools = [t for t in turn.get("tools", []) if t.get("status") == "running"]
+                if turn.get("status") != "running" and not open_tools:
+                    continue
+                if turn.get("status") == "running":
+                    turn["status"] = status
+                for t in open_tools:
+                    t["status"] = status
+                self._push(turns, i)
             self.running = self.aborting = False
             self._broadcast("done", {"status": status, "error": error})
 
@@ -117,9 +176,15 @@ class WebFrontend:
         server.server_close()
         self.stopped.set()
 
+    def _subscribe(self):
+        offs = [self.ctx.events.on("agent.chunk", self._on_chunk)]
+        for name in EVENTS:
+            offs.append(self.ctx.events.on(name, lambda d=None, _n=name: self._on_event(_n, d)))
+        return offs
+
     def main(self, task=None, timeout=None) -> int:
         self._timeout = timeout
-        off = self.ctx.events.on("agent.chunk", self._on_chunk)
+        offs = self._subscribe()
         try:
             url = self.start()
             self.log(f"[ga-harness web] {url}  (Ctrl+C to stop)")
@@ -136,8 +201,22 @@ class WebFrontend:
                     self.abort()
             return 0
         finally:
-            off()
+            for off in offs:
+                off()
             self.stop()
+
+
+def _clip(data):
+    if data is None:
+        return ""
+    if not isinstance(data, str):
+        try:
+            data = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+        except (TypeError, ValueError):
+            data = str(data)
+    if len(data) > MAX_TOOL_DATA:
+        data = data[:MAX_TOOL_DATA] + f"\n... ({len(data) - MAX_TOOL_DATA} more chars)"
+    return data
 
 
 class _Handler(BaseHTTPRequestHandler):

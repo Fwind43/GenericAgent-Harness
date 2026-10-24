@@ -24,6 +24,19 @@ class WebAgent:
             return "x"
         if task == "boom":
             raise RuntimeError("kaput")
+        if task == "tool":
+            e = self.ctx.emit
+            e("run.start", {})
+            e("turn.start", {"turn": 1})
+            e("assistant.text", {"turn": 1, "text": "<summary>calc</summary>go", "reply": "go", "summary": "calc"})
+            e("tool.call", {"id": "1.0", "turn": 1, "index": 0, "name": "code_run", "args": {"script": "1+1"}})
+            e("tool.result", {"id": "1.0", "turn": 1, "index": 0, "name": "code_run", "ok": True,
+                              "data": {"stdout": "2"}, "seconds": 0.5})
+            e("turn.end", {"turn": 1})
+            e("turn.start", {"turn": 2})
+            e("assistant.text", {"turn": 2, "text": "done", "reply": "done", "summary": ""})
+            # like real GA: the final (tool-less) turn never fires turn.end
+            e("run.end", {})
         self.ctx.emit("agent.chunk", task)
         return "x"
 
@@ -54,7 +67,11 @@ def _wait_idle(base):
 def _start(tmp_path):
     rt = _mount_with(tmp_path, WebAgent, "ui-web", {"port": 0, "open_browser": False, "log": lambda m: None})
     fe = rt.ctx.get("frontend")
-    off = rt.ctx.events.on("agent.chunk", fe._on_chunk)
+    offs = fe._subscribe()
+
+    def off():
+        for f in offs:
+            f()
     base = fe.start()
     return rt, fe, off, base
 
@@ -129,3 +146,38 @@ def test_ui_web_main_returns_on_stop(tmp_path):
         assert box.get("rc") == 0
     finally:
         rt.dispose()
+
+
+def test_ui_web_structured_turns_and_tool_cards(tmp_path):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        # events outside a run are ignored
+        rt.ctx.emit("turn.start", {"turn": 9})
+        assert _req(base + "api/run", {"task": "tool"})[0] == 202
+        last = _wait_idle(base)["messages"][-1]
+        assert last["status"] == "done"
+        t1, t2 = last["turns"]
+        assert (t1["turn"], t1["summary"], t1["reply"], t1["status"]) == (1, "calc", "go", "done")
+        (tool,) = t1["tools"]
+        assert (tool["id"], tool["name"], tool["args"], tool["status"], tool["ok"], tool["seconds"]) == (
+            "1.0", "code_run", {"script": "1+1"}, "done", True, 0.5)
+        assert '"stdout": "2"' in tool["data"]
+        assert (t2["reply"], t2["tools"], t2["status"]) == ("done", [], "done")
+        # a plain run carries no turns, so the page falls back to text
+        assert _req(base + "api/run", {"task": "hi"})[0] == 202
+        assert "turns" not in _wait_idle(base)["messages"][-1]
+    finally:
+        off()
+        rt.dispose()
+
+
+def test_ui_web_clips_large_tool_data():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "uiweb_main", Path(__file__).resolve().parents[1] / "ga_harness" / "plugins" / "ui-web" / "main.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    out = m._clip("x" * (m.MAX_TOOL_DATA + 5))
+    assert out.startswith("x" * m.MAX_TOOL_DATA) and out.endswith("(5 more chars)")
+    assert m._clip(None) == "" and m._clip("ok") == "ok"
