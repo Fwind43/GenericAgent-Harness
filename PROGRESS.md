@@ -37,6 +37,13 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - tool-timer: `gah run ... --patch examples/patches/tool-timer.toml` real run printed
   `[tool-timer] code_run 1.011s` on stderr, answer "2", exit 0.
 
+- launcher: `gah.cmd run "3+4" --ga-root E:/Work/GenericAgent --patch examples/patches/tool-timer.toml`
+  from a clean env (no PYTHONPATH/GA_ROOT) re-exec'd into GA's venv, answer "7", exit 0; `gah.cmd tree` ok.
+
+## Usage (current)
+- `gah.cmd run "task"` - ga_root from `--ga-root` > `$GA_ROOT` > `~/.ga-harness/config.toml` (`ga_root = "E:/Work/GenericAgent"`).
+- `gah.cmd llm migrate E:/Work/GenericAgent/mykey.py [--out F] [--force]` (positional path, default out ~/.ga-harness/llm.toml).
+
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
-2. Optional `gah` launcher that auto-uses GA's interpreter.
+2. Pick next plugin (e.g. split GA prompt/tools into harness-owned plugins, or session recorder).
