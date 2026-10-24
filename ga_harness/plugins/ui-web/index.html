@@ -132,12 +132,13 @@ function renderStep(t,key,live){
 function renderTurns(m,mi,box){
   const turns=m.turns.filter(Boolean),running=m.status==='running';
   const fin=turns[turns.length-1];
-  const finalT=!running&&fin&&!fin.tools.length&&fin.reply?fin:null;
+  const streaming=running&&fin&&fin.status==='running'&&!fin.tools.length&&fin.reply;
+  const finalT=(!running||streaming)&&fin&&!fin.tools.length&&fin.reply?fin:null;
   const steps=finalT?turns.slice(0,-1):turns;
   if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');
     s.append(chev(),el('span',null,(running?'执行中 · ':'执行过程 · ')+steps.length+' 步'));d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
-  if(finalT)box.append(el('div','body',finalT.reply));
+  if(finalT)box.append(el('div','body'+(streaming?' cursor':''),finalT.reply));
   else if(running)box.append(el('div','body working cursor',''));
   else if(fin&&fin.reply)box.append(el('div','body',fin.reply));
 }
@@ -161,6 +162,7 @@ function render(){
   if(stick)scroll.scrollTop=scroll.scrollHeight;
 }
 function syncControls(){stop.hidden=!state.running;send.disabled=state.running||!input.value.trim()}
+let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>{pending=0;render()})}
 function last(){return state.messages[state.messages.length-1]}
 function connect(){
   const es=new EventSource('/api/events');
@@ -174,6 +176,9 @@ function connect(){
     if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
   es.addEventListener('turn',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
     (m.turns=m.turns||[])[d.index]=d.turn;render()});
+  es.addEventListener('delta',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
+    const ts=m.turns=m.turns||[];const t=ts[d.index]||(ts[d.index]={turn:d.turn,summary:'',reply:'',status:'running',tools:[]});
+    t[d.part]=(t[d.part]||'')+d.text;schedule()});
   es.addEventListener('usage',e=>{const m=last();if(!m||m.role!=='assistant')return;m.usage=JSON.parse(e.data);render()});
   es.addEventListener('done',e=>{const d=JSON.parse(e.data),m=last();state.running=false;
     if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render()});

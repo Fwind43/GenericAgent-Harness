@@ -24,7 +24,7 @@ from pathlib import Path
 PAGE = Path(__file__).with_name("index.html")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
-EVENTS = ("turn.start", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
+EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
 
 
@@ -91,6 +91,12 @@ class WebFrontend:
                 return
             i = self._find(turns, d.get("turn"))
             t = turns[i]
+            if name == "assistant.delta":
+                part, text = d.get("part"), d.get("text") or ""
+                if part in ("summary", "reply") and text:
+                    t[part] += text
+                    self._broadcast("delta", {"index": i, "turn": t["turn"], "part": part, "text": text})
+                return
             if name == "assistant.text":
                 t["summary"] = d.get("summary") or ""
                 t["reply"] = d.get("reply") or ""
