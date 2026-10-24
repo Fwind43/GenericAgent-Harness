@@ -1,0 +1,5 @@
+name = "ga-usage"
+entry = "main:apply"
+description = "Per-step and per-run token usage events (input/cache/output) read from GA's llmcore, without changing GA."
+inject = ["ga.hooks"]
+provides = []

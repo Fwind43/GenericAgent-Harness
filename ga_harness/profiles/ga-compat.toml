@@ -16,5 +16,9 @@ name = "ga-hooks"
 [[plugins]]
 name = "ga-events"
 
+# token usage per LLM call / per run (usage, usage.total events)
+[[plugins]]
+name = "ga-usage"
+
 [[plugins]]
 name = "ga-core"
