@@ -101,3 +101,20 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - Evidence: `E:/Work/GenericAgent/temp/gah_plugin_acceptance/` (`browser-result.json`, screenshots,
   `visual-review-compact.txt`, `pytest-final.txt`). No real GA/LLM request or production-port validation;
   existing port 8765 was not restarted. This change is local only, not pushed or deployed.
+
+## Assistant output aligned with Admin Chat (2026-10-24)
+- Kept native JS and the existing frontend plugin API. Final answer is separate from collapsible
+  process/step/tool details; manual disclosure state survives SSE renders and streaming completion.
+- Added readable Markdown, locally bundled Marked 18.1.1 / DOMPurify 3.4.17 with licenses,
+  reply/code copy, responsive output styling, and light/dark/warm theme variables.
+  Raw HTML is escaped, generated HTML is allowlist-sanitized, and parser failure falls back to text.
+  Remote Markdown images can still make network requests. Host assets use a fixed route allowlist.
+- Verified: 116 pytest tests including 3 real Chromium regressions (simulated agent / random local port),
+  covering Markdown safety/copy, SSE disclosure/final reply, parser failure, three themes and 1280/390 layouts.
+  Wheel build passed; all seven new renderer/vendor/license assets match source bytes in the wheel.
+- Evidence: E:/Work/GenericAgent/temp/gah_output_validation/ (pytest-final.log, browser-tests.log,
+  page screenshots and visual reviews). Process/reply contact sheets were reviewed; an initial mobile-light
+  clipping concern did not reproduce when the exact test interactions were rerun: heading Y=214.75,
+  scrollTop=0 before/after the screenshot in all mobile themes (recheck/positions.json).
+  Reduced-scale review is not pixel-perfect acceptance or a real phone test.
+- No GA/Admin source changes, live GA/model request, existing-port restart, push or deployment.

@@ -195,6 +195,22 @@ def _get(url):
         return r.status, r.headers["Content-Type"], r.read().decode("utf-8")
 
 
+def test_ui_web_output_assets(tmp_path):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        page = _get(base)[2]
+        for name, kind in [("output.css", "text/css"), ("output.js", "text/javascript"),
+                           ("marked.umd.js", "text/javascript"), ("purify.min.js", "text/javascript")]:
+            assert "/ui-web-assets/" + name in page
+            status, content_type, body = _get(base + "ui-web-assets/" + name)
+            assert status == 200 and content_type.startswith(kind) and body
+        for name in ("main.py", "index.html", "../main.py", "%2e%2e/main.py", "nested/output.js"):
+            assert _req(base + "ui-web-assets/" + name)[0] == 404
+    finally:
+        off()
+        rt.dispose()
+
+
 def test_ui_web_host_assets_routes_and_isolation(tmp_path):
     import pytest
     rt, fe, off, base = _start(tmp_path)

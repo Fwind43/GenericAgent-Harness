@@ -485,6 +485,21 @@ class _Handler(BaseHTTPRequestHandler):
             page = PAGE.read_text(encoding="utf-8")
             body = page.replace("<!--gah:head-->", self.frontend.web.head_html()).encode("utf-8")
             self._bytes(200, body, "text/html; charset=utf-8")
+        elif path.startswith("/ui-web-assets/"):
+            # Host-owned assets only; never expose arbitrary files beside the page.
+            assets = {
+                "output.css": "text/css; charset=utf-8",
+                "output.js": "text/javascript; charset=utf-8",
+                "marked.umd.js": "text/javascript; charset=utf-8",
+                "purify.min.js": "text/javascript; charset=utf-8",
+            }
+            name = path.removeprefix("/ui-web-assets/")
+            if name not in assets:
+                return self._json(404, {"error": "not found"})
+            try:
+                self._bytes(200, PAGE.with_name(name).read_bytes(), assets[name])
+            except OSError:
+                self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/web/"):
             parts = path.split("/")
             found = len(parts) == 4 and self.frontend.web.asset(parts[2], parts[3])

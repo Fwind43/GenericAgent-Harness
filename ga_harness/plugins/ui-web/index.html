@@ -22,18 +22,6 @@ main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) t
 #thread{max-width:820px;margin:0 auto;padding:24px 20px 12px}
 .empty{color:var(--muted);text-align:center;margin-top:18vh}
 .empty b{display:block;color:var(--text);font-size:20px;font-weight:600;margin-bottom:6px}
-.msg{margin:0 0 22px}
-.msg.user{display:flex;justify-content:flex-end}
-.msg.user .body{background:var(--surface-muted);border-radius:18px;padding:9px 15px;max-width:min(80%,640px)}
-.meta{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
-.meta .dot{width:4px;height:4px;background:#19c39c}
-.body{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
-.msg.assistant .body{font-family:inherit}
-.usage{font-size:12px;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
-.step>summary .tok{flex:none;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-.status{font-size:12px;color:var(--muted);margin-top:6px}
-.status.error{color:var(--danger)}
-.cursor::after{content:"";display:inline-block;width:7px;height:1em;vertical-align:-2px;margin-left:2px;background:var(--muted);animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 footer{padding:8px 20px 18px;background:var(--bg)}
 footer form{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);background:var(--surface);border-radius:20px;padding:10px 10px 8px 16px;box-shadow:0 1px 6px rgba(0,0,0,.04)}
@@ -46,30 +34,6 @@ button{font:inherit;font-size:14px;border:0;border-radius:16px;padding:6px 16px;
 button:disabled{opacity:.4;cursor:default}
 button.stop{background:transparent;color:var(--text);border:1px solid var(--border)}
 button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.steps{margin:2px 0 8px;font-size:13px}
-.steps>summary,.step>summary,.tool>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;color:var(--muted);user-select:none}
-.steps>summary::-webkit-details-marker,.step>summary::-webkit-details-marker,.tool>summary::-webkit-details-marker{display:none}
-.chev{display:inline-block;width:10px;flex:none;transform:rotate(-90deg);transition:none}
-details[open]>summary>.chev{transform:none}
-.steps>summary:hover,.step>summary:hover{color:var(--text)}
-.step{border-bottom:1px solid var(--border);padding:6px 0}
-.step:last-child{border-bottom:0}
-.step>summary .no{font-size:12px;color:var(--muted);flex:none}
-.step>summary .ttl{color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.step>summary .cnt{font-size:12px;flex:none}
-.step-body{padding:6px 0 2px 16px}
-.step-body .reply{white-space:pre-wrap;word-break:break-word;margin:0 0 6px;color:var(--text)}
-.tool{border:1px solid var(--border);border-radius:10px;background:var(--surface);margin:6px 0;overflow:hidden}
-.tool>summary{padding:6px 10px;color:var(--text)}
-.tool .tname{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px;font-weight:600;flex:none}
-.tool .targ{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
-.tool .tst{flex:none;font-size:12px;color:var(--muted)}
-.tool .tst.ok{color:#19a37f}.tool .tst.fail{color:var(--danger)}
-.tool .tst.run::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin-right:5px;vertical-align:1px;animation:blink 1s steps(1) infinite}
-.tool-body{border-top:1px solid var(--border);padding:6px 10px 8px}
-.tool-body .lbl{font-size:11px;color:var(--muted);margin:4px 0 2px}
-.tool-body pre{margin:0;background:var(--code-bg);border-radius:6px;padding:6px 8px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-.working{font-size:13px;color:var(--muted)}
 .hint{max-width:820px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
 /* layout: left sidebar + main column; sidebar becomes a drawer on narrow screens */
 .app{flex:1;display:flex;min-height:0}
@@ -123,6 +87,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 @media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}
 
 </style>
+<link rel="stylesheet" href="/ui-web-assets/output.css">
+<script src="/ui-web-assets/marked.umd.js"></script>
+<script src="/ui-web-assets/purify.min.js"></script>
+<script src="/ui-web-assets/output.js"></script>
 <!--gah:head-->
 </head>
 <body>
@@ -171,8 +139,10 @@ function nearBottom(){return scroll.scrollHeight-scroll.scrollTop-scroll.clientH
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 const opened=new Set();
 function det(cls,key,dflt){const d=el('details',cls);d.open=opened.has(key)?true:opened.has('!'+key)?false:dflt;
-  d.addEventListener('toggle',()=>{opened.delete(key);opened.delete('!'+key);opened.add(d.open?key:'!'+key)});return d}
-function chev(){return el('span','chev','\u25BE')}
+  d.addEventListener('click',e=>{if(e.target.closest('summary')!==d.querySelector(':scope > summary'))return;
+    opened.delete(key);opened.delete('!'+key);opened.add(d.open?'!'+key:key)});return d}
+function chev(){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('class','chev');s.setAttribute('viewBox','0 0 16 16');s.setAttribute('aria-hidden','true');
+  s.innerHTML='<path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';return s}
 function argPreview(a){if(a==null)return '';if(typeof a!=='object')return String(a);
   const v=a.script||a.command||a.path||a.pattern||a.query||a.url;
   const s=typeof v==='string'?v:JSON.stringify(a);return s.split('\n').find(x=>x.trim())||s}
@@ -191,13 +161,13 @@ function tok(u){if(!u)return'';let s='\u8f93\u5165 '+num(u.input);
   if(u.cache_read||u.cache_write)s+='\uff08\u7f13\u5b58\u547d\u4e2d '+num(u.cache_read)+(u.cache_write?' / \u5199\u5165 '+num(u.cache_write):'')+'\uff09';
   return s+' \u00b7 \u8f93\u51fa '+num(u.output)}
 function renderStep(t,key,live){
-  const d=det('step',key,live),s=el('summary');
+  const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):'思考中…');
   s.append(chev(),el('span','no','步骤 '+t.turn),el('span','ttl',title));
   if(t.tools.length)s.append(el('span','cnt',t.tools.length+' 个工具'));
-  if(t.usage)s.append(el('span','tok',num(t.usage.input)+' / '+num(t.usage.output)+' tok'));
+  if(t.usage)s.title=tok(t.usage);
   d.append(s);const b=el('div','step-body');
-  if(t.reply&&t.tools.length)b.append(el('div','reply',t.reply));
+  if(t.reply)b.append(GAHOutput.markdown(t.reply,'reply'));
   t.tools.forEach((x,j)=>b.append(renderTool(x,key+':'+(x.id||j))));
   d.append(b);return d}
 function renderTurns(m,mi,box){
@@ -208,23 +178,30 @@ function renderTurns(m,mi,box){
   const finalT=fin&&!fin.tools.length&&fin.reply?fin:null;
   const streaming=running&&!!finalT;
   const steps=finalT?turns.slice(0,-1):turns;
-  if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');
-    s.append(chev(),el('span',null,(running?'执行中 · ':'执行过程 · ')+steps.length+' 步'));d.append(s);
+  if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');d.classList.toggle('running',running);
+    s.append(chev(),el('span','process-dot'),el('span',null,(running?'执行中 · ':'执行过程 · ')+steps.length+' 步'));d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
   if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
-    const b=el('div','body'+(typing?' cursor':''),typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply);
+    const b=GAHOutput.markdown(typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply,'body'+(typing?' cursor':''));
     if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
   else if(running)box.append(el('div','body working cursor',''));
-  else if(fin&&fin.reply)box.append(el('div','body',fin.reply));
+  else if(fin&&fin.reply)box.append(GAHOutput.markdown(fin.reply,'body'));
 }
 function renderMsg(m,mi){
   const box=el('div','msg '+m.role);
   if(m.role==='assistant'){const meta=el('div','meta');meta.append(el('span','dot'),el('span',null,'GenericAgent'));box.append(meta)}
   if(m.role==='assistant'&&m.turns&&m.turns.length){renderTurns(m,mi,box)}
-  else{const body=el('div','body',m.text);
+  else{const body=m.role==='assistant'?GAHOutput.markdown(m.text,'body'):el('div','body',m.text);
     if(m.role==='assistant'&&m.status==='running'){body.classList.add('cursor');if(!m.text)body.textContent='';}
     box.append(body)}
-  if(m.role==='assistant'&&m.usage&&m.usage.calls)box.append(el('div','usage','Token \u00b7 '+m.usage.calls+' \u6b21\u8c03\u7528 \u00b7 '+tok(m.usage)));
+  if(m.role==='assistant'){
+    const actions=el('div','message-actions');
+    const finalTurn=(m.turns||[]).filter(Boolean).at(-1);
+    const reply=finalTurn?finalTurn.reply:m.text;
+    if(reply&&m.status!=='running')actions.append(GAHOutput.copyButton(()=>reply,'\u590d\u5236\u56de\u590d'));
+    if(m.usage&&m.usage.calls)actions.append(el('div','usage',m.usage.calls+' \u6b21\u8c03\u7528 \u00b7 '+tok(m.usage)));
+    if(actions.childNodes.length)box.append(actions);
+  }
   if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?'\uFF1A'+m.error:'')))}
   return box;
 }
@@ -259,7 +236,7 @@ function typeTick(now){typer.raf=0;const t=typer.t,b=typer.el;
   const full=t.reply||'';let n=Math.min(t._shown||0,full.length);
   const dt=typer.ts?Math.min(64,now-typer.ts):16;typer.ts=now;
   if(n<full.length){n=Math.min(full.length,n+Math.max(1,Math.ceil((full.length-n)*dt/180)));t._shown=n;
-    const stick=nearBottom();b.textContent=full.slice(0,n);if(stick)scroll.scrollTop=scroll.scrollHeight}
+    const stick=nearBottom();GAHOutput.setMarkdown(b,full.slice(0,n));if(stick)scroll.scrollTop=scroll.scrollHeight}
   if(n<full.length)kickTyper();
   else{typer.ts=0;if(last()&&last().status!=='running')b.classList.remove('cursor')}}
 let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>{pending=0;render()})}
@@ -337,7 +314,7 @@ function connect(){
     state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running'});render()});
   es.addEventListener('chunk',e=>{const m=last();if(!m||m.role!=='assistant')return;const stick=nearBottom();
     m.text+=JSON.parse(e.data).text;if(m.turns&&m.turns.length)return;const b=thread.lastElementChild&&thread.lastElementChild.querySelector('.body');
-    if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
+    if(b)GAHOutput.setMarkdown(b,m.text);else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
   es.addEventListener('turn',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
     const ts=m.turns=m.turns||[],prev=ts[d.index];if(prev&&prev._shown!=null&&d.turn&&(d.turn.reply||'').startsWith((prev.reply||'').slice(0,prev._shown)))d.turn._shown=prev._shown;
     ts[d.index]=d.turn;render()});

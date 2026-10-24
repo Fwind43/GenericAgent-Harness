@@ -65,6 +65,13 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 
 Web 服务只适用于可信的本机环境，不应直接暴露到公网。
 
+### 助手输出
+
+- 参考 Admin Chat 的内容层级：最终回复单独展示，执行过程、步骤和工具明细逐层折叠；流式更新保留手动展开/收起状态。
+- 正文支持 Markdown 标题、列表、表格、引用和代码块；可复制回复原文或单个代码块。浅色、深色、暖色及窄屏共用主题变量。
+- Marked 与 DOMPurify 随包提供，不依赖 CDN。原始 HTML 作为文本展示，生成的 HTML 经过白名单净化；依赖加载失败时退回纯文本。Markdown 中的远程图片仍可能发起网络请求。
+- 保持原生 JS 和现有 `GAH` 前端插件接口，不引入 React 或前端构建步骤。
+
 ## 插件管理（Web）
 
 默认 profile 提供 `plugin-manager`。点击网页顶部“插件管理”，可查看已发现插件的运行状态、依赖与待生效设置，启用/禁用非保护插件，编辑公开字段，或恢复启动配置。
@@ -202,3 +209,12 @@ tests/             # pytest
 ```bat
 uv run --extra dev pytest -q
 ```
+
+助手输出的真实浏览器回归是可选项（未安装 Playwright 时自动跳过），使用独立随机端口和模拟 Agent，不读取用户模型配置或调用真实模型：
+
+```bat
+uv run --with playwright playwright install chromium
+uv run --extra dev --with playwright python -m pytest tests/test_ui_web_output_browser.py -q
+```
+
+设置 `GAH_OUTPUT_ARTIFACTS` 为仓库外目录可保留三主题、桌面和窄屏验收截图。
