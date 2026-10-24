@@ -31,16 +31,6 @@ main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) t
 .meta .dot{width:4px;height:4px;background:#19c39c}
 .body{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 .msg.assistant .body{font-family:inherit}
-.steps{margin:0 0 8px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
-.steps>summary{cursor:pointer;list-style:none;padding:6px 12px;font-size:13px;color:var(--muted);user-select:none}
-.steps>summary::-webkit-details-marker,.step>summary::-webkit-details-marker{display:none}
-.steps>summary::before,.step>summary::before{content:"\25B8";display:inline-block;width:1em;color:var(--muted)}
-.steps[open]>summary::before,.step[open]>summary::before{content:"\25BE"}
-.step{border-top:1px solid var(--border)}
-.step>summary{cursor:pointer;list-style:none;padding:5px 12px;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.step>summary .no{color:var(--muted);font-size:12px;margin-right:6px}
-.step pre{margin:0;padding:8px 12px 10px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--code-bg);color:var(--text);max-height:360px;overflow-y:auto;scrollbar-width:thin;border-radius:0 0 12px 12px}
-.now{font-size:12px;color:var(--muted);margin:0 0 4px}
 .status{font-size:12px;color:var(--muted);margin-top:6px}
 .status.error{color:var(--danger)}
 .cursor::after{content:"";display:inline-block;width:7px;height:1em;vertical-align:-2px;margin-left:2px;background:var(--muted);animation:blink 1s steps(1) infinite}
@@ -82,49 +72,12 @@ theme.onchange=()=>{document.documentElement.dataset.theme=theme.value;try{local
 const STATUS={aborted:'已停止',error:'出错'};
 function nearBottom(){return scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
-const MARK=/\**LLM Running \(Turn \d+\) \.\.\.\**/;
-function parseTurns(text){
-  const ph=[];const protect=s=>s.replace(/`{4,}[\s\S]*?`{4,}|`{4,}[^`][\s\S]*$/g,x=>{ph.push(x);return '\u0000'+(ph.length-1)+'\u0000'});
-  const back=s=>s.replace(/\u0000(\d+)\u0000/g,(_,i)=>ph[+i]);
-  const parts=protect(text||'').split(new RegExp('('+MARK.source+')')).map(back);
-  const lead=parts[0],turns=[];
-  for(let i=1;i<parts.length;i+=2)turns.push(parts[i+1]||'');
-  return {lead,turns};
-}
-function cleanTurn(s){
-  const m=/<summary>\s*([\s\S]*?)\s*<\/summary>/.exec(s);
-  const sum=m?m[1].trim():'';
-  let body=s.replace(/<summary>[\s\S]*?<\/summary>/g,'').replace(/<thinking>[\s\S]*?<\/thinking>/g,'').replace(/<summary>[\s\S]*$/,'').replace(/\n{3,}/g,'\n\n').trim();
-  return {sum,body};
-}
-function stepTitle(c,i){const t=(c.sum||c.body.replace(/`{3,}[\s\S]*?`{3,}/g,'').trim()).split('\n')[0].trim();return t.length>60?t.slice(0,60)+'…':(t||'步骤 '+(i+1))}
-function fillAssistant(box,m){
-  m._open=m._open||{};
-  const {lead,turns}=parseTurns(m.text);
-  const nodes=[];
-  const running=m.status==='running';
-  const final=turns.length?cleanTurn(turns[turns.length-1]):{sum:'',body:(lead||'').trim()};
-  const done=turns.slice(0,-1).map(cleanTurn);
-  if(lead.trim()&&turns.length)done.unshift({sum:'',body:lead.trim()});
-  if(done.length){
-    const d=el('details','steps');d.open=!!m._open.all;d.ontoggle=()=>{m._open.all=d.open};
-    d.append(el('summary',null,'执行过程 · '+done.length+' 步'));
-    done.forEach((c,i)=>{const s=el('details','step');s.open=!!m._open[i];s.ontoggle=()=>{m._open[i]=s.open};
-      const h=el('summary');h.append(el('span','no','步骤 '+(i+1)),document.createTextNode(stepTitle(c,i)));
-      s.append(h,el('pre',null,c.body||'（无输出）'));d.append(s)});
-    nodes.push(d);
-  }
-  if(running&&final.sum)nodes.push(el('div','now',final.sum));
-  const body=el('div','body',final.body);
-  if(running)body.classList.add('cursor');
-  nodes.push(body);
-  return nodes;
-}
 function renderMsg(m){
   const box=el('div','msg '+m.role);
   if(m.role==='assistant'){const meta=el('div','meta');meta.append(el('span','dot'),el('span',null,'GenericAgent'));box.append(meta)}
-  if(m.role==='assistant'){const c=el('div','content');c.append(...fillAssistant(c,m));box.append(c)}
-  else box.append(el('div','body',m.text));
+  const body=el('div','body',m.text);
+  if(m.role==='assistant'&&m.status==='running'){body.classList.add('cursor');if(!m.text)body.textContent='';}
+  box.append(body);
   if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?'：'+m.error:'')))}
   return box;
 }
@@ -146,8 +99,8 @@ function connect(){
   es.addEventListener('start',e=>{const d=JSON.parse(e.data);state.running=true;
     state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running'});render()});
   es.addEventListener('chunk',e=>{const m=last();if(!m||m.role!=='assistant')return;const stick=nearBottom();
-    m.text+=JSON.parse(e.data).text;const c=thread.lastElementChild&&thread.lastElementChild.querySelector('.content');
-    if(c)c.replaceChildren(...fillAssistant(c,m));else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
+    m.text+=JSON.parse(e.data).text;const b=thread.lastElementChild&&thread.lastElementChild.querySelector('.body');
+    if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
   es.addEventListener('done',e=>{const d=JSON.parse(e.data),m=last();state.running=false;
     if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render()});
 }
