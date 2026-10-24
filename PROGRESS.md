@@ -67,6 +67,12 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - README documents the event table and "never regex agent.chunk". ui-web already renders events (chunk text only as fallback).
 - Verified: 46 tests; real GA `gah run` printed `-- step 1: ... / > code_run print(2**20) / ok 1.0s / | 1048576 / -- step 2: ...`, no LLM Running. GA's own print() lines ([Debug]/[Cache]/code run output) still reach stdout -- they bypass the stream.
 
+## ga-usage: token usage (2026-10-24)
+- Plugin `ga-usage` (in `ga-compat`, before ga-core): wraps `llmcore._record_usage` in place (restored on unmount), reads `STATS['out']` after each call (messages protocol sets output later). Counting follows GA: `input` includes cache.
+- Events `usage {turn,input,cache_read,cache_write,output}` per LLM call, `usage.total {calls,...}` at agent_after (before GA's final `done`).
+- TextView prints per-step `tokens` line + run total; ui-web stores `turn.usage` / `msg.usage`, shows `in / out tok` on step rows and a total line under the reply.
+- Verified: 56 tests; real GA `gah run` and ui-web (port 18766): turn1 4343/88 (cache 4224), turn2 4487/29, total 2 calls 8830 in (cache 8448) / 117 out; playwright light/dark x 1280/390: no pageerror, no horizontal overflow. Screenshots not visually reviewed.
+
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
 2. ui-web: screenshot visual review; optional markdown rendering.

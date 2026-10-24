@@ -68,6 +68,9 @@ name = "ga-hooks"
 name = "ga-events"    # 结构化的 run/turn/tool 事件
 
 [[plugins]]
+name = "ga-usage"     # 每步/每次任务的 token 用量
+
+[[plugins]]
 name = "ga-core"
 ```
 
@@ -141,6 +144,8 @@ GA 内核只输出一段显示用的文本（`**LLM Running (Turn N) ...**`、`�
 | `turn.start` / `turn.end` | 一个步骤开始/结束（最后一步可能没有 `turn.end`，以 `run.end` 收尾） | `turn`、`exit` |
 | `assistant.text` | 模型回复 | `turn`、`text`（原文）、`reply`（去掉 summary/thinking）、`summary` |
 | `tool.call` / `tool.result` | 工具调用开始/结束 | `id`、`turn`、`name`、`args`；结果另有 `ok`、`data`、`seconds` |
+| `usage` | 每次模型调用之后（由 `ga-usage` 发出） | `turn`、`input`（含缓存）、`cache_read`、`cache_write`、`output` |
+| `usage.total` | 任务结束、`run.end` 之前 | `calls` 加上同样四项的累计值 |
 
 - `agent.chunk`：GA 原始文本，只用来调试（`raw = true`），或在一次任务完全没有 `ga-events` 事件时兜底显示。
 - `agent.log`：GA 自己 `print` 出的一行（`stream` 为 `stdout` 或 `stderr`，`text` 为内容），由 `ga-stdout` 发出。前端默认不显示；`TextView(show_log=True)` 会以 `  . ` 前缀显示。
