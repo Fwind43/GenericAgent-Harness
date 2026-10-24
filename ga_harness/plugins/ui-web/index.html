@@ -31,6 +31,8 @@ main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) t
 .meta .dot{width:4px;height:4px;background:#19c39c}
 .body{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 .msg.assistant .body{font-family:inherit}
+.usage{font-size:12px;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
+.step>summary .tok{flex:none;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .status{font-size:12px;color:var(--muted);margin-top:6px}
 .status.error{color:var(--danger)}
 .cursor::after{content:"";display:inline-block;width:7px;height:1em;vertical-align:-2px;margin-left:2px;background:var(--muted);animation:blink 1s steps(1) infinite}
@@ -113,11 +115,16 @@ function renderTool(t,key){
   if(t.args!=null){b.append(el('div','lbl','参数'),el('pre',null,fmt(t.args)))}
   if(t.status==='done'){b.append(el('div','lbl','结果'),el('pre',null,t.data||'(空)'))}
   d.append(b);return d}
+function num(v){return Number(v||0).toLocaleString('en-US')}
+function tok(u){if(!u)return'';let s='\u8f93\u5165 '+num(u.input);
+  if(u.cache_read||u.cache_write)s+='\uff08\u7f13\u5b58\u547d\u4e2d '+num(u.cache_read)+(u.cache_write?' / \u5199\u5165 '+num(u.cache_write):'')+'\uff09';
+  return s+' \u00b7 \u8f93\u51fa '+num(u.output)}
 function renderStep(t,key,live){
   const d=det('step',key,live),s=el('summary');
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):'思考中…');
   s.append(chev(),el('span','no','步骤 '+t.turn),el('span','ttl',title));
   if(t.tools.length)s.append(el('span','cnt',t.tools.length+' 个工具'));
+  if(t.usage)s.append(el('span','tok',num(t.usage.input)+' / '+num(t.usage.output)+' tok'));
   d.append(s);const b=el('div','step-body');
   if(t.reply&&t.tools.length)b.append(el('div','reply',t.reply));
   t.tools.forEach((x,j)=>b.append(renderTool(x,key+':'+(x.id||j))));
@@ -141,6 +148,7 @@ function renderMsg(m,mi){
   else{const body=el('div','body',m.text);
     if(m.role==='assistant'&&m.status==='running'){body.classList.add('cursor');if(!m.text)body.textContent='';}
     box.append(body)}
+  if(m.role==='assistant'&&m.usage&&m.usage.calls)box.append(el('div','usage','Token \u00b7 '+m.usage.calls+' \u6b21\u8c03\u7528 \u00b7 '+tok(m.usage)));
   if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?'\uFF1A'+m.error:'')))}
   return box;
 }
@@ -166,6 +174,7 @@ function connect(){
     if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
   es.addEventListener('turn',e=>{const d=JSON.parse(e.data),m=last();if(!m||m.role!=='assistant')return;
     (m.turns=m.turns||[])[d.index]=d.turn;render()});
+  es.addEventListener('usage',e=>{const m=last();if(!m||m.role!=='assistant')return;m.usage=JSON.parse(e.data);render()});
   es.addEventListener('done',e=>{const d=JSON.parse(e.data),m=last();state.running=false;
     if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render()});
 }

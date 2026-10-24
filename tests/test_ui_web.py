@@ -32,10 +32,12 @@ class WebAgent:
             e("tool.call", {"id": "1.0", "turn": 1, "index": 0, "name": "code_run", "args": {"script": "1+1"}})
             e("tool.result", {"id": "1.0", "turn": 1, "index": 0, "name": "code_run", "ok": True,
                               "data": {"stdout": "2"}, "seconds": 0.5})
+            e("usage", {"turn": 1, "input": 100, "cache_read": 80, "cache_write": 0, "output": 7})
             e("turn.end", {"turn": 1})
             e("turn.start", {"turn": 2})
             e("assistant.text", {"turn": 2, "text": "done", "reply": "done", "summary": ""})
             # like real GA: the final (tool-less) turn never fires turn.end
+            e("usage.total", {"calls": 1, "input": 100, "cache_read": 80, "cache_write": 0, "output": 7})
             e("run.end", {})
         self.ctx.emit("agent.chunk", task)
         return "x"
@@ -163,6 +165,9 @@ def test_ui_web_structured_turns_and_tool_cards(tmp_path):
             "1.0", "code_run", {"script": "1+1"}, "done", True, 0.5)
         assert '"stdout": "2"' in tool["data"]
         assert (t2["reply"], t2["tools"], t2["status"]) == ("done", [], "done")
+        assert t1["usage"] == {"input": 100, "cache_read": 80, "cache_write": 0, "output": 7}
+        assert "usage" not in t2
+        assert last["usage"] == {"calls": 1, "input": 100, "cache_read": 80, "cache_write": 0, "output": 7}
         # a plain run carries no turns, so the page falls back to text
         assert _req(base + "api/run", {"task": "hi"})[0] == 202
         assert "turns" not in _wait_idle(base)["messages"][-1]

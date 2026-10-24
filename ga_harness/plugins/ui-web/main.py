@@ -24,7 +24,8 @@ from pathlib import Path
 PAGE = Path(__file__).with_name("index.html")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
-EVENTS = ("turn.start", "assistant.text", "tool.call", "tool.result", "turn.end")
+EVENTS = ("turn.start", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
+USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
 
 
 class WebFrontend:
@@ -83,6 +84,11 @@ class WebFrontend:
             turns = self._turns()
             if turns is None:
                 return
+            if name == "usage.total":
+                total = {k: d.get(k) for k in ("calls",) + USAGE_KEYS}
+                self.messages[-1]["usage"] = total
+                self._broadcast("usage", total)
+                return
             i = self._find(turns, d.get("turn"))
             t = turns[i]
             if name == "assistant.text":
@@ -100,6 +106,8 @@ class WebFrontend:
                             data=_clip(d.get("data")), seconds=d.get("seconds"))
             elif name == "turn.end":
                 t["status"] = "done"
+            elif name == "usage":
+                t["usage"] = {k: d.get(k) for k in USAGE_KEYS}
             self._push(turns, i)
 
     def submit(self, task):
