@@ -3,7 +3,7 @@ import sys
 
 from ga_harness.kernel import Runtime
 from ga_harness.kernel.loader import discover, mount
-from ga_harness.textview import TextView, arg_summary, result_lines
+from ga_harness.textview import TextView, arg_summary, result_lines, usage_text
 
 from test_frontend import PLUGINS, _e
 
@@ -129,3 +129,23 @@ def test_ui_tui_renders_structured_steps(tmp_path):
     finally:
         rt.dispose()
         sys.modules.pop("tests_frontend_fake", None)
+
+
+def test_usage_lines():
+    assert usage_text({"input": 1110, "cache_read": 1000, "cache_write": 100, "output": 42}) == \
+        "in 1,110 (cache read 1,000 / write 100) out 42"
+    assert usage_text({"input": 5, "output": None}) == "in 5 out 0"
+    rt = Runtime()
+    out = []
+    v = TextView(rt.ctx, out.append)
+    off = v.attach()
+    v.begin()
+    rt.ctx.emit("usage", {"turn": 1, "input": 9, "output": 1})   # before any structured event: ignored
+    rt.ctx.emit("agent.chunk", "raw")
+    rt.ctx.emit("assistant.text", {"turn": 1, "reply": "", "summary": "s"})
+    rt.ctx.emit("usage", {"turn": 1, "input": 1110, "cache_read": 1000, "cache_write": 100, "output": 42})
+    rt.ctx.emit("usage.total", {"calls": 1, "input": 1110, "cache_read": 1000, "cache_write": 100, "output": 42})
+    off()
+    assert "".join(out) == ("raw-- step 1: s\n"
+                            "      tokens in 1,110 (cache read 1,000 / write 100) out 42\n"
+                            "    == tokens: 1 call, in 1,110 (cache read 1,000 / write 100) out 42\n")

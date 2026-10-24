@@ -15,6 +15,11 @@ Output, one block per step::
       > code_run  print(2**20)
         ok 1.0s
         | 1048576
+      tokens in 1,110 (cache read 1,000 / write 100) out 42
+    == tokens: 3 calls, in 1,660 (cache read 1,300 / write 100) out 54
+
+``usage`` / ``usage.total`` (from the ga-usage plugin) are optional and never switch the
+view into structured mode on their own.
 """
 from __future__ import annotations
 import json
@@ -22,6 +27,17 @@ import json
 STRUCTURED = ("run.start", "turn.start", "assistant.text", "tool.call", "tool.result", "turn.end", "run.end")
 ARG_KEYS = ("script", "command", "code", "path", "pattern", "query", "url", "keyword", "text")
 OUT_KEYS = ("stdout", "msg", "message", "content", "result", "error")
+
+
+def usage_text(d) -> str:
+    """``in 1,110 (cache read 1,000 / write 100) out 42`` for a usage / usage.total payload."""
+    def n(k):
+        v = d.get(k)
+        return v if isinstance(v, int) else 0
+    s = f"in {n('input'):,}"
+    if n("cache_read") or n("cache_write"):
+        s += f" (cache read {n('cache_read'):,} / write {n('cache_write'):,})"
+    return s + f" out {n('output'):,}"
 
 
 def one_line(s, width: int) -> str:
@@ -86,6 +102,8 @@ class TextView:
         if not self.raw:
             for name in STRUCTURED:
                 offs.append(self.ctx.events.on(name, lambda d=None, _n=name: self._event(_n, d or {})))
+            offs.append(self.ctx.events.on("usage", self._usage))
+            offs.append(self.ctx.events.on("usage.total", self._usage_total))
 
         def off():
             for o in offs:
@@ -100,6 +118,15 @@ class TextView:
         text = (d or {}).get("text", "")
         if text.strip():
             self.write("  . " + text[: self.width] + "\n")
+
+    def _usage(self, d):
+        if self.structured and isinstance(d, dict):
+            self.write("      tokens " + usage_text(d) + "\n")
+
+    def _usage_total(self, d):
+        if self.structured and isinstance(d, dict):
+            calls = d.get("calls")
+            self.write(f"    == tokens: {calls} call{'s' if calls != 1 else ''}, " + usage_text(d) + "\n")
 
     def _chunk(self, text):
         if self.raw or not self.structured:
