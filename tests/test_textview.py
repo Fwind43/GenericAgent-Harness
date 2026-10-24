@@ -149,3 +149,19 @@ def test_usage_lines():
     assert "".join(out) == ("raw-- step 1: s\n"
                             "      tokens in 1,110 (cache read 1,000 / write 100) out 42\n"
                             "    == tokens: 1 call, in 1,110 (cache read 1,000 / write 100) out 42\n")
+
+
+def test_textview_streams_deltas_without_duplicating_text():
+    rt = Runtime()
+    out = []
+    off = TextView(rt.ctx, out.append).attach()
+    rt.ctx.emit("turn.start", {"turn": 1})
+    for part, text in (("summary", "run "), ("summary", "it"), ("thinking", "hm"), ("reply", "a"), ("reply", "b")):
+        rt.ctx.emit("assistant.delta", {"turn": 1, "part": part, "text": text})
+    rt.ctx.emit("assistant.text", {"turn": 1, "text": "x", "reply": "ab", "summary": "run it"})
+    rt.ctx.emit("tool.call", {"name": "code_run", "args": {"script": "p"}})
+    rt.ctx.emit("assistant.delta", {"turn": 2, "part": "reply", "text": "done"})
+    rt.ctx.emit("assistant.text", {"turn": 2, "text": "done", "reply": "done", "summary": ""})
+    off()
+    assert "".join(out) == "-- step 1: run it\nab\n  > code_run  p\n-- step 2\ndone\n"
+    rt.dispose()

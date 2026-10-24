@@ -7,6 +7,7 @@ renders tool calls the same way instead of re-parsing GA's text.
 Events (emit, payload is one dict):
   run.start       {}
   turn.start      {turn}
+  assistant.delta {turn, part, text}   live model output, part = summary | thinking | reply
   assistant.text  {turn, text, reply, thinking, summary}   reply = text minus <summary>/<thinking>
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
@@ -14,6 +15,12 @@ Events (emit, payload is one dict):
   run.end         {exit}
 
 ``id`` is "<turn>.<index>" (GA does not pass the provider tool-call id to dispatch).
+``assistant.delta`` comes from wrapping ``client.chat`` on the client instance for the
+duration of one LLM call (installed in llm_before, removed when the stream ends), so it
+runs on the agent thread in exactly the order GA consumes tokens. The stream is split on
+<summary>/<thinking> tags (tags removed, leading blank of the reply dropped), so a
+frontend can append ``text`` to the matching field. ``assistant.text`` is authoritative
+and should replace whatever was accumulated from deltas.
 ``no_tool`` (GA's pseudo tool for a plain reply) is not reported as a tool.
 config:
   max_data  truncate string results to this many chars (default 20000, 0 = no limit)
@@ -49,6 +56,60 @@ def _plain(v):
         return str(v)
 
 
+class _Split:
+    """Incrementally split a model stream into (part, text) by <summary>/<thinking> tags."""
+    TAGS = ("summary", "thinking")
+
+    def __init__(self):
+        self.buf = ""
+        self.part = "reply"
+        self.reply_started = False
+
+    def feed(self, s: str) -> list:
+        self.buf += s
+        return self._drain(False)
+
+    def flush(self) -> list:
+        return self._drain(True)
+
+    def _cands(self):
+        if self.part == "reply":
+            return [(f"<{t}>", t) for t in self.TAGS]
+        return [(f"</{self.part}>", "reply")]
+
+    def _drain(self, final: bool) -> list:
+        out: list = []
+        while self.buf:
+            i = self.buf.find("<")
+            if i != 0:
+                text, self.buf = (self.buf, "") if i < 0 else (self.buf[:i], self.buf[i:])
+                self._add(out, text)
+                continue
+            for tag, nxt in self._cands():
+                if self.buf.startswith(tag):
+                    self.part, self.buf = nxt, self.buf[len(tag):]
+                    break
+                if not final and tag.startswith(self.buf):
+                    return out          # maybe a tag split across chunks: wait for more
+            else:
+                self._add(out, "<")
+                self.buf = self.buf[1:]
+        return out
+
+    def _add(self, out, text):
+        if self.part == "reply" and not self.reply_started:
+            text = text.lstrip()
+            if not text:
+                return
+            self.reply_started = True
+        if not text:
+            return
+        if out and out[-1][0] == self.part:
+            out[-1] = (self.part, out[-1][1] + text)
+        else:
+            out.append((self.part, text))
+
+
 def apply(ctx, config):
     limit = int(config.get("max_data", 20000) or 0)
     started: dict[int, float] = {}
@@ -70,7 +131,49 @@ def apply(ctx, config):
         ctx.emit("turn.start", {"turn": g.get("turn")})
         return nxt(g)
 
+    def unwrap(client):
+        d = getattr(client, "__dict__", None)
+        if d is not None and getattr(d.get("chat"), "_ga_events_tap", False):
+            del d["chat"]
+
+    def on_llm_before(g, nxt):
+        client, turn = g.get("client"), g.get("turn")
+        orig = getattr(client, "chat", None)
+        if callable(orig) and not getattr(orig, "_ga_events_tap", False):
+            def chat(*a, **k):
+                unwrap(client)              # one call only; later turns re-install
+                gen = orig(*a, **k)
+                if not hasattr(gen, "__next__"):
+                    return gen
+                return _tap(gen, turn)
+            chat._ga_events_tap = True
+            try:
+                client.chat = chat
+            except Exception:
+                pass                        # e.g. __slots__: no deltas, assistant.text still works
+        return nxt(g)
+
+    def _tap(gen, turn):
+        split = _Split()
+
+        def emit(parts):
+            for part, text in parts:
+                ctx.emit("assistant.delta", {"turn": turn, "part": part, "text": text})
+        try:
+            while True:
+                try:
+                    chunk = next(gen)
+                except StopIteration as e:
+                    emit(split.flush())
+                    return e.value
+                if isinstance(chunk, str) and chunk:
+                    emit(split.feed(chunk))
+                yield chunk
+        finally:
+            gen.close()
+
     def on_llm_after(g, nxt):
+        unwrap(g.get("client"))
         r = g.get("response")
         text = getattr(r, "content", None) or ""
         m = _SUMMARY.search(text)
@@ -113,11 +216,12 @@ def apply(ctx, config):
 
     def on_agent_after(g, nxt):
         started.clear()
+        unwrap(g.get("client"))
         ctx.emit("run.end", {"exit": _plain(g.get("exit_reason") or {})})
         return nxt(g)
 
     for ev, fn in (("agent_before", on_agent_before), ("turn_before", on_turn_before),
-                   ("llm_after", on_llm_after), ("tool_before", on_tool_before),
+                   ("llm_before", on_llm_before), ("llm_after", on_llm_after), ("tool_before", on_tool_before),
                    ("tool_after", on_tool_after), ("turn_after", on_turn_after),
                    ("agent_after", on_agent_after)):
         ctx.on("ga." + ev, fn)

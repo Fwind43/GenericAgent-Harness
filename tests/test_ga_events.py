@@ -56,3 +56,37 @@ def test_full_turn_sequence():
     hooks.trigger("turn_before", {"turn": 2})
     assert seen == []
     rt.remove("ga-hooks")
+
+
+def test_llm_stream_emits_deltas_and_unwraps():
+    rt, hooks, seen = _mount()
+    deltas = []
+    rt.ctx.events.on("assistant.delta", deltas.append)
+
+    class Client:
+        def chat(self, messages=None, tools=None):
+            for c in ("<sum", "mary>go</summ", "ary>\n\nhel", "lo"):
+                yield c
+            return SimpleNamespace(content="<summary>go</summary>hello")
+
+    c = Client()
+    hooks.trigger("llm_before", {"turn": 3, "client": c})
+    assert "chat" in c.__dict__
+    gen = c.chat(messages=[])
+    assert "chat" not in c.__dict__            # one call only
+    got = []
+    try:
+        while True:
+            got.append(next(gen))
+    except StopIteration as e:
+        resp = e.value
+    assert "".join(got) == "<summary>go</summary>\n\nhello"   # GA still sees the raw stream
+    assert resp.content.endswith("hello")
+    assert deltas == [{"turn": 3, "part": "summary", "text": "go"},
+                      {"turn": 3, "part": "reply", "text": "hel"},
+                      {"turn": 3, "part": "reply", "text": "lo"}]
+    hooks.trigger("llm_before", {"turn": 4, "client": c})   # never consumed: llm_after restores
+    hooks.trigger("llm_after", {"turn": 4, "client": c, "response": resp})
+    assert "chat" not in c.__dict__
+    rt.remove("ga-events")
+    rt.remove("ga-hooks")

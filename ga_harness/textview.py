@@ -18,6 +18,9 @@ Output, one block per step::
       tokens in 1,110 (cache read 1,000 / write 100) out 42
     == tokens: 3 calls, in 1,660 (cache read 1,300 / write 100) out 54
 
+``assistant.delta`` streams the step header and reply live (thinking is not shown); the
+later ``assistant.text`` then only closes the line instead of printing the text again.
+
 ``usage`` / ``usage.total`` (from the ga-usage plugin) are optional and never switch the
 view into structured mode on their own.
 """
@@ -93,6 +96,8 @@ class TextView:
         self.width = width
         self.show_log = show_log
         self.structured = False
+        self.live_turn = None   # turn currently streamed by assistant.delta
+        self.live_part = None   # None (header open) | "summary" | "reply"
 
     def attach(self):
         """Start listening; returns a disposer that removes every listener."""
@@ -102,6 +107,7 @@ class TextView:
         if not self.raw:
             for name in STRUCTURED:
                 offs.append(self.ctx.events.on(name, lambda d=None, _n=name: self._event(_n, d or {})))
+            offs.append(self.ctx.events.on("assistant.delta", self._delta))
             offs.append(self.ctx.events.on("usage", self._usage))
             offs.append(self.ctx.events.on("usage.total", self._usage_total))
 
@@ -113,6 +119,33 @@ class TextView:
     def begin(self) -> None:
         """Call before each agent.run: re-decide structured vs raw for the new run."""
         self.structured = False
+        self.live_turn = self.live_part = None
+
+    def _delta(self, d):
+        if not isinstance(d, dict) or d.get("part") not in ("summary", "reply"):
+            return
+        self.structured = True
+        text, part = d.get("text") or "", d["part"]
+        if self.live_turn != d.get("turn"):
+            self._close_live()
+            self.live_turn, self.live_part = d.get("turn"), None
+            self.write(f"-- step {d.get('turn')}")
+        if part == "summary":
+            if self.live_part == "reply":
+                return
+            if self.live_part is None:
+                self.write(": ")
+            self.write(" ".join(text.splitlines()))
+        else:
+            if self.live_part != "reply":
+                self.write("\n")
+            self.write(text)
+        self.live_part = part
+
+    def _close_live(self):
+        if self.live_turn is not None:
+            self.write("\n")
+        self.live_turn = self.live_part = None
 
     def _log(self, d):
         text = (d or {}).get("text", "")
@@ -134,6 +167,13 @@ class TextView:
 
     def _event(self, name, d):
         self.structured = True
+        if name != "assistant.text":
+            self._close_live()
+        elif self.live_turn is not None and self.live_turn == d.get("turn"):
+            self._close_live()      # already streamed by assistant.delta
+            return
+        else:
+            self._close_live()
         if name == "assistant.text":
             head = f"-- step {d.get('turn')}"
             if d.get("summary"):
