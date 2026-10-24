@@ -4,9 +4,10 @@ GAH.define('web-models', api => {
   const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
   /* ---- toolbar ---- */
   const pick = h('select', { 'aria-label': '\u5f53\u524d\u6a21\u578b', onchange: () => select(Number(pick.value)) });
-  const open = h('button', { type: 'button', class: 'secondary', onclick: () => openDialog() }, '\u6a21\u578b\u914d\u7f6e');
-  const group = h('div', { class: 'gah-group gah-models', role: 'group', 'aria-label': '\u6a21\u578b\u7ba1\u7406', hidden: true },
-    h('span', { class: 'gah-label' }, '\u6a21\u578b'), pick, open);
+  // model picker lives inside the composer; the config entry sits in the sidebar footer
+  const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
+    h('span', { class: 'gah-side-icon', 'aria-hidden': 'true' }, '\u2699'), '\u6a21\u578b\u914d\u7f6e');
+  const group = h('div', { class: 'gah-models', role: 'group', 'aria-label': '\u6a21\u578b', hidden: true }, pick);
   /* ---- dialog ---- */
   const entry = h('select', { 'aria-label': '\u9009\u62e9\u914d\u7f6e', onchange: () => fill(entry.value) });
   const addBtn = h('button', { type: 'button', class: 'secondary', onclick: () => { fill(null); name.focus(); } }, '\u65b0\u589e');
@@ -44,7 +45,7 @@ GAH.define('web-models', api => {
       h('div', { class: 'model-picker' }, entry, addBtn), reason, form));
   function error(t) { err.textContent = t || ''; err.hidden = !t; }
   function render(s) {
-    const m = s && s.models; group.hidden = !m; if (!m) return;
+    const m = s && s.models; group.hidden = open.hidden = !m; if (!m) return;
     pick.replaceChildren(...m.items.map(x => h('option', { value: String(x.id) }, x.name + (x.model && x.name !== x.model ? ' / ' + x.model : ''))));
     pick.value = m.current == null ? '' : String(m.current);
     controls();
@@ -110,7 +111,8 @@ GAH.define('web-models', api => {
   }
   api.onHost('state', render);
   api.onHost('sync', d => { busy = !!d.running || (!!d.changing && !working); controls(); });
-  api.slot('toolbar', group);
+  api.slot('composer', group);
+  api.slot('sidebar-foot', open);
   api.slot('overlay', dlg);
   render(api.state());
   return () => { if (dlg.open) dlg.close(); };

@@ -4,9 +4,11 @@ GAH.define('web-plugins', api => {
   const PENDING = ' \u00b7 \u5f85\u91cd\u542f\u751f\u6548', PROTECTED = ' \u00b7 \u53d7\u4fdd\u62a4';
   let cfg = null, editing = null, busy = false, running = false, working = false;
   /* ---- toolbar ---- */
-  const open = h('button', { type: 'button', class: 'secondary', onclick: () => load() }, '\u63d2\u4ef6\u7ba1\u7406');
+  const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => load() },
+    h('span', { class: 'gah-side-icon', 'aria-hidden': 'true' }, '\u29c9'), '\u63d2\u4ef6\u7ba1\u7406');
   const summary = h('span', { class: 'plugin-note' }, '\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548');
-  const group = h('div', { class: 'gah-group gah-plugins', role: 'group', 'aria-label': '\u63d2\u4ef6\u7ba1\u7406', hidden: true }, open, summary);
+  summary.hidden = true;
+  const group = h('div', { class: 'gah-plugins', hidden: true }, open, summary);
   /* ---- dialog ---- */
   const profile = h('p', { class: 'plugin-note' });
   const entry = h('select', { 'aria-label': '\u9009\u62e9\u63d2\u4ef6', onchange: () => fill(entry.value) });
@@ -77,6 +79,7 @@ GAH.define('web-plugins', api => {
   function fillCatalog(preferred) {
     entry.replaceChildren(...cfg.items.map(p => h('option', { value: p.name }, p.name + (p.restart_required ? ' \u00b7 \u5f85\u91cd\u542f' : '') + (p.protected ? PROTECTED : ''))));
     profile.textContent = '\u914d\u7f6e\u65b9\u6848\uff1a' + cfg.profile + '\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002';
+    summary.hidden = !cfg.restart_required;
     summary.textContent = cfg.restart_required ? '\u914d\u7f6e\u5df2\u4fdd\u5b58' + PENDING : '\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548';
     fill(cfg.items.some(p => p.name === preferred) ? preferred : (cfg.items[0] && cfg.items[0].name));
     if (cfg.issues && cfg.issues.length) error('\u4f9d\u8d56\u68c0\u67e5\uff1a' + cfg.issues.join('\uff1b'));
@@ -110,7 +113,7 @@ GAH.define('web-plugins', api => {
   function render(s) { group.hidden = !(s && s.plugins_enabled); }
   api.onHost('state', render);
   api.onHost('sync', d => { running = !!d.running; busy = !!d.changing && !working; controls(); });
-  api.slot('toolbar', group);
+  api.slot('sidebar-foot', group);
   api.slot('overlay', dlg);
   const s = api.state(); render(s); running = !!(s && s.running); controls();
   return () => { if (dlg.open) dlg.close(); };

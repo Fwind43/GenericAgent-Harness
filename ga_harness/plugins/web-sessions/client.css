@@ -1,0 +1,17 @@
+.gah-sessions{display:flex;flex-direction:column;gap:2px}
+.gah-sess-new{font-weight:500;margin-bottom:6px}
+.gah-sess-plus{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:15px;line-height:1}
+.gah-sess-label{font-size:12px;color:var(--muted);padding:6px 10px 4px}
+.gah-sess-list{display:flex;flex-direction:column;gap:1px}
+.gah-sess-row{position:relative;display:flex;align-items:center;border-radius:8px}
+.gah-sess-row:hover,.gah-sess-row:focus-within{background:var(--border)}
+.gah-sess-row.current{background:var(--border)}
+.gah-sess-open{flex:1;min-width:0;text-align:left;background:transparent;color:var(--text);border:0;border-radius:8px;padding:7px 10px;font-size:14px}
+.gah-sess-open:hover:not(:disabled){background:transparent}
+.gah-sess-row.current .gah-sess-open{font-weight:500}
+.gah-sess-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-sess-acts{display:none;flex:none;gap:0;padding-right:4px}
+.gah-sess-row:hover .gah-sess-acts,.gah-sess-row:focus-within .gah-sess-acts{display:flex}
+.gah-sess-act{background:transparent;color:var(--muted);border:0;border-radius:6px;padding:2px 6px;font-size:14px;line-height:1.2}
+.gah-sess-act:hover:not(:disabled){color:var(--text);background:var(--surface)}
+@media (hover:none){.gah-sess-row.current .gah-sess-acts{display:flex}}
