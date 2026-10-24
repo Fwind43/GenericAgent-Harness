@@ -1,0 +1,5 @@
+name = "ui-cli"
+entry = "main:apply"
+description = "One-shot frontend: run the task, stream agent.chunk to stdout, exit."
+inject = ["agent"]
+provides = ["frontend"]

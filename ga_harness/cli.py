@@ -1,6 +1,7 @@
 """gah - command line entry.
 
-  gah run "task" [--profile ga-compat] [--patch file.toml]... [--ga-root DIR]
+  gah run ["task"] [--ui cli|tui|web] [--profile ga-compat] [--patch file.toml]... [--ga-root DIR]
+                                    (the frontend is a plugin: ui-<name>, default ui-cli)
                                     (re-runs itself under DIR/.venv python when needed)
   gah plugins                       list discovered plugin manifests
   gah tree [--profile ...]          print the resolved plugin tree
@@ -26,8 +27,27 @@ def _extra_dirs(env: str) -> list[Path]:
     return [Path(p) for p in os.environ.get(env, "").split(os.pathsep) if p]
 
 
-def _tree(args):
+def select_frontend(tree: list[dict], manifests: dict, ui: str | None) -> list[dict]:
+    """Ensure exactly one frontend plugin. --ui NAME replaces any frontend in the tree with
+    ui-NAME; otherwise the tree's own frontend wins, falling back to ui-cli."""
+    def is_fe(e):
+        m = manifests.get(e["name"])
+        return m is not None and "frontend" in m.provides
+    if ui is None and any(is_fe(e) and not e["disabled"] for e in tree):
+        return tree
+    name = f"ui-{ui or 'cli'}"
+    if name not in manifests:
+        raise SystemExit(f"[gah] unknown frontend {name!r}; have: "
+                         + ", ".join(sorted(n for n, m in manifests.items() if "frontend" in m.provides)))
+    tree = [e for e in tree if not is_fe(e)]
+    tree.append({"name": name, "config": {}, "disabled": False})
+    return tree
+
+
+def _tree(args, manifests=None):
     tree = build_tree(args.profile, PROFILE_DIRS + _extra_dirs("GAH_PROFILE_PATH"), args.patch)
+    if manifests is not None:
+        tree = select_frontend(tree, manifests, getattr(args, "ui", None))
     if args.ga_root:
         for e in tree:
             if e["name"].startswith("ga-"):
@@ -72,8 +92,9 @@ def main(argv=None) -> int:
         p.add_argument("--patch", action="append", default=[])
         p.add_argument("--ga-root", default=None,
                        help="GenericAgent checkout (default: $GA_ROOT, then ~/.ga-harness/config.toml ga_root)")
+        p.add_argument("--ui", default=None, help="frontend plugin ui-<UI> (cli, tui, web, ...)")
         if name == "run":
-            p.add_argument("task")
+            p.add_argument("task", nargs="?", default=None)
             p.add_argument("--timeout", type=float, default=None)
     sub.add_parser("plugins")
     lp = sub.add_parser("llm").add_subparsers(dest="llm_cmd", required=True)
@@ -100,7 +121,7 @@ def main(argv=None) -> int:
         for m in manifests.values():
             print(f"{m.name:16} {getattr(m, 'description', '')}")
         return 0
-    tree = _tree(args)
+    tree = _tree(args, manifests)
     if args.cmd == "tree":
         for e in tree:
             print(("- " if e["disabled"] else "+ ") + e["name"], e["config"] or "")
@@ -112,14 +133,11 @@ def main(argv=None) -> int:
         bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"}
         if bad:
             print(f"[gah] plugins not active: {bad}", file=sys.stderr)
-        agent = rt.ctx.get("agent")
-        if agent is None:
-            print("[gah] no plugin provides `agent`", file=sys.stderr)
+        frontend = rt.ctx.get("frontend")
+        if frontend is None:
+            print("[gah] no active plugin provides `frontend` (does it have its `agent`?)", file=sys.stderr)
             return 2
-        rt.ctx.events.on("agent.chunk", lambda t: (sys.stdout.write(t), sys.stdout.flush()))
-        agent.run(args.task, timeout=args.timeout)
-        print()
-        return 0
+        return frontend.main(task=args.task, timeout=args.timeout)
     finally:
         rt.dispose()
 
