@@ -122,6 +122,13 @@ def main(argv=None) -> int:
             print(f"{m.name:16} {getattr(m, 'description', '')}")
         return 0
     tree = _tree(args, manifests)
+    from .plugin_manager import PluginPreferences, settings_path
+    preferences = PluginPreferences(settings_path(), args.profile, manifests, tree)
+    try:
+        tree = preferences.resolve(preferences.read()[0])
+    except (ValueError, OSError):
+        print("[gah] plugin settings could not be loaded; repair $GAH_PLUGIN_CONFIG before launching", file=sys.stderr)
+        return 2
     if args.cmd == "tree":
         for e in tree:
             print(("- " if e["disabled"] else "+ ") + e["name"], e["config"] or "")
@@ -129,6 +136,7 @@ def main(argv=None) -> int:
 
     rt = Runtime()
     try:
+        rt.ctx.provide("plugin.catalog", {"preferences": preferences, "tree": tree})
         mount(rt, tree, manifests)
         bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"}
         if bad:

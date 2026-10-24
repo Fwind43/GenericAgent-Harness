@@ -87,3 +87,17 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
   `--patch` setting `ga-stdout.file`, the `[Info] Load mykeys ...`, `[Debug] ...`, `[Cache]` lines landed in the file.
 - Known gap: frontends are added after profile/patch resolution, so `--patch id = "ui-cli"` fails (KeyError);
   `show_log` can only be set from code for now. ui-tui / ui-web not re-run against real GA after this change.
+
+## Web plugin management (2026-10-24)
+- Independent `plugin-manager` capability; Web only lists plugins and edits manifest-declared public settings.
+- Enable/disable and reset are persisted per profile in `~/.ga-harness/plugins.json` (or `GAH_PLUGIN_CONFIG`).
+  CLI launch/tree applies overrides after profile/patch resolution. Changes require a new launch; no hot unload.
+- Protected core/config/frontend/management plugins, dependency and capability checks, strict field validation,
+  revision conflicts, exclusive write lock and atomic replacement. Busy tasks reject writes; broken files are not overwritten.
+- Verified: `uv run --extra dev pytest -q` -- 108 passed. Isolated real ui-web + fake agent browser acceptance:
+  light/dark/warm x 1280/390, save/reload/disable/reset/protection/dependencies/conflicts/busy/chat/layout;
+  no page errors or horizontal overflow. Whole-page/dialog contact sheet reviewed: no obvious clipping,
+  overlap or contrast defects; fine typography/1px details are not reliably judged at the reduced scale.
+- Evidence: `E:/Work/GenericAgent/temp/gah_plugin_acceptance/` (`browser-result.json`, screenshots,
+  `visual-review-compact.txt`, `pytest-final.txt`). No real GA/LLM request or production-port validation;
+  existing port 8765 was not restarted. This change is local only, not pushed or deployed.

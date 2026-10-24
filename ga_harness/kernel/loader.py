@@ -40,6 +40,7 @@ class Manifest:
     inject: list[str] = field(default_factory=list)
     provides: list[str] = field(default_factory=list)
     description: str = ""
+    settings: dict[str, dict] = field(default_factory=dict)
 
     def load_apply(self) -> Callable:
         mod_name, _, attr = self.entry.partition(":")
@@ -69,7 +70,7 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
             data = tomllib.loads(mf.read_text(encoding="utf-8"))
             m = Manifest(name=data["name"], entry=data.get("entry", "main:apply"), path=mf.parent,
                          inject=list(data.get("inject", [])), provides=list(data.get("provides", [])),
-                         description=data.get("description", ""))
+                         description=data.get("description", ""), settings=data.get("settings", {}))
             found[m.name] = m  # later dirs override earlier ones
     return found
 

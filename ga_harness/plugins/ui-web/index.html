@@ -81,8 +81,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 
 #models[hidden]{display:none}
 #models label{font-size:12px;color:var(--muted)}
-#model-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-#model-dialog::backdrop{background:rgba(0,0,0,.35)}
+#model-dialog,#plugin-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+#model-dialog::backdrop,#plugin-dialog::backdrop{background:rgba(0,0,0,.35)}
 .dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
 .dialog-head h2{font-size:17px;margin:0;font-weight:600}
 .dialog-content{padding:16px 20px 20px}
@@ -99,6 +99,15 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 #model-save{border:1px solid var(--accent);border-radius:8px;padding:8px 14px;background:var(--accent);color:var(--on-accent);font-size:13px}
 #model-remove{margin-right:auto;color:var(--danger)}
 .secondary:hover:not(:disabled){background:var(--border)}button:disabled{cursor:default;opacity:.5}
+#plugins[hidden],#plugin-fields[hidden]{display:none}
+.plugin-note{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.plugin-status{font-size:13px;font-weight:600;margin:12px 0 4px}
+.plugin-description{margin:4px 0 12px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.plugin-deps{margin:12px 0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px}
+.plugin-deps dt{color:var(--muted)}.plugin-deps dd{margin:0;overflow-wrap:anywhere}
+.plugin-toggle{display:flex;align-items:center;gap:8px;font-size:13px;margin:16px 0}.plugin-toggle input{accent-color:var(--accent)}
+#plugin-reset{margin-right:auto}#plugin-error{color:var(--danger);font-size:13px;overflow-wrap:anywhere}
+#plugin-fields{padding-top:4px}.plugin-actions{flex-wrap:wrap}.plugin-actions button{white-space:normal}
 @media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}
 
 </style>
@@ -120,6 +129,27 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   <label for="model-select">模型</label><select id="model-select" aria-label="当前模型"></select>
   <button id="model-settings" class="secondary">模型配置</button>
 </nav>
+<nav id="plugins" class="toolbar" aria-label="插件管理" hidden>
+  <button id="plugin-settings" class="secondary">插件管理</button><span id="plugin-summary" class="plugin-note">更改在下次启动时生效</span>
+</nav>
+<dialog id="plugin-dialog" aria-labelledby="plugin-heading">
+  <div class="dialog-head"><h2 id="plugin-heading">插件管理</h2><button id="plugin-close" class="secondary" type="button" aria-label="关闭插件管理">关闭</button></div>
+  <div class="dialog-content">
+    <p id="plugin-profile" class="plugin-note"></p>
+    <div class="model-picker"><select id="plugin-entry" aria-label="选择插件"></select><button id="plugin-reload" class="secondary" type="button">刷新</button></div>
+    <p id="plugin-status" class="plugin-status"></p>
+    <p id="plugin-description" class="plugin-description"></p>
+    <dl class="plugin-deps"><dt>依赖能力</dt><dd id="plugin-requires"></dd><dt>提供能力</dt><dd id="plugin-provides"></dd><dt>被插件依赖</dt><dd id="plugin-dependents"></dd></dl>
+    <p id="plugin-warning" class="plugin-note"></p>
+    <form id="plugin-form">
+      <label class="plugin-toggle"><input id="plugin-enabled" type="checkbox">下次启动时启用</label>
+      <div id="plugin-fields" class="model-grid"></div>
+      <p id="plugin-config-note" class="plugin-note"></p>
+      <p id="plugin-error" role="status" hidden></p>
+      <div class="model-actions plugin-actions"><button id="plugin-reset" class="secondary" type="button">恢复启动配置</button><button id="plugin-save" type="submit">保存，下次启动生效</button></div>
+    </form>
+  </div>
+</dialog>
 <dialog id="model-dialog" aria-labelledby="model-heading">
   <div class="dialog-head"><h2 id="model-heading">模型配置</h2><button id="model-close" class="secondary" type="button">关闭</button></div>
   <div class="dialog-content">
@@ -236,7 +266,7 @@ function renderSessions(){
   if(state.persistence_error)notice(state.persistence_error);
 }
 function syncControls(){
-  syncModelControls();
+  syncModelControls();syncPluginControls();
   stop.hidden=!state.running;send.disabled=state.running||changing||!input.value.trim();
   for(const id of ['session-select','session-new','session-rename','session-delete'])$(id).disabled=state.running||changing;
 }
@@ -315,6 +345,75 @@ async function changeModel(action){
 }
 $('model-form').onsubmit=e=>{e.preventDefault();changeModel('save')};
 $('model-remove').onclick=()=>{if(confirm('删除此模型配置？至少需保留一个模型。'))changeModel('delete')};
+
+let pluginConfig=null,editingPlugin=null;
+const PLUGIN_STATES={active:'运行中',pending:'等待依赖',disabled:'未加载',error:'加载失败',removed:'已移除'};
+function pluginError(text){$('plugin-error').textContent=text||'';$('plugin-error').hidden=!text}
+function selectedPlugin(){return pluginConfig?.items.find(x=>x.name===editingPlugin)}
+function syncPluginControls(){
+  $('plugins').hidden=!state.plugins_enabled;
+  const p=selectedPlugin(),locked=changing||state.running||!p||p.protected;
+  $('plugin-settings').disabled=changing;
+  for(const id of ['plugin-entry','plugin-reload','plugin-close'])$(id).disabled=changing;
+  $('plugin-enabled').disabled=locked;$('plugin-save').disabled=locked;
+  $('plugin-reset').disabled=locked||!p?.overridden;
+  $('plugin-fields').querySelectorAll('input').forEach(x=>x.disabled=locked);
+  $('plugin-config-note').textContent=state.running?'任务运行中，仅可查看；结束后可保存。':p?.protected?'基础能力与前端受保护，请通过启动配置调整。':'仅显示插件声明的公开配置；密钥请到模型配置中管理。';
+}
+function fillPlugin(name){
+  editingPlugin=name;const p=selectedPlugin();$('plugin-fields').replaceChildren();
+  $('plugin-entry').value=p?.name||'';
+  $('plugin-status').textContent=p?(PLUGIN_STATES[p.state]||p.state)+(p.restart_required?' · 待重启生效':'')+(p.protected?' · 受保护':''):'没有发现可管理的插件';
+  $('plugin-description').textContent=p?.description||'';
+  for(const key of ['requires','provides','dependents'])$('plugin-'+key).textContent=p?.[key]?.join('、')||'无';
+  $('plugin-warning').textContent=[p?.missing?.length?'当前缺少：'+p.missing.join('、'):'',p?.error||''].filter(Boolean).join('；');
+  $('plugin-enabled').checked=!!p?.enabled;
+  Object.entries(p?.fields||{}).forEach(([key,spec],i)=>{
+    const label=el('label',spec.type==='boolean'?'plugin-toggle':'model-field'),field=el('input');
+    field.id='plugin-field-'+i;field.dataset.pluginField=key;
+    field.type=spec.type==='boolean'?'checkbox':spec.type==='integer'?'number':'text';
+    if(spec.type==='boolean'){field.checked=!!p.config[key];label.append(field,el('span',null,spec.label||key))}
+    else{field.value=p.config[key]??'';if(spec.type==='integer'){field.step='1';if(spec.min!=null)field.min=spec.min;if(spec.max!=null)field.max=spec.max}label.append(el('span',null,spec.label||key),field)}
+    if(spec.description)label.append(el('small',null,spec.description));
+    $('plugin-fields').append(label);
+  });
+  pluginError('');syncPluginControls();
+}
+function fillPluginCatalog(preferred){
+  const cfg=pluginConfig,sel=$('plugin-entry');sel.replaceChildren();
+  cfg.items.forEach(p=>{const o=el('option',null,p.name+(p.restart_required?' · 待重启':'')+(p.protected?' · 受保护':''));o.value=p.name;sel.append(o)});
+  $('plugin-profile').textContent='配置方案：'+cfg.profile+'。更改仅保存到本地，下次启动生效，不中断当前插件。';
+  $('plugin-summary').textContent=cfg.restart_required?'配置已保存 · 待重启生效':'更改在下次启动时生效';
+  fillPlugin(cfg.items.some(p=>p.name===preferred)?preferred:cfg.items[0]?.name);
+  if(cfg.issues?.length)pluginError('依赖检查：'+cfg.issues.join('；'));
+}
+async function loadPlugins(){
+  if(changing)return;changing=true;syncControls();pluginError('');
+  if(!$('plugin-dialog').open)$('plugin-dialog').showModal();
+  try{const r=await fetch('/api/plugins');const d=await r.json();if(!r.ok)throw new Error(d.error||'插件列表读取失败');pluginConfig=d;fillPluginCatalog(editingPlugin)}
+  catch(e){pluginConfig=null;fillPlugin(null);pluginError(e.message)}finally{changing=false;syncControls()}
+}
+async function changePlugin(action){
+  const p=selectedPlugin();if(changing||state.running||!p||p.protected)return;
+  const body={action,name:p.name,revision:pluginConfig.revision};
+  if(action==='save'){
+    body.enabled=$('plugin-enabled').checked;body.config={};
+    $('plugin-fields').querySelectorAll('input').forEach(field=>{
+      const key=field.dataset.pluginField,kind=p.fields[key].type;
+      if(kind==='boolean')body.config[key]=field.checked;
+      else if(field.value!==''||kind==='string')body.config[key]=kind==='integer'?Number(field.value):field.value;
+    });
+  }
+  changing=true;syncControls();pluginError('');
+  try{pluginConfig=await post('/api/plugins',body);fillPluginCatalog(p.name);pluginError('');notice('插件配置已保存；下次启动时生效')}
+  catch(e){pluginError(e.message)}finally{changing=false;syncControls()}
+}
+$('plugin-settings').onclick=loadPlugins;$('plugin-reload').onclick=loadPlugins;
+$('plugin-entry').onchange=e=>fillPlugin(e.target.value);
+$('plugin-close').onclick=()=>{if(!changing)$('plugin-dialog').close()};
+$('plugin-dialog').oncancel=e=>{if(changing)e.preventDefault()};
+$('plugin-form').onsubmit=e=>{e.preventDefault();changePlugin('save')};
+$('plugin-reset').onclick=()=>{if(confirm('清除这个插件的网页覆盖设置，恢复启动配置？下次启动生效。'))changePlugin('reset')};
 
 // Upstream models deliver text in bursts (often 5-25 chars every ~120ms). Revealing each
 // burst at once looks jerky, so the visible reply chases the received text at a rate

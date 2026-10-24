@@ -4,6 +4,9 @@
 # ga-stdout comes first: GA's own print() output becomes `agent.log` events
 # instead of hitting the terminal; frontends write to the `console` capability.
 [[plugins]]
+name = "plugin-manager"
+
+[[plugins]]
 name = "ga-stdout"
 
 [[plugins]]

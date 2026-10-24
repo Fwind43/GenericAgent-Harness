@@ -3,3 +3,10 @@ entry = "main:apply"
 description = "Structured run/turn/assistant/tool events from GA hooks, so frontends never parse GA's display text."
 inject = ["ga.hooks"]
 provides = []
+
+[settings.max_data]
+type = "integer"
+label = "Maximum tool event characters"
+default = 20000
+min = 100
+max = 200000

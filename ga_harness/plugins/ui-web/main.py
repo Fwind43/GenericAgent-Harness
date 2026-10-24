@@ -40,6 +40,7 @@ class WebFrontend:
         self.lock = threading.Lock()
         self.sessions = ctx.get("sessions")
         self.models = ctx.get("models")
+        self.plugins = ctx.get("plugin.manager")
         self.messages = self.sessions.current()["messages"] if self.sessions else []
         self.persistence_error = None
         self.running = False
@@ -63,6 +64,7 @@ class WebFrontend:
                         persistence_error=self.persistence_error)
         if self.models:
             data["models"] = self.models.catalog()
+        data["plugins_enabled"] = self.plugins is not None
         return copy.deepcopy(data)
 
     def session_action(self, body):
@@ -85,6 +87,30 @@ class WebFrontend:
                 return 503, {"error": "session storage failed; current conversation was kept"}
             self._broadcast("snapshot", snap)
             return 200, snap
+
+    def plugin_catalog(self):
+        if not self.plugins:
+            return 404, {"error": "plugin-manager is not enabled"}
+        with self.lock:
+            try:
+                return 200, self.plugins.catalog()
+            except Exception:
+                return 503, {"error": "plugin settings could not be read; check the local settings file"}
+
+    def plugin_action(self, body):
+        if not self.plugins:
+            return 404, {"error": "plugin-manager is not enabled"}
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+            try:
+                return 200, self.plugins.change(body)
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            except RuntimeError as e:
+                return 409, {"error": str(e)}
+            except Exception:
+                return 503, {"error": "plugin settings could not be saved; reload before retrying"}
 
     def model_config(self):
         if not self.models:
@@ -343,6 +369,8 @@ class _Handler(BaseHTTPRequestHandler):
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
             self._json(200, snap)
+        elif path == "/api/plugins":
+            self._json(*self.frontend.plugin_catalog())
         elif path == "/api/models/config":
             self._json(*self.frontend.model_config())
         elif path == "/api/events":
@@ -371,6 +399,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.submit(body.get("task")))
         elif path == "/api/sessions":
             self._json(*self.frontend.session_action(body))
+        elif path == "/api/plugins":
+            self._json(*self.frontend.plugin_action(body))
         elif path == "/api/models/select":
             self._json(*self.frontend.model_action(body))
         elif path == "/api/models/config":

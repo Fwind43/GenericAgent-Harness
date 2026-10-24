@@ -1,0 +1,5 @@
+name = "plugin-manager"
+entry = "main:apply"
+description = "Manage installed plugins and public settings; stage validated changes for the next launch."
+inject = ["plugin.catalog"]
+provides = ["plugin.manager"]

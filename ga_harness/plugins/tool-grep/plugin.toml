@@ -2,3 +2,16 @@ name = "tool-grep"
 entry = "main:apply"
 description = "Read-only regex search tool `grep` registered through ga.tools (example of a harness-owned tool)."
 inject = ["ga.tools"]
+
+[settings.max_results]
+type = "integer"
+label = "Maximum results"
+default = 200
+min = 1
+max = 10000
+
+[settings.root]
+type = "string"
+label = "Search root (blank uses working directory)"
+default = ""
+max_length = 1024

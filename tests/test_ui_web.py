@@ -107,7 +107,9 @@ def test_ui_web_busy_abort_and_sse(tmp_path):
     try:
         sse = urllib.request.urlopen(base + "api/events", timeout=5)
         assert sse.readline().strip() == b"event: snapshot"
-        assert json.loads(sse.readline()[len(b"data: "):]) == {"running": False, "messages": []}
+        assert json.loads(sse.readline()[len(b"data: "):]) == {
+            "running": False, "messages": [], "plugins_enabled": False,
+        }
         sse.readline()
         assert _req(base + "api/run", {"task": "wait"})[0] == 202
         assert _req(base + "api/run", {"task": "again"})[0] == 409
