@@ -56,6 +56,12 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - Patch: `examples/patches/tool-grep.toml` (ga-tools after ga-core, tool-grep after ga-tools).
 - Verified: 28 tests; real GA run -- model called `grep` and reported `ga.py:427` (matches actual `def do_file_read`).
 
+## ui-web (2026-10-24)
+- Plugin `ui-web`: stdlib ThreadingHTTPServer on 127.0.0.1:8765, `/api/state`, `/api/run` (202, 409 if busy), `/api/abort`, `/api/events` SSE; same-origin check; single-file index.html (textContent render, light/dark/warm from GA Admin tokens).
+- Tests: tests/test_ui_web.py (fake agent); full suite 36 passed.
+- Real GA verified in browser: reply streamed and finished, stop during run -> status=aborted, 3 theme colors computed, 390px no horizontal overflow. Not done: screenshot visual review.
+
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
-2. Pick next plugin (e.g. session recorder: per-turn JSONL of messages/tool calls/timings).
+2. ui-web: screenshot visual review; optional markdown rendering.
+3. Pick next plugin (e.g. session recorder: per-turn JSONL of messages/tool calls/timings).

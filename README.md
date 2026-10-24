@@ -19,6 +19,7 @@ uv sync --extra dev
 
 gah.cmd run "介绍一下你自己" --ga-root D:\path\to\GenericAgent
 gah.cmd run --ui tui --ga-root D:\path\to\GenericAgent
+gah.cmd run --ui web --ga-root D:\path\to\GenericAgent
 ```
 
 GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harness/config.toml` 中的 `ga_root`。
@@ -46,6 +47,7 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `tool-timer` | 统计每次工具调用耗时 |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
+| `ui-web` | 本地浏览器前端（仅标准库，HTTP + SSE）：多轮对话、流式输出、停止按钮，浅色/深色/暖色主题；默认 `http://127.0.0.1:8765/`，只接受同源请求，同一时间只运行一个任务 |
 
 ## Profile 与 Patch
 
@@ -121,7 +123,7 @@ def apply(ctx, config):
    - 订阅 `agent.chunk` 事件拿到流式输出。
 4. 用 `gah run --ui xxx` 启动（自动选 `ui-xxx`）。
 
-最简实现见 `ga_harness/plugins/ui-cli/main.py`，多轮对话与中断见 `ui-tui/main.py`。
+最简实现见 `ga_harness/plugins/ui-cli/main.py`，多轮对话与中断见 `ui-tui/main.py`，浏览器前端见 `ui-web/main.py`。
 
 ## 目录结构
 
