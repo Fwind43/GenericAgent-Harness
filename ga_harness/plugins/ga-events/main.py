@@ -1,0 +1,121 @@
+"""ga-events: turn GA's hook locals into structured, frontend-agnostic events.
+
+GA only streams display text (turn banners, tool fences, raw output). This plugin
+listens on the ga-hooks waterfalls and emits plain-dict events so every frontend
+renders tool calls the same way instead of re-parsing GA's text.
+
+Events (emit, payload is one dict):
+  run.start       {}
+  turn.start      {turn}
+  assistant.text  {turn, text, thinking, summary}
+  tool.call       {id, turn, index, name, args}
+  tool.result     {id, turn, index, name, ok, data, seconds}
+  turn.end        {turn, exit}
+  run.end         {exit}
+
+``id`` is "<turn>.<index>" (GA does not pass the provider tool-call id to dispatch).
+``no_tool`` (GA's pseudo tool for a plain reply) is not reported as a tool.
+config:
+  max_data  truncate string results to this many chars (default 20000, 0 = no limit)
+"""
+from __future__ import annotations
+import json
+import re
+import time
+
+_SUMMARY = re.compile(r"<summary>(.*?)</summary>", re.S)
+_PRIVATE = ("_index", "_tool_num")
+
+
+def _text(v, limit):
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        try:
+            v = json.dumps(v, ensure_ascii=False, default=str)
+        except Exception:
+            v = str(v)
+    if limit and len(v) > limit:
+        v = v[:limit] + f"\n... [{len(v) - limit} chars truncated]"
+    return v
+
+
+def _plain(v):
+    """JSON-safe copy (args/data may hold arbitrary objects)."""
+    try:
+        return json.loads(json.dumps(v, ensure_ascii=False, default=str))
+    except Exception:
+        return str(v)
+
+
+def apply(ctx, config):
+    limit = int(config.get("max_data", 20000) or 0)
+    started: dict[int, float] = {}
+
+    def turn_of(g):
+        h = g.get("self")
+        return getattr(h, "current_turn", None) if h is not None else g.get("turn")
+
+    def ident(g):
+        a = g.get("args") or {}
+        t, i = turn_of(g), a.get("_index", 0)
+        return f"{t}.{i}", t, i
+
+    def on_agent_before(g, nxt):
+        ctx.emit("run.start", {})
+        return nxt(g)
+
+    def on_turn_before(g, nxt):
+        ctx.emit("turn.start", {"turn": g.get("turn")})
+        return nxt(g)
+
+    def on_llm_after(g, nxt):
+        r = g.get("response")
+        text = getattr(r, "content", None) or ""
+        m = _SUMMARY.search(text)
+        ctx.emit("assistant.text", {
+            "turn": g.get("turn"),
+            "text": text,
+            "thinking": getattr(r, "thinking", None) or "",
+            "summary": m.group(1).strip() if m else "",
+        })
+        return nxt(g)
+
+    def on_tool_before(g, nxt):
+        name = g.get("tool_name")
+        if name and name != "no_tool":
+            a = g.get("args") or {}
+            started[id(a)] = time.perf_counter()
+            tid, t, i = ident(g)
+            ctx.emit("tool.call", {"id": tid, "turn": t, "index": i, "name": name,
+                                   "args": _plain({k: v for k, v in a.items() if k not in _PRIVATE})})
+        return nxt(g)
+
+    def on_tool_after(g, nxt):
+        name = g.get("tool_name")
+        if name and name != "no_tool":
+            a = g.get("args") or {}
+            t0 = started.pop(id(a), None)
+            ret = g.get("ret")
+            data = getattr(ret, "data", ret)
+            ok = not (isinstance(data, dict) and str(data.get("status", "")).lower() == "error")
+            tid, t, i = ident(g)
+            ctx.emit("tool.result", {"id": tid, "turn": t, "index": i, "name": name, "ok": ok,
+                                     "data": _text(data, limit),
+                                     "seconds": round(time.perf_counter() - t0, 3) if t0 else None})
+        return nxt(g)
+
+    def on_turn_after(g, nxt):
+        ctx.emit("turn.end", {"turn": g.get("turn"), "exit": _plain(g.get("exit_reason") or {})})
+        return nxt(g)
+
+    def on_agent_after(g, nxt):
+        started.clear()
+        ctx.emit("run.end", {"exit": _plain(g.get("exit_reason") or {})})
+        return nxt(g)
+
+    for ev, fn in (("agent_before", on_agent_before), ("turn_before", on_turn_before),
+                   ("llm_after", on_llm_after), ("tool_before", on_tool_before),
+                   ("tool_after", on_tool_after), ("turn_after", on_turn_after),
+                   ("agent_after", on_agent_after)):
+        ctx.on("ga." + ev, fn)

@@ -1,0 +1,5 @@
+name = "ga-events"
+entry = "main:apply"
+description = "Structured run/turn/assistant/tool events from GA hooks, so frontends never parse GA's display text."
+inject = ["ga.hooks"]
+provides = []

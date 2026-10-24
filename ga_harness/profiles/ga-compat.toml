@@ -7,5 +7,9 @@ name = "llm-config"
 [[plugins]]
 name = "ga-hooks"
 
+# structured run/turn/tool events for frontends (no parsing of GA's display text)
+[[plugins]]
+name = "ga-events"
+
 [[plugins]]
 name = "ga-core"
