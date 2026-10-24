@@ -38,7 +38,9 @@ class WebFrontend:
         self.log = config.get("log") or (lambda *m: print(*m, file=console.out, flush=True) if console
                                          else print(*m, flush=True))
         self.lock = threading.Lock()
-        self.messages = []          # {"role", "text", "status"[, "error"]}
+        self.sessions = ctx.get("sessions")
+        self.messages = self.sessions.current()["messages"] if self.sessions else []
+        self.persistence_error = None
         self.running = False
         self.aborting = False
         self.clients = set()
@@ -54,7 +56,32 @@ class WebFrontend:
             q.put(msg)
 
     def snapshot(self):
-        return copy.deepcopy({"running": self.running, "messages": self.messages})
+        data = {"running": self.running, "messages": self.messages}
+        if self.sessions:
+            data.update(session_id=self.sessions.current()["id"], sessions=self.sessions.listing(),
+                        persistence_error=self.persistence_error)
+        return copy.deepcopy(data)
+
+    def session_action(self, body):
+        if not self.sessions:
+            return 404, {"error": "session-store is not enabled"}
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+            try:
+                self.sessions.save(self.messages)
+                selected = self.sessions.change(body.get("action"), body.get("id"), body.get("title"))
+                self.messages = selected["messages"]
+                self.persistence_error = None
+                snap = self.snapshot()
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            except RuntimeError as e:
+                return 409, {"error": str(e)}
+            except Exception:
+                return 503, {"error": "session storage failed; current conversation was kept"}
+            self._broadcast("snapshot", snap)
+            return 200, snap
 
     def _on_chunk(self, text):
         with self.lock:
@@ -123,9 +150,15 @@ class WebFrontend:
         with self.lock:
             if self.running:
                 return 409, {"error": "a task is already running"}
+            messages = self.messages + [{"role": "user", "text": task, "status": "done"},
+                                        {"role": "assistant", "text": "", "status": "running"}]
+            if self.sessions:
+                try:
+                    self.sessions.save(messages)
+                except Exception:
+                    return 503, {"error": "session could not be saved; task was not started"}
+            self.messages = messages
             self.running, self.aborting = True, False
-            self.messages.append({"role": "user", "text": task, "status": "done"})
-            self.messages.append({"role": "assistant", "text": "", "status": "running"})
             self._broadcast("start", {"task": task})
         threading.Thread(target=self._work, args=(task,), name="ui-web-turn", daemon=True).start()
         return 202, {"ok": True}
@@ -157,8 +190,16 @@ class WebFrontend:
                 for t in open_tools:
                     t["status"] = status
                 self._push(turns, i)
+            if self.sessions:
+                try:
+                    self.sessions.save(self.messages)
+                    self.persistence_error = None
+                except Exception:
+                    self.persistence_error = "会话保存失败，请勿关闭页面；重试切换会话可再次保存"
             self.running = self.aborting = False
             self._broadcast("done", {"status": status, "error": error})
+            if self.sessions:
+                self._broadcast("snapshot", self.snapshot())
 
     def abort(self):
         with self.lock:
@@ -279,17 +320,23 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if not self._same_origin():
             return self._json(403, {"error": "cross-origin request rejected"})
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_BODY:
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._json(400, {"error": "invalid content length"})
+        if n < 0 or n > MAX_BODY:
             return self._json(413, {"error": "body too large"})
         raw = self.rfile.read(n) if n else b""
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            return self._json(400, {"error": "invalid json"})
+        if not isinstance(body, dict):
+            return self._json(400, {"error": "expected a JSON object"})
         if path == "/api/run":
-            try:
-                body = json.loads(raw or b"{}")
-            except ValueError:
-                return self._json(400, {"error": "invalid json"})
-            task = body.get("task") if isinstance(body, dict) else None
-            self._json(*self.frontend.submit(task))
+            self._json(*self.frontend.submit(body.get("task")))
+        elif path == "/api/sessions":
+            self._json(*self.frontend.session_action(body))
         elif path == "/api/abort":
             self._json(*self.frontend.abort())
         else:

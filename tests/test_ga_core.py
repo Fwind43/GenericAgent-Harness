@@ -24,6 +24,7 @@ FAKE = textwrap.dedent('''
                 for ch in q:
                     acc += ch; t["output"].put({"next": acc if not self.inc_out else ch})
                 t["output"].put({"done": "echo:" + q})
+                self.task_queue.task_done()
 ''')
 
 

@@ -45,6 +45,8 @@ class AgentHandle:
                 if text:
                     self._ctx.emit("agent.chunk", text)
             if "done" in item:
+                # done precedes GA history assignment and task_done.
+                self.raw.task_queue.join()
                 self._ctx.emit("agent.done", item["done"], item)
                 return item["done"]
 

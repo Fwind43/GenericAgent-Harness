@@ -22,3 +22,6 @@ name = "ga-usage"
 
 [[plugins]]
 name = "ga-core"
+
+[[plugins]]
+name = "session-store"

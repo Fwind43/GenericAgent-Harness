@@ -71,7 +71,13 @@ details[open]>summary>.chev{transform:none}
 .tool-body pre{margin:0;background:var(--code-bg);border-radius:6px;padding:6px 8px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .working{font-size:13px;color:var(--muted)}
 .hint{max-width:820px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
-@media (max-width:600px){header{padding:8px 12px}#thread{padding:16px 12px 8px}footer{padding:6px 10px 12px}.msg.user .body{max-width:88%}.hint{display:none}}
+.toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 20px;border-bottom:1px solid var(--border)}
+.toolbar[hidden],#notice[hidden]{display:none}
+.toolbar select{flex:1;min-width:80px;max-width:420px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.secondary{background:var(--surface-muted);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px}
+#notice{padding:8px 20px;color:var(--danger);font-size:13px;overflow-wrap:anywhere;border-bottom:1px solid var(--border)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+@media (max-width:600px){.toolbar{padding:8px 12px;gap:4px}.toolbar select{max-width:none}.toolbar button{padding:6px 8px}header{padding:8px 12px}#thread{padding:16px 12px 8px}footer{padding:6px 10px 12px}.msg.user .body{max-width:88%}.hint{display:none}}
 </style>
 </head>
 <body>
@@ -80,6 +86,13 @@ details[open]>summary>.chev{transform:none}
   <span class="spacer"></span>
   <select id="theme" aria-label="主题"><option value="light">浅色</option><option value="dark">深色</option><option value="warm">暖色</option></select>
 </header>
+<nav id="sessions" class="toolbar" aria-label="会话管理" hidden>
+  <select id="session-select" aria-label="当前会话"></select>
+  <button id="session-new" class="secondary">新会话</button>
+  <button id="session-rename" class="secondary">重命名</button>
+  <button id="session-delete" class="secondary">删除</button>
+</nav>
+<div id="notice" role="status" hidden></div>
 <main id="scroll"><div id="thread"></div></main>
 <footer>
   <form id="form">
@@ -162,10 +175,30 @@ function render(){
   thread.replaceChildren();
   if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,'有什么可以帮你？'),el('span',null,'任务交给本机 GenericAgent 执行'));thread.append(e)}
   state.messages.forEach((m,i)=>thread.append(renderMsg(m,i)));
-  syncControls();
+  renderSessions();syncControls();
   if(stick)scroll.scrollTop=scroll.scrollHeight;
 }
-function syncControls(){stop.hidden=!state.running;send.disabled=state.running||!input.value.trim()}
+let changing=false;
+function notice(text){$('notice').textContent=text||'';$('notice').hidden=!text}
+function renderSessions(){
+  const entries=state.sessions;$('sessions').hidden=!Array.isArray(entries);
+  if(entries){const s=$('session-select');s.replaceChildren();entries.forEach(x=>{const o=el('option',null,x.title);o.value=x.id;s.append(o)});s.value=state.session_id}
+  if(state.persistence_error)notice(state.persistence_error);
+}
+function syncControls(){
+  stop.hidden=!state.running;send.disabled=state.running||changing||!input.value.trim();
+  for(const id of ['session-select','session-new','session-rename','session-delete'])$(id).disabled=state.running||changing;
+}
+async function sessionAction(action,extra={}){
+  changing=true;syncControls();notice('');
+  try{state=await post('/api/sessions',{action,id:state.session_id,...extra});opened.clear();render();scroll.scrollTop=scroll.scrollHeight}
+  catch(e){notice(e.message);renderSessions()}
+  finally{changing=false;syncControls()}
+}
+$('session-select').onchange=e=>sessionAction('select',{id:e.target.value});
+$('session-new').onclick=()=>sessionAction('new');
+$('session-rename').onclick=()=>{const old=(state.sessions||[]).find(x=>x.id===state.session_id);const title=prompt('会话名称',old?.title||'');if(title!=null)sessionAction('rename',{title})};
+$('session-delete').onclick=()=>{if(confirm('从会话列表中删除当前会话？记录将保留在本地数据库中。'))sessionAction('delete')};
 // Upstream models deliver text in bursts (often 5-25 chars every ~120ms). Revealing each
 // burst at once looks jerky, so the visible reply chases the received text at a rate
 // proportional to the backlog: smooth per-frame typing that never lags more than ~0.2s.
@@ -204,6 +237,7 @@ function connect(){
 async function post(path,body){
   const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
   if(!r.ok){let msg=r.status;try{msg=(await r.json()).error||msg}catch(e){}throw new Error(msg)}
+  return r.json();
 }
 $('form').onsubmit=async e=>{
   e.preventDefault();const task=input.value.trim();if(!task||state.running)return;
