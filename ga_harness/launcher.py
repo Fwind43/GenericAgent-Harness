@@ -71,7 +71,12 @@ def maybe_reexec(argv: list[str], ga_root: str | None) -> int | None:
     if plan is None:
         return None
     cmd, env = plan
-    try:
-        return subprocess.call(cmd, env=env)
-    except KeyboardInterrupt:
-        return 130
+    # The child shares our console, so Ctrl+C reaches it directly (ui-tui turns it into an
+    # abort). subprocess.call would kill the child on KeyboardInterrupt; instead keep waiting
+    # and let the child decide whether to exit.
+    proc = subprocess.Popen(cmd, env=env)
+    while True:
+        try:
+            return proc.wait()
+        except KeyboardInterrupt:
+            continue
