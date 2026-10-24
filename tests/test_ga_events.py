@@ -46,6 +46,7 @@ def test_full_turn_sequence():
     assert [n for n, _ in seen] == list(NAMES)
     d = dict(seen)
     assert d["assistant.text"]["summary"] == "run it"
+    assert d["assistant.text"]["reply"] == "ok"
     assert d["tool.call"] == {"id": "1.0", "turn": 1, "index": 0, "name": "code_run", "args": {"code": "print(1)"}}
     r = d["tool.result"]
     assert r["id"] == "1.0" and r["ok"] is False and "truncated" in r["data"] and r["seconds"] >= 0

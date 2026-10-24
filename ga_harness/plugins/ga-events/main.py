@@ -7,7 +7,7 @@ renders tool calls the same way instead of re-parsing GA's text.
 Events (emit, payload is one dict):
   run.start       {}
   turn.start      {turn}
-  assistant.text  {turn, text, thinking, summary}
+  assistant.text  {turn, text, reply, thinking, summary}   reply = text minus <summary>/<thinking>
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
   turn.end        {turn, exit}
@@ -24,6 +24,7 @@ import re
 import time
 
 _SUMMARY = re.compile(r"<summary>(.*?)</summary>", re.S)
+_TAGS = re.compile(r"<(summary|thinking)>.*?(</\1>|$)", re.S)
 _PRIVATE = ("_index", "_tool_num")
 
 
@@ -76,6 +77,7 @@ def apply(ctx, config):
         ctx.emit("assistant.text", {
             "turn": g.get("turn"),
             "text": text,
+            "reply": re.sub(r"\n{3,}", "\n\n", _TAGS.sub("", text)).strip(),
             "thinking": getattr(r, "thinking", None) or "",
             "summary": m.group(1).strip() if m else "",
         })
