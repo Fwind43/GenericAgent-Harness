@@ -71,3 +71,13 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
 2. ui-web: screenshot visual review; optional markdown rendering.
 3. Pick next plugin (e.g. session recorder: per-turn JSONL of messages/tool calls/timings).
+
+## ga-stdout: GA's own print() output (2026-10-24)
+- GA prints `[Info]`/`[Debug]`/working-memory dumps etc. straight to sys.stdout/stderr. New plugin `ga-stdout`
+  (first in `ga-compat`) swaps both for line-buffered proxies: each line -> `agent.log {stream, text}`;
+  config `file` (append log) / `passthrough`; provides `console` (real out/err); restores on dispose.
+- Frontends write via `console` (ui-cli/ui-tui output + tui prompt, ui-web log). TextView `show_log` shows agent.log.
+- Verified: 51 tests; real GA `gah run` terminal shows only step/tool/result/reply; with
+  `--patch` setting `ga-stdout.file`, the `[Info] Load mykeys ...`, `[Debug] ...`, `[Cache]` lines landed in the file.
+- Known gap: frontends are added after profile/patch resolution, so `--patch id = "ui-cli"` fails (KeyError);
+  `show_log` can only be set from code for now. ui-tui / ui-web not re-run against real GA after this change.

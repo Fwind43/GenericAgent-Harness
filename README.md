@@ -39,6 +39,7 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | 插件 | 作用 |
 | --- | --- |
 | `ga-core` | 托管未修改的 `agentmain.GenericAgent`，对外提供 `agent` 能力 |
+| `ga-stdout` | 接管 GA 自己 `print` 的输出（`[Info]`、`[Debug]` 等）：每行变成 `agent.log` 事件，不再直接打到终端；可配 `file` 写日志、`passthrough` 照常输出；对外提供 `console`（真实的 stdout/stderr） |
 | `ga-hooks` | 把 GA 的 hooks（agent/turn/llm/tool 前后）桥接为 harness 事件 `ga.<event>` |
 | `ga-prompt` | 把系统提示词变成可前置、追加、替换的 waterfall |
 | `ga-tools` | 不改 GA 即可新增、替换或禁用工具 |
@@ -55,10 +56,16 @@ profile 定义基础插件树，按顺序挂载。默认的 `ga_harness/profiles
 
 ```toml
 [[plugins]]
+name = "ga-stdout"    # 最先挂载，接管 GA 的 print 输出
+
+[[plugins]]
 name = "llm-config"   # 必须在 ga-core 之前
 
 [[plugins]]
 name = "ga-hooks"
+
+[[plugins]]
+name = "ga-events"    # 结构化的 run/turn/tool 事件
 
 [[plugins]]
 name = "ga-core"
@@ -136,6 +143,8 @@ GA 内核只输出一段显示用的文本（`**LLM Running (Turn N) ...**`、`�
 | `tool.call` / `tool.result` | 工具调用开始/结束 | `id`、`turn`、`name`、`args`；结果另有 `ok`、`data`、`seconds` |
 
 - `agent.chunk`：GA 原始文本，只用来调试（`raw = true`），或在一次任务完全没有 `ga-events` 事件时兜底显示。
+- `agent.log`：GA 自己 `print` 出的一行（`stream` 为 `stdout` 或 `stderr`，`text` 为内容），由 `ga-stdout` 发出。前端默认不显示；`TextView(show_log=True)` 会以 `  . ` 前缀显示。
+- 挂载 `ga-stdout` 后 `sys.stdout` 已被接管，前端要输出到终端须写 `ctx.get("console").out` / `.err`，不要直接 `print`（否则会被当成 GA 日志吞掉）。
 - 终端前端可以直接用 `ga_harness.textview.TextView`，按事件输出“步骤 / 工具调用 / 结果 / 回复”的纯文本（`ui-cli`、`ui-tui` 就是这么做的）。
 - GA 改了显示格式，只需改 `ga-events` 一处，前端不用改。
 
