@@ -1,0 +1,4 @@
+name = "web-workspaces"
+entry = "main:apply"
+description = "Workspace and project controls for ui-web."
+inject = ["web.host", "workspaces"]

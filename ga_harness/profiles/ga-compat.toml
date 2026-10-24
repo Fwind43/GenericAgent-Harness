@@ -30,6 +30,9 @@ name = "ga-core"
 name = "session-store"
 
 [[plugins]]
+name = "workspace-store"
+
+[[plugins]]
 name = "model-store"
 
 # web page themes; an add-on for ui-web (dormant under other frontends)
@@ -45,3 +48,6 @@ name = "web-models"
 [[plugins]]
 name = "web-plugins"
 
+
+[[plugins]]
+name = "web-workspaces"

@@ -96,6 +96,9 @@ def main(argv=None) -> int:
         if name == "run":
             p.add_argument("task", nargs="?", default=None)
             p.add_argument("--timeout", type=float, default=None)
+            scope = p.add_mutually_exclusive_group()
+            scope.add_argument("--workspace", help="start a new conversation in this absolute server directory")
+            scope.add_argument("--project", help="select an existing project by ID")
     sub.add_parser("plugins")
     lp = sub.add_parser("llm").add_subparsers(dest="llm_cmd", required=True)
     s = lp.add_parser("show")
@@ -134,6 +137,14 @@ def main(argv=None) -> int:
             print(("- " if e["disabled"] else "+ ") + e["name"], e["config"] or "")
         return 0
 
+    if args.workspace or args.project:
+        entry = next((e for e in tree if e["name"] == "workspace-store" and not e["disabled"]), None)
+        if entry is None:
+            print("[gah] workspace selection requires workspace-store", file=sys.stderr)
+            return 2
+        entry["config"] = {**(entry["config"] or {}),
+                           "start_workspace": args.workspace, "start_project": args.project}
+
     rt = Runtime()
     try:
         rt.ctx.provide("plugin.catalog", {"preferences": preferences, "tree": tree})
@@ -144,6 +155,9 @@ def main(argv=None) -> int:
                and not (v.get("missing") and set(v["missing"]) <= dormant)}
         if bad:
             print(f"[gah] plugins not active: {bad}", file=sys.stderr)
+        if (args.workspace or args.project) and rt.ctx.get("workspaces") is None:
+            print("[gah] requested workspace/project could not be activated; refusing to run", file=sys.stderr)
+            return 2
         frontend = rt.ctx.get("frontend")
         if frontend is None:
             print("[gah] no active plugin provides `frontend` (does it have its `agent`?)", file=sys.stderr)

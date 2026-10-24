@@ -118,3 +118,25 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
   scrollTop=0 before/after the screenshot in all mobile themes (recheck/positions.json).
   Reduced-scale review is not pixel-perfect acceptance or a real phone test.
 - No GA/Admin source changes, live GA/model request, existing-port restart, push or deployment.
+
+## Native workspace/project plugins (2026-10-24)
+- Added independent `workspace-store` and `web-workspaces` plugins, without Admin's project mode or layered memory.
+  Workspaces bind relative tool paths/default execution directories to an existing absolute server directory;
+  changing a workspace creates a conversation instead of relabeling old history.
+- Projects persist name, fixed directory, rules and user-edited shared notes with sessions in SQLite.
+  New conversations inherit the selected project; selecting a project restores its latest conversation.
+  The native sidebar provides selection/creation/settings and a copyable read-only project ID;
+  CLI/TUI/Web startup supports mutually exclusive `--workspace` and `--project` flags.
+- Requests reserve their scope before queueing and keep it pinned until GA has actually stopped, including timeout/abort.
+  Busy changes and stale project edits are rejected; requested startup scope must activate or launch fails.
+  This is execution context, NOT a sandbox or automatic memory learning.
+- Verified: 130 pytest tests passed, including the opt-in installed-GA tool-method test and real Chromium UI regression.
+  The tool test AST-loads GA path/subprocess methods without importing GA or credentials: two projects wrote real
+  relative files in their own directories without changing the harness process cwd. It is not a full GA/LLM run.
+- Browser acceptance used the real UI with a simulated agent: create/edit/reload/select/workspace switch/busy protection,
+  light/dark/warm at 1280px and 390px, no page errors or horizontal overflow. Desktop and mobile contact sheets
+  were visually reviewed with no definite blocking defect; reduced scale cannot establish pixel-perfect contrast
+  or real-phone behavior. Wheel build passed and all seven workspace module/plugin files matched source bytes.
+- Evidence: E:/Work/GenericAgent/temp/gah-workspace-acceptance/ (`pytest-final.log`, `ga-tool-test.log`,
+  `wheel-build.log`, browser screenshots, `desktop-review-sheet.txt`, `mobile-review-final.txt`).
+  No GA/Admin source changes, live GA/LLM request, restart of existing 8765/8799 services, push or deployment.

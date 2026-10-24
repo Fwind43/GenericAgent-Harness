@@ -30,6 +30,11 @@ class AgentHandle:
         self._ctx = ctx
 
     def run(self, query: str, source: str = "user", images=None, timeout: float | None = None) -> str:
+        return self._ctx.waterfall("agent.request",
+            {"query": query, "source": source, "images": images, "timeout": timeout},
+            lambda request: self._run(**request))
+
+    def _run(self, query, source, images, timeout):
         dq = self.raw.put_task(query, source=source, images=images)
         printed = ""
         while True:

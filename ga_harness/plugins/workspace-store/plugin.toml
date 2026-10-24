@@ -1,0 +1,5 @@
+name = "workspace-store"
+entry = "main:apply"
+description = "Session-bound tool workspaces and lightweight project rules/notes."
+inject = ["sessions", "ga.hooks"]
+provides = ["workspaces"]

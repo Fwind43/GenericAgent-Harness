@@ -47,9 +47,10 @@ class Sessions:
     """
     def __init__(self, agent, path):
         self.agent = agent
-        self.path = Path(path).expanduser()
+        self.path = Path(path).expanduser().resolve()
         self.lock = threading.RLock()
         self._ready = False
+        self.reserved = False
 
     @contextmanager
     def _db(self):
@@ -64,13 +65,13 @@ class Sessions:
 
     def _idle(self):
         q = getattr(self.agent, "task_queue", None)
-        if getattr(self.agent, "is_running", False) or getattr(q, "unfinished_tasks", 0):
+        if self.reserved or getattr(self.agent, "is_running", False) or getattr(q, "unfinished_tasks", 0):
             raise RuntimeError("agent is still running")
 
-    def _new(self, db):
+    def _new(self, db, workspace="", project_id=""):
         sid = uuid.uuid4().hex
-        db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, 0)",
-                   (sid, "新会话", time.time(), "[]", "{}"))
+        db.execute("INSERT INTO sessions (id, title, updated, messages, state, deleted, workspace, project_id) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                   (sid, "新会话", time.time(), "[]", "{}", workspace, project_id))
         return sid
 
     def _select(self, db, sid):
@@ -83,6 +84,10 @@ class Sessions:
         with self._db() as db:
             db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, updated REAL NOT NULL, messages TEXT NOT NULL, state TEXT NOT NULL, deleted INTEGER NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            columns = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
+            for column in ("workspace", "project_id"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
             row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
             sid = row[0] if row else None
             row = db.execute("SELECT * FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
@@ -118,7 +123,7 @@ class Sessions:
         with self.lock:
             self._init()
             with self._db() as db:
-                return [dict(r) for r in db.execute("SELECT id,title,updated FROM sessions WHERE deleted=0 ORDER BY updated DESC,id")]
+                return [dict(r) for r in db.execute("SELECT id,title,updated,workspace,project_id FROM sessions WHERE deleted=0 ORDER BY updated DESC,id")]
 
     def save(self, messages):
         with self.lock:
@@ -134,13 +139,14 @@ class Sessions:
                 db.execute("UPDATE sessions SET title=?,updated=?,messages=?,state=? WHERE id=?",
                            (title, time.time(), payload, state, current["id"]))
 
-    def change(self, action, sid=None, title=None):
+    def change(self, action, sid=None, title=None, *, workspace=None, project_id=None):
         with self.lock:
             self._idle()
             current = self.current()
             with self._db() as db:
                 if action == "new":
-                    sid = self._new(db)
+                    sid = self._new(db, current["workspace"] if workspace is None else workspace,
+                                    current["project_id"] if project_id is None else project_id)
                 elif action in ("select", "rename", "delete"):
                     if not isinstance(sid, str) or not db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():
                         raise ValueError("session not found")
@@ -153,7 +159,7 @@ class Sessions:
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
                     if sid == current["id"]:
-                        sid = self._new(db)
+                        sid = self._new(db, current["workspace"], current["project_id"])
                         self._select(db, sid)
                 else:
                     self._select(db, sid)

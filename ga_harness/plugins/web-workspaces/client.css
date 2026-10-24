@@ -1,0 +1,27 @@
+.gah-workspaces{padding:12px 10px 10px;border-bottom:1px solid var(--border);min-width:0}
+.gah-ws-label{font-size:11px;color:var(--muted);margin-bottom:7px;letter-spacing:.03em}
+.gah-ws-picker{display:flex;gap:4px;align-items:center;min-width:0}
+.gah-ws-picker select{min-width:0;flex:1;width:100%;text-overflow:ellipsis}
+.gah-workspaces button{font:inherit;font-size:12px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;padding:4px 7px}
+.gah-workspaces button:hover:not(:disabled){background:var(--surface);color:var(--text)}
+.gah-workspaces .gah-ws-path{display:block;width:100%;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px;font-size:11px;padding:3px 0}
+.gah-workspaces :disabled{opacity:.45;cursor:default}
+.gah-workspaces :focus-visible,.gah-ws-dialog :focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+.gah-ws-dialog{width:min(570px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid var(--border);border-radius:14px;background:var(--bg);color:var(--text);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;box-shadow:0 20px 80px #0003}
+.gah-ws-dialog::backdrop{background:#0006}
+.gah-ws-dialog h2{font-size:18px;font-weight:600;margin:0 0 8px}
+.gah-ws-help{font-size:12px;color:var(--muted);margin:0 0 18px;line-height:1.7}
+.gah-ws-field{display:block;margin:12px 0;font-size:13px}
+.gah-ws-field[hidden]{display:none}
+.gah-ws-field>span{display:block;margin-bottom:5px}
+.gah-ws-field input,.gah-ws-field textarea{display:block;box-sizing:border-box;width:100%;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;line-height:1.5}
+.gah-ws-field textarea{resize:vertical;min-height:88px;max-height:28vh}
+.gah-ws-field input[readonly]{color:var(--muted)}
+.gah-ws-error{color:#c84f4f;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.gah-ws-error:empty{display:none}
+.gah-ws-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.gah-ws-actions button{font:inherit;font-size:13px;padding:7px 14px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);cursor:pointer}
+.gah-ws-actions .gah-ws-save{background:var(--text);color:var(--bg);border-color:var(--text)}
+.gah-ws-actions button:hover:not(:disabled){filter:brightness(.9)}
+.gah-ws-actions button:disabled{opacity:.45;cursor:default}
+@media(max-width:600px){.gah-ws-dialog{padding:18px;max-height:calc(100dvh - 20px)}}

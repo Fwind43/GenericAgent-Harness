@@ -163,7 +163,7 @@ class WebFrontend:
         data["plugins_enabled"] = self.plugins is not None
         data = copy.deepcopy(data)
         data["web_plugins"] = self.web.manifest()
-        return data
+        return self.ctx.waterfall("web.snapshot", data)
 
     def session_action(self, body):
         if not self.sessions:
