@@ -61,6 +61,12 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - Tests: tests/test_ui_web.py (fake agent); full suite 36 passed.
 - Real GA verified in browser: reply streamed and finished, stop during run -> status=aborted, 3 theme colors computed, 390px no horizontal overflow. Not done: screenshot visual review.
 
+## Output contract: ga-events only (2026-10-24)
+- GA's `agent.chunk` is display text (`**LLM Running (Turn N) ...**`, tool fences, `[Stdout]`); GA's own frontends each regex it differently. Not a contract.
+- `ga_harness/textview.py` `TextView`: renders run/turn/assistant/tool events as plain text; chunk only as fallback when a run emits no ga-events; `raw = true` for debug. ui-cli and ui-tui use it (`tool_lines` config).
+- README documents the event table and "never regex agent.chunk". ui-web already renders events (chunk text only as fallback).
+- Verified: 46 tests; real GA `gah run` printed `-- step 1: ... / > code_run print(2**20) / ok 1.0s / | 1048576 / -- step 2: ...`, no LLM Running. GA's own print() lines ([Debug]/[Cache]/code run output) still reach stdout -- they bypass the stream.
+
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
 2. ui-web: screenshot visual review; optional markdown rendering.

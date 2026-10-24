@@ -9,6 +9,10 @@ Provides
   ga.agent  the raw GenericAgent instance (escape hatch for compat plugins)
   agent     AgentHandle: run(query) -> final text, abort()
 Events (emit): agent.chunk(text), agent.done(text, item)
+  agent.chunk is GA's raw display text ("**LLM Running (Turn N) ...**", tool fences,
+  [Stdout] ...). Its format belongs to GA and is NOT a contract: frontends render from the
+  ga-events events (run/turn/assistant/tool) and must not regex-parse chunks. Use chunks
+  only as a fallback when no ga-events arrive, or for raw/debug output.
 """
 from __future__ import annotations
 import importlib

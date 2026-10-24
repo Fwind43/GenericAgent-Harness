@@ -120,8 +120,24 @@ def apply(ctx, config):
 3. 前端对象实现 `main(task=None, timeout=None) -> int`：
    - `ctx.get("agent").run(task, timeout=...)` 发送任务，可以多轮调用；
    - `ctx.get("agent").abort()` 中止当前任务；
-   - 订阅 `agent.chunk` 事件拿到流式输出。
+   - 订阅 `ga-events` 的结构化事件来显示（见下节）。
 4. 用 `gah run --ui xxx` 启动（自动选 `ui-xxx`）。
+
+### 输出事件规范
+
+GA 内核只输出一段显示用的文本（`**LLM Running (Turn N) ...**`、`🛠️ Tool:` 代码块、`[Stdout]` 等），
+格式由 GA 决定，随时可能变。**前端一律使用 `ga-events` 的结构化事件，禁止用正则解析 `agent.chunk`。**
+
+| 事件 | 时机 | 主要字段 |
+| --- | --- | --- |
+| `run.start` / `run.end` | 一次任务开始/结束 | `exit` |
+| `turn.start` / `turn.end` | 一个步骤开始/结束（最后一步可能没有 `turn.end`，以 `run.end` 收尾） | `turn`、`exit` |
+| `assistant.text` | 模型回复 | `turn`、`text`（原文）、`reply`（去掉 summary/thinking）、`summary` |
+| `tool.call` / `tool.result` | 工具调用开始/结束 | `id`、`turn`、`name`、`args`；结果另有 `ok`、`data`、`seconds` |
+
+- `agent.chunk`：GA 原始文本，只用来调试（`raw = true`），或在一次任务完全没有 `ga-events` 事件时兜底显示。
+- 终端前端可以直接用 `ga_harness.textview.TextView`，按事件输出“步骤 / 工具调用 / 结果 / 回复”的纯文本（`ui-cli`、`ui-tui` 就是这么做的）。
+- GA 改了显示格式，只需改 `ga-events` 一处，前端不用改。
 
 最简实现见 `ga_harness/plugins/ui-cli/main.py`，多轮对话与中断见 `ui-tui/main.py`，浏览器前端见 `ui-web/main.py`。
 
