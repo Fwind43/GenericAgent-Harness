@@ -20,12 +20,14 @@ HELP = "commands: /exit /quit /help   Ctrl+C while running = abort the task"
 class TuiFrontend:
     def __init__(self, ctx, config):
         self.ctx = ctx
-        self.out = config.get("stream") or sys.stdout
+        console = ctx.get("console")
+        self.out = config.get("stream") or (console.out if console else sys.stdout)
         self.read = config.get("input") or input
         self.prompt = config.get("prompt", "\n> ")
         self.turns = 0
         self.view = TextView(ctx, self._w, raw=bool(config.get("raw", False)),
-                             tool_lines=int(config.get("tool_lines", 3)))
+                             tool_lines=int(config.get("tool_lines", 3)),
+                             show_log=bool(config.get("show_log", False)))
 
     def _w(self, text):
         self.out.write(text)
@@ -41,7 +43,8 @@ class TuiFrontend:
             while True:
                 if pending is None:
                     try:
-                        pending = self.read(self.prompt)
+                        self._w(self.prompt)   # not via input(): sys.stdout may be captured
+                        pending = self.read("")
                     except (EOFError, KeyboardInterrupt):
                         self._w("\n")
                         return 0

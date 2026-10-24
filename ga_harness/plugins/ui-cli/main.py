@@ -10,6 +10,7 @@ config:
   stream      output stream (default stdout)
   raw         print GA's raw ``agent.chunk`` text instead (default false)
   tool_lines  result lines shown per tool call (default 3)
+  show_log    also show GA's captured print() lines (`agent.log`, default false)
 """
 import sys
 
@@ -19,13 +20,16 @@ from ga_harness.textview import TextView
 class CliFrontend:
     def __init__(self, ctx, config):
         self.ctx = ctx
-        self.out = config.get("stream") or sys.stdout
+        console = ctx.get("console")
+        self.out = config.get("stream") or (console.out if console else sys.stdout)
+        self.err = console.err if console else sys.stderr
         self.view = TextView(ctx, self._write, raw=bool(config.get("raw", False)),
-                             tool_lines=int(config.get("tool_lines", 3)))
+                             tool_lines=int(config.get("tool_lines", 3)),
+                             show_log=bool(config.get("show_log", False)))
 
     def main(self, task=None, timeout=None) -> int:
         if not task:
-            print("[ui-cli] a task is required: gah run \"task\" (or use --ui tui)", file=sys.stderr)
+            print("[ui-cli] a task is required: gah run \"task\" (or use --ui tui)", file=self.err)
             return 2
         off = self.view.attach()
         self.view.begin()

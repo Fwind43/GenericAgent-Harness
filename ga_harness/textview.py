@@ -68,17 +68,21 @@ def result_lines(data, lines: int = 3, width: int = 160) -> list[str]:
 class TextView:
     """Subscribe to ga-events on ``ctx.events`` and write a readable transcript."""
 
-    def __init__(self, ctx, write, *, raw: bool = False, tool_lines: int = 3, width: int = 160):
+    def __init__(self, ctx, write, *, raw: bool = False, tool_lines: int = 3, width: int = 160,
+                 show_log: bool = False):
         self.ctx = ctx
         self.write = write
         self.raw = raw
         self.tool_lines = tool_lines
         self.width = width
+        self.show_log = show_log
         self.structured = False
 
     def attach(self):
         """Start listening; returns a disposer that removes every listener."""
         offs = [self.ctx.events.on("agent.chunk", self._chunk)]
+        if self.show_log:
+            offs.append(self.ctx.events.on("agent.log", self._log))
         if not self.raw:
             for name in STRUCTURED:
                 offs.append(self.ctx.events.on(name, lambda d=None, _n=name: self._event(_n, d or {})))
@@ -91,6 +95,11 @@ class TextView:
     def begin(self) -> None:
         """Call before each agent.run: re-decide structured vs raw for the new run."""
         self.structured = False
+
+    def _log(self, d):
+        text = (d or {}).get("text", "")
+        if text.strip():
+            self.write("  . " + text[: self.width] + "\n")
 
     def _chunk(self, text):
         if self.raw or not self.structured:

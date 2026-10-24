@@ -1,6 +1,11 @@
 # Drop-in GA: unmodified GenericAgent + hook bridge. Everything else layers on top via patches.
 # llm-config must precede ga-core: it answers GA's `import mykey` from ~/.ga-harness/llm.toml
 # (or $GAH_LLM_CONFIG / inline keys); without any such source GA's own mykey.py is used.
+# ga-stdout comes first: GA's own print() output becomes `agent.log` events
+# instead of hitting the terminal; frontends write to the `console` capability.
+[[plugins]]
+name = "ga-stdout"
+
 [[plugins]]
 name = "llm-config"
 

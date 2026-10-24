@@ -33,7 +33,9 @@ class WebFrontend:
         self.host = config.get("host", "127.0.0.1")
         self.port = int(config.get("port", 8765))
         self.open_browser = bool(config.get("open_browser", True))
-        self.log = config.get("log") or print
+        console = ctx.get("console")    # ga-stdout captures sys.stdout; talk to the real one
+        self.log = config.get("log") or (lambda *m: print(*m, file=console.out, flush=True) if console
+                                         else print(*m, flush=True))
         self.lock = threading.Lock()
         self.messages = []          # {"role", "text", "status"[, "error"]}
         self.running = False

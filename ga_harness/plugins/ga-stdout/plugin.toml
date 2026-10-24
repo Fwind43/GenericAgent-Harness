@@ -1,0 +1,5 @@
+name = "ga-stdout"
+entry = "main:apply"
+description = "Capture everything GA prints to stdout/stderr ([Info]/[Debug]/code run output) as `agent.log` events; frontends write to the `console` capability."
+inject = []
+provides = ["console"]
