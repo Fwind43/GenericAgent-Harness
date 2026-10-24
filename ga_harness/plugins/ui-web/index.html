@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ga-harness</title>
+<script>try{var t=localStorage.getItem('gah-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<style>
+/* Palettes follow GenericAgent-Admin (light / dark / warm). */
+html[data-theme="light"]{--bg:#fff;--surface:#fff;--surface-muted:#f7f7f7;--border:#e5e5e5;--text:#0d0d0d;--muted:#6b6b6b;--accent:#373737;--on-accent:#fff;--code-bg:#f7f7f8;--danger:#c0392b;color-scheme:light}
+html[data-theme="dark"]{--bg:#0d0f11;--surface:#1b1e22;--surface-muted:#24282e;--border:rgba(255,255,255,.15);--text:#ececec;--muted:#a6abb2;--accent:#19c39c;--on-accent:#06251d;--code-bg:#20242a;--danger:#ff7b72;color-scheme:dark}
+html[data-theme="warm"]{--bg:#F4F0ED;--surface:#FCFAF8;--surface-muted:#EEE6E1;--border:#DED3CB;--text:#362F2B;--muted:#776A63;--accent:#995D4D;--on-accent:#fff;--code-bg:#EEE6E1;--danger:#a8322a;color-scheme:light}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--bg)}
+header h1{font-size:15px;font-weight:600;margin:0}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:#19c39c}
+#conn{font-size:12px;color:var(--muted)}
+.spacer{flex:1}
+select{font:inherit;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px 8px}
+main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+#thread{max-width:820px;margin:0 auto;padding:24px 20px 12px}
+.empty{color:var(--muted);text-align:center;margin-top:18vh}
+.empty b{display:block;color:var(--text);font-size:20px;font-weight:600;margin-bottom:6px}
+.msg{margin:0 0 22px}
+.msg.user{display:flex;justify-content:flex-end}
+.msg.user .body{background:var(--surface-muted);border-radius:18px;padding:9px 15px;max-width:min(80%,640px)}
+.meta{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.meta .dot{width:4px;height:4px;background:#19c39c}
+.body{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+.msg.assistant .body{font-family:inherit}
+.status{font-size:12px;color:var(--muted);margin-top:6px}
+.status.error{color:var(--danger)}
+.cursor::after{content:"";display:inline-block;width:7px;height:1em;vertical-align:-2px;margin-left:2px;background:var(--muted);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+footer{padding:8px 20px 18px;background:var(--bg)}
+form{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;border:1px solid var(--border);background:var(--surface);border-radius:22px;padding:8px 8px 8px 16px}
+form:focus-within{border-color:var(--muted)}
+textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;max-height:40vh;min-height:24px;padding:4px 0;scrollbar-width:thin}
+textarea::placeholder{color:var(--muted)}
+button{font:inherit;font-size:14px;border:0;border-radius:16px;padding:6px 16px;cursor:pointer;background:var(--accent);color:var(--on-accent)}
+button:disabled{opacity:.4;cursor:default}
+button.stop{background:transparent;color:var(--text);border:1px solid var(--border)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hint{max-width:820px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
+@media (max-width:600px){header{padding:8px 12px}#thread{padding:16px 12px 8px}footer{padding:6px 10px 12px}.msg.user .body{max-width:88%}.hint{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span><h1>ga-harness</h1><span id="conn">连接中…</span>
+  <span class="spacer"></span>
+  <select id="theme" aria-label="主题"><option value="light">浅色</option><option value="dark">深色</option><option value="warm">暖色</option></select>
+</header>
+<main id="scroll"><div id="thread"></div></main>
+<footer>
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="给 GenericAgent 发消息…" autofocus></textarea>
+    <button type="button" id="stop" class="stop" hidden>停止</button>
+    <button type="submit" id="send">发送</button>
+  </form>
+  <div class="hint">Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务</div>
+</footer>
+<script>
+const $=id=>document.getElementById(id);
+const thread=$('thread'),scroll=$('scroll'),input=$('input'),send=$('send'),stop=$('stop'),theme=$('theme');
+let state={running:false,messages:[]};
+theme.value=document.documentElement.dataset.theme;
+theme.onchange=()=>{document.documentElement.dataset.theme=theme.value;try{localStorage.setItem('gah-theme',theme.value)}catch(e){}};
+const STATUS={aborted:'已停止',error:'出错'};
+function nearBottom(){return scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function renderMsg(m){
+  const box=el('div','msg '+m.role);
+  if(m.role==='assistant'){const meta=el('div','meta');meta.append(el('span','dot'),el('span',null,'GenericAgent'));box.append(meta)}
+  const body=el('div','body',m.text);
+  if(m.role==='assistant'&&m.status==='running'){body.classList.add('cursor');if(!m.text)body.textContent='';}
+  box.append(body);
+  if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?'：'+m.error:'')))}
+  return box;
+}
+function render(){
+  const stick=nearBottom();
+  thread.replaceChildren();
+  if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,'有什么可以帮你？'),el('span',null,'任务交给本机 GenericAgent 执行'));thread.append(e)}
+  state.messages.forEach(m=>thread.append(renderMsg(m)));
+  syncControls();
+  if(stick)scroll.scrollTop=scroll.scrollHeight;
+}
+function syncControls(){stop.hidden=!state.running;send.disabled=state.running||!input.value.trim()}
+function last(){return state.messages[state.messages.length-1]}
+function connect(){
+  const es=new EventSource('/api/events');
+  es.onopen=()=>{$('conn').textContent='已连接';$('dot').classList.add('live')};
+  es.onerror=()=>{$('conn').textContent='已断开，重连中…';$('dot').classList.remove('live')};
+  es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render()});
+  es.addEventListener('start',e=>{const d=JSON.parse(e.data);state.running=true;
+    state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running'});render()});
+  es.addEventListener('chunk',e=>{const m=last();if(!m||m.role!=='assistant')return;const stick=nearBottom();
+    m.text+=JSON.parse(e.data).text;const b=thread.lastElementChild&&thread.lastElementChild.querySelector('.body');
+    if(b)b.textContent=m.text;else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
+  es.addEventListener('done',e=>{const d=JSON.parse(e.data),m=last();state.running=false;
+    if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render()});
+}
+async function post(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  if(!r.ok){let msg=r.status;try{msg=(await r.json()).error||msg}catch(e){}throw new Error(msg)}
+}
+$('form').onsubmit=async e=>{
+  e.preventDefault();const task=input.value.trim();if(!task||state.running)return;
+  send.disabled=true;
+  try{await post('/api/run',{task});input.value='';grow()}catch(err){alert('发送失败：'+err.message)}
+  syncControls();input.focus();
+};
+stop.onclick=async()=>{stop.disabled=true;try{await post('/api/abort')}catch(e){}stop.disabled=false};
+function grow(){input.style.height='auto';input.style.height=input.scrollHeight+'px'}
+input.oninput=()=>{grow();syncControls()};
+input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('form').requestSubmit()}};
+render();connect();
+</script>
+</body>
+</html>

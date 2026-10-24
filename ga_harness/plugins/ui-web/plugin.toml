@@ -1,0 +1,5 @@
+name = "ui-web"
+entry = "main:apply"
+description = "Local web frontend (stdlib http.server + SSE on 127.0.0.1): multi-turn chat, stop button, light/dark/warm themes."
+inject = ["agent"]
+provides = ["frontend"]
