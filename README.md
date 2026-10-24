@@ -46,9 +46,23 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `llm-config` | 从 `~/.ga-harness/llm.toml`（或 `$GAH_LLM_CONFIG`、内联配置）提供模型配置，替代 `mykey.py` |
 | `tool-grep` | 示例：通过 `ga-tools` 注册的只读正则搜索工具 |
 | `tool-timer` | 统计每次工具调用耗时 |
+| `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
+| `model-store` | 独立的运行时模型目录、切换和文件配置管理；接口不返回 API 密钥 |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
 | `ui-web` | 本地浏览器前端（仅标准库，HTTP + SSE）：多轮对话、流式输出、停止按钮，浅色/深色/暖色主题；默认 `http://127.0.0.1:8765/`，只接受同源请求，同一时间只运行一个任务 |
+
+## 会话与模型管理（Web）
+
+使用 `gah.cmd run --ui web` 启动。默认 profile 在 `ga-core` 后挂载 `session-store` 和 `model-store`；能力在独立插件中，Web 只负责交互。
+
+- **会话**：新建、切换、重命名和删除；对话及 GA 上下文保存到 `~/.ga-harness/sessions.sqlite3`，刷新或重启后可恢复。可通过 `$GAH_SESSION_DB` 或 `session-store` 的 `file` 配置更换位置。删除为逻辑删除，不代表安全擦除磁盘数据。
+- **模型切换**：顶部选择已加载模型，后续任务使用新模型并保留当前对话上下文；运行任务时禁止切换和改配置。
+- **模型配置**：打开“模型配置”新增、编辑或删除 OpenAI/Claude 配置，支持名称、模型 ID、Base URL、API Key 和上下文窗口；至少保留一个模型。保存后原子替换配置文件并重载，加载失败时回滚；过期编辑会被拒绝，重新打开弹窗后再试。
+- **密钥**：接口不返回已有 API Key；密码框留空保留原值，也支持 `${ENV_NAME}`。文件仍按原有 TOML/JSON 方式保存配置；需要避免明文密钥时请使用环境变量引用。含账号、密码、查询参数或片段的 URL 不允许保存。
+- **编辑边界**：仅编辑 `llm-config` 使用的 harness TOML/JSON 文件；GA 的 `mykey.py` 和带内联覆盖的配置只读。不改写 GA 源码或 `mykey.py`，复杂 mixin 依赖需在本地文件维护。模型选择目前属于运行时状态，不承诺跨进程重启保留。
+
+Web 服务只适用于可信的本机环境，不应直接暴露到公网。
 
 ## Profile 与 Patch
 

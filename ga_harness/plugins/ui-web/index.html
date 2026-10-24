@@ -78,6 +78,29 @@ details[open]>summary>.chev{transform:none}
 #notice{padding:8px 20px;color:var(--danger);font-size:13px;overflow-wrap:anywhere;border-bottom:1px solid var(--border)}
 button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 @media (max-width:600px){.toolbar{padding:8px 12px;gap:4px}.toolbar select{max-width:none}.toolbar button{padding:6px 8px}header{padding:8px 12px}#thread{padding:16px 12px 8px}footer{padding:6px 10px 12px}.msg.user .body{max-width:88%}.hint{display:none}}
+
+#models[hidden]{display:none}
+#models label{font-size:12px;color:var(--muted)}
+#model-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+#model-dialog::backdrop{background:rgba(0,0,0,.35)}
+.dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
+.dialog-head h2{font-size:17px;margin:0;font-weight:600}
+.dialog-content{padding:16px 20px 20px}
+.model-picker{display:flex;gap:8px;margin-bottom:16px}.model-picker select{flex:1;min-width:0}
+.model-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.model-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:13px}
+.model-field.wide{grid-column:1/-1}
+.model-field input,.model-field select{width:100%;min-width:0;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--text)}
+.model-field input:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+.model-field input:disabled{opacity:.65}.model-field small,.model-help{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.model-help{margin:0 0 14px}.model-help[hidden],#model-error[hidden]{display:none}
+#model-error{font-size:13px;color:var(--danger);overflow-wrap:anywhere;margin:12px 0}
+.model-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+#model-save{border:1px solid var(--accent);border-radius:8px;padding:8px 14px;background:var(--accent);color:var(--on-accent);font-size:13px}
+#model-remove{margin-right:auto;color:var(--danger)}
+.secondary:hover:not(:disabled){background:var(--border)}button:disabled{cursor:default;opacity:.5}
+@media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}
+
 </style>
 </head>
 <body>
@@ -92,6 +115,33 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   <button id="session-rename" class="secondary">重命名</button>
   <button id="session-delete" class="secondary">删除</button>
 </nav>
+
+<nav id="models" class="toolbar" aria-label="模型管理" hidden>
+  <label for="model-select">模型</label><select id="model-select" aria-label="当前模型"></select>
+  <button id="model-settings" class="secondary">模型配置</button>
+</nav>
+<dialog id="model-dialog" aria-labelledby="model-heading">
+  <div class="dialog-head"><h2 id="model-heading">模型配置</h2><button id="model-close" class="secondary" type="button">关闭</button></div>
+  <div class="dialog-content">
+    <p class="model-help">配置保存在本机，不会回显已有的 API Key。保存成功后即时生效。</p>
+    <div class="model-picker"><select id="model-entry" aria-label="选择配置"></select><button id="model-add" class="secondary" type="button">新增</button></div>
+    <p id="model-reason" class="model-help" hidden></p>
+    <form id="model-form">
+      <div class="model-grid">
+        <label class="model-field">协议<select id="model-protocol"><option value="oai">OpenAI compatible</option><option value="claude">Anthropic Claude</option></select></label>
+        <label class="model-field">显示名称<input id="model-name" maxlength="120" autocomplete="off"></label>
+        <label class="model-field wide">配置标识<input id="model-key" required pattern="[A-Za-z][A-Za-z0-9_]{0,99}" autocomplete="off"><small>标识需包含 oai 或 claude 及 config。已有配置的标识不可修改。</small></label>
+        <label class="model-field">模型 ID<input id="model-id" required autocomplete="off" placeholder="gpt-4.1"></label>
+        <label class="model-field">上下文窗口<input id="model-context" type="number" min="1024" step="1" placeholder="131072"></label>
+        <label class="model-field wide">API Base URL<input id="model-base" required autocomplete="off" placeholder="https://api.openai.com/v1"><small>支持 ${ENV_NAME} 环境变量引用。</small></label>
+        <label class="model-field wide">API Key<input id="model-secret" type="password" autocomplete="new-password"><small id="model-secret-hint"></small></label>
+      </div>
+      <p id="model-error" role="status" hidden></p>
+      <div class="model-actions"><button id="model-remove" class="secondary" type="button">删除配置</button><button id="model-save" type="submit">保存并生效</button></div>
+    </form>
+  </div>
+</dialog>
+
 <div id="notice" role="status" hidden></div>
 <main id="scroll"><div id="thread"></div></main>
 <footer>
@@ -175,7 +225,7 @@ function render(){
   thread.replaceChildren();
   if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,'有什么可以帮你？'),el('span',null,'任务交给本机 GenericAgent 执行'));thread.append(e)}
   state.messages.forEach((m,i)=>thread.append(renderMsg(m,i)));
-  renderSessions();syncControls();
+  renderSessions();renderModels();syncControls();
   if(stick)scroll.scrollTop=scroll.scrollHeight;
 }
 let changing=false;
@@ -186,6 +236,7 @@ function renderSessions(){
   if(state.persistence_error)notice(state.persistence_error);
 }
 function syncControls(){
+  syncModelControls();
   stop.hidden=!state.running;send.disabled=state.running||changing||!input.value.trim();
   for(const id of ['session-select','session-new','session-rename','session-delete'])$(id).disabled=state.running||changing;
 }
@@ -199,6 +250,72 @@ $('session-select').onchange=e=>sessionAction('select',{id:e.target.value});
 $('session-new').onclick=()=>sessionAction('new');
 $('session-rename').onclick=()=>{const old=(state.sessions||[]).find(x=>x.id===state.session_id);const title=prompt('会话名称',old?.title||'');if(title!=null)sessionAction('rename',{title})};
 $('session-delete').onclick=()=>{if(confirm('从会话列表中删除当前会话？记录将保留在本地数据库中。'))sessionAction('delete')};
+
+let modelConfig=null,editingKey=null;
+function renderModels(){
+  const m=state.models;$('models').hidden=!m;
+  if(!m)return;
+  const sel=$('model-select');sel.replaceChildren();
+  m.items.forEach(x=>{const o=el('option',null,x.name+(x.model&&x.name!==x.model?' / '+x.model:''));o.value=x.id;sel.append(o)});
+  sel.value=m.current==null?'':String(m.current);
+}
+function modelError(text){$('model-error').textContent=text||'';$('model-error').hidden=!text}
+function syncModelControls(){
+  const busy=state.running||changing,locked=busy||!modelConfig?.writable;
+  $('model-select').disabled=busy||!state.models?.items.length;
+  $('model-settings').disabled=busy;
+  for(const id of ['model-entry','model-add','model-save','model-name','model-id','model-context','model-base','model-secret'])$(id).disabled=locked;
+  $('model-key').disabled=locked||editingKey!==null;$('model-protocol').disabled=locked||editingKey!==null;
+  $('model-remove').disabled=locked||editingKey===null;
+  $('model-close').disabled=changing;
+}
+function fillModel(key){
+  const entry=modelConfig?.entries.find(x=>x.key===key),v=entry?.values||{};editingKey=entry?.key||null;
+  $('model-entry').value=editingKey||'';
+  $('model-protocol').value=editingKey?.includes('claude')?'claude':'oai';
+  $('model-key').value=editingKey||'native_oai_config_'+Date.now();
+  for(const [id,k] of [['model-name','name'],['model-id','model'],['model-base','apibase'],['model-context','context_win']])$(id).value=v[k]??'';
+  $('model-secret').value='';$('model-secret').required=!entry?.has_key;
+  $('model-secret').placeholder=entry?.has_key?'******':'';
+  $('model-secret-hint').textContent=entry?.has_key?'留空保留原密钥或环境变量引用。':'填写密钥或 ${ENV_NAME}。';
+  modelError(entry?.url_hidden?'原 URL 含敏感信息已隐藏，请重新填写不含密钥的 URL。':'');syncModelControls();
+}
+function fillModelConfig(preferred){
+  const select=$('model-entry');select.replaceChildren(el('option',null,'新增配置'));select.firstChild.value='';
+  modelConfig.entries.forEach(x=>{const o=el('option',null,x.values.name||x.values.model||x.key);o.value=x.key;select.append(o)});
+  $('model-reason').textContent=modelConfig.reason||'';$('model-reason').hidden=modelConfig.writable;
+  fillModel(preferred===null?null:(modelConfig.entries.some(x=>x.key===preferred)?preferred:modelConfig.entries[0]?.key));
+}
+$('model-select').onchange=async e=>{
+  const id=Number(e.target.value);changing=true;syncControls();notice('');
+  try{state=await post('/api/models/select',{id});render()}catch(err){notice(err.message);renderModels()}
+  finally{changing=false;syncControls()}
+};
+$('model-settings').onclick=async()=>{
+  modelConfig=null;editingKey=null;changing=true;syncControls();modelError('');$('model-secret').value='';$('model-dialog').showModal();
+  try{const r=await fetch('/api/models/config');const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);modelConfig=d;fillModelConfig()}
+  catch(e){modelError(e.message)}finally{changing=false;syncControls()}
+};
+$('model-close').onclick=()=>$('model-dialog').close();
+$('model-dialog').oncancel=e=>{if(changing)e.preventDefault()};
+$('model-dialog').onclose=()=>{$('model-secret').value=''};
+$('model-entry').onchange=e=>fillModel(e.target.value);
+$('model-add').onclick=()=>{fillModel(null);$('model-name').focus()};
+$('model-protocol').onchange=e=>{if(editingKey===null)$('model-key').value='native_'+e.target.value+'_config_'+Date.now()};
+async function changeModel(action){
+  if(changing||state.running||!modelConfig?.writable)return;
+  const key=$('model-key').value.trim(),body={action,key,revision:modelConfig.revision};
+  if(action==='save'){
+    body.values={name:$('model-name').value.trim(),model:$('model-id').value.trim(),apibase:$('model-base').value.trim(),apikey:$('model-secret').value};
+    if($('model-context').value)body.values.context_win=Number($('model-context').value);
+  }
+  changing=true;syncControls();modelError('');
+  try{const d=await post('/api/models/config',body);state=d.state;modelConfig=d.config;fillModelConfig(action==='save'?key:undefined);render();modelError('');notice('模型配置已保存并生效')}
+  catch(e){modelError(e.message)}finally{changing=false;syncControls()}
+}
+$('model-form').onsubmit=e=>{e.preventDefault();changeModel('save')};
+$('model-remove').onclick=()=>{if(confirm('删除此模型配置？至少需保留一个模型。'))changeModel('delete')};
+
 // Upstream models deliver text in bursts (often 5-25 chars every ~120ms). Revealing each
 // burst at once looks jerky, so the visible reply chases the received text at a rate
 // proportional to the backlog: smooth per-frame typing that never lags more than ~0.2s.
@@ -240,7 +357,7 @@ async function post(path,body){
   return r.json();
 }
 $('form').onsubmit=async e=>{
-  e.preventDefault();const task=input.value.trim();if(!task||state.running)return;
+  e.preventDefault();const task=input.value.trim();if(!task||state.running||changing)return;
   send.disabled=true;
   try{await post('/api/run',{task});input.value='';grow()}catch(err){alert('发送失败：'+err.message)}
   syncControls();input.focus();

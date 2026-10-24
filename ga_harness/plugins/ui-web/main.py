@@ -39,6 +39,7 @@ class WebFrontend:
                                          else print(*m, flush=True))
         self.lock = threading.Lock()
         self.sessions = ctx.get("sessions")
+        self.models = ctx.get("models")
         self.messages = self.sessions.current()["messages"] if self.sessions else []
         self.persistence_error = None
         self.running = False
@@ -60,6 +61,8 @@ class WebFrontend:
         if self.sessions:
             data.update(session_id=self.sessions.current()["id"], sessions=self.sessions.listing(),
                         persistence_error=self.persistence_error)
+        if self.models:
+            data["models"] = self.models.catalog()
         return copy.deepcopy(data)
 
     def session_action(self, body):
@@ -82,6 +85,35 @@ class WebFrontend:
                 return 503, {"error": "session storage failed; current conversation was kept"}
             self._broadcast("snapshot", snap)
             return 200, snap
+
+    def model_config(self):
+        if not self.models:
+            return 404, {"error": "model-store is not enabled"}
+        with self.lock:
+            try:
+                return 200, self.models.config()
+            except Exception:
+                return 503, {"error": "model configuration could not be read"}
+
+    def model_action(self, body, configure=False):
+        if not self.models:
+            return 404, {"error": "model-store is not enabled"}
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+            try:
+                settings = self.models.change(body) if configure else None
+                if not configure:
+                    self.models.select(body.get("id"))
+                snap = self.snapshot()
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            except RuntimeError as e:
+                return 409, {"error": str(e)}
+            except Exception:
+                return 503, {"error": "model operation failed; reload settings before retrying"}
+            self._broadcast("snapshot", snap)
+            return 200, {"state": snap, "config": settings} if configure else snap
 
     def _on_chunk(self, text):
         with self.lock:
@@ -311,6 +343,8 @@ class _Handler(BaseHTTPRequestHandler):
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
             self._json(200, snap)
+        elif path == "/api/models/config":
+            self._json(*self.frontend.model_config())
         elif path == "/api/events":
             self._sse()
         else:
@@ -337,6 +371,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.submit(body.get("task")))
         elif path == "/api/sessions":
             self._json(*self.frontend.session_action(body))
+        elif path == "/api/models/select":
+            self._json(*self.frontend.model_action(body))
+        elif path == "/api/models/config":
+            self._json(*self.frontend.model_action(body, configure=True))
         elif path == "/api/abort":
             self._json(*self.frontend.abort())
         else:
