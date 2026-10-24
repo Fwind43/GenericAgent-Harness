@@ -108,7 +108,7 @@ def test_ui_web_busy_abort_and_sse(tmp_path):
         sse = urllib.request.urlopen(base + "api/events", timeout=5)
         assert sse.readline().strip() == b"event: snapshot"
         assert json.loads(sse.readline()[len(b"data: "):]) == {
-            "running": False, "messages": [], "plugins_enabled": False,
+            "running": False, "messages": [], "plugins_enabled": False, "web_plugins": [],
         }
         sse.readline()
         assert _req(base + "api/run", {"task": "wait"})[0] == 202
@@ -188,3 +188,103 @@ def test_ui_web_clips_large_tool_data():
     out = m._clip("x" * (m.MAX_TOOL_DATA + 5))
     assert out.startswith("x" * m.MAX_TOOL_DATA) and out.endswith("(5 more chars)")
     assert m._clip(None) == "" and m._clip("ok") == "ok"
+
+
+def _get(url):
+    with urllib.request.urlopen(url, timeout=5) as r:
+        return r.status, r.headers["Content-Type"], r.read().decode("utf-8")
+
+
+def test_ui_web_host_assets_routes_and_isolation(tmp_path):
+    import pytest
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        d = tmp_path / "wp"
+        d.mkdir()
+        (d / "client.js").write_text("GAH.define('demo', {});")
+        (d / "client.css").write_text(".demo{}")
+        (d / "head.js").write_text("/*head*/")
+
+        def boom(req):
+            raise RuntimeError("bad plugin")
+        routes = {("GET", "ping"): lambda req: {"pong": req["query"].get("q")},
+                  ("POST", "/echo/"): lambda req: (201, req["body"]),
+                  ("GET", "boom"): boom}
+        un = fe.web.register("demo", script=d / "client.js", style=d / "client.css", head=d / "head.js",
+                             routes=routes, order=5)
+        fe.web.register("late", style=d / "client.css")
+        m = fe.web.manifest()
+        assert [x["name"] for x in m] == ["demo", "late"]
+        assert m[0]["script"].startswith("/web/demo/client.js?v=") and "script" not in m[1]
+        assert _req(base + "api/state")[1]["web_plugins"] == m
+        # page head carries style + head script; assets are served with proper types
+        page = _get(base)[2]
+        assert 'href="/web/demo/client.css?v=' in page and 'src="/web/demo/head.js?v=' in page
+        assert "<!--gah:head-->" not in page
+        st, ct, body = _get(base + "web/demo/client.js")
+        assert st == 200 and ct.startswith("text/javascript") and "GAH.define" in body
+        assert _get(base + "web/demo/client.css")[1].startswith("text/css")
+        assert _req(base + "web/late/client.js")[0] == 404      # not registered for this plugin
+        assert _req(base + "web/demo/../x")[0] == 404
+        # routes: GET query, POST body + status, plugin error isolated as 500
+        assert _req(base + "api/p/demo/ping?q=1") == (200, {"pong": "1"})
+        assert _req(base + "api/p/demo/echo", {"a": 1}) == (201, {"a": 1})
+        code, err = _req(base + "api/p/demo/boom")
+        assert code == 500 and "bad plugin" in err["error"]
+        assert _req(base + "api/p/demo/nope")[0] == 404
+        assert _req(base + "api/p/demo/echo", {"a": 1}, {"Origin": "http://evil.example"})[0] == 403
+        assert _req(base + "api/state")[0] == 200            # page still alive after plugin failure
+        # validation
+        with pytest.raises(ValueError):
+            fe.web.register("demo")
+        with pytest.raises(ValueError):
+            fe.web.register("Bad Name")
+        with pytest.raises(FileNotFoundError):
+            fe.web.register("ghost", script=d / "missing.js")
+        # unregister removes assets and routes; idempotent
+        un()
+        un()
+        assert [x["name"] for x in fe.web.manifest()] == ["late"]
+        assert _req(base + "web/demo/client.js")[0] == 404 and _req(base + "api/p/demo/ping")[0] == 404
+    finally:
+        off()
+        rt.dispose()
+
+
+def test_ui_web_host_changes_reach_sse(tmp_path):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        sse = urllib.request.urlopen(base + "api/events", timeout=5)
+        for _ in range(3):
+            sse.readline()
+        f = tmp_path / "a.css"
+        f.write_text("")
+        un = fe.web.register("demo", style=f)
+        assert sse.readline().strip() == b"event: web.plugins"
+        assert [x["name"] for x in json.loads(sse.readline()[len(b"data: "):])] == ["demo"]
+        sse.readline()
+        fe.web.emit("demo", "tick", {"n": 1})
+        assert sse.readline().strip() == b"event: plugin"
+        assert json.loads(sse.readline()[len(b"data: "):]) == {"plugin": "demo", "kind": "tick", "data": {"n": 1}}
+        sse.readline()
+        un()
+        assert sse.readline().strip() == b"event: web.plugins"
+        assert json.loads(sse.readline()[len(b"data: "):]) == []
+        sse.close()
+    finally:
+        off()
+        rt.dispose()
+
+
+def test_web_theme_plugin_registers_and_is_dormant_elsewhere(tmp_path):
+    from ga_harness.kernel.loader import discover
+    from tests.test_frontend import PLUGINS
+    from ga_harness.plugin_manager import frontend_capabilities
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        assert "web.host" in frontend_capabilities(discover([PLUGINS]))
+        m = {x["name"]: x for x in fe.web.manifest()}
+        assert "web-theme" not in m       # not in this tree
+    finally:
+        off()
+        rt.dispose()

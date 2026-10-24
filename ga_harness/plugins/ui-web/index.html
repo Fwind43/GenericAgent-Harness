@@ -4,12 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ga-harness</title>
-<script>try{var t=localStorage.getItem('gah-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
 <style>
-/* Palettes follow GenericAgent-Admin (light / dark / warm). */
-html[data-theme="light"]{--bg:#fff;--surface:#fff;--surface-muted:#f7f7f7;--border:#e5e5e5;--text:#0d0d0d;--muted:#6b6b6b;--accent:#373737;--on-accent:#fff;--code-bg:#f7f7f8;--danger:#c0392b;color-scheme:light}
-html[data-theme="dark"]{--bg:#0d0f11;--surface:#1b1e22;--surface-muted:#24282e;--border:rgba(255,255,255,.15);--text:#ececec;--muted:#a6abb2;--accent:#19c39c;--on-accent:#06251d;--code-bg:#20242a;--danger:#ff7b72;color-scheme:dark}
-html[data-theme="warm"]{--bg:#F4F0ED;--surface:#FCFAF8;--surface-muted:#EEE6E1;--border:#DED3CB;--text:#362F2B;--muted:#776A63;--accent:#995D4D;--on-accent:#fff;--code-bg:#EEE6E1;--danger:#a8322a;color-scheme:light}
+/* Base palette (light). Theme plugins override these variables. */
+:root{--bg:#fff;--surface:#fff;--surface-muted:#f7f7f7;--border:#e5e5e5;--text:#0d0d0d;--muted:#6b6b6b;--accent:#373737;--on-accent:#fff;--code-bg:#f7f7f8;--danger:#c0392b;color-scheme:light}
+.gah-slot{display:contents}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column}
@@ -111,12 +109,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 @media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}
 
 </style>
+<!--gah:head-->
 </head>
 <body>
 <header>
   <span class="dot" id="dot"></span><h1>ga-harness</h1><span id="conn">连接中…</span>
   <span class="spacer"></span>
-  <select id="theme" aria-label="主题"><option value="light">浅色</option><option value="dark">深色</option><option value="warm">暖色</option></select>
+  <div class="gah-slot" data-slot="header"></div>
 </header>
 <nav id="sessions" class="toolbar" aria-label="会话管理" hidden>
   <select id="session-select" aria-label="当前会话"></select>
@@ -184,10 +183,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 </footer>
 <script>
 const $=id=>document.getElementById(id);
-const thread=$('thread'),scroll=$('scroll'),input=$('input'),send=$('send'),stop=$('stop'),theme=$('theme');
+const thread=$('thread'),scroll=$('scroll'),input=$('input'),send=$('send'),stop=$('stop');
 let state={running:false,messages:[]};
-theme.value=document.documentElement.dataset.theme;
-theme.onchange=()=>{document.documentElement.dataset.theme=theme.value;try{localStorage.setItem('gah-theme',theme.value)}catch(e){}};
 const STATUS={aborted:'已停止',error:'出错'};
 function nearBottom(){return scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
@@ -430,11 +427,71 @@ function typeTick(now){typer.raf=0;const t=typer.t,b=typer.el;
   else{typer.ts=0;if(last()&&last().status!=='running')b.classList.remove('cursor')}}
 let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>{pending=0;render()})}
 function last(){return state.messages[state.messages.length-1]}
+/* ---- web plugin runtime: plugins call GAH.define(name, api => cleanup?) from their client.js ---- */
+const GAH=(()=>{
+  const defs={},live={},hostSubs=new Set();let manifest=[];
+  const by=name=>manifest.find(x=>x.name===name);
+  /* h('button',{class:'x',onclick:fn,dataset:{k:1}},'text',childNode,[more]) -> element; null/false children skipped */
+  function h(tag,props,...kids){const e=document.createElement(tag);
+    for(const [k,v] of Object.entries(props||{})){if(v==null||v===false)continue;
+      if(k==='class')e.className=v;else if(k==='style'&&typeof v==='object')Object.assign(e.style,v);
+      else if(k==='dataset')Object.assign(e.dataset,v);else if(k.startsWith('on')&&typeof v==='function')e.addEventListener(k.slice(2),v);
+      else if(k in e&&typeof v!=='string')e[k]=v;else e.setAttribute(k,v===true?'':v)}
+    (function add(xs){for(const c of xs){if(c==null||c===false)continue;if(Array.isArray(c))add(c);else e.append(c instanceof Node?c:String(c))}})(kids);
+    return e}
+  function report(name,err){console.error('[gah plugin '+name+']',err);notice('\u63d2\u4ef6 '+name+' \u51fa\u9519\uff1a'+(err&&err.message||err))}
+  async function req(name,method,path,body){
+    const opt={method,headers:{}};if(method==='POST'){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body||{})}
+    const r=await fetch('/api/p/'+name+'/'+String(path||'').replace(/^\/+/,''),opt);let d=null;try{d=await r.json()}catch(e){}
+    if(!r.ok)throw new Error((d&&d.error)||('HTTP '+r.status));return d}
+  function start(name){
+    const m=by(name);if(!m||live[name]||!defs[name])return;
+    const cleanups=[],subs={};
+    const api={name,
+      slot(slotName,node){const s=document.querySelector('.gah-slot[data-slot="'+slotName+'"]');if(!s)throw new Error('unknown slot: '+slotName);
+        node.dataset.gahPlugin=name;s.appendChild(node);cleanups.push(()=>node.remove());return node},
+      get:path=>req(name,'GET',path),post:(path,body)=>req(name,'POST',path,body),
+      on(kind,fn){(subs[kind]=subs[kind]||[]).push(fn)},
+      onHost(type,fn){const h={type,fn};hostSubs.add(h);cleanups.push(()=>hostSubs.delete(h))},
+      state:()=>state,notice,el,h,cleanup(fn){cleanups.push(fn)},
+      listen(target,type,fn,opt){target.addEventListener(type,fn,opt);cleanups.push(()=>target.removeEventListener(type,fn,opt))},
+      every(ms,fn){const t=setInterval(()=>{try{fn()}catch(e){report(name,e)}},ms);cleanups.push(()=>clearInterval(t))},
+      host:{post,get:async p=>{const r=await fetch(p);const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}}};
+    live[name]={cleanups,subs};
+    try{const ret=defs[name](api);if(typeof ret==='function')cleanups.push(ret)}catch(e){report(name,e);stop(name)}
+  }
+  function stop(name){
+    const p=live[name];if(!p)return;delete live[name];
+    for(const fn of p.cleanups.reverse()){try{fn()}catch(e){console.error('[gah plugin '+name+'] cleanup',e)}}
+  }
+  function unload(name){stop(name);delete defs[name];
+    document.querySelectorAll('[data-gah-plugin="'+name+'"]').forEach(n=>{if(n.tagName==='LINK'||n.tagName==='SCRIPT')n.remove()})}
+  function addTag(name,tag,attr,url){
+    if(document.querySelector(tag+'[data-gah-plugin="'+name+'"]['+attr+'="'+url+'"]'))return null;
+    const n=document.createElement(tag);n.dataset.gahPlugin=name;if(tag==='link')n.rel='stylesheet';n[attr]=url;document.head.appendChild(n);return n}
+  function sync(list){
+    const prev=manifest;manifest=Array.isArray(list)?list:[];
+    for(const old of prev){const now=by(old.name);if(!now||now.rev!==old.rev)unload(old.name)}
+    for(const m of manifest){
+      if(m.style)addTag(m.name,'link','href',m.style);
+      if(m.head)addTag(m.name,'script','src',m.head);
+      if(m.script){if(defs[m.name])start(m.name);else{const n=addTag(m.name,'script','src',m.script);if(n)n.onerror=()=>report(m.name,new Error('\u811a\u672c\u52a0\u8f7d\u5931\u8d25'))}}
+    }
+  }
+  function define(name,setup){if(typeof setup!=='function')return report(name,new Error('define needs a function'));
+    if(!by(name))return;defs[name]=setup;start(name)}
+  function dispatch(d){const p=live[d&&d.plugin];for(const fn of (p&&p.subs[d.kind])||[]){try{fn(d.data)}catch(e){report(d.plugin,e)}}}
+  function emitHost(type,data){for(const h of [...hostSubs]){if(h.type===type){try{h.fn(data)}catch(e){console.error('[gah] host listener',e)}}}}
+  return {define,sync,dispatch,emitHost,loaded:()=>Object.keys(live)};
+})();
+window.GAH=GAH;
 function connect(){
   const es=new EventSource('/api/events');
   es.onopen=()=>{$('conn').textContent='已连接';$('dot').classList.add('live')};
   es.onerror=()=>{$('conn').textContent='已断开，重连中…';$('dot').classList.remove('live')};
-  es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render()});
+  es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render();GAH.sync(state.web_plugins);GAH.emitHost('snapshot',state)});
+  es.addEventListener('web.plugins',e=>GAH.sync(JSON.parse(e.data)));
+  es.addEventListener('plugin',e=>GAH.dispatch(JSON.parse(e.data)));
   es.addEventListener('start',e=>{const d=JSON.parse(e.data);state.running=true;
     state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running'});render()});
   es.addEventListener('chunk',e=>{const m=last();if(!m||m.role!=='assistant')return;const stick=nearBottom();
@@ -448,7 +505,7 @@ function connect(){
     t[d.part]=(t[d.part]||'')+d.text;schedule()});
   es.addEventListener('usage',e=>{const m=last();if(!m||m.role!=='assistant')return;m.usage=JSON.parse(e.data);render()});
   es.addEventListener('done',e=>{const d=JSON.parse(e.data),m=last();state.running=false;
-    if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render()});
+    if(m&&m.role==='assistant'){m.status=d.status;if(d.error)m.error=d.error}render();GAH.emitHost('done',d)});
 }
 async function post(path,body){
   const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});

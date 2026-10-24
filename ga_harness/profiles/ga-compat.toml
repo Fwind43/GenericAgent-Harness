@@ -31,3 +31,7 @@ name = "session-store"
 
 [[plugins]]
 name = "model-store"
+
+# web page themes; an add-on for ui-web (dormant under other frontends)
+[[plugins]]
+name = "web-theme"

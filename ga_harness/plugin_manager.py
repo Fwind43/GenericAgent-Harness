@@ -24,6 +24,13 @@ def settings_path():
     return Path(os.environ.get("GAH_PLUGIN_CONFIG") or Path.home() / ".ga-harness" / "plugins.json").expanduser()
 
 
+def frontend_capabilities(manifests):
+    """Capabilities only a frontend provides (e.g. ``web.host``). Plugins that need one of these
+    are add-ons for that frontend: when another frontend is selected they stay dormant."""
+    return {cap for m in manifests.values() if "frontend" in m.provides
+            for cap in m.provides if cap != "frontend"}
+
+
 def protected(manifest):
     return manifest.name in PROTECTED or bool(set(manifest.provides) & {"agent", "frontend", "plugin.manager", "plugin.catalog"})
 
@@ -104,6 +111,7 @@ class PluginPreferences:
         return tree
 
     def issues(self, tree):
+        dormant = frontend_capabilities(self.manifests)
         enabled = {e["name"] for e in tree if not e["disabled"]}
         available = set(HOST_CAPABILITIES)
         ready = set()
@@ -119,6 +127,8 @@ class PluginPreferences:
         for name in sorted(enabled - ready):
             m = self.manifests.get(name)
             missing = [c for c in m.inject if not c.endswith("?") and c not in available] if m else ["manifest"]
+            if m and missing and set(missing) <= dormant:
+                continue    # add-on for a frontend that is not selected: dormant, not broken
             issues.append(f"{name}: missing {', '.join(missing)}")
         owners = {}
         for name in sorted(enabled):

@@ -10,12 +10,19 @@ if the config sets ``host``). One agent, one task at a time, any number of brows
   POST /api/run       {"task": "..."}  -> 202, or 409 while a task is running
   POST /api/abort     -> 202 (no-op when idle)
 
+Web plugins: ordinary plugins that inject ``web.host`` and call
+``host.register(name, script=, style=, head=, routes=)``. Their assets are served under
+``/web/<name>/`` and their routes under ``/api/p/<name>/<path>``; the page loads them at
+runtime (``GAH.define`` in the browser) and drops them again when they are withdrawn.
+
 Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true).
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
 import copy
+import html
 import json
 import queue
+import re
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +33,87 @@ MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
 EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
+               "style": "text/css; charset=utf-8"}
+ASSET_FILES = {"script": "client.js", "head": "head.js", "style": "client.css"}
+
+
+class WebHost:
+    """Registry of browser-side plugins (the ``web.host`` capability)."""
+
+    def __init__(self, frontend):
+        self.frontend = frontend
+        self.lock = threading.Lock()
+        self.items = {}
+        self.seq = 0
+
+    def register(self, name, *, script=None, style=None, head=None, routes=None, order=100):
+        if not isinstance(name, str) or not NAME_RE.match(name):
+            raise ValueError(f"invalid web plugin name: {name!r}")
+        assets = {}
+        for kind, path in (("script", script), ("style", style), ("head", head)):
+            if path is not None:
+                path = Path(path)
+                if not path.is_file():
+                    raise FileNotFoundError(f"{name}: {kind} asset not found: {path}")
+                assets[kind] = path
+        table = {}
+        for key, fn in (routes or {}).items():
+            method, sub = key
+            method = str(method).upper()
+            if method not in ("GET", "POST") or not callable(fn):
+                raise ValueError(f"{name}: invalid route {key!r}")
+            table[(method, str(sub).strip("/"))] = fn
+        with self.lock:
+            if name in self.items:
+                raise ValueError(f"web plugin already registered: {name}")
+            self.seq += 1
+            item = {"name": name, "assets": assets, "routes": table, "order": int(order), "rev": self.seq}
+            self.items[name] = item
+        self.frontend.web_plugins_changed()
+
+        def unregister():
+            with self.lock:
+                if self.items.get(name) is not item:
+                    return
+                del self.items[name]
+            self.frontend.web_plugins_changed()
+        return unregister
+
+    def emit(self, name, kind, data=None):
+        """Push ``{plugin, kind, data}`` to every page (``api.on(kind)`` in the browser)."""
+        self.frontend.broadcast("plugin", {"plugin": name, "kind": kind, "data": data})
+
+    def manifest(self):
+        with self.lock:
+            items = sorted(self.items.values(), key=lambda i: (i["order"], i["name"]))
+            return [{"name": i["name"], "rev": i["rev"],
+                     **{k: f"/web/{i['name']}/{ASSET_FILES[k]}?v={i['rev']}" for k in i["assets"]}}
+                    for i in items]
+
+    def asset(self, name, filename):
+        with self.lock:
+            item = self.items.get(name)
+        if item:
+            for kind, fname in ASSET_FILES.items():
+                if fname == filename and kind in item["assets"]:
+                    return item["assets"][kind], ASSET_TYPES[kind]
+        return None
+
+    def route(self, name, method, sub):
+        with self.lock:
+            item = self.items.get(name)
+        return item and item["routes"].get((method, sub.strip("/")))
+
+    def head_html(self):
+        out = []
+        for m in self.manifest():
+            if "style" in m:
+                out.append(f'<link rel="stylesheet" href="{html.escape(m["style"])}" data-gah-plugin="{m["name"]}">')
+            if "head" in m:
+                out.append(f'<script src="{html.escape(m["head"])}" data-gah-plugin="{m["name"]}"></script>')
+        return "\n".join(out)
 
 
 class WebFrontend:
@@ -50,6 +138,14 @@ class WebFrontend:
         self.url = None
         self.stopped = threading.Event()
         self._timeout = None
+        self.web = WebHost(self)
+
+    def broadcast(self, kind, data):
+        with self.lock:
+            self._broadcast(kind, data)
+
+    def web_plugins_changed(self):
+        self.broadcast("web.plugins", self.web.manifest())
 
     # ---- state + fan-out (callers hold self.lock) ----
     def _broadcast(self, kind, data):
@@ -65,7 +161,9 @@ class WebFrontend:
         if self.models:
             data["models"] = self.models.catalog()
         data["plugins_enabled"] = self.plugins is not None
-        return copy.deepcopy(data)
+        data = copy.deepcopy(data)
+        data["web_plugins"] = self.web.manifest()
+        return data
 
     def session_action(self, body):
         if not self.sessions:
@@ -350,6 +448,32 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _bytes(self, code, body, ctype):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _plugin_route(self, method, path, body):
+        name, _, sub = path[len("/api/p/"):].partition("/")
+        fn = self.frontend.web.route(name, method, sub)
+        if not fn:
+            return self._json(404, {"error": "not found"})
+        query = {}
+        if "?" in self.path:
+            from urllib.parse import parse_qsl
+            query = dict(parse_qsl(self.path.split("?", 1)[1]))
+        try:
+            result = fn({"method": method, "path": sub, "query": query, "body": body or {}})
+        except Exception as e:  # a broken plugin must not take the page down
+            self.frontend.log(f"[web] plugin {name} {method} /{sub} failed: {type(e).__name__}: {e}")
+            return self._json(500, {"error": f"plugin {name} failed: {type(e).__name__}: {e}"})
+        code, obj = result if isinstance(result, tuple) else (200, result)
+        self._json(code, obj)
+
     def _same_origin(self):
         # Browsers always send Origin on cross-site POSTs; reject anything not from this page.
         origin = self.headers.get("Origin")
@@ -358,13 +482,22 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            body = PAGE.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+            page = PAGE.read_text(encoding="utf-8")
+            body = page.replace("<!--gah:head-->", self.frontend.web.head_html()).encode("utf-8")
+            self._bytes(200, body, "text/html; charset=utf-8")
+        elif path.startswith("/web/"):
+            parts = path.split("/")
+            found = len(parts) == 4 and self.frontend.web.asset(parts[2], parts[3])
+            if not found:
+                return self._json(404, {"error": "not found"})
+            try:
+                self._bytes(200, found[0].read_bytes(), found[1])
+            except OSError:
+                self._json(404, {"error": "asset unavailable"})
+        elif path.startswith("/api/p/"):
+            self._plugin_route("GET", path, None)
+        elif path == "/api/web/plugins":
+            self._json(200, self.frontend.web.manifest())
         elif path == "/api/state":
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
@@ -395,6 +528,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "invalid json"})
         if not isinstance(body, dict):
             return self._json(400, {"error": "expected a JSON object"})
+        if path.startswith("/api/p/"):
+            return self._plugin_route("POST", path, body)
         if path == "/api/run":
             self._json(*self.frontend.submit(body.get("task")))
         elif path == "/api/sessions":
@@ -444,4 +579,5 @@ class _Handler(BaseHTTPRequestHandler):
 def apply(ctx, config):
     fe = WebFrontend(ctx, config or {})
     ctx.provide("frontend", fe)
+    ctx.provide("web.host", fe.web)
     ctx.scope.add(fe.stop)

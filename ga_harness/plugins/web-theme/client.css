@@ -1,0 +1,4 @@
+/* Palettes follow GenericAgent-Admin (light / dark / warm). */
+html[data-theme="light"]{--bg:#fff;--surface:#fff;--surface-muted:#f7f7f7;--border:#e5e5e5;--text:#0d0d0d;--muted:#6b6b6b;--accent:#373737;--on-accent:#fff;--code-bg:#f7f7f8;--danger:#c0392b;color-scheme:light}
+html[data-theme="dark"]{--bg:#0d0f11;--surface:#1b1e22;--surface-muted:#24282e;--border:rgba(255,255,255,.15);--text:#ececec;--muted:#a6abb2;--accent:#19c39c;--on-accent:#06251d;--code-bg:#20242a;--danger:#ff7b72;color-scheme:dark}
+html[data-theme="warm"]{--bg:#F4F0ED;--surface:#FCFAF8;--surface-muted:#EEE6E1;--border:#DED3CB;--text:#362F2B;--muted:#776A63;--accent:#995D4D;--on-accent:#fff;--code-bg:#EEE6E1;--danger:#a8322a;color-scheme:light}

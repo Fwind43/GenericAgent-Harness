@@ -1,0 +1,4 @@
+name = "web-theme"
+entry = "main:apply"
+description = "Web page themes (light / dark / warm) with a header picker; remembered per browser."
+inject = ["web.host"]

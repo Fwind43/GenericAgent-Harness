@@ -138,7 +138,10 @@ def main(argv=None) -> int:
     try:
         rt.ctx.provide("plugin.catalog", {"preferences": preferences, "tree": tree})
         mount(rt, tree, manifests)
-        bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"}
+        from .plugin_manager import frontend_capabilities
+        dormant = frontend_capabilities(manifests)
+        bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"
+               and not (v.get("missing") and set(v["missing"]) <= dormant)}
         if bad:
             print(f"[gah] plugins not active: {bad}", file=sys.stderr)
         frontend = rt.ctx.get("frontend")
