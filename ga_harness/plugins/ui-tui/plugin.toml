@@ -1,0 +1,5 @@
+name = "ui-tui"
+entry = "main:apply"
+description = "Interactive terminal frontend: multi-turn chat, Ctrl+C aborts the running task, /exit quits."
+inject = ["agent"]
+provides = ["frontend"]
