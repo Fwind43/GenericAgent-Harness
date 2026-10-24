@@ -1,0 +1,9 @@
+# gah run "task" --patch examples/patches/ga-tools-prompt.toml
+# Disable GA's browser tools and append a line to the system prompt -- no GA edits.
+[[patch]]
+after = "ga-core"
+insert = { name = "ga-tools", config = { disable = ["web_scan", "web_execute_js"] } }
+
+[[patch]]
+after = "ga-tools"
+insert = { name = "ga-prompt", config = { append = "[harness] If asked for the harness marker, answer GAH-OK." } }

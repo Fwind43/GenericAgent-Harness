@@ -1,0 +1,5 @@
+name = "ga-prompt"
+entry = "main:apply"
+description = "Make GA's system prompt a waterfall (ga.system_prompt): prepend/append/replace without editing GA."
+inject = ["ga.agent"]
+provides = ["ga.prompt"]

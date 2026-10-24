@@ -1,0 +1,5 @@
+name = "ga-tools"
+entry = "main:apply"
+description = "Add, replace or disable GA tools (schema + do_<name> handler) without editing GA."
+inject = ["ga.agent"]
+provides = ["ga.tools"]
