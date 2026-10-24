@@ -17,6 +17,10 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
   `~/.ga-harness/llm.toml|json` or inline profile keys; `${ENV}` refs for secrets; `__file__` points at
   the config file so GA's mtime hot-reload keeps working. No source -> finder not installed -> GA's own mykey.py.
   `gah llm show` (masked) / `gah llm migrate --from mykey.py --out llm.toml` (user runs it; no clobber).
+- ga-tools / ga-prompt: GA tools & system prompt as plugins without editing GA. ga-tools wraps
+  `agentmain.load_tool_schema` (re-applied on every reload) to drop/replace schemas, hangs `do_<name>` on
+  `ga.GenericAgentHandler` (disabled tools get a refusal StepOutcome), provides `ga.tools`; ga-prompt wraps
+  `agentmain.get_system_prompt` (append/prepend/replace_file), provides `ga.prompt`. Both restore on dispose.
 - tool-timer: first feature plugin layered purely by patch (`examples/patches/tool-timer.toml`);
   pairs tool_before/after by `id(args)`, emits `tool.timed`, provides `tool.timer.stats()`; ignores `no_tool`.
 
@@ -40,10 +44,13 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - launcher: `gah.cmd run "3+4" --ga-root E:/Work/GenericAgent --patch examples/patches/tool-timer.toml`
   from a clean env (no PYTHONPATH/GA_ROOT) re-exec'd into GA's venv, answer "7", exit 0; `gah.cmd tree` ok.
 
+- ga-tools/ga-prompt: `--patch examples/patches/ga-tools-prompt.toml` real run: model reported web_scan
+  unavailable (schema removed) and answered the appended marker `GAH-OK`, exit 0 (27 tests).
+
 ## Usage (current)
 - `gah.cmd run "task"` - ga_root from `--ga-root` > `$GA_ROOT` > `~/.ga-harness/config.toml` (`ga_root = "E:/Work/GenericAgent"`).
 - `gah.cmd llm migrate E:/Work/GenericAgent/mykey.py [--out F] [--force]` (positional path, default out ~/.ga-harness/llm.toml).
 
 ## Next
 1. User migrates mykey.py -> ~/.ga-harness/llm.toml and confirms a real run without mykey.
-2. Pick next plugin (e.g. split GA prompt/tools into harness-owned plugins, or session recorder).
+2. Pick next plugin (e.g. a harness-owned custom tool via `ga.tools.register`, or session recorder).
