@@ -125,3 +125,9 @@ footer .hint{max-width:var(--col-w);margin-top:8px;font-size:11px}
 footer{position:relative}
 footer::before{content:"";position:absolute;left:0;right:0;top:-24px;height:24px;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--bg))}
 footer .hint{padding-bottom:2px}
+/* Composer bar like Admin: tools left, model picker right next to send/stop. */
+.composer-row{align-items:center;gap:6px;min-height:34px}
+.composer-row>.spacer{order:-1}
+.composer-row .gah-models select{height:34px;border:1px solid rgba(0,0,0,.11);border-radius:999px;background-color:transparent;font-weight:600;padding:0 28px 0 12px}
+.composer-row .gah-models select:hover:not(:disabled){background-color:var(--surface-muted)}
+.composer-row #send,.composer-row #stop{height:30px;border-radius:9px}
