@@ -20,10 +20,10 @@
 .status.error{color:var(--danger)}
 .cursor::after{content:"";display:inline-block;width:6px;height:15px;vertical-align:-2px;margin-left:3px;background:var(--muted);animation:blink 1s steps(1) infinite}
 .working{font-size:13px;color:var(--muted)}
-/* Trailing disclosure chevrons. No connector lines or number badges. */
+/* Leading tool chevrons, trailing step/process chevrons; right when collapsed. */
 details>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;min-width:0;user-select:none}
 details>summary::-webkit-details-marker{display:none}
-.chev{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(90deg)}
+.chev{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(-90deg)}
 details[open]>summary>.chev{transform:none}
 .steps{margin:0 0 20px;color:var(--muted)}
 .steps>summary{padding:5px 0;font-size:12px;min-height:30px}
@@ -40,13 +40,13 @@ details[open]>summary>.chev{transform:none}
 .step .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .step .cnt{color:var(--muted);font-size:11px;flex:none}
 .step .tok{color:var(--muted);font-size:11px;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}
-.step-body{padding:3px 0 12px;min-width:0}
+.step-body{padding:3px 0 12px 20px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
 /* Admin-style receipts: plain action / tool / target rows, not nested cards. */
 .tool{border:0;border-radius:0;background:transparent;margin:2px 0;min-width:0;color:var(--text)}
 .tool>summary{padding:6px 0;font-size:13px;line-height:20px;min-height:34px;gap:9px;border-radius:4px}
-.tool>summary:hover{background:var(--surface-muted)}
+.tool>summary:hover{background:transparent}
 .tool>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tool .tkind{flex:none;color:var(--muted);font-weight:400}
 .tool .tname{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:400;max-width:40%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
@@ -56,7 +56,7 @@ details[open]>summary>.chev{transform:none}
 .tool .tst.run{color:var(--accent)}
 .tool>summary .chev{opacity:.65}
 .tool>summary:hover .chev,.tool[open]>summary .chev{opacity:1}
-.tool-body{border:0;padding:2px 0 10px;min-width:0}
+.tool-body{border:0;border-left:1px solid var(--border);margin-left:6px;padding:2px 0 10px 15px;min-width:0}
 .tool-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin:0 0 8px}
 .tool-body .lbl{font-size:11px;color:var(--muted);margin:4px 0}
 .tool-body pre{margin:0 0 7px;background:var(--code-bg);border-radius:4px;padding:8px 10px;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
@@ -100,9 +100,10 @@ details[open]>summary>.chev{transform:none}
   .meta{margin-bottom:10px;font-size:11px}
   .steps{margin-bottom:16px}
   .step>summary{gap:7px}.step .cnt,.step .tok{font-size:10px}
+  .step-body{padding-left:16px}
   .tool>summary{padding:6px 0;gap:6px}
   .tool .tname{max-width:48%}
-  .tool-body{padding:6px 0 8px}
+  .tool-body{padding:6px 0 8px 12px}
   .message-actions{align-items:flex-start;gap:5px}
   .message-actions .usage{font-size:10px;line-height:18px;padding-top:4px}
   .md-code pre{font-size:12px;padding:10px 12px}

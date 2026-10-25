@@ -178,9 +178,9 @@ function renderTool(t,key){
   const elapsed=state!=='run'&&seconds!=null&&Number.isFinite(seconds)&&seconds>=0?' \u00b7 '+seconds.toFixed(1)+'s':'';
   const name=el('span','tname',receipt.tool);name.title=t.name||receipt.tool;
   const target=el('span','targ',receipt.target);target.title=receipt.detail;
-  s.append(el('span','tkind',receipt.kind),name);
+  s.append(chev(),el('span','tkind',receipt.kind),name);
   if(state!=='ok')s.append(el('span','tst '+state,status));
-  s.append(target,chev());d.append(s);
+  s.append(target);d.append(s);
   s.setAttribute('aria-label',[receipt.kind,t.name||receipt.tool,receipt.detail,status+elapsed].filter(Boolean).join(' \u00b7 '));
   const b=el('div','tool-body');b.append(el('div','tool-meta '+state,status+elapsed));
   if(t.args!=null){b.append(el('div','lbl',T('\u53c2\u6570','Arguments')),el('pre',null,fmt(t.args)))}

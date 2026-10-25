@@ -121,7 +121,7 @@ def assert_layout(page):
 
 @pytest.mark.parametrize("width", [1280, 390])
 @pytest.mark.parametrize("running", [False, True])
-def test_disclosure_chevrons_trail_content(output_app, browser, width, running):
+def test_disclosure_chevrons_position(output_app, browser, width, running):
     fe, _, base = output_app
     fe.messages = seeded_messages()
     if running:
@@ -134,13 +134,21 @@ def test_disclosure_chevrons_trail_content(output_app, browser, width, running):
     page.wait_for_selector(".steps > summary")
     for selector in (".steps", ".step", ".tool"):
         summary = page.locator(selector + " > summary")
-        assert summary.evaluate("""s => {
+        assert summary.evaluate("""(s, selector) => {
             const arrow = s.querySelector('.chev'), r = arrow.getBoundingClientRect();
             const content = [...s.children].filter(n => n !== arrow);
-            const edge = s.getBoundingClientRect().right - parseFloat(getComputedStyle(s).paddingRight);
-            return s.lastElementChild === arrow && Math.abs(r.right - edge) < 1
-                && content.every(n => n.getBoundingClientRect().right <= r.left);
-        }""")
+            const box = s.getBoundingClientRect();
+            const style = getComputedStyle(s);
+            const trailing = selector !== '.tool';
+            const edge = trailing ? box.right - parseFloat(style.paddingRight)
+                                  : box.left + parseFloat(style.paddingLeft);
+            return (trailing ? s.lastElementChild === arrow
+                              && Math.abs(r.right - edge) < 1
+                              && content.every(n => n.getBoundingClientRect().right <= r.left)
+                         : s.firstElementChild === arrow
+                              && Math.abs(r.left - edge) < 1
+                              && content.every(n => n.getBoundingClientRect().left >= r.right));
+        }""", selector)
         was_open = page.locator(selector).evaluate("d => d.open")
         summary.press("Enter")
         assert page.locator(selector).evaluate("d => d.open") is not was_open
@@ -201,11 +209,12 @@ def test_admin_style_tool_receipts(output_app, browser, width, locale):
         assert rows.evaluate_all("""nodes => nodes.every(s => {
             const c = s.querySelector('.chev'), r = c.getBoundingClientRect();
             const style = getComputedStyle(s.parentElement);
-            return s.lastElementChild === c && style.borderTopWidth === '0px'
+            const box = s.getBoundingClientRect();
+            return s.firstElementChild === c && Math.abs(box.left - r.left) < 1
+                && style.borderTopWidth === '0px'
                 && style.backgroundColor === 'rgba(0, 0, 0, 0)'
                 && s.getBoundingClientRect().height <= 36
-                && Math.abs(s.getBoundingClientRect().right - r.right) < 1
-                && [...s.children].filter(n => n !== c).every(n => n.getBoundingClientRect().right <= r.left);
+                && [...s.children].filter(n => n !== c).every(n => n.getBoundingClientRect().left >= r.right);
         })""")
         page.evaluate("document.getElementById('scroll').scrollTop=0")
         shot(page, f"{width}-{locale}-{theme}-receipts")
