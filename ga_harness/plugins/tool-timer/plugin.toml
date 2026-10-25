@@ -4,3 +4,9 @@ description = "Time every GA tool call via ga.tool_before/after; emits tool.time
 description_zh = "通过 ga.tool_before/after 为每次 GA 工具调用计时；发出 tool.timed 事件并累计各工具总耗时。"
 inject = ["ga.hooks"]
 provides = ["tool.timer"]
+
+[settings.print]
+type = "boolean"
+label = "Print each tool's duration to stderr"
+label_zh = "在 stderr 打印每次工具耗时"
+default = true

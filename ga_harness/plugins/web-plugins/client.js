@@ -75,7 +75,7 @@ GAH.define('web-plugins', api => {
     closeBtn.disabled = working;
     enabled.disabled = saveBtn.disabled = locked;
     resetBtn.disabled = locked || !(p && p.overridden);
-    fields.querySelectorAll('input').forEach(x => { x.disabled = locked; });
+    fields.querySelectorAll('[data-plugin-field]').forEach(x => { x.disabled = locked; });
     note.textContent = running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\uff1b\u7ed3\u675f\u540e\u53ef\u4fdd\u5b58\u3002','A task is running; view only. You can save after it finishes.')
       : p && p.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002','Core and frontend plugins are protected; change them in the startup config.')
       : T('\u4ec5\u663e\u793a\u63d2\u4ef6\u58f0\u660e\u7684\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002','Only public settings declared by the plugin are shown; manage keys in Models.');
@@ -115,7 +115,10 @@ GAH.define('web-plugins', api => {
     warning.hidden = !warning.textContent;
     enabled.checked = !!(p && p.enabled);
     Object.entries((p && p.fields) || {}).forEach(([key, spec]) => {
-      const bool = spec.type === 'boolean', input = h('input', { type: bool ? 'checkbox' : spec.type === 'integer' ? 'number' : 'text' });
+      const bool = spec.type === 'boolean', choice = spec.type === 'choice';
+      const input = choice ? h('select', null, ...(spec.options || []).map(o => h('option', { value: o.value }, (zh && o.label_zh) || o.label || o.value)))
+        : spec.type === 'string' && spec.multiline ? h('textarea', { rows: 4 })
+        : h('input', { type: bool ? 'checkbox' : spec.type === 'integer' ? 'number' : 'text' });
       input.dataset.pluginField = key;
       let label;
       if (bool) { input.checked = !!p.config[key]; label = h('label', { class: 'plugin-toggle' }, input, h('span', null, labelOf(spec) || key)); }
@@ -158,7 +161,7 @@ GAH.define('web-plugins', api => {
     const body = { action, name: p.name, revision: cfg.revision };
     if (action === 'save') {
       body.enabled = enabled.checked; body.config = {};
-      fields.querySelectorAll('input').forEach(f => {
+      fields.querySelectorAll('[data-plugin-field]').forEach(f => {
         const key = f.dataset.pluginField, kind = p.fields[key].type;
         if (kind === 'boolean') body.config[key] = f.checked;
         else if (f.value !== '' || kind === 'string') body.config[key] = kind === 'integer' ? Number(f.value) : f.value;

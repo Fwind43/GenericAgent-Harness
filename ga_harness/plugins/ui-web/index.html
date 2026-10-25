@@ -99,9 +99,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .model-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
 .model-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:13px}
 .model-field.wide{grid-column:1/-1}
-.model-field input,.model-field select{width:100%;min-width:0;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--text)}
-.model-field input:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
-.model-field input:disabled{opacity:.65}.model-field small,.model-help{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.model-field input,.model-field select,.model-field textarea{width:100%;min-width:0;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--text)}
+.model-field textarea{flex:none;resize:vertical;min-height:72px;max-height:40vh;outline:0}
+.model-field input:focus-visible,.model-field select:focus-visible,.model-field textarea:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+.model-field input:disabled,.model-field select:disabled,.model-field textarea:disabled{opacity:.65}.model-field small,.model-help{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .model-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .secondary:hover:not(:disabled){background:var(--border)}button:disabled{cursor:default;opacity:.5}
 @media(max-width:600px){.model-grid{grid-template-columns:1fr}.dialog-head{padding:12px 16px}.dialog-content{padding:12px 16px 16px}}

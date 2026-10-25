@@ -18,6 +18,10 @@ def make_manager(tmp_path):
     ms = discover([PLUGINS])
     ms["demo"] = Manifest("demo", "main:apply", tmp_path, inject=["ga.hooks"],
         settings={"limit": {"type": "integer", "min": 1, "max": 100, "default": 10},
+                  "mode": {"type": "choice", "default": "fast", "label": "Mode", "label_zh": "\u6a21\u5f0f",
+                           "options": [{"value": "fast", "label": "Fast", "label_zh": "\u5feb\u901f"},
+                                       {"value": "safe", "label": "Safe", "label_zh": "\u7a33\u59a5"}]},
+                  "note": {"type": "string", "multiline": True, "default": ""},
                   "secret": {"type": "string", "secret": True, "default": "DO-NOT-EXPOSE"}})
     tree = [entry(n) for n in ["plugin-manager", "llm-config", "ga-hooks", "ga-core", "ui-web"]]
     tree.insert(-1, entry("demo", {"limit": 10, "secret": "DO-NOT-EXPOSE"}))
@@ -48,7 +52,7 @@ def test_catalog_is_safe_and_inspects_without_imports(tmp_path):
     try:
         c = m.catalog()
         assert "DO-NOT-EXPOSE" not in json.dumps(c)
-        assert item(c)["config"] == {"limit": 10}
+        assert item(c)["config"] == {"limit": 10, "mode": "fast", "note": ""}
         assert item(c, "ga-core")["protected"]
         assert item(c, "ui-web")["protected"]
         assert item(c, "tool-grep")["missing"] == ["ga.tools"]
@@ -171,3 +175,33 @@ def test_bundled_plugins_ship_chinese_descriptions(tmp_path):
         assert item(m.catalog())["description_zh"] == ""
     finally:
         rt.dispose()
+
+
+def test_choice_field_options_and_validation():
+    from ga_harness.plugin_manager import public_fields, validate_values
+    m = Manifest("c", "main:apply", Path("."), settings={
+        "mode": {"type": "choice", "default": "a",
+                 "options": ["a", {"value": "b", "label": "Bee", "label_zh": "\u871c\u8702"}]},
+        "bad": {"type": "choice", "options": ["x", "x"]},
+        "none": {"type": "choice"}})
+    fields = public_fields(m)
+    assert set(fields) == {"mode"}
+    assert fields["mode"]["options"] == [{"value": "a", "label": "a", "label_zh": ""},
+                                         {"value": "b", "label": "Bee", "label_zh": "\u871c\u8702"}]
+    assert validate_values(m, {"mode": "b"}) == {"mode": "b"}
+    for bad in [{"mode": "c"}, {"mode": 1}, {"bad": "x"}]:
+        with pytest.raises(ValueError):
+            validate_values(m, bad)
+
+
+def test_bundled_plugin_settings_are_editable():
+    from ga_harness.plugin_manager import public_fields
+    ms = discover([PLUGINS])
+    expect = {"tool-grep": {"root", "max_results", "case", "max_file_kb", "skip_dirs"}, "tool-timer": {"print"},
+              "ga-stdout": {"passthrough", "file"}, "ga-prompt": {"prepend", "append", "replace_file"},
+              "ga-events": {"max_data"}}
+    for name, keys in expect.items():
+        fields = public_fields(ms[name])
+        assert set(fields) == keys, name
+        for spec in fields.values():
+            assert spec.get("label_zh") and "default" in spec, name

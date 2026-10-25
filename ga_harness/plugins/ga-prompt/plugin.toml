@@ -4,3 +4,24 @@ description = "Make GA's system prompt a waterfall (ga.system_prompt): prepend/a
 description_zh = "把 GA 的系统提示词变成瀑布流（ga.system_prompt）：无需改 GA 即可前置、追加或替换。"
 inject = ["ga.agent"]
 provides = ["ga.prompt"]
+
+[settings.prepend]
+type = "string"
+multiline = true
+label = "Text before the system prompt"
+label_zh = "系统提示词前置文本"
+default = ""
+
+[settings.append]
+type = "string"
+multiline = true
+label = "Text after the system prompt"
+label_zh = "系统提示词追加文本"
+default = ""
+
+[settings.replace_file]
+type = "string"
+label = "Replace the base prompt with this file (blank: GA's own)"
+label_zh = "用此文件替换基础提示词（留空则用 GA 自带）"
+default = ""
+max_length = 1024

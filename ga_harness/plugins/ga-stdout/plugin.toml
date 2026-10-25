@@ -4,3 +4,16 @@ description = "Capture everything GA prints to stdout/stderr ([Info]/[Debug]/cod
 description_zh = "捕获 GA 打印到 stdout/stderr 的全部内容（[Info]/[Debug]/代码运行输出），作为 `agent.log` 事件；前端写入 `console` 能力。"
 inject = []
 provides = ["console"]
+
+[settings.passthrough]
+type = "boolean"
+label = "Also print captured output to the real console"
+label_zh = "同时把捕获的输出打印到真实控制台"
+default = false
+
+[settings.file]
+type = "string"
+label = "Also append output to this file (blank: off)"
+label_zh = "同时追加写入此文件（留空则不写）"
+default = ""
+max_length = 1024

@@ -35,10 +35,31 @@ def protected(manifest):
     return manifest.name in PROTECTED or bool(set(manifest.provides) & {"agent", "frontend", "plugin.manager", "plugin.catalog"})
 
 
+def choice_options(spec):
+    """Normalise ``options`` of a choice field to ``[{value, label, label_zh}]``; None if malformed."""
+    raw = spec.get("options")
+    if not isinstance(raw, list) or not raw:
+        return None
+    out = []
+    for o in raw:
+        o = {"value": o} if isinstance(o, str) else o
+        if not isinstance(o, dict) or not isinstance(o.get("value"), str):
+            return None
+        out.append({"value": o["value"], "label": str(o.get("label") or o["value"]),
+                    "label_zh": str(o.get("label_zh") or "")})
+    return out if len({o["value"] for o in out}) == len(out) else None
+
+
 def public_fields(manifest):
-    return {k: v for k, v in manifest.settings.items()
-            if isinstance(v, dict) and v.get("type") in {"string", "integer", "boolean"}
-            and not v.get("secret") and not SENSITIVE.search(k)}
+    fields = {}
+    for k, v in manifest.settings.items():
+        if not isinstance(v, dict) or v.get("secret") or SENSITIVE.search(k):
+            continue
+        if v.get("type") in {"string", "integer", "boolean"}:
+            fields[k] = v
+        elif v.get("type") == "choice" and (options := choice_options(v)):
+            fields[k] = {**v, "options": options}
+    return fields
 
 
 def validate_values(manifest, values):
@@ -52,7 +73,8 @@ def validate_values(manifest, values):
         kind = spec["type"]
         valid = ((kind == "string" and isinstance(value, str) and len(value) <= min(spec.get("max_length", 8000), 8000))
                  or (kind == "integer" and type(value) is int and spec.get("min", -1000000) <= value <= spec.get("max", 1000000))
-                 or (kind == "boolean" and type(value) is bool))
+                 or (kind == "boolean" and type(value) is bool)
+                 or (kind == "choice" and isinstance(value, str) and value in {o["value"] for o in spec["options"]}))
         if not valid:
             raise ValueError(f"invalid value for {key}")
     return copy.deepcopy(values)

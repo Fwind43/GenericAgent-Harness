@@ -87,11 +87,19 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     pw.expect(limit).to_have_value("10")
     assert detail.locator('[data-plugin-field="secret"]').count() == 0
     shot(page, "plugins_detail_1280")
+    mode = detail.locator('select[data-plugin-field="mode"]')
+    pw.expect(mode).to_have_value("fast")
+    assert mode.locator("option").all_inner_texts() == ["\u5feb\u901f", "\u7a33\u59a5"]
+    note = detail.locator('textarea[data-plugin-field="note"]')
+    pw.expect(note).to_be_visible()
     limit.fill("42")
+    mode.select_option("safe")
+    note.fill("line1\nline2")
     detail.locator('button[type="submit"]').click()
     pw.expect(detail.locator(".plugin-tag[data-tag='pending']").first).to_be_visible()
     saved = next(i for i in manager.catalog()["items"] if i["name"] == "demo")
     assert saved["config"]["limit"] == 42 and saved["restart_required"] and saved["overridden"]
+    assert saved["config"]["mode"] == "safe" and saved["config"]["note"] == "line1\nline2"
     assert "DO-NOT-EXPOSE" not in json.dumps(manager.catalog())
 
     detail.locator(".plugin-reset").click()
@@ -104,6 +112,8 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     pw.expect(card(dialog, "demo")).to_be_focused()
     card(dialog, "ga-core").click()
     pw.expect(detail.locator('button[type="submit"]')).to_be_disabled()
+    card_fields = detail.locator("[data-plugin-field]")
+    assert card_fields.evaluate_all("fs => fs.every(f => f.disabled)")
     detail.locator(".plugin-back").click()
     pw.expect(dialog.locator(".plugin-catalog")).to_be_visible()
     assert errors == []
