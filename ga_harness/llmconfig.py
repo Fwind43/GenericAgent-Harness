@@ -87,7 +87,36 @@ class Source:
     def load(self) -> dict:
         data = read_file(self.file) if self.file and self.file.is_file() else {}
         data.update(self.inline)
-        return {k: v for k, v in _expand(data).items() if not k.startswith("_")}
+        return {k: v for k, v in _expand(resolve_providers(data)).items() if not k.startswith("_")}
+
+
+PROVIDERS = "providers"
+_PROVIDER_META = ("name", "protocol")
+
+
+def resolve_providers(data: dict) -> dict:
+    """Flatten ``[providers.<id>]`` into GA's per-model mykey shape.
+
+    A model table with ``provider = "<id>"`` inherits that provider's fields
+    (``apibase``, ``apikey`` and any other connection options) unless it sets
+    them itself.  The ``providers`` table never reaches GA, so providers with
+    no models stay invisible to it.
+    """
+    providers = data.get(PROVIDERS, {})
+    if not isinstance(providers, dict) or any(not isinstance(v, dict) for v in providers.values()):
+        raise ConfigError(f"{PROVIDERS} must be a table of tables")
+    out = {}
+    for k, v in data.items():
+        if k == PROVIDERS:
+            continue
+        if isinstance(v, dict) and "provider" in v:
+            pid = v["provider"]
+            if not isinstance(pid, str) or pid not in providers:
+                raise ConfigError(f"{k}: unknown provider {pid!r}")
+            base = {x: y for x, y in providers[pid].items() if x not in _PROVIDER_META}
+            v = base | {x: y for x, y in v.items() if x != "provider"}
+        out[k] = v
+    return out
 
 
 class _Loader(importlib.abc.Loader):

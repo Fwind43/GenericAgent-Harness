@@ -10,3 +10,7 @@
 .gah-models[hidden],.gah-models select[hidden]{display:none}
 .gah-models select.gah-effort{max-width:120px}
 @media (max-width:560px){.gah-models{min-width:0;flex:0 1 auto;gap:4px}.gah-models select{min-width:0;padding:0 22px 0 8px}.gah-models select{font-size:12px}.gah-models select.gah-effort{width:auto;flex:none}.gah-models select:not(.gah-effort){max-width:130px}}
+/* provider / model sections in the config dialog */
+.gah-model-dialog .model-section{margin:18px 0 8px;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.gah-model-dialog .model-section:first-of-type{margin-top:4px}
+.gah-model-dialog .model-field[hidden]{display:none}
