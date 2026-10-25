@@ -1,4 +1,5 @@
 name = "ui-cli"
+category = "ui"
 entry = "main:apply"
 description = "One-shot frontend: run the task, stream agent.chunk to stdout, exit."
 description_zh = "一次性前端：运行任务，把 agent.chunk 流式输出到 stdout，然后退出。"

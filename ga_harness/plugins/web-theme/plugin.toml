@@ -1,4 +1,5 @@
 name = "web-theme"
+category = "ui"
 entry = "main:apply"
 description = "Web page themes (light / dark / warm) with a header picker; remembered per browser."
 description_zh = "网页主题（浅色 / 深色 / 暖色），页头可切换；按浏览器记住选择。"

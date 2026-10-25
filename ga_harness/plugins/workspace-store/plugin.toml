@@ -1,4 +1,5 @@
 name = "workspace-store"
+category = "service"
 entry = "main:apply"
 description = "Session-bound tool workspaces and lightweight project rules/notes."
 description_zh = "绑定到会话的工具工作区，以及轻量的项目规则/笔记。"

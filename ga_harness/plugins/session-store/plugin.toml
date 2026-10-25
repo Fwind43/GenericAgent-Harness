@@ -1,4 +1,5 @@
 name = "session-store"
+category = "service"
 entry = "main:apply"
 description = "Durable conversations and isolated GA memory snapshots."
 description_zh = "持久化的对话，以及相互隔离的 GA 记忆快照。"

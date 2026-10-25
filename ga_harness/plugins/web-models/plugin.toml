@@ -1,4 +1,5 @@
 name = "web-models"
+category = "ui"
 entry = "main:apply"
 description = "Web model picker and model config dialog for ui-web (uses /api/models/*)."
 description_zh = "ui-web 的模型选择器和模型配置对话框（使用 /api/models/*）。"

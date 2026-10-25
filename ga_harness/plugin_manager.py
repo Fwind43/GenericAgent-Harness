@@ -205,6 +205,7 @@ class PluginManager:
                 pending = target["disabled"] != current["disabled"] or target["config"] != current["config"]
                 items.append({"name": name, "description": m.description,
                               "description_zh": getattr(m, "description_zh", ""),
+                              "category": getattr(m, "category", "other"),
                               "state": h.state if h else "disabled",
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,

@@ -177,6 +177,29 @@ def test_bundled_plugins_ship_chinese_descriptions(tmp_path):
         rt.dispose()
 
 
+def test_plugin_categories(tmp_path):
+    bundled = discover([PLUGINS])
+    cats = {n: x.category for n, x in bundled.items()}
+    assert cats["ga-core"] == "core"
+    assert {cats[n] for n in ("ga-hooks", "ga-tools", "ga-prompt", "ga-stdout")} == {"extension"}
+    assert {cats[n] for n in ("ga-events", "ga-usage", "ga-timing")} == {"observe"}
+    assert all(c == "ui" for n, c in cats.items() if n.startswith(("ui-", "web-")))
+    assert all(c == "service" for n, c in cats.items() if n.endswith("-store") or n in ("llm-config", "plugin-manager"))
+    assert "other" not in cats.values()
+    d = tmp_path / "third"
+    for name, extra in (("no-cat", ""), ("bad-cat", 'category = "bogus"\n')):
+        (d / name).mkdir(parents=True)
+        (d / name / "plugin.toml").write_text(f'name = "{name}"\n{extra}', encoding="utf-8")
+    found = discover([d])
+    assert found["no-cat"].category == found["bad-cat"].category == "other"
+    rt, m = make_manager(tmp_path)
+    try:
+        assert item(m.catalog(), "ga-core")["category"] == "core"
+        assert item(m.catalog())["category"] == "other"
+    finally:
+        rt.dispose()
+
+
 def test_choice_field_options_and_validation():
     from ga_harness.plugin_manager import public_fields, validate_values
     m = Manifest("c", "main:apply", Path("."), settings={

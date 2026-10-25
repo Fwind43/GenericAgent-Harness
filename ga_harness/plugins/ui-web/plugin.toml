@@ -1,4 +1,5 @@
 name = "ui-web"
+category = "ui"
 entry = "main:apply"
 description = "Local web frontend (stdlib http.server + SSE on 127.0.0.1): multi-turn chat, stop button; hosts web plugins (web.host)."
 description_zh = "本地网页前端（标准库 http.server + SSE，监听 127.0.0.1）：多轮对话、停止按钮；承载网页插件（web.host）。"

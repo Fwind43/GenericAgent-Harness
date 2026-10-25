@@ -1,4 +1,5 @@
 name = "llm-config"
+category = "service"
 entry = "main:apply"
 description = "Feed GA its LLM configs from a harness TOML/JSON file or inline profile values instead of mykey.py."
 description_zh = "用 harness 的 TOML/JSON 文件或内联配置为 GA 提供 LLM 配置，替代 mykey.py。"

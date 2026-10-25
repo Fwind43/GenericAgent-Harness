@@ -1,4 +1,5 @@
 name = "ga-usage"
+category = "observe"
 entry = "main:apply"
 description = "Per-step and per-run token usage events (input/cache/output) read from GA's llmcore, without changing GA."
 description_zh = "从 GA 的 llmcore 读取每步和每次运行的 token 用量事件（输入/缓存/输出），不改动 GA。"

@@ -5,6 +5,10 @@ GAH.define('web-plugins', api => {
   const labelOf = spec => (zh && spec.label_zh) || spec.label;
   const STATES = { active: T('\u8fd0\u884c\u4e2d','Running'), pending: T('\u7b49\u5f85\u4f9d\u8d56','Waiting for dependencies'), disabled: T('\u672a\u52a0\u8f7d','Not loaded'), error: T('\u52a0\u8f7d\u5931\u8d25','Failed to load'), removed: T('\u5df2\u79fb\u9664','Removed') };
   const PENDING = T(' \u00b7 \u5f85\u91cd\u542f\u751f\u6548',' · applies after restart'), PROTECTED = T(' \u00b7 \u53d7\u4fdd\u62a4',' · protected');
+  const CATS = [['core', T('核心','Core'), T('核','C')], ['extension', T('GA 扩展','GA extensions'), T('扩','E')],
+    ['observe', T('观测记录','Observability'), T('观','O')], ['service', T('数据与服务','Data & services'), T('数','S')],
+    ['ui', T('界面','Interface'), T('界','U')], ['other', T('其他','Other'), T('其','?')]];
+  const catOf = p => CATS.find(c => c[0] === p.category) || CATS[CATS.length - 1];
   const FILTERS = [['all', T('\u5168\u90e8','All')], ['active', T('\u8fd0\u884c\u4e2d','Running')], ['off', T('\u672a\u52a0\u8f7d','Not loaded')], ['issue', T('\u9700\u5904\u7406','Needs attention')]];
   let cfg = null, editing = null, view = 'grid', filter = 'all', busy = false, running = false, working = false;
   /* ---- toolbar ---- */
@@ -18,7 +22,7 @@ GAH.define('web-plugins', api => {
   const search = h('input', { type: 'search', class: 'plugin-search', placeholder: T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e','Search plugin names or descriptions'), 'aria-label': T('\u641c\u7d22\u63d2\u4ef6','Search plugins'), oninput: () => renderCards() });
   const reload = h('button', { type: 'button', class: 'secondary', onclick: () => load() }, T('\u5237\u65b0','Refresh'));
   const tabs = h('div', { class: 'plugin-filters', role: 'tablist', 'aria-label': T('\u6309\u72b6\u6001\u7b5b\u9009','Filter by status') });
-  const cards = h('ul', { class: 'plugin-grid', 'aria-label': T('\u63d2\u4ef6\u5217\u8868','Plugin list') });
+  const cards = h('div', { class: 'plugin-groups', 'aria-label': T('\u63d2\u4ef6\u5217\u8868','Plugin list') });
   const empty = h('p', { class: 'plugin-empty', hidden: true });
   const catalogErr = h('p', { class: 'gah-error', role: 'status', hidden: true });
   const gridView = h('section', { class: 'plugin-catalog' },
@@ -88,16 +92,20 @@ GAH.define('web-plugins', api => {
   }
   function renderCards() {
     const q = search.value.trim().toLowerCase(), items = (cfg && cfg.items) || [];
-    const shown = items.filter(p => matches(p, filter) && (!q || (p.name + ' ' + (p.description || '') + ' ' + (p.description_zh || '')).toLowerCase().includes(q)));
-    cards.replaceChildren(...shown.map(p => h('li', null, h('button', { type: 'button', class: 'plugin-card', dataset: { plugin: p.name, state: p.state },
+    const shown = items.filter(p => matches(p, filter) && (!q || (p.name + ' ' + (p.description || '') + ' ' + (p.description_zh || '') + ' ' + catOf(p)[1]).toLowerCase().includes(q)));
+    const card = p => h('li', null, h('button', { type: 'button', class: 'plugin-card', dataset: { plugin: p.name, state: p.state },
         'aria-label': p.name + T('\uff0c',', ') + stateLabel(p), onclick: () => showDetail(p.name) },
       h('span', { class: 'plugin-card-head' },
-        h('span', { class: 'plugin-avatar', 'aria-hidden': 'true' }, p.name.slice(0, 1).toUpperCase()),
+        h('span', { class: 'plugin-avatar', 'aria-hidden': 'true', dataset: { category: catOf(p)[0] } }, catOf(p)[2]),
         h('span', { class: 'plugin-name', title: p.name }, p.name),
         h('span', { class: 'plugin-badge', dataset: { state: p.state } }, stateLabel(p))),
       h('span', { class: 'plugin-card-desc' }, descOf(p) || T('\u6682\u65e0\u8bf4\u660e','No description')),
       h('span', { class: 'plugin-card-foot' }, ...badges(p),
-        h('span', { class: 'plugin-card-meta' }, (p.provides && p.provides.length ? T('\u63d0\u4f9b ','Provides ') + p.provides.length + T(' \u9879\u80fd\u529b',' capabilities') : '')))))));
+        h('span', { class: 'plugin-card-meta' }, (p.provides && p.provides.length ? T('\u63d0\u4f9b ','Provides ') + p.provides.length + T(' \u9879\u80fd\u529b',' capabilities') : '')))));
+    cards.replaceChildren(...CATS.map(c => [c, shown.filter(p => catOf(p) === c)]).filter(([, ps]) => ps.length).map(([c, ps]) =>
+      h('section', { class: 'plugin-group', dataset: { category: c[0] } },
+        h('h3', { class: 'plugin-group-title' }, c[1], h('span', { class: 'plugin-count' }, String(ps.length))),
+        h('ul', { class: 'plugin-grid', 'aria-label': c[1] }, ...ps.map(card)))));
     empty.hidden = !!shown.length;
     empty.textContent = items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6','No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
     controls();
@@ -105,7 +113,7 @@ GAH.define('web-plugins', api => {
   function fill(name) {
     editing = name; const p = selected(); fields.replaceChildren();
     title.textContent = p ? p.name : '';
-    detailView.querySelector('.plugin-avatar').textContent = p ? p.name.slice(0, 1).toUpperCase() : '';
+    const av = detailView.querySelector('.plugin-avatar'); av.textContent = p ? catOf(p)[2] : ''; av.dataset.category = p ? catOf(p)[0] : '';
     status.textContent = p ? stateLabel(p) : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
     status.dataset.state = p ? p.state : '';
     tags.replaceChildren(...(p ? badges(p) : []));

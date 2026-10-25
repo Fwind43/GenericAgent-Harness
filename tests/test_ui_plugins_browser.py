@@ -55,7 +55,13 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     dialog = open_plugins(page, base)
     pw.expect(dialog.locator(".plugin-card")).to_have_count(len(names))
     # Cards sit side by side in a grid, not a single list column.
-    tops = dialog.locator(".plugin-card").evaluate_all("cs => cs.slice(0, 3).map(c => c.getBoundingClientRect().top)")
+    tops = dialog.locator('.plugin-group[data-category="ui"] .plugin-card').evaluate_all("cs => cs.slice(0, 3).map(c => c.getBoundingClientRect().top)")
+    # Cards are grouped by manifest category, in a fixed order; avatars carry the category.
+    cats = [i["category"] for i in manager.catalog()["items"]]
+    order = [c for c in ("core", "extension", "observe", "service", "ui", "other") if c in cats]
+    assert dialog.locator(".plugin-group").evaluate_all("gs => gs.map(g => g.dataset.category)") == order
+    pw.expect(card(dialog, "ga-core").locator(".plugin-avatar")).to_have_attribute("data-category", "core")
+    pw.expect(card(dialog, "ga-core").locator(".plugin-avatar")).to_have_text("核")
     assert len(set(round(t) for t in tops)) == 1
     assert no_overflow(dialog)
     pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["\u53d7\u4fdd\u62a4"])

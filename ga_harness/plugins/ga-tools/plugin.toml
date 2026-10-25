@@ -1,4 +1,5 @@
 name = "ga-tools"
+category = "extension"
 entry = "main:apply"
 description = "Add, replace or disable GA tools (schema + do_<name> handler) without editing GA."
 description_zh = "无需改 GA 即可新增、替换或禁用 GA 工具（schema + do_<name> 处理函数）。"

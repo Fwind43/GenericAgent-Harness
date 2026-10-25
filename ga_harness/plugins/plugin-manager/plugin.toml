@@ -1,4 +1,5 @@
 name = "plugin-manager"
+category = "service"
 entry = "main:apply"
 description = "Manage installed plugins and public settings; stage validated changes for the next launch."
 description_zh = "管理已安装插件及其公开设置；校验后的改动在下次启动时生效。"

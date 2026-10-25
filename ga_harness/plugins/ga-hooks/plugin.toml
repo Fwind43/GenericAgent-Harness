@@ -1,4 +1,5 @@
 name = "ga-hooks"
+category = "extension"
 entry = "main:apply"
 description = "Bridge GA plugins.hooks events (agent/turn/llm/tool before/after) onto the harness bus as ga.<event> waterfalls."
 description_zh = "把 GA plugins.hooks 事件（agent/turn/llm/tool 的前后）桥接到 harness 总线，作为 ga.<event> 瀑布流。"

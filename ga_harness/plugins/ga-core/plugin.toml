@@ -1,4 +1,5 @@
 name = "ga-core"
+category = "core"
 entry = "main:apply"
 description = "Host an unmodified GenericAgent (agentmain.GenericAgent) and expose it as the `agent` capability."
 description_zh = "承载未经修改的 GenericAgent（agentmain.GenericAgent），并以 `agent` 能力对外提供。"

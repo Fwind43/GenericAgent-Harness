@@ -1,4 +1,5 @@
 name = "ga-timing"
+category = "observe"
 entry = "main:apply"
 description = "Time every GA tool call via ga.tool_before/after; emits tool.timed and keeps per-tool totals."
 description_zh = "通过 ga.tool_before/after 为每次 GA 工具调用计时；发出 tool.timed 事件并累计各工具总耗时。"

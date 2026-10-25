@@ -1,4 +1,5 @@
 name = "ga-prompt"
+category = "extension"
 entry = "main:apply"
 description = "Make GA's system prompt a waterfall (ga.system_prompt): prepend/append/replace without editing GA."
 description_zh = "把 GA 的系统提示词变成瀑布流（ga.system_prompt）：无需改 GA 即可前置、追加或替换。"

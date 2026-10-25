@@ -15,6 +15,14 @@
 .gah-plugin-dialog .plugin-filter:hover{color:var(--text);background:var(--surface-muted)}
 .gah-plugin-dialog .plugin-filter[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
 .gah-plugin-dialog .plugin-count{font-variant-numeric:tabular-nums;opacity:.7}
+.gah-plugin-dialog .plugin-groups{display:flex;flex-direction:column;gap:18px}
+.gah-plugin-dialog .plugin-group-title{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.gah-plugin-dialog .plugin-avatar[data-category]{--cat:var(--muted);color:var(--cat);background:color-mix(in srgb,var(--cat) 12%,transparent);border-color:color-mix(in srgb,var(--cat) 28%,transparent)}
+.gah-plugin-dialog .plugin-avatar[data-category=core]{--cat:#c2410c}
+.gah-plugin-dialog .plugin-avatar[data-category=extension]{--cat:#2563eb}
+.gah-plugin-dialog .plugin-avatar[data-category=observe]{--cat:#0d9488}
+.gah-plugin-dialog .plugin-avatar[data-category=service]{--cat:#7c3aed}
+.gah-plugin-dialog .plugin-avatar[data-category=ui]{--cat:#be185d}
 .gah-plugin-dialog .plugin-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
 .gah-plugin-dialog .plugin-grid>li{display:flex;min-width:0}
 .gah-plugin-dialog .plugin-card{display:flex;flex-direction:column;gap:8px;width:100%;min-width:0;min-height:132px;padding:14px;text-align:left;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}

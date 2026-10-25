@@ -31,6 +31,8 @@ from typing import Any, Callable
 
 from .plugin import Plugin, Runtime
 
+CATEGORIES = ("core", "extension", "observe", "service", "ui", "other")
+
 
 @dataclass
 class Manifest:
@@ -41,6 +43,7 @@ class Manifest:
     provides: list[str] = field(default_factory=list)
     description: str = ""
     description_zh: str = ""
+    category: str = "other"
     settings: dict[str, dict] = field(default_factory=dict)
 
     def load_apply(self) -> Callable:
@@ -72,7 +75,8 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
             m = Manifest(name=data["name"], entry=data.get("entry", "main:apply"), path=mf.parent,
                          inject=list(data.get("inject", [])), provides=list(data.get("provides", [])),
                          description=data.get("description", ""),
-                         description_zh=data.get("description_zh", ""), settings=data.get("settings", {}))
+                         description_zh=data.get("description_zh", ""), settings=data.get("settings", {}),
+                         category=data.get("category") if data.get("category") in CATEGORIES else "other")
             found[m.name] = m  # later dirs override earlier ones
     return found
 

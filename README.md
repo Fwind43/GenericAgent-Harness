@@ -155,6 +155,7 @@ ga_harness/plugins/my-plugin/
 name = "my-plugin"
 entry = "main:apply"
 description = "一句话说明"
+category = "extension"   # 可选：core / extension / observe / service / ui，缺省或未知归 other
 inject = ["ga.hooks"]       # 依赖的能力
 provides = ["my.service"]   # 对外提供的能力
 ```
