@@ -27,9 +27,10 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
     page.on("pageerror", lambda e: errors.append(str(e)))
     try:
         page.goto(base)
-        box = page.locator(".gah-workspaces")
+        box = page.locator(".gah-sessions")
         pw.expect(box).to_be_visible()
-        pw.expect(box.locator(".gah-ws-row")).to_have_count(0)
+        pw.expect(box.locator(".gah-group.project")).to_have_count(0)
+        pw.expect(box.locator(".gah-group.workspace.current")).to_have_count(1)
         chip = page.locator(".gah-scope")
         pw.expect(chip).to_be_visible()
         pw.expect(chip.locator(".gah-scope-kind")).to_have_text("\u5de5\u4f5c\u533a")
@@ -47,14 +48,15 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         dialog.locator('[name="workspace"]').fill(str(tmp_path))
         dialog.locator('button[type="submit"]').click()
         pw.expect(dialog).not_to_be_visible()
-        pw.expect(box.locator(".gah-ws-row.current")).to_have_text("Alpha \u9879\u76ee")
+        pw.expect(box.locator(".gah-group.current .gah-group-name")).to_have_text("Alpha \u9879\u76ee")
+        pw.expect(box.locator(".gah-group.current .gah-sess-items")).to_be_visible()
         pw.expect(chip.locator(".gah-scope-name")).to_have_text("Alpha \u9879\u76ee")
         scope = _req(base + "api/state")[1]["scope"]
         project_id = scope["project_id"]
         assert scope["workspace"] == str(tmp_path.resolve())
         assert scope["project"]["memory"] == "Shared notes\n\u4e2d\u6587\u7b14\u8bb0"
         page.reload()
-        pw.expect(box.locator(".gah-ws-row.current")).to_have_count(1)
+        pw.expect(box.locator(".gah-group.project.current")).to_have_count(1)
         edit = chip.get_by_role("button", name="\u9879\u76ee\u89c4\u5219\u4e0e\u7b14\u8bb0", exact=True)
         edit.click()
         pw.expect(dialog.locator('[name="project_id"]')).to_have_value(project_id)
@@ -127,6 +129,48 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         assert _req(base + "api/abort", {})[0] == 202
         _wait_idle(base)
         pw.expect(create).to_be_enabled()
+        assert not errors, errors
+    finally:
+        page.close()
+
+
+def test_sidebar_groups_sessions_by_scope(workspace_app, browser, tmp_path):
+    _, _, _, base = workspace_app
+    url = base + "api/p/web-workspaces"
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    created = _req(url, {"action": "create", "name": "Alpha", "workspace": str(alpha)})
+    assert created[0] == 200, created
+    project_id = created[1]["scope"]["project_id"]
+    assert _req(url, {"action": "select"})[0] == 200
+    page = browser.new_page(viewport={"width": 1280, "height": 820})
+    page.set_default_timeout(6000)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    try:
+        page.goto(base)
+        box = page.locator(".gah-sessions")
+        current = box.locator(".gah-group.current")
+        project = box.locator(".gah-group.project")
+        pw.expect(current).to_have_count(1)
+        pw.expect(current).to_have_class(re.compile("workspace"))
+        pw.expect(current.locator(".gah-sess-items")).to_be_visible()
+        pw.expect(project.locator(".gah-group-name")).to_have_text("Alpha")
+        pw.expect(project.locator(".gah-sess-items")).to_be_hidden()
+        project.locator(".gah-group-add").click()
+        pw.expect(project).to_have_class(re.compile("current"))
+        pw.expect(project.locator(".gah-sess-items .gah-sess-row.current")).to_have_count(1)
+        state = _req(base + "api/state")[1]
+        assert state["scope"]["project_id"] == project_id
+        assert state["scope"]["workspace"] == str(alpha.resolve())
+        toggle = project.locator(".gah-group-toggle")
+        toggle.click()
+        pw.expect(project.locator(".gah-sess-items")).to_be_hidden()
+        pw.expect(toggle).to_have_attribute("aria-expanded", "false")
+        page.reload()
+        pw.expect(box.locator(".gah-group.project .gah-sess-items")).to_be_hidden()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+        screenshot(page, "sidebar-groups")
         assert not errors, errors
     finally:
         page.close()

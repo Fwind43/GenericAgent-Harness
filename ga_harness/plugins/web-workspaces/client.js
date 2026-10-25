@@ -7,11 +7,8 @@ GAH.define('web-workspaces', api => {
   const input = document.getElementById('input');
   const composer = document.getElementById('form');
 
-  // ---- sidebar: project list ----
-  const create = h('button', { type: 'button', class: 'gah-ws-add', onclick: () => open('create'), title: '新建项目', 'aria-label': '新建项目' }, '+');
-  const list = h('div', { class: 'gah-ws-list', role: 'list', 'aria-label': '项目列表' });
-  const box = h('section', { class: 'gah-workspaces', hidden: true },
-    h('div', { class: 'gah-ws-head' }, h('span', { class: 'gah-ws-label' }, '项目'), create), list);
+  // The sidebar project/workspace groups live in web-sessions; it asks for dialogs via this event.
+  api.listen(window, 'gah:workspace-dialog', e => open((e.detail && e.detail.action) || 'create'));
 
   // ---- composer chip ----
   const kind = h('span', { class: 'gah-scope-kind' });
@@ -49,15 +46,8 @@ GAH.define('web-workspaces', api => {
   const scope = () => (api.state() || {}).scope;
   function render(state) {
     const s = state && state.scope;
-    box.hidden = chip.hidden = !s;
+    chip.hidden = !s;
     if (!s) return;
-    list.replaceChildren(...s.projects.map(p => {
-      const cur = p.id === s.project_id;
-      return h('div', { class: 'gah-ws-row' + (cur ? ' current' : ''), role: 'listitem' },
-        h('button', { type: 'button', class: 'gah-ws-open', 'data-gah-close': '', title: p.workspace, 'aria-current': cur ? 'true' : null,
-          onclick: () => { if (!cur) enter({ id: p.id }); } }, h('span', { class: 'gah-ws-dot', 'aria-hidden': 'true' }), h('span', { class: 'gah-ws-title' }, p.name)));
-    }));
-    if (!s.projects.length) list.append(h('div', { class: 'gah-ws-empty' }, '输入 /project 新建或进入项目'));
     chip.classList.toggle('in-project', !!s.project);
     kind.textContent = s.project ? '项目' : '工作区';
     label.textContent = s.project ? s.project.name : '';
@@ -69,7 +59,7 @@ GAH.define('web-workspaces', api => {
   }
   function sync(value) {
     busy = value;
-    for (const element of [...box.querySelectorAll('button'), ...chip.querySelectorAll('button')]) element.disabled = busy;
+    for (const element of chip.querySelectorAll('button')) element.disabled = busy;
     save.disabled = busy;
     cancel.disabled = saving;
   }
@@ -215,7 +205,6 @@ GAH.define('web-workspaces', api => {
 
   api.onHost('state', render);
   api.onHost('sync', value => { sync(value.running || value.changing); if (busy) menu.hidden = true; });
-  api.slot('sidebar', box);
   api.slot('composer-top', top);
   render(api.state());
   sync(!!(api.state() && api.state().running));

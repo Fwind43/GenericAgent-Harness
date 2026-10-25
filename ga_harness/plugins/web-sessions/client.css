@@ -1,7 +1,7 @@
 .gah-sessions{display:flex;flex-direction:column;gap:2px}
 .gah-sess-new{font-weight:500;margin-bottom:6px}
 .gah-sess-plus{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:15px;line-height:1}
-.gah-sess-label{font-size:12px;color:var(--muted);padding:6px 10px 4px}
+.gah-sess-label{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);padding:6px 6px 4px 10px}
 .gah-sess-list{display:flex;flex-direction:column;gap:1px}
 .gah-sess-row{position:relative;display:flex;align-items:center;border-radius:8px}
 .gah-sess-row:hover,.gah-sess-row:focus-within{background:var(--border)}
@@ -15,3 +15,24 @@
 .gah-sess-act{background:transparent;color:var(--muted);border:0;border-radius:6px;padding:2px 6px;font-size:14px;line-height:1.2}
 .gah-sess-act:hover:not(:disabled){color:var(--text);background:var(--surface)}
 @media (hover:none){.gah-sess-row.current .gah-sess-acts{display:flex}}
+.gah-sess-head-btn{font:inherit;font-size:12px;background:transparent;color:var(--muted);border:0;border-radius:6px;padding:2px 6px}
+.gah-sess-head-btn:hover:not(:disabled){background:var(--border);color:var(--text)}
+.gah-group{display:flex;flex-direction:column;min-width:0}
+.gah-group+.gah-group{margin-top:2px}
+.gah-group-head{display:flex;align-items:center;border-radius:8px;min-width:0}
+.gah-group-head:hover,.gah-group-head:focus-within{background:var(--border)}
+.gah-group-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:6px;text-align:left;background:transparent;color:var(--muted);border:0;border-radius:8px;padding:6px 8px;font:inherit;font-size:13px}
+.gah-group-toggle:hover{background:transparent;color:var(--text)}
+.gah-group.current .gah-group-toggle{color:var(--text);font-weight:600}
+.gah-group-caret{flex:none;width:0;height:0;border-left:4px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .12s}
+.gah-group-toggle[aria-expanded=true] .gah-group-caret{transform:rotate(90deg)}
+.gah-group-kind{flex:none;font-size:9px;opacity:.7}
+.gah-group-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-group-count{flex:none;font-size:11px;color:var(--muted);font-weight:400}
+.gah-group-add{flex:none;width:22px;height:22px;margin-right:4px;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:var(--muted);border:0;border-radius:6px;font-size:15px;line-height:1;padding:0;opacity:0}
+.gah-group-head:hover .gah-group-add,.gah-group-head:focus-within .gah-group-add,.gah-group.current .gah-group-add{opacity:1}
+.gah-group-add:hover:not(:disabled){background:var(--surface);color:var(--text)}
+.gah-sess-items{display:flex;flex-direction:column;gap:1px;padding-left:12px}
+.gah-sess-items[hidden]{display:none}
+.gah-sess-empty{font-size:12px;color:var(--muted);padding:4px 10px 6px}
+@media (hover:none){.gah-group-add{opacity:1}}
