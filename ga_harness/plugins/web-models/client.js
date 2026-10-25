@@ -1,7 +1,7 @@
 GAH.define('web-models', api => {
   const { h } = api;
   let cfg = null, editingKey = null, busy = false, working = false;
-  let sections = [], sectionId = null;
+  let sections = [], sectionId = null, catalog = null;
   const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
   /* ---- one composer entry for model + per-conversation effort ---- */
   const EFFORT_LABEL = { '': T('\u9ed8\u8ba4','Default'), low: T('\u4f4e','Low'), medium: T('\u4e2d','Medium'), high: T('\u9ad8','High'), xhigh: T('\u8d85\u9ad8','Extra high') };
@@ -15,11 +15,18 @@ GAH.define('web-models', api => {
   const effortBox = h('div', { class: 'gah-picker-effort' },
     h('div', { class: 'gah-picker-label' }, T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort'),
       h('small', null, T('\u4ec5\u5f53\u524d\u5bf9\u8bdd','This chat only'))), effortChoices);
+  const pickerSearch = h('input', { type: 'search', class: 'gah-picker-search', autocomplete: 'off',
+    placeholder: T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
+    'aria-label': T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'), oninput: () => renderPicker(true) });
+  const pickerProvider = h('select', { class: 'gah-picker-filter',
+    'aria-label': T('\u7b5b\u9009\u670d\u52a1\u5546','Filter providers'), onchange: () => renderPicker(true) });
+  const pickerCount = h('span', { class: 'gah-picker-count', role: 'status', 'aria-live': 'polite' });
   const pickerModels = h('div', { class: 'gah-picker-models' });
   const picker = h('div', { id: 'gah-model-picker', class: 'gah-model-popover', popover: 'auto', role: 'dialog',
     'aria-label': T('\u6a21\u578b\u4e0e\u63a8\u7406\u5f3a\u5ea6','Model and reasoning effort'),
     ontoggle: () => { pick.setAttribute('aria-expanded', String(picker.matches(':popover-open'))); },
-    onkeydown: e => pickerKeys(e) }, effortBox, pickerModels);
+    onkeydown: e => pickerKeys(e) }, h('div', { class: 'gah-picker-toolbar' }, pickerSearch,
+      h('div', { class: 'gah-picker-filters' }, pickerProvider, pickerCount)), pickerModels, effortBox);
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
     h('span', { class: 'gah-ico', dataset: { i: 'cpu' }, 'aria-hidden': 'true' }), T('\u6a21\u578b\u914d\u7f6e','Models'));
   function positionPicker() {
@@ -36,16 +43,50 @@ GAH.define('web-models', api => {
   function togglePicker() {
     if (pick.disabled) return;
     if (picker.matches(':popover-open')) return closePicker(true);
+    pickerSearch.value = ''; pickerProvider.value = ''; renderPicker(true);
     picker.showPopover(); positionPicker(); pick.setAttribute('aria-expanded', 'true');
-    (pickerModels.querySelector('[aria-pressed="true"]') || pickerModels.querySelector('button'))?.focus();
+    if (matchMedia('(pointer: fine)').matches) pickerSearch.focus({ preventScroll: true });
+    else (pickerModels.querySelector('[aria-pressed="true"]') || pickerModels.querySelector('button'))?.focus({ preventScroll: true });
   }
   function pickerKeys(e) {
+    if (e.isComposing || e.target === pickerProvider) return;
+    const buttons = [...pickerModels.querySelectorAll('button:not(:disabled)')];
+    if (e.target === pickerSearch) {
+      if (e.key === 'Enter' && buttons.length) { e.preventDefault(); buttons[0].click(); }
+      else if (['ArrowDown', 'ArrowUp'].includes(e.key) && buttons.length) {
+        e.preventDefault(); buttons[e.key === 'ArrowDown' ? 0 : buttons.length - 1].focus();
+      }
+      return;
+    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
-    const buttons = [...picker.querySelectorAll('button:not(:disabled)')], i = buttons.indexOf(document.activeElement);
+    const i = buttons.indexOf(document.activeElement);
     if (i < 0 || !buttons.length) return;
     e.preventDefault();
     const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
     buttons[next].focus();
+  }
+  function matchesQuery(query, ...values) {
+    const text = values.filter(Boolean).join(' ').toLocaleLowerCase();
+    return query.trim().toLocaleLowerCase().split(/\s+/).every(word => text.includes(word));
+  }
+  function pickerProviderId(x) { return x.provider_id || x.provider || 'independent'; }
+  function renderPicker(reset = false) {
+    if (!catalog) return;
+    const focused = pickerModels.contains(document.activeElement) ? document.activeElement.dataset.modelId : null;
+    const scroll = reset ? 0 : pickerModels.scrollTop;
+    const items = catalog.items.filter(x => (!pickerProvider.value || pickerProviderId(x) === pickerProvider.value)
+      && matchesQuery(pickerSearch.value, x.name, x.model, x.provider));
+    pickerModels.replaceChildren(...items.map(x => h('button', { type: 'button', class: 'gah-picker-option',
+      dataset: { modelId: String(x.id), provider: pickerProviderId(x) },
+      'aria-pressed': String(x.id === catalog.current), disabled: busy || working,
+      onclick: () => { closePicker(true); select(x.id); } },
+      h('span', { class: 'gah-picker-option-copy' }, h('span', null, x.name || x.model),
+        h('small', null, [x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), x.name && x.model !== x.name ? x.model : ''].filter(Boolean).join(' \u00b7 '))),
+      h('span', { class: 'gah-picker-check', 'aria-hidden': 'true' }, x.id === catalog.current ? '\u2713' : ''))));
+    pickerCount.textContent = items.length + ' / ' + catalog.items.length;
+    if (!items.length) pickerModels.append(h('p', { class: 'gah-picker-empty' }, T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b','No matching models')));
+    if (focused !== null) [...pickerModels.querySelectorAll('button')].find(b => b.dataset.modelId === focused)?.focus({ preventScroll: true });
+    pickerModels.scrollTop = scroll; positionPicker();
   }
   window.addEventListener('resize', positionPicker);
   /* ---- dialog ---- */
@@ -103,7 +144,12 @@ GAH.define('web-models', api => {
   const help = h('p', { class: 'model-help' }, T('\u914d\u7f6e\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u56de\u663e\u5df2\u6709\u7684 API Key\u3002\u4fdd\u5b58\u6210\u529f\u540e\u5373\u65f6\u751f\u6548\u3002','Settings are stored on this machine; existing API keys are never shown. Changes apply immediately after saving.'));
   const convertBtn = h('button', { type: 'button', onclick: () => convert() }, T('\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e','Convert to editable config'));
   const convertBox = h('div', { class: 'model-actions model-convert', hidden: true }, convertBtn);
-  const sectionList = h('nav', { class: 'model-sections', 'aria-label': T('\u670d\u52a1\u5546\u5206\u533a','Providers') });
+  const modelSearch = h('input', { type: 'search', class: 'model-search', autocomplete: 'off',
+    placeholder: T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
+    'aria-label': T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
+    oninput: () => selectSection(sectionId, editingKey, true) });
+  const sectionList = h('select', { class: 'model-provider-filter',
+    'aria-label': T('\u7b5b\u9009\u670d\u52a1\u5546','Filter providers'), onchange: () => selectSection(sectionList.value || null) });
   const sectionTitle = h('h3');
   const sectionHint = h('p', { class: 'model-help' });
   const editProviderBtn = h('button', { type: 'button', class: 'secondary', onclick: () => editProvider(currentSection()?.provider) }, T('\u670d\u52a1\u5546\u8bbe\u7f6e','Provider settings'));
@@ -112,12 +158,12 @@ GAH.define('web-models', api => {
   const empty = h('p', { class: 'model-empty' }, T('\u6682\u65e0\u6a21\u578b\uff0c\u70b9\u51fb\u201c\u65b0\u589e\u6a21\u578b\u201d\u6dfb\u52a0\u3002','No models yet. Click “Add model” to add one.'));
   const editorTitle = h('h4', { class: 'model-editor-title' });
   const editor = h('div', { class: 'model-editor' }, editorTitle, form);
-  const modelArea = h('div', { class: 'model-area' }, modelList, empty, editor);
+  const modelArea = h('div', { class: 'model-area' }, h('div', { class: 'model-list-pane' }, modelList, empty), editor);
   const sectionBody = h('section', { class: 'model-section-body' },
     h('div', { class: 'model-section-head' }, h('div', { class: 'model-section-heading' }, sectionTitle, sectionHint),
       h('div', { class: 'model-section-tools' }, backBtn, editProviderBtn, addBtn)), modelArea, pform);
   const layout = h('div', { class: 'model-layout', hidden: true },
-    h('aside', { class: 'model-sidebar' }, h('div', { class: 'model-sidebar-head' }, h('strong', null, T('\u670d\u52a1\u5546','Provider')), paddBtn), sectionList), sectionBody);
+    h('div', { class: 'model-browser-tools' }, modelSearch, sectionList, paddBtn), sectionBody);
   const loading = h('p', { class: 'model-help', role: 'status', hidden: true }, T('\u6b63\u5728\u52a0\u8f7d\u6a21\u578b\u914d\u7f6e\u2026','Loading models…'));
   const dlg = h('dialog', { class: 'gah-dialog gah-model-dialog', 'aria-label': T('\u6a21\u578b\u914d\u7f6e','Models'),
       oncancel: e => { if (working) e.preventDefault(); }, onclose: () => { secret.value = ''; psecret.value = ''; } },
@@ -143,28 +189,34 @@ GAH.define('web-models', api => {
       map.get(id).entries.push(e);
     }
     sections = [...map.values()];
-    sectionList.replaceChildren(...sections.map(g => h('button', { type: 'button', class: 'model-section-item',
-      dataset: { section: g.id }, onclick: () => selectSection(g.id) },
-      h('span', { class: 'model-section-label' }, h('strong', null, g.title), h('small', null, g.hint)),
-      h('span', { class: 'model-count' }, String(g.entries.length)))));
+    sectionList.replaceChildren(h('option', { value: '' }, T('\u5168\u90e8\u670d\u52a1\u5546','All providers') + ' (' + cfg.entries.length + ')'),
+      ...sections.map(g => h('option', { value: g.id }, g.title + ' (' + g.entries.length + ')')));
   }
   function markSelection() {
-    for (const b of sectionList.querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.section === sectionId));
     for (const b of modelList.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.key === editingKey));
   }
-  function selectSection(id, preferred) {
-    sectionId = id; const g = currentSection();
+  function selectSection(id, preferred, keepEdits = false) {
+    sectionId = id; sectionList.value = id || ''; const g = currentSection();
     pform.hidden = true; modelArea.hidden = false; backBtn.hidden = true;
-    editProviderBtn.hidden = !g?.provider; addBtn.hidden = !g;
-    sectionTitle.textContent = g?.title || T('\u5148\u6dfb\u52a0\u670d\u52a1\u5546','Add a provider first');
-    sectionHint.textContent = !g ? T('\u914d\u7f6e API \u5730\u5740\u548c\u5bc6\u94a5\uff0c\u518d\u6dfb\u52a0\u6240\u5c5e\u6a21\u578b\u3002','Set the API URL and key, then add its models.') : g.provider
-      ? g.hint + ' \u00b7 ' + g.entries.length + T(' \u4e2a\u6a21\u578b\uff0c\u5171\u7528\u670d\u52a1\u5546\u7684 API \u914d\u7f6e',' models sharing this provider\'s API settings')
-      : T('\u6309 API \u5730\u5740\u5c55\u793a\u65e7\u914d\u7f6e\uff0c\u5bc6\u94a5\u4ecd\u72ec\u7acb\u4fdd\u7559\u3002\u53ef\u5728\u6a21\u578b\u8be6\u60c5\u4e2d\u7ed1\u5b9a\u670d\u52a1\u5546\u3002','Legacy models grouped by API URL; each keeps its own key. Bind a provider in the model details.');
-    const es = g?.entries || [];
-    modelList.replaceChildren(...es.map(e => h('button', { type: 'button', class: 'model-list-item', dataset: { key: e.key }, onclick: () => fill(e.key) },
-      h('strong', null, e.values.name || e.values.model || e.key), h('small', null, e.values.model || e.key))));
+    editProviderBtn.hidden = !g?.provider; addBtn.hidden = false;
+    const all = g?.entries || cfg.entries;
+    const es = all.filter(e => matchesQuery(modelSearch.value, e.values.name, e.values.model, e.key,
+      sections.find(s => s.id === sectionKey(e))?.title, e.provider, e.protocol));
+    sectionTitle.textContent = (g?.title || T('\u5168\u90e8\u6a21\u578b','All models')) + ' \u00b7 ' + es.length + (es.length !== all.length ? ' / ' + all.length : '');
+    sectionHint.textContent = !g ? T('\u70b9\u9009\u6a21\u578b\u7f16\u8f91\u8be6\u60c5\uff0c\u6216\u6309\u670d\u52a1\u5546\u7b5b\u9009\u3002','Select a model to edit, or filter by provider.') : g.provider
+      ? T('\u6b64\u670d\u52a1\u5546\u4e0b\u7684\u6a21\u578b\u5171\u7528 API \u5730\u5740\u4e0e\u5bc6\u94a5\u3002','These models share the provider\'s API URL and key.')
+      : T('\u65e7\u914d\u7f6e\u4ec5\u6309 API \u5730\u5740\u5c55\u793a\uff0c\u5bc6\u94a5\u4ecd\u72ec\u7acb\u4fdd\u7559\u3002','Legacy models grouped by API URL; each keeps its own key.');
+    modelList.replaceChildren(...es.map(e => {
+      const provider = sections.find(s => s.id === sectionKey(e))?.title;
+      return h('button', { type: 'button', class: 'model-list-item', dataset: { key: e.key }, onclick: () => fill(e.key) },
+        h('strong', null, e.values.name || e.values.model || e.key),
+        h('small', null, [provider, e.values.model || e.key].filter(Boolean).join(' \u00b7 ')));
+    }));
+    empty.textContent = modelSearch.value.trim() ? T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b\uff0c\u8bf7\u66f4\u6362\u5173\u952e\u8bcd\u6216\u670d\u52a1\u5546\u3002','No matching models. Try another search or provider.')
+      : T('\u6682\u65e0\u6a21\u578b\uff0c\u70b9\u51fb\u201c\u65b0\u589e\u6a21\u578b\u201d\u6dfb\u52a0\u3002','No models yet. Click "Add model" to add one.');
     empty.hidden = !!es.length; modelList.hidden = !es.length;
-    fill(es.find(e => e.key === preferred)?.key || es[0]?.key || null);
+    const next = es.find(e => e.key === preferred)?.key || es[0]?.key || null;
+    if (!keepEdits || next !== editingKey) fill(next);
     editor.hidden = !es.length;
     markSelection(); controls();
   }
@@ -184,13 +236,13 @@ GAH.define('web-models', api => {
     addBtn.hidden = editProviderBtn.hidden = true; backBtn.hidden = false;
     sectionTitle.textContent = id ? T('\u670d\u52a1\u5546\u8bbe\u7f6e','Provider settings') : T('\u65b0\u589e\u670d\u52a1\u5546','Add provider');
     sectionHint.textContent = T('\u914d\u7f6e\u4e00\u6b21 API \u5730\u5740\u4e0e\u5bc6\u94a5\uff0c\u4f9b\u8be5\u670d\u52a1\u5546\u4e0b\u7684\u6a21\u578b\u5171\u7528\u3002','Set the API URL and key once; all models under this provider share them.');
-    if (!id) { for (const b of sectionList.querySelectorAll('button')) b.setAttribute('aria-current', 'false'); pid.focus(); }
+    if (!id) pid.focus();
     controls();
   }
   function error(t) { err.textContent = t || ''; err.hidden = !t; }
   function render(s) {
     const m = s && s.models; group.hidden = open.hidden = !m;
-    if (!m) { closePicker(); return; }
+    if (!m) { catalog = null; closePicker(); return; }
     const current = m.items.find(x => x.id === m.current), e = s.effort;
     pickName.textContent = current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b','Choose model');
     pickEffort.hidden = !e; pickEffort.textContent = e ? EFFORT_LABEL[e.current || ''] || e.current : '';
@@ -199,26 +251,23 @@ GAH.define('web-models', api => {
     effortBox.hidden = !e;
     effortChoices.replaceChildren(...(e ? ['', ...e.options].map(v => h('button', { type: 'button', dataset: { effort: v },
       'aria-pressed': String(v === (e.current || '')), onclick: () => { closePicker(true); setEffort(v); } }, EFFORT_LABEL[v] || v)) : []));
-    const groups = new Map();
+    catalog = m;
+    const groups = new Map(), selectedProvider = pickerProvider.value;
     for (const x of m.items) {
-      const id = x.provider_id || x.provider || '';
-      if (!groups.has(id)) groups.set(id, { label: x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), items: [] });
-      groups.get(id).items.push(x);
+      const id = pickerProviderId(x);
+      if (!groups.has(id)) groups.set(id, { title: x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), count: 0 });
+      groups.get(id).count++;
     }
-    pickerModels.replaceChildren(...[...groups].map(([id, g]) => h('section', { class: 'gah-picker-provider', dataset: { provider: id },
-      'aria-label': g.label }, h('h3', null, g.label, h('span', null, String(g.items.length))),
-      ...g.items.map(x => h('button', { type: 'button', class: 'gah-picker-option', dataset: { modelId: String(x.id) },
-        'aria-pressed': String(x.id === m.current), onclick: () => { closePicker(true); select(x.id); } },
-        h('span', { class: 'gah-picker-option-copy' }, h('span', null, x.name || x.model),
-          x.model && x.name !== x.model ? h('small', null, x.model) : null),
-        h('span', { class: 'gah-picker-check', 'aria-hidden': 'true' }, x.id === m.current ? '\u2713' : ''))))));
-    if (!m.items.length) pickerModels.append(h('p', { class: 'gah-picker-empty' }, T('\u6682\u65e0\u53ef\u7528\u6a21\u578b','No models available')));
+    pickerProvider.replaceChildren(h('option', { value: '' }, T('\u5168\u90e8\u670d\u52a1\u5546','All providers')),
+      ...[...groups].map(([id, g]) => h('option', { value: id }, g.title + ' (' + g.count + ')')));
+    pickerProvider.value = groups.has(selectedProvider) ? selectedProvider : '';
+    renderPicker();
     controls(); positionPicker();
   }
   function controls() {
     const s = api.state() || {}, b = busy || working, locked = b || !(cfg && cfg.writable);
     pick.disabled = b || !(s.models && s.models.items.length);
-    for (const n of picker.querySelectorAll('button')) n.disabled = b;
+    for (const n of picker.querySelectorAll('button, input, select')) n.disabled = b;
     if (busy && !working) closePicker();
     open.disabled = b;
     convertBtn.disabled = b;
@@ -231,7 +280,8 @@ GAH.define('web-models', api => {
     removeBtn.disabled = locked || editingKey === null;
     closeBtn.disabled = working;
     editProviderBtn.disabled = backBtn.disabled = b;
-    for (const n of [...sectionList.querySelectorAll('button'), ...modelList.querySelectorAll('button')]) n.disabled = b;
+    sectionList.disabled = modelSearch.disabled = b;
+    for (const n of modelList.querySelectorAll('button')) n.disabled = b;
   }
   function fill(k) {
     const e = cfg && cfg.entries.find(x => x.key === k), v = (e && e.values) || {};
@@ -277,8 +327,9 @@ GAH.define('web-models', api => {
       ...ps.map(x => h('option', { value: x.id }, (x.values.name || x.id) + ' (' + x.values.protocol + ')')));
     buildSections();
     const e = cfg.entries.find(x => x.key === preferred);
-    const id = ppreferred ? 'provider:' + ppreferred : e ? sectionKey(e) : sectionId;
-    selectSection(sections.some(g => g.id === id) ? id : sections[0]?.id || null, preferred);
+    const id = ppreferred ? 'provider:' + ppreferred : e && sectionId ? sectionKey(e) : sectionId;
+    if (preferred) modelSearch.value = '';
+    selectSection(sections.some(g => g.id === id) ? id : null, preferred);
     layout.hidden = false;
     reason.textContent = cfg.writable ? '' : readonlyText(cfg); reason.hidden = !!cfg.writable;
     help.hidden = !cfg.writable;
@@ -322,7 +373,7 @@ GAH.define('web-models', api => {
   }
   async function openDialog() {
     closePicker();
-    cfg = null; editingKey = null; error(''); secret.value = ''; psecret.value = '';
+    cfg = null; editingKey = null; sectionId = null; modelSearch.value = ''; error(''); secret.value = ''; psecret.value = '';
     layout.hidden = true; loading.hidden = false; reason.hidden = convertBox.hidden = true;
     dlg.showModal(); begin();
     try { cfg = await api.host.get('/api/models/config'); fillConfig(); }

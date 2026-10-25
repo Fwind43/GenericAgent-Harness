@@ -1,4 +1,4 @@
-"""Provider-first model dialog, using isolated synthetic configuration only.
+"""Search-first model picker and editor, using isolated synthetic configuration only.
 
 Run with the optional Playwright dependency and Chromium installed.
 GAH_OUTPUT_ARTIFACTS retains desktop/mobile screenshots outside the repository.
@@ -60,8 +60,12 @@ def button(root, text):
     return root.get_by_role("button", name=text, exact=True)
 
 
+def provider_filter(dialog):
+    return dialog.locator(".model-provider-filter")
+
+
 def section(dialog, pid):
-    return dialog.locator('[data-section="provider:' + pid + '"]')
+    return provider_filter(dialog).locator('option[value="provider:' + pid + '"]')
 
 
 def model_form(dialog):
@@ -74,7 +78,7 @@ def assert_no_overflow(dialog):
 
 
 @pytest.mark.parametrize("width,locale", [(1280, "zh-CN"), (390, "zh-CN"), (1280, "en-US")])
-def test_combined_picker_groups_effort_and_session_scope(browser, models_app, width, locale):
+def test_searchable_picker_providers_effort_and_session_scope(browser, models_app, width, locale):
     store, base = models_app
     page = browser.new_page(viewport={"width": width, "height": 844}, locale=locale)
     errors = []
@@ -95,20 +99,35 @@ def test_combined_picker_groups_effort_and_session_scope(browser, models_app, wi
         groups = {}
         for row in catalog["items"]:
             groups.setdefault(row["provider_id"], []).append(row)
-        pw.expect(picker.locator(".gah-picker-provider")).to_have_count(len(groups))
+        options = picker.locator(".gah-picker-option")
+        search = picker.locator(".gah-picker-search")
+        providers = picker.locator(".gah-picker-filter")
+        pw.expect(options).to_have_count(len(catalog["items"]))
+        pw.expect(providers.locator("option")).to_have_count(len(groups) + 1)
         for pid, rows in groups.items():
-            group = picker.locator('[data-provider="' + pid + '"]')
-            pw.expect(group).to_have_attribute("aria-label", rows[0]["provider"])
-            pw.expect(group.locator(".gah-picker-option")).to_have_count(len(rows))
+            providers.select_option(pid)
+            pw.expect(options).to_have_count(len(rows))
+            pw.expect(picker.locator('[data-provider="' + pid + '"]')).to_have_count(len(rows))
+        providers.select_option("")
+        search.fill("BeTa 1")
+        pw.expect(options).to_have_count(1)
+        pw.expect(options.first).to_contain_text("Beta model")
+        search.fill("no-such-model")
+        pw.expect(options).to_have_count(0)
+        pw.expect(picker.locator(".gah-picker-empty")).to_be_visible()
+        search.fill("")
+        pw.expect(options).to_have_count(len(catalog["items"]))
         assert picker.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
         bounds = picker.bounding_box()
         assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
         assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 844
         shot(page, "model-picker-" + str(width) + "-" + locale)
+        search.press("ArrowDown")
+        pw.expect(options.first).to_be_focused()
         page.keyboard.press("End")
-        pw.expect(picker.locator("button").last).to_be_focused()
+        pw.expect(options.last).to_be_focused()
         page.keyboard.press("Home")
-        pw.expect(picker.locator("button").first).to_be_focused()
+        pw.expect(options.first).to_be_focused()
         page.keyboard.press("Escape")
         pw.expect(picker).to_be_hidden()
         pw.expect(trigger).to_be_focused()
@@ -122,8 +141,9 @@ def test_combined_picker_groups_effort_and_session_scope(browser, models_app, wi
         assert before["effort"]["current"] == "high"
         trigger.click()
         target = next(r for r in catalog["items"] if r["provider_id"] == "provider:beta")
+        search.fill("beta")
         with page.expect_response("**/api/models/select") as response:
-            picker.locator('[data-model-id="' + str(target["id"]) + '"]').click()
+            search.press("Enter")
         assert response.value.ok
         pw.expect(trigger).to_contain_text("Beta model")
         page.reload()
@@ -176,7 +196,7 @@ def test_picker_pending_error_and_busy_states(browser, models_app):
         page.close()
 
 
-def test_provider_sections_and_crud(browser, models_app):
+def test_search_and_provider_filter_crud(browser, models_app):
     store, base = models_app
     page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 1000})
     errors = []
@@ -185,10 +205,32 @@ def test_provider_sections_and_crud(browser, models_app):
     try:
         dialog = open_models(page, base)
         form = model_form(dialog)
-        pw.expect(dialog.locator(".model-section-item")).to_have_count(5)
-        pw.expect(section(dialog, "acme")).to_have_attribute("aria-current", "true")
-        pw.expect(dialog.locator(".model-list-item")).to_have_text(["Acme modelacme-1"])
-        section(dialog, "beta").click()
+        pw.expect(provider_filter(dialog).locator("option")).to_have_count(6)
+        pw.expect(provider_filter(dialog)).to_have_value("")
+        count = len(store.config()["entries"])
+        pw.expect(dialog.locator(".model-list-item")).to_have_count(count)
+        search = dialog.locator(".model-search")
+        search.fill("BETA 1")
+        pw.expect(dialog.locator(".model-list-item")).to_have_count(1)
+        pw.expect(dialog.locator(".model-list-item")).to_contain_text("Beta model")
+        search.fill("no-such-model")
+        pw.expect(dialog.locator(".model-empty")).to_be_visible()
+        pw.expect(dialog.locator(".model-editor")).to_be_hidden()
+        search.fill("")
+        pw.expect(dialog.locator(".model-list-item")).to_have_count(count)
+        # The editor preserves an in-progress edit when the same row still matches.
+        dialog.locator('[data-key="native_oai_config_acme"]').click()
+        name = form.get_by_label("\u663e\u793a\u540d\u79f0", exact=True)
+        name.fill("Unsaved name")
+        search.fill("acme")
+        pw.expect(name).to_have_value("Unsaved name")
+        search.fill("")
+        pw.expect(name).to_have_value("Unsaved name")
+        # Master/detail columns must sit side by side on desktop.
+        left = dialog.locator(".model-list-pane").bounding_box()
+        right = dialog.locator(".model-editor").bounding_box()
+        assert left["x"] + left["width"] <= right["x"]
+        provider_filter(dialog).select_option("provider:beta")
         pw.expect(form.get_by_label("\u6a21\u578b ID", exact=True)).to_have_value("beta-1")
         pw.expect(dialog.locator(".model-list-item")).to_have_count(1)
         button(dialog, "\u65b0\u589e\u6a21\u578b").click()
@@ -204,7 +246,7 @@ def test_provider_sections_and_crud(browser, models_app):
         # Moving a model selects its new section rather than a stale old section.
         form.get_by_label("\u6240\u5c5e\u670d\u52a1\u5546").select_option("acme")
         button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548").click()
-        pw.expect(section(dialog, "acme")).to_have_attribute("aria-current", "true")
+        pw.expect(provider_filter(dialog)).to_have_value("provider:acme")
         pw.expect(form.get_by_label("\u6a21\u578b ID", exact=True)).to_have_value("beta-2")
         assert next(e for e in store.config()["entries"] if e["key"] == added_key)["provider"] == "acme"
         assert_no_overflow(dialog)
@@ -216,8 +258,8 @@ def test_provider_sections_and_crud(browser, models_app):
         provider.get_by_label("\u663e\u793a\u540d\u79f0", exact=True).fill("Acme renamed")
         button(dialog, "\u4fdd\u5b58\u670d\u52a1\u5546").click()
         pw.expect(section(dialog, "acme")).to_contain_text("Acme renamed")
-        pw.expect(section(dialog, "acme")).to_have_attribute("aria-current", "true")
-        section(dialog, "empty").click()
+        pw.expect(provider_filter(dialog)).to_have_value("provider:acme")
+        provider_filter(dialog).select_option("provider:empty")
         pw.expect(dialog.locator(".model-empty")).to_be_visible()
         pw.expect(dialog.locator(".model-editor")).to_be_hidden()
         button(dialog, "\u65b0\u589e\u670d\u52a1\u5546").click()
@@ -225,7 +267,7 @@ def test_provider_sections_and_crud(browser, models_app):
         provider.get_by_label("API Base URL").fill("https://new.invalid/v1")
         provider.get_by_label("API Key").fill("synthetic-new")
         button(dialog, "\u4fdd\u5b58\u670d\u52a1\u5546").click()
-        pw.expect(section(dialog, "new-provider")).to_have_attribute("aria-current", "true")
+        pw.expect(provider_filter(dialog)).to_have_value("provider:new-provider")
         pw.expect(dialog.locator(".model-editor")).to_be_hidden()
         button(dialog, "\u65b0\u589e\u6a21\u578b").click()
         form.get_by_label("\u6a21\u578b ID", exact=True).fill("new-model")
@@ -236,9 +278,9 @@ def test_provider_sections_and_crud(browser, models_app):
         button(dialog, "\u670d\u52a1\u5546\u8bbe\u7f6e").click()
         button(dialog, "\u5220\u9664\u670d\u52a1\u5546").click()
         pw.expect(section(dialog, "new-provider")).to_have_count(0)
-        legacy = dialog.locator('[data-section^="legacy:"]')
+        legacy = provider_filter(dialog).locator('option[value^="legacy:"]')
         pw.expect(legacy).to_have_count(2)
-        legacy.first.click()
+        provider_filter(dialog).select_option(legacy.first.get_attribute("value"))
         pw.expect(dialog.locator(".model-list-item")).to_have_count(2)
         pw.expect(button(dialog, "\u670d\u52a1\u5546\u8bbe\u7f6e")).to_be_hidden()
         button(dialog, "\u65b0\u589e\u6a21\u578b").click()
@@ -247,12 +289,12 @@ def test_provider_sections_and_crud(browser, models_app):
         assert form.get_by_label("API Key").evaluate("e => e.required")
         # Navigation must not silently bind or rewrite old models.
         assert next(e for e in store.config()["entries"] if e["key"] == "native_oai_config_one")["provider"] is None
-        legacy.last.click()
+        provider_filter(dialog).select_option(legacy.last.get_attribute("value"))
         pw.expect(dialog.locator(".model-list-item")).to_have_count(1)
         button(dialog, "\u65b0\u589e\u6a21\u578b").click()
         assert "claude_config" in form.get_by_label("\u914d\u7f6e\u6807\u8bc6").input_value()
         page.set_viewport_size({"width": 390, "height": 844})
-        section(dialog, "acme").click()
+        provider_filter(dialog).select_option("provider:acme")
         assert_no_overflow(dialog)
         shot(page, "models-mobile")
         save = button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548")
@@ -290,7 +332,7 @@ def test_loading_errors_readonly_and_busy(browser, models_app):
         pw.expect(dialog.locator(".model-layout")).to_be_visible()
         pw.expect(button(dialog, "\u65b0\u589e\u6a21\u578b")).to_be_disabled()
         pw.expect(button(dialog, "\u65b0\u589e\u670d\u52a1\u5546")).to_be_disabled()
-        section(dialog, "beta").click()
+        provider_filter(dialog).select_option("provider:beta")
         pw.expect(model_form(dialog).get_by_label("\u6a21\u578b ID", exact=True)).to_have_value("beta-1")
         pw.expect(button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_disabled()
         button(dialog, "\u670d\u52a1\u5546\u8bbe\u7f6e").click()
@@ -299,15 +341,17 @@ def test_loading_errors_readonly_and_busy(browser, models_app):
         page.unroute("**/api/models/config")
         trigger.click()
         pw.expect(button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_enabled()
+        provider_filter(dialog).select_option("provider:beta")
         page.route("**/api/models/config", lambda route: pending.append(route))
         button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548").click()
-        pw.expect(section(dialog, "acme")).to_be_disabled()
+        pw.expect(provider_filter(dialog)).to_be_disabled()
+        pw.expect(dialog.locator(".model-search")).to_be_disabled()
         pw.expect(button(dialog, "\u5173\u95ed")).to_be_disabled()
         assert len(pending) == 1
         pending.pop().fulfill(status=409, json={"error": "synthetic save conflict"})
         pw.expect(dialog.locator(".gah-error").first).to_contain_text("synthetic save conflict")
         pw.expect(button(dialog, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_enabled()
-        pw.expect(section(dialog, "beta")).to_have_attribute("aria-current", "true")
+        pw.expect(provider_filter(dialog)).to_have_value("provider:beta")
         assert store.source.file.read_bytes() == original
     finally:
         page.close()
