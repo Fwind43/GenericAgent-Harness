@@ -1,10 +1,10 @@
-"""tool-timer: time each GA tool call without touching GA.
+"""ga-timing: time each GA tool call without touching GA.
 
 GA passes dispatch()'s locals() to both tool_before and tool_after; the ``args``
 dict is the same object in both, so its id() pairs the two events.
 
 config:
-  print   write "[tool-timer] name 0.123s" to stderr after each call (default: true)
+  print   write "[ga-timing] name 0.123s" to stderr after each call (default: true)
   ignore  tool names not timed (default: ["no_tool"], GA's pseudo-tool for plain replies)
 """
 from __future__ import annotations
@@ -48,9 +48,9 @@ def apply(ctx, config):
             timer.calls.append(rec)
             ctx.emit("tool.timed", rec)
             if echo:
-                print(f"[tool-timer] {rec['tool']} {rec['seconds']:.3f}s", file=sys.stderr, flush=True)
+                print(f"[ga-timing] {rec['tool']} {rec['seconds']:.3f}s", file=sys.stderr, flush=True)
         return nxt(gactx)
 
     ctx.on("ga.tool_before", before)
     ctx.on("ga.tool_after", after)
-    ctx.provide("tool.timer", timer)
+    ctx.provide("ga.timing", timer)

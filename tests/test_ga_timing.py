@@ -12,17 +12,17 @@ pytestmark = pytest.mark.skipif(not (GA_ROOT / "plugins" / "hooks.py").exists(),
 
 
 def test_patch_inserts_after_hooks():
-    tree = build_tree("ga-compat", [ROOT / "ga_harness" / "profiles"], [ROOT / "examples" / "patches" / "tool-timer.toml"])
+    tree = build_tree("ga-compat", [ROOT / "ga_harness" / "profiles"], [ROOT / "examples" / "patches" / "ga-timing.toml"])
     names = [e["name"] for e in tree]
-    assert names.index("tool-timer") == names.index("ga-hooks") + 1
+    assert names.index("ga-timing") == names.index("ga-hooks") + 1
 
 
 def test_times_paired_calls_and_unloads():
     rt = Runtime()
     tree = [{"name": "ga-hooks", "disabled": False, "config": {"ga_root": str(GA_ROOT)}},
-            {"name": "tool-timer", "disabled": False, "config": {"print": False}}]
+            {"name": "ga-timing", "disabled": False, "config": {"print": False}}]
     mount(rt, tree, discover([PLUGINS]))
-    hooks, timer = rt.ctx.get("ga.hooks"), rt.ctx.get("tool.timer")
+    hooks, timer = rt.ctx.get("ga.hooks"), rt.ctx.get("ga.timing")
     seen = []
     rt.ctx.events.on("tool.timed", seen.append)
     a1, a2 = {"_index": 0}, {"_index": 1}

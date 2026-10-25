@@ -44,8 +44,7 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `ga-prompt` | 把系统提示词变成可前置、追加、替换的 waterfall |
 | `ga-tools` | 不改 GA 即可新增、替换或禁用工具 |
 | `llm-config` | 从 `~/.ga-harness/llm.toml`（或 `$GAH_LLM_CONFIG`、内联配置）提供模型配置，替代 `mykey.py` |
-| `tool-grep` | 示例：通过 `ga-tools` 注册的只读正则搜索工具 |
-| `tool-timer` | 统计每次工具调用耗时 |
+| `ga-timing` | 通过 GA 钩子统计每次工具调用耗时（只记录，不改变 GA 行为） |
 | `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
 | `model-store` | 独立的运行时模型目录、切换和文件配置管理；接口不返回 API 密钥 |
 | `plugin-manager` | 独立的插件目录、依赖检查与配置持久化；网页保存的修改在下次启动生效 |
@@ -127,19 +126,19 @@ name = "ga-usage"     # 每步/每次任务的 token 用量
 name = "ga-core"
 ```
 
-patch 在不修改 profile 的情况下插入插件，例如 `examples/patches/tool-timer.toml`：
+patch 在不修改 profile 的情况下插入插件，例如 `examples/patches/ga-timing.toml`：
 
 ```toml
 [[patch]]
 after = "ga-hooks"
-insert = { name = "tool-timer", config = { print = true } }
+insert = { name = "ga-timing", config = { print = true } }
 ```
 
 ```bat
-gah.cmd run "列出当前目录" --patch examples\patches\tool-timer.toml
+gah.cmd run "列出当前目录" --patch examples\patches\ga-timing.toml
 ```
 
-更多示例见 `examples/patches/`：禁用浏览器工具并追加提示词、注册 `grep` 工具。
+更多示例见 `examples/patches/`：禁用浏览器工具并追加提示词。
 
 ## 写一个插件
 
@@ -172,7 +171,7 @@ def apply(ctx, config):
     ctx.scope.add(lambda: None)             # 卸载时清理
 ```
 
-完整示例可参考 `tool-timer`（钩子）、`tool-grep`（工具）。
+完整示例可参考 `ga-timing`（钩子）。
 
 ## 接入新的展示前端
 

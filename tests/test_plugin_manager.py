@@ -23,6 +23,7 @@ def make_manager(tmp_path):
                                        {"value": "safe", "label": "Safe", "label_zh": "\u7a33\u59a5"}]},
                   "note": {"type": "string", "multiline": True, "default": ""},
                   "secret": {"type": "string", "secret": True, "default": "DO-NOT-EXPOSE"}})
+    ms["needs-tools"] = Manifest("needs-tools", "main:apply", tmp_path, inject=["ga.tools"])
     tree = [entry(n) for n in ["plugin-manager", "llm-config", "ga-hooks", "ga-core", "ui-web"]]
     tree.insert(-1, entry("demo", {"limit": 10, "secret": "DO-NOT-EXPOSE"}))
     p = PluginPreferences(tmp_path / "plugins.json", "test", ms, tree)
@@ -55,7 +56,7 @@ def test_catalog_is_safe_and_inspects_without_imports(tmp_path):
         assert item(c)["config"] == {"limit": 10, "mode": "fast", "note": ""}
         assert item(c, "ga-core")["protected"]
         assert item(c, "ui-web")["protected"]
-        assert item(c, "tool-grep")["missing"] == ["ga.tools"]
+        assert item(c, "needs-tools")["missing"] == ["ga.tools"]
         assert "demo" in item(c, "ga-hooks")["dependents"]
         assert not c["restart_required"]
         assert item(c, "plugin-manager")["state"] == "active"
@@ -110,8 +111,8 @@ def test_dependencies_and_stale_revision_do_not_write(tmp_path):
     try:
         with pytest.raises(RuntimeError, match="demo: missing ga.hooks"):
             change(m, "ga-hooks", False)
-        with pytest.raises(RuntimeError, match="tool-grep: missing ga.tools"):
-            change(m, "tool-grep")
+        with pytest.raises(RuntimeError, match="needs-tools: missing ga.tools"):
+            change(m, "needs-tools")
         old = m.catalog()["revision"]
         change(m, config={"limit": 11})
         raw = m.preferences.path.read_bytes()
@@ -121,8 +122,7 @@ def test_dependencies_and_stale_revision_do_not_write(tmp_path):
         change(m, "demo", False)
         assert not item(change(m, "ga-hooks", False), "ga-hooks")["enabled"]
         change(m, "ga-tools")
-        c = change(m, "tool-grep", config={"max_results": 30})
-        assert item(c, "tool-grep")["enabled"]
+        assert item(change(m, "needs-tools"), "needs-tools")["enabled"]
     finally:
         rt.dispose()
 
@@ -197,7 +197,7 @@ def test_choice_field_options_and_validation():
 def test_bundled_plugin_settings_are_editable():
     from ga_harness.plugin_manager import public_fields
     ms = discover([PLUGINS])
-    expect = {"tool-grep": {"root", "max_results", "case", "max_file_kb", "skip_dirs"}, "tool-timer": {"print"},
+    expect = {"ga-timing": {"print"},
               "ga-stdout": {"passthrough", "file"}, "ga-prompt": {"prepend", "append", "replace_file"},
               "ga-events": {"max_data"}}
     for name, keys in expect.items():

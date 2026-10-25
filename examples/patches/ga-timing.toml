@@ -1,0 +1,4 @@
+# gah run "task" --patch examples/patches/ga-timing.toml
+[[patch]]
+after = "ga-hooks"
+insert = { name = "ga-timing", config = { print = true } }

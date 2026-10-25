@@ -140,3 +140,9 @@ Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in
 - Evidence: E:/Work/GenericAgent/temp/gah-workspace-acceptance/ (`pytest-final.log`, `ga-tool-test.log`,
   `wheel-build.log`, browser screenshots, `desktop-review-sheet.txt`, `mobile-review-final.txt`).
   No GA/Admin source changes, live GA/LLM request, restart of existing 8765/8799 services, push or deployment.
+
+## Plugin cleanup (2026-10-25)
+- Removed the `tool-grep` example plugin (with its test and `examples/patches/tool-grep.toml`); no other plugin injected `ga.tools`, which stays available.
+- Renamed `tool-timer` to `ga-timing` (hook observer, same family as `ga-usage`): capability `tool.timer` -> `ga.timing`,
+  patch `examples/patches/ga-timing.toml`, test `tests/test_ga_timing.py`; event name `tool.timed` unchanged.
+  Saved plugin config under the old name is not migrated.

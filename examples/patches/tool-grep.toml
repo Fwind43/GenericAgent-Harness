@@ -1,9 +1,0 @@
-# gah run "task" --patch examples/patches/tool-grep.toml
-# Adds a harness-owned read-only `grep` tool to GA via the ga.tools service.
-[[patch]]
-after = "ga-core"
-insert = { name = "ga-tools" }
-
-[[patch]]
-after = "ga-tools"
-insert = { name = "tool-grep" }
