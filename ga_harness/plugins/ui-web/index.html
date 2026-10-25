@@ -203,7 +203,7 @@ function tokChip(u){const c=el('span','tok'),cache=[],full=[];
 function renderThinking(text){
   const b=el('div','thinking');b.append(el('div','thinking-label',T('思考','Thinking')),GAHOutput.markdown(text));return b}
 function renderStep(t,key,live){
-  const d=det('step',key,true),s=el('summary');d.classList.toggle('running',live);
+  const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
   s.append(el('span','no',T('步骤 ','Step ')+t.turn),el('span','ttl',title));
   if(t.tools.length)s.append(el('span','cnt',t.tools.length+T(' 个工具',' tools')));
@@ -221,7 +221,7 @@ function renderTurns(m,mi,box){
   const finalT=fin&&!fin.tools.length&&fin.reply?fin:null;
   const streaming=running&&!!finalT;
   const steps=finalT?turns.slice(0,-1):turns;
-  if(steps.length){const d=det('steps',mi+':steps',true),s=el('summary');d.classList.toggle('running',running);
+  if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');d.classList.toggle('running',running);
     s.append(el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')),chev());d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
   if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
