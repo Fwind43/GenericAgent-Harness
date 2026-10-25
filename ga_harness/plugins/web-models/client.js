@@ -1,6 +1,7 @@
 GAH.define('web-models', api => {
   const { h } = api;
   let cfg = null, editingKey = null, busy = false, working = false;
+  let sections = [], sectionId = null;
   const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
   /* ---- toolbar ---- */
   const pick = h('select', { 'aria-label': '\u5f53\u524d\u6a21\u578b', onchange: () => select(Number(pick.value)) });
@@ -12,8 +13,7 @@ GAH.define('web-models', api => {
   const effort = h('select', { class: 'gah-effort', 'aria-label': '\u63a8\u7406\u5f3a\u5ea6', title: '\u63a8\u7406\u5f3a\u5ea6\uff08\u4ec5\u5f53\u524d\u5bf9\u8bdd\uff09', hidden: true, onchange: () => setEffort(effort.value) });
   const group = h('div', { class: 'gah-models', role: 'group', 'aria-label': '\u6a21\u578b', hidden: true }, effort, pick);
   /* ---- dialog ---- */
-  const entry = h('select', { 'aria-label': '\u9009\u62e9\u914d\u7f6e', onchange: () => fill(entry.value) });
-  const addBtn = h('button', { type: 'button', class: 'secondary', onclick: () => { fill(null); name.focus(); } }, '\u65b0\u589e');
+  const addBtn = h('button', { type: 'button', onclick: () => newModel() }, '\u65b0\u589e\u6a21\u578b');
   const reason = h('p', { class: 'model-help', hidden: true });
   const protocol = h('select', { onchange: () => { if (editingKey === null) key.value = 'native_' + protocol.value + '_config_' + Date.now(); } },
     h('option', { value: 'oai' }, 'OpenAI compatible'), h('option', { value: 'claude' }, 'Anthropic Claude'));
@@ -29,8 +29,7 @@ GAH.define('web-models', api => {
   const baseField = field('API Base URL', base, { wide: true }, h('small', null, '\u652f\u6301 ${ENV_NAME} \u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002'));
   const secretField = field('API Key', secret, { wide: true }, secretHint);
   /* ---- provider form ---- */
-  const pentry = h('select', { 'aria-label': '\u9009\u62e9\u670d\u52a1\u5546', onchange: () => pfill(pentry.value) });
-  const paddBtn = h('button', { type: 'button', class: 'secondary', onclick: () => { pfill(null); pid.focus(); } }, '\u65b0\u589e');
+  const paddBtn = h('button', { type: 'button', class: 'secondary', onclick: () => editProvider(null) }, '\u65b0\u589e\u670d\u52a1\u5546');
   const pid = h('input', { required: true, pattern: '[a-z0-9][a-z0-9_\\-]{0,39}', autocomplete: 'off', placeholder: 'openai' });
   const pname = h('input', { maxlength: '120', autocomplete: 'off' });
   const pproto = h('select', null, h('option', { value: 'oai' }, 'OpenAI compatible'), h('option', { value: 'claude' }, 'Anthropic Claude'));
@@ -64,21 +63,92 @@ GAH.define('web-models', api => {
       field('\u6a21\u578b ID', model),
       field('\u4e0a\u4e0b\u6587\u7a97\u53e3', ctxwin),
       baseField, secretField),
-    err,
     h('div', { class: 'model-actions' }, removeBtn, saveBtn));
   const help = h('p', { class: 'model-help' }, '\u914d\u7f6e\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u56de\u663e\u5df2\u6709\u7684 API Key\u3002\u4fdd\u5b58\u6210\u529f\u540e\u5373\u65f6\u751f\u6548\u3002');
   const convertBtn = h('button', { type: 'button', onclick: () => convert() }, '\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e');
   const convertBox = h('div', { class: 'model-actions model-convert', hidden: true }, convertBtn);
+  const sectionList = h('nav', { class: 'model-sections', 'aria-label': '\u670d\u52a1\u5546\u5206\u533a' });
+  const sectionTitle = h('h3');
+  const sectionHint = h('p', { class: 'model-help' });
+  const editProviderBtn = h('button', { type: 'button', class: 'secondary', onclick: () => editProvider(currentSection()?.provider) }, '\u670d\u52a1\u5546\u8bbe\u7f6e');
+  const backBtn = h('button', { type: 'button', class: 'secondary', onclick: () => selectSection(sectionId, editingKey) }, '\u8fd4\u56de\u6a21\u578b');
+  const modelList = h('div', { class: 'model-list', role: 'group', 'aria-label': '\u8be5\u5206\u533a\u7684\u6a21\u578b' });
+  const empty = h('p', { class: 'model-empty' }, '\u6682\u65e0\u6a21\u578b\uff0c\u70b9\u51fb\u201c\u65b0\u589e\u6a21\u578b\u201d\u6dfb\u52a0\u3002');
+  const editorTitle = h('h4', { class: 'model-editor-title' });
+  const editor = h('div', { class: 'model-editor' }, editorTitle, form);
+  const modelArea = h('div', { class: 'model-area' }, modelList, empty, editor);
+  const sectionBody = h('section', { class: 'model-section-body' },
+    h('div', { class: 'model-section-head' }, h('div', { class: 'model-section-heading' }, sectionTitle, sectionHint),
+      h('div', { class: 'model-section-tools' }, backBtn, editProviderBtn, addBtn)), modelArea, pform);
+  const layout = h('div', { class: 'model-layout', hidden: true },
+    h('aside', { class: 'model-sidebar' }, h('div', { class: 'model-sidebar-head' }, h('strong', null, '\u670d\u52a1\u5546'), paddBtn), sectionList), sectionBody);
+  const loading = h('p', { class: 'model-help', role: 'status', hidden: true }, '\u6b63\u5728\u52a0\u8f7d\u6a21\u578b\u914d\u7f6e\u2026');
   const dlg = h('dialog', { class: 'gah-dialog gah-model-dialog', 'aria-label': '\u6a21\u578b\u914d\u7f6e',
       oncancel: e => { if (working) e.preventDefault(); }, onclose: () => { secret.value = ''; psecret.value = ''; } },
     h('div', { class: 'dialog-head' }, h('h2', null, '\u6a21\u578b\u914d\u7f6e'), closeBtn),
-    h('div', { class: 'dialog-content' },
-      help,
-      reason, convertBox,
-      h('h3', { class: 'model-section' }, '\u670d\u52a1\u5546'),
-      h('div', { class: 'model-picker' }, pentry, paddBtn), pform,
-      h('h3', { class: 'model-section' }, '\u6a21\u578b'),
-      h('div', { class: 'model-picker' }, entry, addBtn), form));
+    h('div', { class: 'dialog-content' }, help, reason, convertBox, loading, err, layout));
+  function currentSection() { return sections.find(g => g.id === sectionId); }
+  // Legacy grouping is presentation only: never merge credentials or infer a provider.
+  function sectionKey(e) {
+    return e.provider ? 'provider:' + e.provider : 'legacy:' + JSON.stringify([e.protocol, e.values.apibase || (e.url_hidden ? e.key : '')]);
+  }
+  function endpointLabel(value) {
+    try { const u = new URL(value); return u.host + (u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '')); }
+    catch (_) { return value || '\u672a\u8bbe\u7f6e API \u5730\u5740'; }
+  }
+  function buildSections() {
+    const map = new Map((cfg.providers || []).map(p => ['provider:' + p.id,
+      { id: 'provider:' + p.id, provider: p.id, title: p.values.name || p.id,
+        hint: p.values.protocol === 'claude' ? 'Anthropic Claude' : 'OpenAI compatible', entries: [] }]));
+    for (const e of cfg.entries) {
+      const id = sectionKey(e);
+      if (!map.has(id)) map.set(id, { id, title: e.provider || endpointLabel(e.values.apibase),
+        hint: '\u672a\u7ed1\u5b9a\u670d\u52a1\u5546 \u00b7 ' + (e.protocol === 'claude' ? 'Claude' : 'OpenAI'), entries: [] });
+      map.get(id).entries.push(e);
+    }
+    sections = [...map.values()];
+    sectionList.replaceChildren(...sections.map(g => h('button', { type: 'button', class: 'model-section-item',
+      dataset: { section: g.id }, onclick: () => selectSection(g.id) },
+      h('span', { class: 'model-section-label' }, h('strong', null, g.title), h('small', null, g.hint)),
+      h('span', { class: 'model-count' }, String(g.entries.length)))));
+  }
+  function markSelection() {
+    for (const b of sectionList.querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.section === sectionId));
+    for (const b of modelList.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.key === editingKey));
+  }
+  function selectSection(id, preferred) {
+    sectionId = id; const g = currentSection();
+    pform.hidden = true; modelArea.hidden = false; backBtn.hidden = true;
+    editProviderBtn.hidden = !g?.provider; addBtn.hidden = !g;
+    sectionTitle.textContent = g?.title || '\u5148\u6dfb\u52a0\u670d\u52a1\u5546';
+    sectionHint.textContent = !g ? '\u914d\u7f6e API \u5730\u5740\u548c\u5bc6\u94a5\uff0c\u518d\u6dfb\u52a0\u6240\u5c5e\u6a21\u578b\u3002' : g.provider
+      ? g.hint + ' \u00b7 ' + g.entries.length + ' \u4e2a\u6a21\u578b\uff0c\u5171\u7528\u670d\u52a1\u5546\u7684 API \u914d\u7f6e'
+      : '\u6309 API \u5730\u5740\u5c55\u793a\u65e7\u914d\u7f6e\uff0c\u5bc6\u94a5\u4ecd\u72ec\u7acb\u4fdd\u7559\u3002\u53ef\u5728\u6a21\u578b\u8be6\u60c5\u4e2d\u7ed1\u5b9a\u670d\u52a1\u5546\u3002';
+    const es = g?.entries || [];
+    modelList.replaceChildren(...es.map(e => h('button', { type: 'button', class: 'model-list-item', dataset: { key: e.key }, onclick: () => fill(e.key) },
+      h('strong', null, e.values.name || e.values.model || e.key), h('small', null, e.values.model || e.key))));
+    empty.hidden = !!es.length; modelList.hidden = !es.length;
+    fill(es.find(e => e.key === preferred)?.key || es[0]?.key || null);
+    editor.hidden = !es.length;
+    markSelection(); controls();
+  }
+  function newModel() {
+    fill(null); const g = currentSection();
+    if (g?.provider) { prov.value = g.provider; provChanged(); }
+    else if (g?.entries.length) {
+      base.value = g.entries[0].values.apibase || ''; protocol.value = g.entries[0].protocol;
+      key.value = 'native_' + protocol.value + '_config_' + Date.now();
+    }
+    empty.hidden = true; editor.hidden = false; name.focus();
+  }
+  function editProvider(id) {
+    pfill(id); error(''); modelArea.hidden = true; pform.hidden = false;
+    addBtn.hidden = editProviderBtn.hidden = true; backBtn.hidden = false;
+    sectionTitle.textContent = id ? '\u670d\u52a1\u5546\u8bbe\u7f6e' : '\u65b0\u589e\u670d\u52a1\u5546';
+    sectionHint.textContent = '\u914d\u7f6e\u4e00\u6b21 API \u5730\u5740\u4e0e\u5bc6\u94a5\uff0c\u4f9b\u8be5\u670d\u52a1\u5546\u4e0b\u7684\u6a21\u578b\u5171\u7528\u3002';
+    if (!id) { for (const b of sectionList.querySelectorAll('button')) b.setAttribute('aria-current', 'false'); pid.focus(); }
+    controls();
+  }
   function error(t) { err.textContent = t || ''; err.hidden = !t; }
   function render(s) {
     const m = s && s.models; group.hidden = open.hidden = !m; if (!m) return;
@@ -100,7 +170,7 @@ GAH.define('web-models', api => {
     effort.disabled = b;
     open.disabled = b;
     convertBtn.disabled = b;
-    for (const n of [entry, addBtn, saveBtn, name, model, ctxwin, base, secret, prov, pentry, paddBtn, pSaveBtn, pname, pbase, psecret]) n.disabled = locked;
+    for (const n of [addBtn, saveBtn, name, model, ctxwin, base, secret, prov, paddBtn, pSaveBtn, pname, pbase, psecret]) n.disabled = locked;
     key.disabled = locked || editingKey !== null;
     protocol.disabled = locked || editingKey !== null || !!prov.value;
     const pv = cfg && cfg.providers && cfg.providers.find(x => x.id === editingPid);
@@ -109,11 +179,14 @@ GAH.define('web-models', api => {
     pDelBtn.disabled = locked || editingPid === null;
     removeBtn.disabled = locked || editingKey === null;
     closeBtn.disabled = working;
+    editProviderBtn.disabled = backBtn.disabled = b;
+    for (const n of [...sectionList.querySelectorAll('button'), ...modelList.querySelectorAll('button')]) n.disabled = b;
   }
   function fill(k) {
     const e = cfg && cfg.entries.find(x => x.key === k), v = (e && e.values) || {};
     editingKey = e ? e.key : null;
-    entry.value = editingKey || '';
+    editorTitle.textContent = e ? '\u6a21\u578b\u8be6\u60c5' : '\u65b0\u589e\u6a21\u578b';
+    markSelection();
     protocol.value = editingKey && editingKey.includes('claude') ? 'claude' : 'oai';
     prov.value = (e && e.provider) || '';
     key.value = editingKey || 'native_oai_config_' + Date.now();
@@ -139,7 +212,7 @@ GAH.define('web-models', api => {
   }
   function pfill(id) {
     const p = cfg && cfg.providers && cfg.providers.find(x => x.id === id), v = (p && p.values) || {};
-    editingPid = p ? p.id : null; pentry.value = editingPid || '';
+    editingPid = p ? p.id : null;
     pid.value = editingPid || ''; pname.value = v.name ?? ''; pproto.value = v.protocol || 'oai'; pbase.value = v.apibase ?? '';
     const has = !!(p && p.has_key);
     psecret.value = ''; psecret.required = !has; psecret.placeholder = has ? '******' : '';
@@ -150,17 +223,16 @@ GAH.define('web-models', api => {
   function perror(t) { perr.textContent = t || ''; perr.hidden = !t; }
   function fillConfig(preferred, ppreferred) {
     const ps = cfg.providers || [];
-    pentry.replaceChildren(h('option', { value: '' }, '\u65b0\u589e\u670d\u52a1\u5546'),
-      ...ps.map(x => h('option', { value: x.id }, (x.values.name || x.id) + ' \u00b7 ' + x.models)));
     prov.replaceChildren(h('option', { value: '' }, '\u65e0\uff08\u5355\u72ec\u586b\u5199 URL / Key\uff09'),
       ...ps.map(x => h('option', { value: x.id }, (x.values.name || x.id) + ' (' + x.values.protocol + ')')));
-    pfill(ppreferred !== undefined ? ppreferred : (ps.some(x => x.id === editingPid) ? editingPid : (ps[0] ? ps[0].id : null)));
-    entry.replaceChildren(h('option', { value: '' }, '\u65b0\u589e\u914d\u7f6e'),
-      ...cfg.entries.map(x => h('option', { value: x.key }, x.values.name || x.values.model || x.key)));
+    buildSections();
+    const e = cfg.entries.find(x => x.key === preferred);
+    const id = ppreferred ? 'provider:' + ppreferred : e ? sectionKey(e) : sectionId;
+    selectSection(sections.some(g => g.id === id) ? id : sections[0]?.id || null, preferred);
+    layout.hidden = false;
     reason.textContent = cfg.writable ? '' : readonlyText(cfg); reason.hidden = !!cfg.writable;
     help.hidden = !cfg.writable;
     convertBox.hidden = !(cfg.convert && !cfg.convert.blocked);
-    fill(preferred === null ? null : (cfg.entries.some(x => x.key === preferred) ? preferred : (cfg.entries[0] && cfg.entries[0].key)));
   }
   function readonlyText(c) {
     const t = c.convert && c.convert.target;
@@ -199,11 +271,12 @@ GAH.define('web-models', api => {
     finally { end(); }
   }
   async function openDialog() {
-    cfg = null; editingKey = null; error(''); secret.value = '';
+    cfg = null; editingKey = null; error(''); secret.value = ''; psecret.value = '';
+    layout.hidden = true; loading.hidden = false; reason.hidden = convertBox.hidden = true;
     dlg.showModal(); begin();
     try { cfg = await api.host.get('/api/models/config'); fillConfig(); }
     catch (e) { error(e.message); }
-    finally { end(); }
+    finally { loading.hidden = true; end(); }
   }
   async function change(action) {
     if (working || busy || !(cfg && cfg.writable)) return;
@@ -228,7 +301,7 @@ GAH.define('web-models', api => {
     begin(); perror('');
     try {
       const d = await api.host.post('/api/models/config', body);
-      cfg = d.config; api.setState(d.state); fillConfig(editingKey, action === 'provider_save' ? id : null);
+      cfg = d.config; api.setState(d.state); fillConfig(undefined, action === 'provider_save' ? id : null);
       api.notice('\u670d\u52a1\u5546\u5df2\u4fdd\u5b58\u5e76\u751f\u6548');
     } catch (e) { perror(e.message); }
     finally { end(); }

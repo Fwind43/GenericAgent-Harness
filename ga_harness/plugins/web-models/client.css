@@ -10,7 +10,43 @@
 .gah-models[hidden],.gah-models select[hidden]{display:none}
 .gah-models select.gah-effort{max-width:120px}
 @media (max-width:560px){.gah-models{min-width:0;flex:0 1 auto;gap:4px}.gah-models select{min-width:0;padding:0 22px 0 8px}.gah-models select{font-size:12px}.gah-models select.gah-effort{width:auto;flex:none}.gah-models select:not(.gah-effort){max-width:130px}}
-/* provider / model sections in the config dialog */
-.gah-model-dialog .model-section{margin:18px 0 8px;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.02em}
-.gah-model-dialog .model-section:first-of-type{margin-top:4px}
-.gah-model-dialog .model-field[hidden],.gah-model-dialog .model-actions[hidden]{display:none}
+/* Provider-first navigation; shared form controls keep the host theme. */
+.gah-model-dialog{width:min(980px,calc(100vw - 24px))}
+.gah-model-dialog [hidden]{display:none!important}
+.gah-model-dialog .dialog-content{padding:16px 20px 20px}
+.gah-model-dialog .model-layout{display:grid;grid-template-columns:224px minmax(0,1fr);gap:24px;margin-top:16px;min-height:420px}
+.gah-model-dialog .model-sidebar{min-width:0;border-right:1px solid var(--border);padding-right:18px}
+.gah-model-dialog .model-sidebar-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px;font-size:13px}
+.gah-model-dialog .model-sidebar-head button{font-size:12px;padding:5px 9px}
+.gah-model-dialog .model-sections{display:flex;flex-direction:column;gap:5px}
+.gah-model-dialog .model-section-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text);padding:10px;font-size:13px;line-height:1.4}
+.gah-model-dialog .model-section-item:hover,.gah-model-dialog .model-list-item:hover{background:var(--surface-muted)}
+.gah-model-dialog .model-section-item[aria-current=true]{background:var(--surface-muted);border-color:var(--border)}
+.gah-model-dialog .model-section-label{display:grid;gap:4px;min-width:0;flex:1;overflow-wrap:anywhere}
+.gah-model-dialog .model-section-label strong{font-weight:600}
+.gah-model-dialog .model-section-label small,.gah-model-dialog .model-list-item small{font-size:11px;color:var(--muted);font-weight:400}
+.gah-model-dialog .model-count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.gah-model-dialog .model-section-body{min-width:0}
+.gah-model-dialog .model-section-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;margin-bottom:16px}
+.gah-model-dialog .model-section-heading{min-width:0;flex:1 1 220px;overflow-wrap:anywhere}
+.gah-model-dialog .model-section-heading h3{margin:0 0 6px;font-size:17px;font-weight:600;line-height:1.4}
+.gah-model-dialog .model-section-heading .model-help{margin:0;line-height:1.6}
+.gah-model-dialog .model-section-tools{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px}
+.gah-model-dialog .model-section-tools button{white-space:nowrap;padding:7px 11px;font-size:12px}
+.gah-model-dialog .model-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:20px}
+.gah-model-dialog .model-list-item{display:grid;gap:5px;text-align:left;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:11px 12px;font-size:13px;overflow-wrap:anywhere;min-width:0;line-height:1.4}
+.gah-model-dialog .model-list-item strong{font-weight:500}
+.gah-model-dialog .model-list-item[aria-pressed=true]{border-color:var(--text);background:var(--surface-muted)}
+.gah-model-dialog .model-editor{border-top:1px solid var(--border);padding-top:16px}
+.gah-model-dialog .model-editor-title{font-size:13px;margin:0 0 14px;font-weight:600}
+.gah-model-dialog .model-empty{padding:36px 16px;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-size:13px;text-align:center;line-height:1.7}
+.gah-model-dialog .model-section-item:focus-visible,.gah-model-dialog .model-list-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:700px){
+  .gah-model-dialog .dialog-content{padding:14px}
+  .gah-model-dialog .model-layout{grid-template-columns:minmax(0,1fr);gap:18px}
+  .gah-model-dialog .model-sidebar{border-right:0;border-bottom:1px solid var(--border);padding:0 0 14px}
+  .gah-model-dialog .model-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:200px;overflow-y:auto}
+  .gah-model-dialog .model-section-item{padding:8px}
+  .gah-model-dialog .model-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .gah-model-dialog .model-section-heading{flex-basis:100%}
+}
