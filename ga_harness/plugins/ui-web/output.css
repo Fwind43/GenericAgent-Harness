@@ -39,6 +39,7 @@ details[open]>summary>.chev{transform:none}
 .step .no{color:var(--muted);font-size:11px;flex:none;font-weight:400}
 .step .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .step .cnt{color:var(--muted);font-size:11px;flex:none}
+.step .tok{color:var(--muted);font-size:11px;flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}
 .step-body{padding:3px 0 12px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
@@ -93,7 +94,7 @@ details[open]>summary>.chev{transform:none}
   .md{font-size:14px;line-height:1.85}
   .meta{margin-bottom:10px;font-size:11px}
   .steps{margin-bottom:16px}
-  .step>summary{gap:7px}.step .cnt{font-size:10px}
+  .step>summary{gap:7px}.step .cnt,.step .tok{font-size:10px}
   .tool>summary{padding:7px 8px;gap:6px}
   .tool .tname{max-width:48%}
   .tool-body{padding:6px 8px 8px}

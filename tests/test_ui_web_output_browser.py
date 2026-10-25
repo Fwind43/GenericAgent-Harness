@@ -95,7 +95,8 @@ def seeded_messages():
         {"role": "assistant", "status": "done", "text": "", "turns": [
             {"turn": 1, "summary": "\u68c0\u67e5\u8f93\u51fa\u683c\u5f0f", "status": "done", "reply": "\u5df2\u8bfb\u53d6 **\u672c\u5730\u6570\u636e**\u3002", "tools": [
                 {"id": "1.0", "name": "code_run", "args": {"script": CODE}, "data": "<safe> & readable\n" + "x" * 200,
-                 "status": "done", "ok": True, "seconds": 0.25}]},
+                 "status": "done", "ok": True, "seconds": 0.25}],
+             "usage": {"input": 12345, "cache_read": 10000, "cache_write": 0, "output": 456}},
             {"turn": 2, "summary": "", "status": "done", "reply": BODY, "tools": []}],
          "usage": {"calls": 2, "input": 1234, "cache_read": 1000, "output": 234}},
     ]
@@ -135,6 +136,9 @@ def test_markdown_safety_copy_and_themes(output_app, browser):
     assert page.locator('.body.md a[href^="javascript:"]').count() == 0
     assert page.locator('.body.md a[href="https://example.test/docs"]').get_attribute("rel") == "noopener noreferrer"
     assert page.locator('.body.md input:not([disabled])').count() == 0
+    chip = page.locator(".step > summary .tok")
+    assert chip.count() == 1 and chip.text_content() == "\u219112k \u2193456"
+    assert "12,345" in chip.get_attribute("title") and "10,000" in chip.get_attribute("title")
     page.locator(".md-code .output-copy").click()
     page.locator(".md-code .output-copy.copied").wait_for()
     # Windows' system clipboard converts LF to CRLF; the payload is unchanged.
