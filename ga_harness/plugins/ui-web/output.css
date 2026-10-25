@@ -3,7 +3,7 @@
 .msg{min-width:0;margin:0 0 32px}
 .msg.user{display:flex;justify-content:flex-end;margin-bottom:26px}
 .msg.user .body{max-width:85%;padding:10px 16px;background:var(--surface-muted);border:1px solid var(--border);border-radius:18px;white-space:pre-wrap;overflow-wrap:anywhere}
-.msg.assistant{padding:0 2px}
+.msg.assistant{padding:0}
 .meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;margin:0 0 12px;line-height:20px}
 .meta .dot{width:4px;height:4px;background:#19a37f}
 .msg.assistant .body{min-width:0}
@@ -102,3 +102,26 @@ details[open]>summary>.chev{transform:none}
   .md-code pre{font-size:12px;padding:10px 12px}
 }
 @media(prefers-reduced-motion:reduce){.cursor::after,.steps.running .process-dot,.tool .tst.run::before{animation:none}}
+/* Composer: same column as the transcript (860 - 2*28 = 804), shaped like Admin's .oa-composer. */
+:root{--col-pad:28px;--col-w:804px}
+#thread{padding-left:var(--col-pad);padding-right:var(--col-pad);padding-bottom:8px}
+#thread>.msg:last-child{margin-bottom:8px}
+footer{padding:10px var(--col-pad) 14px}
+footer form{max-width:var(--col-w);gap:6px;padding:6px;border-radius:18px;border-color:var(--border);background:var(--surface);box-shadow:0 2px 6px rgba(35,30,24,.05),0 10px 28px -8px rgba(35,30,24,.16);transition:border-color .15s,box-shadow .15s}
+footer form:focus-within{border-color:color-mix(in srgb,var(--muted) 45%,var(--border));box-shadow:0 2px 6px rgba(35,30,24,.06),0 12px 30px -8px rgba(35,30,24,.2)}
+footer textarea{padding:8px 10px 2px;font-size:15px;line-height:24px;min-height:34px}
+footer .composer-row{min-height:34px;gap:6px;padding:0 0 0 2px}
+footer .gah-slot[data-slot=composer-top]:not(:empty){padding:2px 8px 0}
+footer .gah-models select{height:32px;border-radius:999px;border:1px solid var(--border);background-color:transparent;padding:0 26px 0 12px;font-weight:500}
+footer .gah-models select:hover:not(:disabled){background-color:var(--surface-muted)}
+footer #send,footer #stop{height:32px;min-width:52px;padding:0 14px;border-radius:9px;font-size:13px;font-weight:600;line-height:30px}
+footer #send:disabled{opacity:1;background:var(--surface-muted);color:var(--muted)}
+footer #stop{background:var(--surface-muted);border:1px solid var(--border);color:var(--text)}
+footer .hint{max-width:var(--col-w);margin-top:8px;font-size:11px}
+/* Bordered blocks share one radius. */
+.md-code,.md-table,.tool{border-radius:10px}
+@media(max-width:760px){:root{--col-pad:16px}#thread{padding-left:var(--col-pad);padding-right:var(--col-pad)}footer{padding:8px var(--col-pad) 10px}footer form{border-radius:16px}}
+/* Soft fade so text scrolling under the composer does not look clipped. */
+footer{position:relative}
+footer::before{content:"";position:absolute;left:0;right:0;top:-24px;height:24px;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--bg))}
+footer .hint{padding-bottom:2px}
