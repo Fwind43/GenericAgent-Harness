@@ -214,6 +214,9 @@ def test_readonly_ga_mykey_explains_and_converts(tmp_path):
     out = store.change({"action": "convert"})
     assert out["writable"] is True and "convert" not in out
     assert [e["key"] for e in out["entries"]] == ["native_oai_config_x"]
+    assert [p["id"] for p in out["providers"]] == ["example"]
+    assert out["entries"][0]["provider"] == "example"
+    assert llmconfig.Source(fb.target).load()["native_oai_config_x"]["apikey"] == "test-secret-x"
     assert "test-secret-x" not in json.dumps(out)
     assert llmconfig.Source(fb.target).load()["proxy"] == "http://127.0.0.1:1"
     assert mykey.read_bytes() == before and fb.committed == ["finder"]

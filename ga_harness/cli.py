@@ -75,6 +75,7 @@ def _llm(args) -> int:
     data = llmconfig.read_mykey_py(args.mykey)
     skipped = data.pop("_skipped", [])
     out.parent.mkdir(parents=True, exist_ok=True)
+    data = llmconfig.group_providers(data)
     out.write_text(llmconfig.to_toml(data), encoding="utf-8")
     print(f"[gah] wrote {out}: {[k for k in data if llmconfig.is_llm_key(k)]}")
     if skipped:

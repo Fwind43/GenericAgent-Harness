@@ -20,6 +20,7 @@ import sys
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 MODULE = "mykey"
 DEFAULT_FILE = "~/.ga-harness/llm.toml"
@@ -234,9 +235,86 @@ def to_toml(data: dict) -> str:
     plain = {k: v for k, v in data.items() if not isinstance(v, dict) and v is not None}
     tables = {k: v for k, v in data.items() if isinstance(v, dict)}
     out = [f"{_key(k)} = {_val(v)}" for k, v in plain.items()]
+    providers = tables.pop(PROVIDERS, None)
+    if isinstance(providers, dict) and all(isinstance(v, dict) for v in providers.values()):
+        for pid, tbl in providers.items():
+            out += ["", f"[{PROVIDERS}.{_key(pid)}]"] + [f"{_key(k)} = {_val(v)}" for k, v in tbl.items() if v is not None]
+    elif providers is not None:
+        tables = {PROVIDERS: providers} | tables
     for name, tbl in tables.items():
         out += ["", f"[{_key(name)}]"] + [f"{_key(k)} = {_val(v)}" for k, v in tbl.items() if v is not None]
     return "\n".join(out) + "\n"
+
+
+def _provider_id(apibase: str, taken: set) -> str:
+    try:
+        host = urlsplit(_expand(apibase)).hostname or ""
+    except Exception:
+        host = ""
+    parts = [x for x in host.lower().split(".") if x and x not in ("www", "api")]
+    if len(parts) > 1 and not all(x.isdigit() for x in parts):
+        parts = parts[:-1]   # drop the TLD: api.openai.com -> openai
+    base = re.sub(r"[^a-z0-9_-]+", "-", "-".join(parts)).strip("-_")[:32] or "provider"
+    pid, n = base, 2
+    while pid in taken:
+        pid, n = f"{base}-{n}", n + 1
+    taken.add(pid)
+    return pid
+
+
+def group_providers(data: dict) -> dict:
+    """Lift shared connection settings of mykey-style models into ``[providers]``.
+
+    Models are grouped only when protocol, ``apibase`` and ``apikey`` are all
+    identical, so no credential is ever reassigned to another model; a shared
+    endpoint alone does not merge.  Returns ``data`` unchanged when it already
+    has providers or when the result would not resolve to the same models.
+    """
+    if PROVIDERS in data:
+        return data
+    groups, order = {}, []
+    for k, v in data.items():
+        if not (isinstance(v, dict) and is_llm_key(k) and ("oai" in k or "claude" in k) and "mixin" not in k):
+            continue
+        base, key = v.get("apibase"), v.get("apikey")
+        if not (isinstance(base, str) and base.strip() and isinstance(key, str) and key.strip()):
+            continue
+        g = ("claude" if "claude" in k else "oai", base, key)
+        if g not in groups:
+            groups[g] = []
+            order.append(g)
+        groups[g].append(k)
+    if not groups:
+        return data
+    taken, providers, owner = set(), {}, {}
+    for g in order:
+        protocol, base, key = g
+        pid = _provider_id(base, taken)
+        try:
+            host = urlsplit(_expand(base)).hostname or pid
+        except Exception:
+            host = pid
+        providers[pid] = {"name": host, "protocol": protocol, "apibase": base, "apikey": key}
+        for k in groups[g]:
+            owner[k] = pid
+    names = {}
+    for p in providers.values():   # same host twice (e.g. two keys): tell them apart
+        names.setdefault(p["name"], []).append(p)
+    for same in names.values():
+        if len(same) > 1:
+            for i, p in enumerate(same, 1):
+                p["name"] = f"{p['name']} ({p['protocol']}, {i})"
+    out = {PROVIDERS: providers}
+    for k, v in data.items():
+        if k in owner:
+            v = {"provider": owner[k]} | {x: y for x, y in v.items() if x not in ("apibase", "apikey")}
+        out[k] = v
+    try:
+        if resolve_providers(out) != data:
+            return data
+    except ConfigError:
+        return data
+    return out
 
 
 def read_mykey_py(path: str | os.PathLike) -> dict:

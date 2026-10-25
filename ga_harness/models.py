@@ -247,7 +247,7 @@ class Models:
             try:
                 data = llmconfig.read_mykey_py(mykey)
                 data.pop("_skipped", None)
-                payload = llmconfig.to_toml(data).encode("utf-8")
+                payload = llmconfig.to_toml(llmconfig.group_providers(data)).encode("utf-8")
                 llmconfig.tomllib.loads(payload.decode("utf-8"))
             except Exception:
                 raise ValueError("GA mykey.py could not be converted; run 'gah llm migrate' locally") from None
