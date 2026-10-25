@@ -118,5 +118,38 @@
     setMarkdown(node, text);
     return node;
   }
-  window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton });
+  // Quiet, semantic tool receipts: details stay in the expandable body.
+  function toolSummary(name, value) {
+    const tool = String(name || 'tool').split('.').filter(Boolean).pop() || 'tool';
+    let args = value;
+    if (typeof args === 'string') { try { args = JSON.parse(args); } catch (_) { args = {}; } }
+    if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+    const text = value => typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+    const basename = value => text(value).split(/[\\/]/).filter(Boolean).pop() || '';
+    const path = text(args.path || args.file);
+    let kind = T('\u5de5\u5177', 'Tool'), target = basename(path || args.cwd), detail = path || text(args.cwd);
+    if (tool === 'file_read') {
+      kind = T('\u8bfb\u53d6', 'Read');
+      const start = Number(args.start), count = args.count == null ? 200 : Number(args.count);
+      const lines = Number.isSafeInteger(start) && start > 0
+        ? ' \u00b7 L' + start + (Number.isSafeInteger(count) && count > 1 ? '\u2013' + (start + count - 1) : '') : '';
+      target = basename(path) + lines; detail = path + lines;
+    } else if (tool === 'file_patch') kind = T('\u7f16\u8f91', 'Edit');
+    else if (tool === 'file_write') kind = T('\u5199\u5165', 'Write');
+    else if (tool === 'code_run') {
+      kind = T('\u6267\u884c', 'Run');
+      const type = text(args.type).toLowerCase();
+      target = type === 'powershell' ? 'PowerShell' : type === 'python' || !type ? 'Python' : text(args.type);
+      detail = [target, text(args.cwd)].filter(Boolean).join(' \u00b7 ');
+    } else if (tool === 'web_scan') {
+      kind = T('\u6d4f\u89c8', 'Browse');
+      target = args.tabs_only ? T('\u6807\u7b7e\u9875', 'Tabs') : T('\u9875\u9762\u5185\u5bb9', 'Page content'); detail = target;
+    } else if (tool === 'web_execute_js') {
+      kind = T('\u6d4f\u89c8', 'Browse'); target = detail = 'JavaScript';
+    } else if (tool === 'ask_user') {
+      kind = T('\u8be2\u95ee', 'Ask'); target = detail = text(args.question) || T('\u7b49\u5f85\u56de\u590d', 'Awaiting reply');
+    } else if (!target) target = detail = text(args.query || args.pattern || args.url || args.command);
+    return { kind, tool, target, detail };
+  }
+  window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton, toolSummary });
 })();

@@ -155,6 +155,94 @@ def test_disclosure_chevrons_trail_content(output_app, browser, width, running):
     page.close()
 
 
+@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("locale", ["zh-CN", "en-US"])
+def test_admin_style_tool_receipts(output_app, browser, width, locale):
+    fe, _, base = output_app
+    fe.messages = seeded_messages()
+    tools = [
+        {"name": "functions.web_execute_js", "args": {"script": "document.title"}},
+        {"name": "file_read", "args": {"path": "C:/project/ui/index.html", "start": 176, "count": 39}},
+        {"name": "code_run", "args": {"type": "powershell", "script": "Get-Date"}, "status": "running"},
+        {"name": "file_patch", "args": {"path": "C:/project/ui/output.css"}, "ok": False},
+        {"name": "file_write", "args": {"path": "C:/project/ui/output.js"}},
+        {"name": "ask_user", "args": {"question": "<img src=x onerror=window.__receiptXSS=1>"}},
+        {"name": "custom_" + "tool_" * 30, "args": {"query": "target-" * 100}},
+    ]
+    fe.messages[-1]["turns"][0]["tools"] = [
+        {"id": f"1.{i}", "status": "done", "ok": True, "seconds": 0.25, "data": "<safe> & readable", **tool}
+        for i, tool in enumerate(tools)
+    ]
+    page = browser.new_page(locale=locale, viewport={"width": width, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base)
+    page.locator(".steps > summary").click()
+    page.locator(".step > summary").click()
+    rows = page.locator(".tool > summary")
+    assert rows.count() == 7
+    expected = (["\u6d4f\u89c8", "\u8bfb\u53d6", "\u6267\u884c", "\u7f16\u8f91", "\u5199\u5165", "\u8be2\u95ee", "\u5de5\u5177"]
+                if locale == "zh-CN" else ["Browse", "Read", "Run", "Edit", "Write", "Ask", "Tool"])
+    assert page.locator(".tool .tkind").all_text_contents() == expected
+    assert rows.nth(0).locator(".tname").inner_text() == "web_execute_js"
+    assert rows.nth(0).locator(".targ").inner_text() == "JavaScript"
+    assert rows.nth(1).locator(".targ").inner_text() == "index.html \u00b7 L176\u2013214"
+    assert rows.nth(1).locator(".targ").get_attribute("title") == "C:/project/ui/index.html \u00b7 L176\u2013214"
+    assert rows.nth(2).locator(".targ").inner_text() == "PowerShell"
+    assert rows.nth(2).locator(".tst").inner_text() == ("\u6267\u884c\u4e2d" if locale == "zh-CN" else "Running")
+    assert rows.nth(3).locator(".tst").inner_text() == ("\u5931\u8d25" if locale == "zh-CN" else "Failed")
+    assert page.locator('.tool[data-state="ok"] .tst').count() == 0
+    assert page.locator(".tool img, .tool script").count() == 0
+    assert not page.evaluate("window.__receiptXSS || false")
+    assert page.locator(".tool-body:visible").count() == 0
+    for theme in ["light", "dark", "warm"]:
+        page.evaluate("v => document.documentElement.dataset.theme=v", theme)
+        assert_layout(page)
+        assert rows.evaluate_all("""nodes => nodes.every(s => {
+            const c = s.querySelector('.chev'), r = c.getBoundingClientRect();
+            const style = getComputedStyle(s.parentElement);
+            return s.lastElementChild === c && style.borderTopWidth === '0px'
+                && style.backgroundColor === 'rgba(0, 0, 0, 0)'
+                && s.getBoundingClientRect().height <= 36
+                && Math.abs(s.getBoundingClientRect().right - r.right) < 1
+                && [...s.children].filter(n => n !== c).every(n => n.getBoundingClientRect().right <= r.left);
+        })""")
+        page.evaluate("document.getElementById('scroll').scrollTop=0")
+        shot(page, f"{width}-{locale}-{theme}-receipts")
+    rows.nth(1).press("Enter")
+    assert page.locator(".tool").nth(1).evaluate("d => d.open")
+    assert "C:/project/ui/index.html" in page.locator(".tool").nth(1).locator("pre").first.inner_text()
+    assert page.locator(".tool").nth(1).locator("pre").last.inner_text() == "<safe> & readable"
+    assert "0.3s" in page.locator(".tool").nth(1).locator(".tool-meta").inner_text()
+    rows.nth(1).press("Space")
+    assert not page.locator(".tool").nth(1).evaluate("d => d.open")
+    assert not errors, errors
+    page.close()
+
+
+def test_tool_receipt_summary_handles_argument_shapes(output_app, browser):
+    _, _, base = output_app
+    page = browser.new_page(locale="en-US")
+    page.goto(base)
+    cases = [
+        ("file_read", {"path": "C:\\ui\\index.html", "start": 3, "count": 1}, "Read", "index.html \u00b7 L3"),
+        ("file_read", {"path": "/tmp/index.html", "start": 1}, "Read", "index.html \u00b7 L1\u2013200"),
+        ("file_read", {"path": "/tmp/index.html", "start": "bad"}, "Read", "index.html"),
+        ("functions.file_patch", '{"path":"/tmp/output.css"}', "Edit", "output.css"),
+        ("code_run", {"script": "print('not in the header')"}, "Run", "Python"),
+        ("web_scan", {"tabs_only": True}, "Browse", "Tabs"),
+        ("web_scan", {}, "Browse", "Page content"),
+        ("unknown", "not json", "Tool", ""),
+        ("unknown", [], "Tool", ""),
+        ("unknown", None, "Tool", ""),
+        ("unknown", {"path": {"nested": "data"}}, "Tool", ""),
+    ]
+    for name, args, kind, target in cases:
+        receipt = page.evaluate("([name,args]) => GAHOutput.toolSummary(name,args)", [name, args])
+        assert (receipt["kind"], receipt["target"]) == (kind, target)
+    page.close()
+
+
 def test_markdown_safety_copy_and_themes(output_app, browser):
     fe, _, base = output_app
     fe.messages = seeded_messages()
@@ -231,7 +319,9 @@ def test_streaming_keeps_disclosure_and_final_markdown(output_app, browser):
     assert page.locator(".step[open]").count() == 0
     page.locator(".step > summary").click()
     assert page.locator(".tool[open]").count() == 1
-    assert page.locator(".tool .tst.ok").count() == 1
+    assert page.locator('.tool[data-state="ok"]').count() == 1
+    assert page.locator(".tool .tool-meta.ok").count() == 1
+    assert page.locator(".tool > summary .tst").count() == 0
     agent.finish.set()
     page.wait_for_selector(".message-actions .output-copy")
     assert page.locator(".body.md h2").inner_text() == "\u5b8c\u6210\u9a8c\u8bc1"

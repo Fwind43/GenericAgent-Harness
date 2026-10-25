@@ -43,17 +43,22 @@ details[open]>summary>.chev{transform:none}
 .step-body{padding:3px 0 12px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
-.tool{border:1px solid var(--border);border-radius:7px;background:var(--surface);margin:7px 0;overflow:hidden;color:var(--text)}
-.tool>summary{padding:7px 10px;font-size:12px;min-height:34px;gap:8px}
+/* Admin-style receipts: plain action / tool / target rows, not nested cards. */
+.tool{border:0;border-radius:0;background:transparent;margin:2px 0;min-width:0;color:var(--text)}
+.tool>summary{padding:6px 0;font-size:13px;line-height:20px;min-height:34px;gap:9px;border-radius:4px}
 .tool>summary:hover{background:var(--surface-muted)}
-.tool .tname{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:500;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
-.tool .targ{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px}
-.tool .tst{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.tool .tst.ok{color:var(--muted)}
-.tool .tst.fail{color:var(--danger)}
-.tool .tst.run::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:#19a37f;margin-right:5px;vertical-align:1px;animation:blink 1s steps(1) infinite}
-.tool-body{border-top:1px solid var(--border);padding:8px 10px 10px}
-.tool-body .lbl{font-size:10px;color:var(--muted);margin:4px 0}
+.tool>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tool .tkind{flex:none;color:var(--muted);font-weight:400}
+.tool .tname{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:400;max-width:40%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+.tool .targ{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:13px}
+.tool .tst{flex:none;font-size:11px;white-space:nowrap;color:var(--muted)}
+.tool .tst.fail,.tool-meta.fail{color:var(--danger)}
+.tool .tst.run{color:var(--accent)}
+.tool>summary .chev{opacity:.65}
+.tool>summary:hover .chev,.tool[open]>summary .chev{opacity:1}
+.tool-body{border:0;padding:2px 0 10px;min-width:0}
+.tool-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin:0 0 8px}
+.tool-body .lbl{font-size:11px;color:var(--muted);margin:4px 0}
 .tool-body pre{margin:0 0 7px;background:var(--code-bg);border-radius:4px;padding:8px 10px;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
 /* Markdown stays inside the transcript; only code and tables scroll horizontally. */
 .md{font-size:15px;line-height:1.85;font-weight:400;color:var(--text);overflow-wrap:anywhere;min-width:0}
@@ -95,9 +100,9 @@ details[open]>summary>.chev{transform:none}
   .meta{margin-bottom:10px;font-size:11px}
   .steps{margin-bottom:16px}
   .step>summary{gap:7px}.step .cnt,.step .tok{font-size:10px}
-  .tool>summary{padding:7px 8px;gap:6px}
+  .tool>summary{padding:6px 0;gap:6px}
   .tool .tname{max-width:48%}
-  .tool-body{padding:6px 8px 8px}
+  .tool-body{padding:6px 0 8px}
   .message-actions{align-items:flex-start;gap:5px}
   .message-actions .usage{font-size:10px;line-height:18px;padding-top:4px}
   .md-code pre{font-size:12px;padding:10px 12px}
@@ -120,7 +125,7 @@ footer #send:disabled{opacity:1;background:var(--surface-muted);color:var(--mute
 footer #stop{background:var(--surface-muted);border:1px solid var(--border);color:var(--text)}
 footer .hint{max-width:var(--col-w);margin-top:8px;font-size:11px}
 /* Bordered blocks share one radius. */
-.md-code,.md-table,.tool{border-radius:10px}
+.md-code,.md-table{border-radius:10px}
 @media(max-width:760px){:root{--col-pad:16px}#thread{padding-left:var(--col-pad);padding-right:var(--col-pad)}footer{padding:8px var(--col-pad) 10px}footer form{border-radius:16px}}
 /* Soft fade so text scrolling under the composer does not look clipped. */
 footer{position:relative}
