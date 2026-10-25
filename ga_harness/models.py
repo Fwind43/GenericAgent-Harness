@@ -77,9 +77,10 @@ def _replace(path, payload):
 
 
 class Models:
-    def __init__(self, agent, source=None):
+    def __init__(self, agent, source=None, fallback=None):
         self.agent = agent
         self.source = source
+        self.fallback = fallback if source is None else None
         self.lock = threading.RLock()
 
     def _idle(self):
@@ -153,7 +154,17 @@ class Models:
                 _, _, data, revision = self._read()
                 providers = self._providers(data)
             except ValueError as e:
-                return {"writable": False, "reason": str(e), "entries": [], "providers": []}
+                out = {"writable": False, "reason": str(e), "entries": [], "providers": []}
+                if self.source is None:
+                    out["reason_code"] = "ga_mykey"
+                    if self.fallback is not None:
+                        out["convert"] = {"target": str(self.fallback.target),
+                                          "blocked": self.fallback.target.exists()}
+                elif self.source.inline:
+                    out["reason_code"] = "inline"
+                else:
+                    out["reason_code"] = "invalid"
+                return out
             entries = []
             count = {}
             for key, value in data.items():
@@ -220,9 +231,53 @@ class Models:
             data.pop(llmconfig.PROVIDERS, None)
         return bool(used)
 
+    def convert(self):
+        """Copy GA's mykey.py into the harness file and switch to it; mykey.py is left untouched."""
+        with self.lock:
+            self._idle()
+            fb = self.fallback
+            if self.source is not None or fb is None:
+                raise ValueError("model configuration is already editable")
+            target = fb.target
+            if target.exists():
+                raise ValueError(f"{target} already exists; restart gah to use it")
+            mykey = fb.mykey_path()
+            if mykey is None or not mykey.is_file():
+                raise ValueError("GA mykey.py was not found")
+            try:
+                data = llmconfig.read_mykey_py(mykey)
+                data.pop("_skipped", None)
+                payload = llmconfig.to_toml(data).encode("utf-8")
+                llmconfig.tomllib.loads(payload.decode("utf-8"))
+            except Exception:
+                raise ValueError("GA mykey.py could not be converted; run 'gah llm migrate' locally") from None
+            agent = self.agent
+            old = agent.llmclients, agent.llmclient, getattr(agent, "llm_no", 0)
+            finder = None
+            _replace(target, payload)
+            try:
+                src, finder = fb.adopt()
+                agent.load_llm_sessions()
+                if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
+                    raise RuntimeError()
+            except Exception:
+                if finder is not None:
+                    fb.undo(finder)
+                target.unlink(missing_ok=True)
+                try:
+                    agent.load_llm_sessions()
+                finally:
+                    agent.llmclients, agent.llmclient, agent.llm_no = old
+                raise RuntimeError("conversion failed; GA mykey.py is still in use") from None
+            fb.commit(finder)
+            self.source, self.fallback = src, None
+            return self.config()
+
     def change(self, body):
         with self.lock:
             self._idle()
+            if body.get("action") == "convert":
+                return self.convert()
             path, original, data, revision = self._read()
             if body.get("revision") != revision:
                 raise RuntimeError("model file changed; reload settings before saving")

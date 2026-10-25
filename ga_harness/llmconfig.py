@@ -157,6 +157,42 @@ def uninstall(finder: MykeyFinder) -> None:
         sys.modules.pop(MODULE, None)
 
 
+class Fallback:
+    """GA's own mykey.py is active (no harness file).  Knows where a harness file
+    would live and how to switch GA over to it without a restart."""
+
+    def __init__(self, target: str | os.PathLike, on_adopt=None):
+        self.target = Path(os.path.expanduser(str(target)))
+        self.on_adopt = on_adopt
+
+    def mykey_path(self) -> Path | None:
+        core = sys.modules.get("llmcore")
+        p = getattr(core, "_mykey_path", None)
+        if not p:
+            p = getattr(sys.modules.get(MODULE), "__file__", None)
+        return Path(p) if p else None
+
+    @staticmethod
+    def _refresh() -> None:
+        core = sys.modules.get("llmcore")
+        if core is not None and hasattr(core, "_mykey_mtime"):
+            core._mykey_mtime = None   # force GA's next reload_mykeys() to re-import
+
+    def adopt(self) -> tuple[Source, MykeyFinder]:
+        src = Source(self.target)
+        finder = install(src)
+        self._refresh()
+        return src, finder
+
+    def undo(self, finder: MykeyFinder) -> None:
+        uninstall(finder)
+        self._refresh()
+
+    def commit(self, finder: MykeyFinder) -> None:
+        if self.on_adopt:
+            self.on_adopt(finder)
+
+
 def is_llm_key(name: str) -> bool:
     """Same filter GA's load_llm_sessions uses."""
     return any(x in name for x in ("api", "config", "cookie"))

@@ -66,12 +66,15 @@ GAH.define('web-models', api => {
       baseField, secretField),
     err,
     h('div', { class: 'model-actions' }, removeBtn, saveBtn));
+  const help = h('p', { class: 'model-help' }, '\u914d\u7f6e\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u56de\u663e\u5df2\u6709\u7684 API Key\u3002\u4fdd\u5b58\u6210\u529f\u540e\u5373\u65f6\u751f\u6548\u3002');
+  const convertBtn = h('button', { type: 'button', onclick: () => convert() }, '\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e');
+  const convertBox = h('div', { class: 'model-actions model-convert', hidden: true }, convertBtn);
   const dlg = h('dialog', { class: 'gah-dialog gah-model-dialog', 'aria-label': '\u6a21\u578b\u914d\u7f6e',
       oncancel: e => { if (working) e.preventDefault(); }, onclose: () => { secret.value = ''; psecret.value = ''; } },
     h('div', { class: 'dialog-head' }, h('h2', null, '\u6a21\u578b\u914d\u7f6e'), closeBtn),
     h('div', { class: 'dialog-content' },
-      h('p', { class: 'model-help' }, '\u914d\u7f6e\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u56de\u663e\u5df2\u6709\u7684 API Key\u3002\u4fdd\u5b58\u6210\u529f\u540e\u5373\u65f6\u751f\u6548\u3002'),
-      reason,
+      help,
+      reason, convertBox,
       h('h3', { class: 'model-section' }, '\u670d\u52a1\u5546'),
       h('div', { class: 'model-picker' }, pentry, paddBtn), pform,
       h('h3', { class: 'model-section' }, '\u6a21\u578b'),
@@ -96,6 +99,7 @@ GAH.define('web-models', api => {
     pick.disabled = b || !(s.models && s.models.items.length);
     effort.disabled = b;
     open.disabled = b;
+    convertBtn.disabled = b;
     for (const n of [entry, addBtn, saveBtn, name, model, ctxwin, base, secret, prov, pentry, paddBtn, pSaveBtn, pname, pbase, psecret]) n.disabled = locked;
     key.disabled = locked || editingKey !== null;
     protocol.disabled = locked || editingKey !== null || !!prov.value;
@@ -153,8 +157,30 @@ GAH.define('web-models', api => {
     pfill(ppreferred !== undefined ? ppreferred : (ps.some(x => x.id === editingPid) ? editingPid : (ps[0] ? ps[0].id : null)));
     entry.replaceChildren(h('option', { value: '' }, '\u65b0\u589e\u914d\u7f6e'),
       ...cfg.entries.map(x => h('option', { value: x.key }, x.values.name || x.values.model || x.key)));
-    reason.textContent = cfg.reason || ''; reason.hidden = !!cfg.writable;
+    reason.textContent = cfg.writable ? '' : readonlyText(cfg); reason.hidden = !!cfg.writable;
+    help.hidden = !cfg.writable;
+    convertBox.hidden = !(cfg.convert && !cfg.convert.blocked);
     fill(preferred === null ? null : (cfg.entries.some(x => x.key === preferred) ? preferred : (cfg.entries[0] && cfg.entries[0].key)));
+  }
+  function readonlyText(c) {
+    const t = c.convert && c.convert.target;
+    if (c.reason_code === 'ga_mykey' && t && c.convert.blocked)
+      return '\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u53ea\u80fd\u67e5\u770b\u3002' + t + ' \u5df2\u5b58\u5728\u4f46\u5c1a\u672a\u542f\u7528\uff0c\u91cd\u542f gah \u540e\u5373\u53ef\u5728\u8fd9\u91cc\u7f16\u8f91\u3002';
+    if (c.reason_code === 'ga_mykey' && t)
+      return '\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u4e0d\u80fd\u4fee\u6539\u3002\u70b9\u51fb\u4e0b\u65b9\u6309\u94ae\u4f1a\u628a\u5b83\u590d\u5236\u5230 ' + t + '\uff0c\u4ee5\u540e\u5728\u8fd9\u91cc\u7f16\u8f91\uff1b\u539f mykey.py \u4fdd\u6301\u4e0d\u53d8\uff0c\u8f6c\u6362\u540e\u7acb\u5373\u751f\u6548\u3002';
+    if (c.reason_code === 'ga_mykey') return '\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u4e0d\u80fd\u4fee\u6539\u3002\u8fd0\u884c gah llm migrate \u8f6c\u6362\u540e\u5373\u53ef\u5728\u8fd9\u91cc\u7f16\u8f91\u3002';
+    if (c.reason_code === 'inline') return '\u6a21\u578b\u914d\u7f6e\u5199\u5728 profile \u7684 keys \u91cc\uff0c\u8bf7\u76f4\u63a5\u4fee\u6539 profile\u3002';
+    return '\u914d\u7f6e\u6587\u4ef6\u6682\u65f6\u65e0\u6cd5\u7f16\u8f91\uff1a' + (c.reason || '');
+  }
+  async function convert() {
+    if (working || busy || !(cfg && cfg.convert)) return;
+    begin(); error('');
+    try {
+      const d = await api.host.post('/api/models/config', { action: 'convert' });
+      cfg = d.config; api.setState(d.state); fillConfig();
+      api.notice('\u5df2\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e\u5e76\u751f\u6548');
+    } catch (e) { error(e.message); }
+    finally { end(); }
   }
   function begin() { working = true; api.lock(true); controls(); }
   function end() { working = false; api.lock(false); controls(); }

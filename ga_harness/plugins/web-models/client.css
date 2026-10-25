@@ -13,4 +13,4 @@
 /* provider / model sections in the config dialog */
 .gah-model-dialog .model-section{margin:18px 0 8px;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.02em}
 .gah-model-dialog .model-section:first-of-type{margin-top:4px}
-.gah-model-dialog .model-field[hidden]{display:none}
+.gah-model-dialog .model-field[hidden],.gah-model-dialog .model-actions[hidden]{display:none}

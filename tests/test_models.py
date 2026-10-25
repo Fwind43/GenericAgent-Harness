@@ -172,3 +172,90 @@ def test_invalid_selection(tmp_path, index):
     with pytest.raises(ValueError):
         store.select(index)
     assert store.catalog()["current"] == 0
+
+
+class StubFallback(llmconfig.Fallback):
+    def __init__(self, target, mykey, agent):
+        super().__init__(target)
+        self.mykey, self.agent, self.committed, self.undone = mykey, agent, [], []
+
+    def mykey_path(self):
+        return self.mykey
+
+    def adopt(self):
+        src = llmconfig.Source(self.target)
+        self.prev, self.agent.source = self.agent.source, src
+        return src, "finder"
+
+    def undo(self, finder):
+        self.agent.source = self.prev
+        self.undone.append(finder)
+
+    def commit(self, finder):
+        self.committed.append(finder)
+
+
+def make_fallback(tmp_path):
+    mykey = tmp_path / "mykey.py"
+    mykey.write_text('native_oai_config_x = {"name": "X", "model": "m-x", "apibase": "https://example.invalid/v1", '
+                     '"apikey": "test-secret-x"}\nproxy = "http://127.0.0.1:1"\n', encoding="utf-8")
+    agent = ModelAgent(llmconfig.Source(inline=llmconfig.read_mykey_py(mykey)))
+    fb = StubFallback(tmp_path / "gah" / "llm.toml", mykey, agent)
+    return Models(agent, None, fb), fb, mykey
+
+
+def test_readonly_ga_mykey_explains_and_converts(tmp_path):
+    store, fb, mykey = make_fallback(tmp_path)
+    before = mykey.read_bytes()
+    cfg = store.config()
+    assert cfg["writable"] is False and cfg["reason_code"] == "ga_mykey"
+    assert cfg["convert"] == {"target": str(fb.target), "blocked": False}
+    store.agent.llmclient.backend.history = [{"role": "user", "content": "kept"}]
+    out = store.change({"action": "convert"})
+    assert out["writable"] is True and "convert" not in out
+    assert [e["key"] for e in out["entries"]] == ["native_oai_config_x"]
+    assert "test-secret-x" not in json.dumps(out)
+    assert llmconfig.Source(fb.target).load()["proxy"] == "http://127.0.0.1:1"
+    assert mykey.read_bytes() == before and fb.committed == ["finder"]
+    assert store.agent.llmclient.backend.history == [{"role": "user", "content": "kept"}]
+    with pytest.raises(ValueError):
+        store.convert()
+    change(store, values={"name": "Y", "model": "m-y", "apibase": "https://example.invalid/v1", "apikey": "k"},
+           key="native_oai_config_y")
+    assert "native_oai_config_y" in llmconfig.Source(fb.target).load()
+
+
+def test_convert_refuses_existing_target_and_rolls_back(tmp_path):
+    store, fb, _ = make_fallback(tmp_path)
+    fb.target.parent.mkdir()
+    fb.target.write_text("# user file\n", encoding="utf-8")
+    assert store.config()["convert"]["blocked"] is True
+    with pytest.raises(ValueError):
+        store.convert()
+    assert fb.target.read_text(encoding="utf-8") == "# user file\n"
+    fb.target.unlink()
+    store.agent.fail_reload = True
+    clients = store.agent.llmclients
+    with pytest.raises(RuntimeError):
+        store.convert()
+    assert not fb.target.exists() and fb.undone == ["finder"] and not fb.committed
+    assert store.agent.llmclients is clients and store.source is None
+    assert store.config()["reason_code"] == "ga_mykey"
+
+
+def test_real_fallback_switches_mykey_module(tmp_path):
+    import sys
+    target = tmp_path / "llm.toml"
+    target.write_text(llmconfig.to_toml({"native_oai_config_z": {"model": "z"}}), encoding="utf-8")
+    fb = llmconfig.Fallback(target)
+    saved = sys.modules.pop("mykey", None)
+    try:
+        src, finder = fb.adopt()
+        import mykey
+        assert mykey.native_oai_config_z == {"model": "z"} and mykey.__file__ == str(target)
+        fb.undo(finder)
+        assert finder not in sys.meta_path and "mykey" not in sys.modules
+    finally:
+        sys.modules.pop("mykey", None)
+        if saved is not None:
+            sys.modules["mykey"] = saved

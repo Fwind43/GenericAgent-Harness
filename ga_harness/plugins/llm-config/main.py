@@ -16,7 +16,10 @@ def apply(ctx, config):
     if not src.available:
         if config.get("required"):
             raise llmconfig.ConfigError(f"no LLM config: {src.file} not found and no inline keys")
-        ctx.provide("llm.config", {"origin": "mykey.py (GA fallback)", "names": [], "source": None})
+        fallback = llmconfig.Fallback(src.file or llmconfig.default_path(),
+                                      lambda f: ctx.scope.add(lambda: llmconfig.uninstall(f)))
+        ctx.provide("llm.config", {"origin": "mykey.py (GA fallback)", "names": [], "source": None,
+                                   "fallback": fallback})
         return
     finder = llmconfig.install(src)
     ctx.scope.add(lambda: llmconfig.uninstall(finder))
