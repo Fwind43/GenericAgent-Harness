@@ -44,6 +44,9 @@ details[open]>summary>.chev{transform:none}
 .tok .tok-cache{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;white-space:normal}
 .step-body{padding:3px 0 12px 20px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
+.thinking{margin:3px 0 10px;min-width:0}
+.thinking-label{margin-bottom:4px;color:var(--muted);font-size:11px;line-height:20px}
+.thinking .md{color:var(--muted);font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
 .final-step-label{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:400;line-height:20px}
 /* Admin-style receipts: plain action / tool / target rows, not nested cards. */

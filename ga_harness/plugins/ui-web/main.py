@@ -284,7 +284,7 @@ class WebFrontend:
         for i in range(len(turns) - 1, -1, -1):
             if turns[i]["turn"] == n:
                 return i
-        turns.append({"turn": n, "summary": "", "reply": "", "status": "running", "tools": []})
+        turns.append({"turn": n, "summary": "", "reply": "", "thinking": "", "status": "running", "tools": []})
         return len(turns) - 1
 
     def _on_event(self, name, d):
@@ -302,13 +302,14 @@ class WebFrontend:
             t = turns[i]
             if name == "assistant.delta":
                 part, text = d.get("part"), d.get("text") or ""
-                if part in ("summary", "reply") and text:
-                    t[part] += text
+                if part in ("summary", "reply", "thinking") and text:
+                    t[part] = (t.get(part) or "") + text
                     self._broadcast("delta", {"index": i, "turn": t["turn"], "part": part, "text": text})
                 return
             if name == "assistant.text":
                 t["summary"] = d.get("summary") or ""
                 t["reply"] = d.get("reply") or ""
+                t["thinking"] = d.get("thinking") or ""
             elif name == "tool.call":
                 t["tools"].append({"id": d.get("id"), "name": d.get("name"), "args": d.get("args"),
                                    "status": "running"})
