@@ -43,6 +43,7 @@ details[open]>summary>.chev{transform:none}
 .step-body{padding:3px 0 12px 20px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
+.final-step-label{margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:400;line-height:20px}
 /* Admin-style receipts: plain action / tool / target rows, not nested cards. */
 .tool{border:0;border-radius:0;background:transparent;margin:2px 0;min-width:0;color:var(--text)}
 .tool>summary{padding:6px 0;font-size:13px;line-height:20px;min-height:34px;gap:9px;border-radius:4px}
