@@ -95,12 +95,12 @@ def test_group_providers_only_merges_identical_credentials(tmp_path):
     owner = {k: v.get("provider") for k, v in out.items() if isinstance(v, dict) and k != llmconfig.PROVIDERS}
     assert owner["native_oai_config_a"] == owner["native_oai_config_b"]
     assert len({owner[k] for k in ("native_oai_config_a", "native_oai_config_c", "native_claude_config_d",
-                                   "native_oai_config_e")}) == 4   # different key / protocol never merge
+                                   "native_oai_config_e")}) == 3   # different base URL or key never merge
     assert owner["native_oai_config_nokey"] is None and owner["mixin_config"] is None
     assert owner["native_oai_config_a"] == "openai" and owner["native_oai_config_e"] == "relay-example"
     assert p["openai"] == {"name": p["openai"]["name"], "protocol": "oai",
                            "apibase": "https://api.openai.com/v1", "apikey": "k1"}
-    assert p[owner["native_claude_config_d"]]["protocol"] == "claude"
+    assert owner["native_claude_config_d"] == owner["native_oai_config_a"]
     assert len({v["name"] for v in p.values()}) == len(p)
     assert "apikey" not in out["native_oai_config_a"] and out["native_oai_config_b"]["max_retries"] == 2
     assert llmconfig.resolve_providers(out) == data

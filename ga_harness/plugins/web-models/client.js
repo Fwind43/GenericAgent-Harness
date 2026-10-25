@@ -3,15 +3,51 @@ GAH.define('web-models', api => {
   let cfg = null, editingKey = null, busy = false, working = false;
   let sections = [], sectionId = null;
   const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
-  /* ---- toolbar ---- */
-  const pick = h('select', { 'aria-label': T('\u5f53\u524d\u6a21\u578b','Current model'), onchange: () => select(Number(pick.value)) });
-  // model picker lives inside the composer; the config entry sits in the sidebar footer
+  /* ---- one composer entry for model + per-conversation effort ---- */
+  const EFFORT_LABEL = { '': T('\u9ed8\u8ba4','Default'), low: T('\u4f4e','Low'), medium: T('\u4e2d','Medium'), high: T('\u9ad8','High'), xhigh: T('\u8d85\u9ad8','Extra high') };
+  const pickName = h('span', { class: 'gah-model-name' });
+  const pickEffort = h('span', { class: 'gah-model-effort' });
+  const pick = h('button', { type: 'button', class: 'gah-model-trigger', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    'aria-controls': 'gah-model-picker', onclick: () => togglePicker() }, pickName, pickEffort,
+    h('span', { class: 'gah-model-caret', 'aria-hidden': 'true' }, '\u2303'));
+  const group = h('div', { class: 'gah-models', hidden: true }, pick);
+  const effortChoices = h('div', { class: 'gah-effort-options', role: 'group', 'aria-label': T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort') });
+  const effortBox = h('div', { class: 'gah-picker-effort' },
+    h('div', { class: 'gah-picker-label' }, T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort'),
+      h('small', null, T('\u4ec5\u5f53\u524d\u5bf9\u8bdd','This chat only'))), effortChoices);
+  const pickerModels = h('div', { class: 'gah-picker-models' });
+  const picker = h('div', { id: 'gah-model-picker', class: 'gah-model-popover', popover: 'auto', role: 'dialog',
+    'aria-label': T('\u6a21\u578b\u4e0e\u63a8\u7406\u5f3a\u5ea6','Model and reasoning effort'),
+    ontoggle: () => { pick.setAttribute('aria-expanded', String(picker.matches(':popover-open'))); },
+    onkeydown: e => pickerKeys(e) }, effortBox, pickerModels);
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
     h('span', { class: 'gah-ico', dataset: { i: 'cpu' }, 'aria-hidden': 'true' }), T('\u6a21\u578b\u914d\u7f6e','Models'));
-  // reasoning effort: per conversation, saved with the session
-  const EFFORT_LABEL = { '': T('\u9ed8\u8ba4\u5f3a\u5ea6','Default'), low: T('\u4f4e','Low'), medium: T('\u4e2d','Medium'), high: T('\u9ad8','High'), xhigh: T('\u8d85\u9ad8','Extra high') };
-  const effort = h('select', { class: 'gah-effort', 'aria-label': T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort'), title: T('\u63a8\u7406\u5f3a\u5ea6\uff08\u4ec5\u5f53\u524d\u5bf9\u8bdd\uff09','Reasoning effort (this chat only)'), hidden: true, onchange: () => setEffort(effort.value) });
-  const group = h('div', { class: 'gah-models', role: 'group', 'aria-label': T('\u6a21\u578b','Model'), hidden: true }, effort, pick);
+  function positionPicker() {
+    if (!picker.matches(':popover-open')) return;
+    const r = pick.getBoundingClientRect(), w = picker.offsetWidth, height = picker.offsetHeight;
+    picker.style.left = Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + 'px';
+    picker.style.top = Math.max(12, Math.min(r.top - height - 8, innerHeight - height - 12)) + 'px';
+  }
+  function closePicker(focus = false) {
+    if (!picker.matches(':popover-open')) return;
+    picker.hidePopover(); pick.setAttribute('aria-expanded', 'false');
+    if (focus) pick.focus();
+  }
+  function togglePicker() {
+    if (pick.disabled) return;
+    if (picker.matches(':popover-open')) return closePicker(true);
+    picker.showPopover(); positionPicker(); pick.setAttribute('aria-expanded', 'true');
+    (pickerModels.querySelector('[aria-pressed="true"]') || pickerModels.querySelector('button'))?.focus();
+  }
+  function pickerKeys(e) {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const buttons = [...picker.querySelectorAll('button:not(:disabled)')], i = buttons.indexOf(document.activeElement);
+    if (i < 0 || !buttons.length) return;
+    e.preventDefault();
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+  }
+  window.addEventListener('resize', positionPicker);
   /* ---- dialog ---- */
   const addBtn = h('button', { type: 'button', onclick: () => newModel() }, T('\u65b0\u589e\u6a21\u578b','Add model'));
   const reason = h('p', { class: 'model-help', hidden: true });
@@ -45,7 +81,7 @@ GAH.define('web-models', api => {
     h('div', { class: 'model-grid' },
       field(T('\u670d\u52a1\u5546\u6807\u8bc6','Provider ID'), pid, {}, h('small', null, T('\u5c0f\u5199\u5b57\u6bcd/\u6570\u5b57/-/_\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u6539\u3002','Lowercase letters, digits, - and _. Cannot be changed after creation.'))),
       field(T('\u663e\u793a\u540d\u79f0','Display name'), pname),
-      field(T('\u534f\u8bae','Protocol'), pproto),
+      field(T('\u9ed8\u8ba4\u534f\u8bae','Default protocol'), pproto),
       field('API Base URL', pbase, { wide: true }, h('small', null, T('\u652f\u6301 ${ENV_NAME} \u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002','Supports ${ENV_NAME} environment variable references.'))),
       field('API Key', psecret, { wide: true }, psecretHint)),
     perr,
@@ -134,7 +170,9 @@ GAH.define('web-models', api => {
   }
   function newModel() {
     fill(null); const g = currentSection();
-    if (g?.provider) { prov.value = g.provider; provChanged(); }
+    if (g?.provider) {
+      prov.value = g.provider; protocol.value = cfg.providers.find(p => p.id === g.provider)?.values.protocol || 'oai'; provChanged();
+    }
     else if (g?.entries.length) {
       base.value = g.entries[0].values.apibase || ''; protocol.value = g.entries[0].protocol;
       key.value = 'native_' + protocol.value + '_config_' + Date.now();
@@ -151,31 +189,44 @@ GAH.define('web-models', api => {
   }
   function error(t) { err.textContent = t || ''; err.hidden = !t; }
   function render(s) {
-    const m = s && s.models; group.hidden = open.hidden = !m; if (!m) return;
-    const opt = x => h('option', { value: String(x.id) }, x.name + (x.model && x.name !== x.model ? ' / ' + x.model : ''));
+    const m = s && s.models; group.hidden = open.hidden = !m;
+    if (!m) { closePicker(); return; }
+    const current = m.items.find(x => x.id === m.current), e = s.effort;
+    pickName.textContent = current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b','Choose model');
+    pickEffort.hidden = !e; pickEffort.textContent = e ? EFFORT_LABEL[e.current || ''] || e.current : '';
+    pick.title = [current?.provider, pickName.textContent, e && T('\u63a8\u7406\u5f3a\u5ea6\uff1a','Reasoning effort: ') + pickEffort.textContent].filter(Boolean).join(' / ');
+    pick.setAttribute('aria-label', T('\u6a21\u578b\u4e0e\u63a8\u7406\u5f3a\u5ea6\uff1a','Model and reasoning effort: ') + pick.title);
+    effortBox.hidden = !e;
+    effortChoices.replaceChildren(...(e ? ['', ...e.options].map(v => h('button', { type: 'button', dataset: { effort: v },
+      'aria-pressed': String(v === (e.current || '')), onclick: () => { closePicker(true); setEffort(v); } }, EFFORT_LABEL[v] || v)) : []));
     const groups = new Map();
-    for (const x of m.items) { const g = x.provider || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(x); }
-    pick.replaceChildren(...[...groups].map(([g, xs]) => (groups.size > 1 || g) ? h('optgroup', { label: g || T('\u72ec\u7acb\u914d\u7f6e','Standalone') }, ...xs.map(opt)) : xs.map(opt)).flat());
-    pick.value = m.current == null ? '' : String(m.current);
-    const e = s.effort; effort.hidden = !e;
-    if (e) {
-      effort.replaceChildren(...['', ...e.options].map(v => h('option', { value: v }, EFFORT_LABEL[v] || v)));
-      effort.value = e.current || '';
+    for (const x of m.items) {
+      const id = x.provider_id || x.provider || '';
+      if (!groups.has(id)) groups.set(id, { label: x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), items: [] });
+      groups.get(id).items.push(x);
     }
-    controls();
+    pickerModels.replaceChildren(...[...groups].map(([id, g]) => h('section', { class: 'gah-picker-provider', dataset: { provider: id },
+      'aria-label': g.label }, h('h3', null, g.label, h('span', null, String(g.items.length))),
+      ...g.items.map(x => h('button', { type: 'button', class: 'gah-picker-option', dataset: { modelId: String(x.id) },
+        'aria-pressed': String(x.id === m.current), onclick: () => { closePicker(true); select(x.id); } },
+        h('span', { class: 'gah-picker-option-copy' }, h('span', null, x.name || x.model),
+          x.model && x.name !== x.model ? h('small', null, x.model) : null),
+        h('span', { class: 'gah-picker-check', 'aria-hidden': 'true' }, x.id === m.current ? '\u2713' : ''))))));
+    if (!m.items.length) pickerModels.append(h('p', { class: 'gah-picker-empty' }, T('\u6682\u65e0\u53ef\u7528\u6a21\u578b','No models available')));
+    controls(); positionPicker();
   }
   function controls() {
     const s = api.state() || {}, b = busy || working, locked = b || !(cfg && cfg.writable);
     pick.disabled = b || !(s.models && s.models.items.length);
-    effort.disabled = b;
+    for (const n of picker.querySelectorAll('button')) n.disabled = b;
+    if (busy && !working) closePicker();
     open.disabled = b;
     convertBtn.disabled = b;
     for (const n of [addBtn, saveBtn, name, model, ctxwin, base, secret, prov, paddBtn, pSaveBtn, pname, pbase, psecret]) n.disabled = locked;
     key.disabled = locked || editingKey !== null;
-    protocol.disabled = locked || editingKey !== null || !!prov.value;
-    const pv = cfg && cfg.providers && cfg.providers.find(x => x.id === editingPid);
+    protocol.disabled = locked || editingKey !== null;
     pid.disabled = locked || editingPid !== null;
-    pproto.disabled = locked || !!(pv && pv.models);
+    pproto.disabled = locked;
     pDelBtn.disabled = locked || editingPid === null;
     removeBtn.disabled = locked || editingKey === null;
     closeBtn.disabled = working;
@@ -202,7 +253,6 @@ GAH.define('web-models', api => {
     const p = cfg && cfg.providers && cfg.providers.find(x => x.id === prov.value);
     baseField.hidden = secretField.hidden = !!p;
     base.required = !p; if (p) secret.required = false;
-    if (p) protocol.value = p.values.protocol;
   }
   function provChanged() {
     provToggle();
@@ -271,6 +321,7 @@ GAH.define('web-models', api => {
     finally { end(); }
   }
   async function openDialog() {
+    closePicker();
     cfg = null; editingKey = null; error(''); secret.value = ''; psecret.value = '';
     layout.hidden = true; loading.hidden = false; reason.hidden = convertBox.hidden = true;
     dlg.showModal(); begin();
@@ -310,7 +361,8 @@ GAH.define('web-models', api => {
   api.onHost('sync', d => { busy = !!d.running || (!!d.changing && !working); controls(); });
   api.slot('composer', group);
   api.slot('sidebar-foot', open);
+  api.slot('overlay', picker);
   api.slot('overlay', dlg);
   render(api.state());
-  return () => { if (dlg.open) dlg.close(); };
+  return () => { closePicker(); window.removeEventListener('resize', positionPicker); if (dlg.open) dlg.close(); };
 });

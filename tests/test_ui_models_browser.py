@@ -3,8 +3,11 @@
 Run with the optional Playwright dependency and Chromium installed.
 GAH_OUTPUT_ARTIFACTS retains desktop/mobile screenshots outside the repository.
 """
+import json
+
 import pytest
 
+from ga_harness.sessions import Sessions
 from tests.test_frontend import PLUGINS
 from tests.test_models import make_models
 from tests.test_ui_web import _start
@@ -31,6 +34,9 @@ def models_app(tmp_path):
                        "apikey": "synthetic-" + protocol})
     rt, fe, off, base = _start(tmp_path)
     fe.models = store
+    store.agent.history = []
+    fe.ctx.provide("ga.agent", store.agent)
+    fe.sessions = Sessions(store.agent, tmp_path / "picker-sessions.sqlite3")
     for name in ("web-models", "web-theme"):
         folder = PLUGINS / name
         fe.web.register(name, script=folder / "client.js", style=folder / "client.css")
@@ -65,6 +71,109 @@ def model_form(dialog):
 def assert_no_overflow(dialog):
     assert dialog.evaluate("d => d.scrollWidth <= d.clientWidth + 1")
     assert dialog.locator(".model-section-body").evaluate("d => d.scrollWidth <= d.clientWidth + 1")
+
+
+@pytest.mark.parametrize("width,locale", [(1280, "zh-CN"), (390, "zh-CN"), (1280, "en-US")])
+def test_combined_picker_groups_effort_and_session_scope(browser, models_app, width, locale):
+    store, base = models_app
+    page = browser.new_page(viewport={"width": width, "height": 844}, locale=locale)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    try:
+        page.goto(base)
+        trigger = page.locator(".gah-model-trigger")
+        picker = page.locator(".gah-model-popover")
+        pw.expect(trigger).to_be_visible()
+        pw.expect(page.locator(".gah-models button")).to_have_count(1)
+        pw.expect(page.locator(".gah-models select")).to_have_count(0)
+        trigger.click()
+        pw.expect(picker).to_be_visible()
+        pw.expect(trigger).to_have_attribute("aria-expanded", "true")
+        pw.expect(picker.locator(".gah-picker-effort")).to_be_visible()
+        pw.expect(picker.locator("[data-effort]")).to_have_count(5)
+        catalog = store.catalog()
+        groups = {}
+        for row in catalog["items"]:
+            groups.setdefault(row["provider_id"], []).append(row)
+        pw.expect(picker.locator(".gah-picker-provider")).to_have_count(len(groups))
+        for pid, rows in groups.items():
+            group = picker.locator('[data-provider="' + pid + '"]')
+            pw.expect(group).to_have_attribute("aria-label", rows[0]["provider"])
+            pw.expect(group.locator(".gah-picker-option")).to_have_count(len(rows))
+        assert picker.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
+        bounds = picker.bounding_box()
+        assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width
+        assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= 844
+        shot(page, "model-picker-" + str(width) + "-" + locale)
+        page.keyboard.press("End")
+        pw.expect(picker.locator("button").last).to_be_focused()
+        page.keyboard.press("Home")
+        pw.expect(picker.locator("button").first).to_be_focused()
+        page.keyboard.press("Escape")
+        pw.expect(picker).to_be_hidden()
+        pw.expect(trigger).to_be_focused()
+        trigger.click()
+        with page.expect_response("**/api/effort") as response:
+            picker.locator('[data-effort="high"]').click()
+        assert response.value.ok
+        pw.expect(picker).to_be_hidden()
+        pw.expect(trigger).to_contain_text("High" if locale == "en-US" else "\u9ad8")
+        before = page.request.get(base + "api/state").json()
+        assert before["effort"]["current"] == "high"
+        trigger.click()
+        target = next(r for r in catalog["items"] if r["provider_id"] == "provider:beta")
+        with page.expect_response("**/api/models/select") as response:
+            picker.locator('[data-model-id="' + str(target["id"]) + '"]').click()
+        assert response.value.ok
+        pw.expect(trigger).to_contain_text("Beta model")
+        page.reload()
+        pw.expect(trigger).to_contain_text("High" if locale == "en-US" else "\u9ad8")
+        state = page.request.get(base + "api/state").json()
+        assert state["models"]["current"] == target["id"]
+        assert state["effort"]["current"] == "high"
+        # The picker changes the current conversation, never the model config.
+        assert page.request.post(base + "api/sessions", data={"action": "new"}).ok
+        page.reload()
+        pw.expect(trigger).to_contain_text("Default" if locale == "en-US" else "\u9ed8\u8ba4")
+        assert page.request.post(base + "api/sessions", data={"action": "select", "id": before["session_id"]}).ok
+        page.reload()
+        pw.expect(trigger).to_contain_text("High" if locale == "en-US" else "\u9ad8")
+        assert not errors
+    finally:
+        page.close()
+
+
+def test_picker_pending_error_and_busy_states(browser, models_app):
+    store, base = models_app
+    page = browser.new_page(locale="en-US")
+    pending = []
+    try:
+        page.goto(base)
+        trigger = page.locator(".gah-model-trigger")
+        picker = page.locator(".gah-model-popover")
+        pw.expect(trigger).to_be_enabled()
+        original = page.request.get(base + "api/state").json()
+        page.route("**/api/effort", lambda route: pending.append(route))
+        trigger.click()
+        picker.locator('[data-effort="high"]').click()
+        pw.expect(trigger).to_be_disabled()
+        assert len(pending) == 1
+        pending.pop().fulfill(status=409, json={"error": "synthetic effort conflict"})
+        pw.expect(trigger).to_be_enabled()
+        pw.expect(page.get_by_text("synthetic effort conflict", exact=True)).to_be_visible()
+        assert page.request.get(base + "api/state").json()["effort"] == original["effort"]
+        page.unroute("**/api/effort")
+        busy_state = dict(original, running=True)
+        page.route("**/api/state", lambda route: route.fulfill(json=busy_state))
+        page.route("**/api/events", lambda route: route.fulfill(
+            content_type="text/event-stream",
+            body="event: snapshot\ndata: " + json.dumps(busy_state) + "\n\n"))
+        page.reload()
+        pw.expect(trigger).to_be_visible()
+        pw.expect(trigger).to_be_disabled()
+        pw.expect(picker).to_be_hidden()
+    finally:
+        page.close()
 
 
 def test_provider_sections_and_crud(browser, models_app):

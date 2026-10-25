@@ -59,7 +59,7 @@ def test_model_under_provider_inherits_key_and_groups_catalog(tmp_path):
     assert entry["provider"] == "acme" and entry["has_key"] is False and "apibase" not in entry["values"]
     assert next(p for p in cfg["providers"] if p["id"] == "acme")["models"] == 1
     items = {i["name"]: i["provider"] for i in store.catalog()["items"]}
-    assert items == {"One": None, "Two": "Acme"}
+    assert items == {"One": "example.invalid", "Two": "Acme"}
     assert "test-secret" not in json.dumps(cfg) + json.dumps(store.catalog())
 
 
@@ -83,17 +83,51 @@ def test_provider_key_change_applies_to_all_models_and_empty_keeps_secret(tmp_pa
     assert store.source.load()["native_oai_config_two"]["apikey"] == "test-secret-new"
 
 
+def test_mixed_protocols_share_provider_without_changing_models(tmp_path):
+    store = make_models(tmp_path)
+    psave(store)
+    msave(store, "native_oai_config_two", provider="acme", model="acme-two")
+    msave(store, "native_claude_config_three", provider="acme", model="acme-three")
+    before = store.source.load()
+    psave(store, protocol="claude", apikey="")
+    assert store.source.load() == before
+    entries = {e["key"]: e for e in store.config()["entries"]}
+    assert entries["native_oai_config_two"]["protocol"] == "oai"
+    assert entries["native_claude_config_three"]["protocol"] == "claude"
+    rows = {e["model"]: e for e in store.catalog()["items"]}
+    assert rows["acme-two"]["provider_id"] == rows["acme-three"]["provider_id"] == "provider:acme"
+    assert rows["acme-three"]["provider"] == "Acme"
+
+
+def test_catalog_groups_legacy_by_url_and_key_and_keeps_explicit_ids(tmp_path):
+    store = make_models(tmp_path)
+    msave(store, "native_claude_config_same", model="same", apibase="https://example.invalid/v1",
+          apikey="test-secret-one")
+    msave(store, "native_oai_config_other", model="other", apibase="https://example.invalid/v1",
+          apikey="test-secret-other")
+    psave(store, "a", name="Same display name")
+    psave(store, "b", name="Same display name")
+    msave(store, "native_oai_config_a", model="explicit-a", provider="a")
+    msave(store, "native_oai_config_b", model="explicit-b", provider="b")
+    catalog = store.catalog()
+    rows = {e["model"]: e for e in catalog["items"]}
+    assert rows["same"]["provider_id"] == rows["test-one"]["provider_id"]
+    assert rows["other"]["provider_id"] != rows["test-one"]["provider_id"]
+    assert rows["explicit-a"]["provider_id"] != rows["explicit-b"]["provider_id"]
+    assert rows["explicit-a"]["provider"] == rows["explicit-b"]["provider"]
+    assert "test-secret" not in json.dumps(catalog)
+    assert store.catalog() == catalog
+
+
 def test_provider_rules(tmp_path):
     store = make_models(tmp_path)
     psave(store)
     msave(store, "native_oai_config_two", provider="acme", model="acme-two")
     original = store.source.file.read_bytes()
     for body in ({"action": "provider_delete", "id": "acme"},
-                 {"action": "provider_save", "id": "acme", "values": {"protocol": "claude"}},
                  {"action": "provider_save", "id": "Bad Id", "values": {}},
                  {"action": "provider_save", "id": "new", "values": {"apibase": "file:///x", "apikey": "k"}},
                  {"action": "provider_save", "id": "new", "values": {"apibase": "https://x.invalid"}},
-                 {"action": "save", "key": "native_claude_config_x", "values": {"provider": "acme", "model": "c"}},
                  {"action": "save", "key": "native_oai_config_x", "values": {"provider": "nope", "model": "c"}}):
         with pytest.raises(ValueError):
             store.change(body | {"revision": rev(store)})

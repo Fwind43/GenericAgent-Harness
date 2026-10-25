@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 import threading
 from urllib.parse import urlsplit
@@ -120,30 +121,52 @@ class Models:
         return p
 
     def _group_of(self):
-        """(name, model) -> provider display name, for the composer picker."""
+        """Runtime identity -> ordered provider labels, never credentials.
+
+        Flat/mykey entries use the same base URL + key grouping as migration.
+        Explicit provider IDs remain authoritative, even with duplicate names.
+        """
         try:
-            _, _, data, _ = self._read()
+            data = llmconfig.read_file(self.source.file) if self.source else vars(sys.modules.get("mykey"))
             providers = self._providers(data)
+            legacy = llmconfig.group_providers({k: v for k, v in data.items()
+                                               if _supported(k, v) and "provider" not in v})
         except Exception:
             return {}
         out = {}
         for k, v in data.items():
-            if _supported(k, v) and v.get("provider") in providers:
-                pv = providers[v["provider"]]
-                out[(v.get("name") or v.get("model"), v.get("model"))] = pv.get("name") or v["provider"]
+            if not _supported(k, v):
+                continue
+            pid = v.get("provider")
+            pv = providers.get(pid) if isinstance(pid, str) else None
+            group_id = "provider:" + pid if pv is not None else None
+            if pv is None:
+                pid = legacy.get(k, {}).get("provider")
+                pv = legacy.get(llmconfig.PROVIDERS, {}).get(pid)
+                group_id = "legacy:" + pid if pv is not None else None
+            label = (pv.get("name") or pid) if pv is not None else None
+            try:
+                name = llmconfig._expand(v.get("name") or v.get("model", ""))
+                model = llmconfig._expand(v.get("model", ""))
+            except llmconfig.ConfigError:
+                continue
+            out.setdefault((name, model), []).append((group_id, label))
         return out
 
     def catalog(self):
         rows = []
         current = None
-        groups = self._group_of() if self.source is not None else {}
+        groups = self._group_of()
         for i, c in enumerate(self.agent.llmclients):
             b = getattr(c, "backend", None)
             if b is None:
                 continue
             name = getattr(b, "name", "") or getattr(b, "model", "")
             model = getattr(b, "model", "")
-            rows.append({"id": i, "name": name, "model": model, "provider": groups.get((name, model))})
+            matches = groups.get((name, model), [])
+            pid, label = matches.pop(0) if matches else (None, None)
+            rows.append({"id": i, "name": name, "model": model,
+                         "provider": label, "provider_id": pid})
             if c is self.agent.llmclient:
                 current = i
         return {"items": rows, "current": current}
@@ -217,8 +240,6 @@ class Models:
             cfg.setdefault("protocol", "oai")
             if cfg["protocol"] not in _PROTOCOLS:
                 raise ValueError("protocol must be oai or claude")
-            if used and any(_protocol(k) != cfg["protocol"] for k in used):
-                raise ValueError("protocol cannot change while the provider has models")
             if not isinstance(cfg.get("name", ""), str) or len(cfg.get("name", "")) > 120:
                 raise ValueError("name must contain at most 120 characters")
             if any(not isinstance(cfg.get(k), str) or not cfg[k].strip() for k in ("apibase", "apikey")):
@@ -348,8 +369,6 @@ class Models:
         if pid:
             if pid not in providers:
                 raise ValueError("unknown provider")
-            if _protocol(key) != providers[pid].get("protocol", "oai"):
-                raise ValueError("model identifier protocol does not match the provider")
             # connection now comes from the provider
             cfg.pop("apibase", None)
             cfg.pop("apikey", None)

@@ -265,8 +265,8 @@ def _provider_id(apibase: str, taken: set) -> str:
 def group_providers(data: dict) -> dict:
     """Lift shared connection settings of mykey-style models into ``[providers]``.
 
-    Models are grouped only when protocol, ``apibase`` and ``apikey`` are all
-    identical, so no credential is ever reassigned to another model; a shared
+    Models are grouped only when ``apibase`` and ``apikey`` are identical;
+    protocol stays with each model. No credential is reassigned: a shared
     endpoint alone does not merge.  Returns ``data`` unchanged when it already
     has providers or when the result would not resolve to the same models.
     """
@@ -279,7 +279,7 @@ def group_providers(data: dict) -> dict:
         base, key = v.get("apibase"), v.get("apikey")
         if not (isinstance(base, str) and base.strip() and isinstance(key, str) and key.strip()):
             continue
-        g = ("claude" if "claude" in k else "oai", base, key)
+        g = (base, key)
         if g not in groups:
             groups[g] = []
             order.append(g)
@@ -288,7 +288,9 @@ def group_providers(data: dict) -> dict:
         return data
     taken, providers, owner = set(), {}, {}
     for g in order:
-        protocol, base, key = g
+        base, key = g
+        # A default for new models only; each model identifier owns its protocol.
+        protocol = "claude" if "claude" in groups[g][0] else "oai"
         pid = _provider_id(base, taken)
         try:
             host = urlsplit(_expand(base)).hostname or pid
@@ -303,7 +305,7 @@ def group_providers(data: dict) -> dict:
     for same in names.values():
         if len(same) > 1:
             for i, p in enumerate(same, 1):
-                p["name"] = f"{p['name']} ({p['protocol']}, {i})"
+                p["name"] = f"{p['name']} ({i})"
     out = {PROVIDERS: providers}
     for k, v in data.items():
         if k in owner:
