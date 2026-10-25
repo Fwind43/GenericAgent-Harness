@@ -42,7 +42,7 @@ def test_workspace_http_isolation_conflict_busy_and_unload(workspace_app, tmp_pa
     assert status == 200
     first = state["session_id"]
     project = state["scope"]["project"]
-    assert first != original and state["messages"] == []
+    assert first == original and state["messages"] == []  # empty conversation is bound in place
     assert project["rules"] == "alpha-only"
     edit = {**project, "action": "update", "rules": "edited"}
     assert _req(url, edit)[0] == 200

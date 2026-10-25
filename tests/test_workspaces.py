@@ -128,3 +128,24 @@ def test_injection_without_system_is_idempotent(tmp_path):
             ws.inject(g, lambda value: value)
     ws.request({}, run)
     assert g["messages"][0]["content"].count("[Harness execution context]") == 1
+
+
+def test_enter_binds_empty_conversation_or_opens_new(tmp_path):
+    raw, sessions, ws = setup(tmp_path)
+    a = project(ws, tmp_path)
+    blank = sessions.change("new", project_id="")
+    entered = ws.change({"action": "enter", "id": a["project_id"]})
+    assert entered["id"] == blank["id"] and entered["project_id"] == a["project_id"]
+    raw.history = ["alpha talk"]
+    sessions.save([{"role": "user", "text": "hello"}])
+    other = tmp_path / "other"
+    other.mkdir()
+    moved = ws.change({"action": "enter", "workspace": str(other)})
+    assert moved["id"] != blank["id"] and moved["project_id"] == ""
+    assert moved["workspace"] == str(other.resolve()) and raw.history == []
+    kept = [s for s in sessions.listing() if s["id"] == blank["id"]][0]
+    assert kept["project_id"] == a["project_id"]
+    plain = ws.change({"action": "enter", "id": ""})
+    assert plain["id"] == moved["id"] and plain["workspace"] == str(tmp_path.resolve())
+    with pytest.raises(ValueError):
+        ws.change({"action": "enter", "id": "missing"})

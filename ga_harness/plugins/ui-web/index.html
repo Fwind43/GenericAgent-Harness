@@ -113,6 +113,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 <main id="scroll"><div id="thread"></div></main>
 <footer>
   <form id="form">
+    <div class="gah-slot" data-slot="composer-top"></div>
     <textarea id="input" rows="1" placeholder="给 GenericAgent 发消息…" autofocus></textarea>
     <div class="composer-row">
       <div class="gah-slot" data-slot="composer"></div>
@@ -243,7 +244,7 @@ let pending=0;function schedule(){if(!pending)pending=requestAnimationFrame(()=>
 function last(){return state.messages[state.messages.length-1]}
 /* ---- web plugin runtime: plugins call GAH.define(name, api => cleanup?) from their client.js ---- */
 const GAH=(()=>{
-  const defs={},live={},hostSubs=new Set();let manifest=[],locks=0;
+  const defs={},live={},hostSubs=new Set(),intercepts=new Set();let manifest=[],locks=0;
   const by=name=>manifest.find(x=>x.name===name);
   /* h('button',{class:'x',onclick:fn,dataset:{k:1}},'text',childNode,[more]) -> element; null/false children skipped */
   function h(tag,props,...kids){const e=document.createElement(tag);
@@ -266,6 +267,8 @@ const GAH=(()=>{
         node.dataset.gahPlugin=name;s.appendChild(node);cleanups.push(()=>node.remove());return node},
       get:path=>req(name,'GET',path),post:(path,body)=>req(name,'POST',path,body),
       on(kind,fn){(subs[kind]=subs[kind]||[]).push(fn)},
+      /* claim composer text (e.g. slash commands): fn(text) -> true|Promise<true> when handled; it is then not sent */
+      intercept(fn){intercepts.add(fn);cleanups.push(()=>intercepts.delete(fn))},
       onHost(type,fn){const h={type,fn};hostSubs.add(h);cleanups.push(()=>hostSubs.delete(h))},
       state:()=>state,notice,el,h,cleanup(fn){cleanups.push(fn)},
       /* replace page state with a snapshot (e.g. a POST reply); reset=true for a different conversation */
@@ -300,7 +303,8 @@ const GAH=(()=>{
     if(!by(name))return;defs[name]=setup;start(name)}
   function dispatch(d){const p=live[d&&d.plugin];for(const fn of (p&&p.subs[d.kind])||[]){try{fn(d.data)}catch(e){report(d.plugin,e)}}}
   function emitHost(type,data){for(const h of [...hostSubs]){if(h.type===type){try{h.fn(data)}catch(e){console.error('[gah] host listener',e)}}}}
-  return {define,sync,dispatch,emitHost,loaded:()=>Object.keys(live)};
+  async function claim(text){for(const fn of [...intercepts]){try{if(await fn(text))return true}catch(e){notice(e.message||String(e));return true}}return false}
+  return {define,sync,dispatch,emitHost,claim,loaded:()=>Object.keys(live)};
 })();
 window.GAH=GAH;
 function connect(){
@@ -333,6 +337,7 @@ async function post(path,body){
 $('form').onsubmit=async e=>{
   e.preventDefault();const task=input.value.trim();if(!task||state.running||changing)return;
   send.disabled=true;
+  if(await GAH.claim(task)){input.value='';grow();syncControls();input.focus();return}
   try{await post('/api/run',{task});input.value='';grow()}catch(err){alert('发送失败：'+err.message)}
   syncControls();input.focus();
 };

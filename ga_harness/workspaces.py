@@ -6,6 +6,7 @@ selects another conversation; it never relabels an existing conversation's histo
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 import re
 import threading
@@ -59,6 +60,19 @@ class Workspaces:
         with self.sessions.lock:
             return {**self.current(), "projects": self.projects(), "default_workspace": self.default_workspace}
 
+    def _enter(self, db, workspace, project_id):
+        """Bind the current conversation if it has no history, else open a new one."""
+        store = self.sessions
+        row = db.execute("SELECT s.id, s.messages, s.workspace, s.project_id FROM sessions s "
+                         "JOIN meta m ON m.key='current' AND m.value=s.id WHERE s.deleted=0").fetchone()
+        if row is not None and json.loads(row["messages"]) == []:
+            db.execute("UPDATE sessions SET workspace=?, project_id=?, updated=? WHERE id=?",
+                       (workspace, project_id, time.time(), row["id"]))
+            return row["id"]
+        sid = store._new(db, workspace, project_id)
+        store._select(db, sid)
+        return sid
+
     def change(self, body):
         """Must be called while idle; web callers also hold the frontend lock."""
         store = self.sessions
@@ -75,8 +89,7 @@ class Workspaces:
                     if action == "create":
                         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
                                    (pid, name, workspace, rules, memory, time.time()))
-                        sid = store._new(db, workspace, pid)
-                        store._select(db, sid)
+                        self._enter(db, workspace, pid)
                     else:
                         old = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
                         if old is None:
@@ -91,6 +104,26 @@ class Workspaces:
             elif action == "workspace":
                 directory = self.directory(body.get("workspace"))
                 store.change("new", workspace=directory, project_id="")
+            elif action == "enter":
+                # Conversation-level scope: an empty conversation is rebound in place;
+                # one with history stays untouched and a new conversation is opened.
+                pid = body.get("id", "")
+                if not isinstance(pid, str):
+                    raise ValueError("invalid project id")
+                if pid:
+                    project = next((p for p in self.projects() if p["id"] == pid), None)
+                    if project is None:
+                        raise ValueError("project not found")
+                    directory = self.directory(project["workspace"])
+                elif body.get("workspace"):
+                    directory = self.directory(body.get("workspace"))
+                else:
+                    directory = self.default_workspace
+                with store._db() as db:
+                    self._enter(db, directory, pid)
+                from .sessions import restore
+                if not store.current()["messages"]:
+                    restore(store.agent, {})
             elif action == "select":
                 pid = body.get("id", "")
                 if not isinstance(pid, str):
