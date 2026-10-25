@@ -191,8 +191,15 @@ function tok(u){if(!u)return'';let s=T('\u8f93\u5165 ','In ')+num(u.input);
   if(u.cache_read||u.cache_write)s+=T('\uff08\u7f13\u5b58\u547d\u4e2d ',' (cache hit ')+num(u.cache_read)+(u.cache_write?T(' / \u5199\u5165 ',' / write ')+num(u.cache_write):'')+T('\uff09',')');
   return s+T(' \u00b7 \u8f93\u51fa ',' · Out ')+num(u.output)}
 function kn(v){v=Number(v||0);return v<1000?String(v):v<1e6?(v/1e3).toFixed(v<1e4?1:0).replace(/\.0$/,'')+'k':(v/1e6).toFixed(1).replace(/\.0$/,'')+'M'}
-/* compact per-step usage chip: arrow-up input, arrow-down output; full numbers in the tooltip */
-function tokChip(u){const c=el('span','tok','\u2191'+kn(u.input)+' \u2193'+kn(u.output));const full=tok(u);c.title=full;c.setAttribute('aria-label',T('Token \u7528\u91cf\uff1a','Token usage: ')+full);return c}
+/* Per-step usage: input/output plus cache details; exact counts in the tooltip. */
+function tokChip(u){const c=el('span','tok'),cache=[],full=[];
+  c.append(el('span',null,'\u2191'+kn(u.input)+' \u2193'+kn(u.output)));
+  full.push(T('\u8f93\u5165 ','In ')+num(u.input),T('\u8f93\u51fa ','Out ')+num(u.output));
+  for(const [key,label] of [['cache_read',T('\u7f13\u5b58\u547d\u4e2d ','Cache hit ')],['cache_write',T('\u7f13\u5b58\u5199\u5165 ','Cache write ')]]){
+    if(u[key]!=null){cache.push(label+kn(u[key]));full.push(label+num(u[key]))}}
+  if(cache.length)c.append(el('span','tok-cache',cache.join(' \u00b7 ')));
+  c.title=full.join(' \u00b7 ')+T('\uff08\u8f93\u5165\u5df2\u5305\u542b\u7f13\u5b58\uff09',' (input includes cached tokens)');
+  c.setAttribute('aria-label',T('Token \u7528\u91cf\uff1a','Token usage: ')+c.title);return c}
 function renderStep(t,key,live){
   const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
@@ -215,7 +222,8 @@ function renderTurns(m,mi,box){
     s.append(el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')),chev());d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
   if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
-    box.append(el('div','final-step-label',T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
+    const label=el('div','final-step-label');label.append(el('span',null,T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
+    if(finalT.usage)label.append(tokChip(finalT.usage));box.append(label);
     const b=GAHOutput.markdown(typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply,'body'+(typing?' cursor':''));
     if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
   else if(running)box.append(el('div','body working cursor',''));
