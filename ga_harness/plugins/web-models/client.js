@@ -6,7 +6,7 @@ GAH.define('web-models', api => {
   const pick = h('select', { 'aria-label': '\u5f53\u524d\u6a21\u578b', onchange: () => select(Number(pick.value)) });
   // model picker lives inside the composer; the config entry sits in the sidebar footer
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
-    h('span', { class: 'gah-side-icon', 'aria-hidden': 'true' }, '\u2699'), '\u6a21\u578b\u914d\u7f6e');
+    h('span', { class: 'gah-ico', dataset: { i: 'cpu' }, 'aria-hidden': 'true' }), '\u6a21\u578b\u914d\u7f6e');
   // reasoning effort: per conversation, saved with the session
   const EFFORT_LABEL = { '': '\u9ed8\u8ba4\u5f3a\u5ea6', low: '\u4f4e', medium: '\u4e2d', high: '\u9ad8', xhigh: '\u8d85\u9ad8' };
   const effort = h('select', { class: 'gah-effort', 'aria-label': '\u63a8\u7406\u5f3a\u5ea6', title: '\u63a8\u7406\u5f3a\u5ea6\uff08\u4ec5\u5f53\u524d\u5bf9\u8bdd\uff09', hidden: true, onchange: () => setEffort(effort.value) });

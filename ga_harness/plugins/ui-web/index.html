@@ -38,19 +38,37 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 /* layout: left sidebar + main column; sidebar becomes a drawer on narrow screens */
 .app{flex:1;display:flex;min-height:0}
 .main-col{flex:1;min-width:0;display:flex;flex-direction:column}
-.sidebar{width:260px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-muted);border-right:1px solid var(--border)}
-.side-head{display:flex;align-items:center;gap:8px;padding:12px 14px 8px}
-.side-head h1{font-size:15px;font-weight:600;margin:0;flex:1}
-.side-body{flex:1;min-height:0;overflow-y:auto;padding:4px 8px 8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-.side-foot{display:flex;flex-direction:column;gap:2px;padding:8px;border-top:1px solid var(--border)}
-.side-foot #conn{padding:4px 10px 0}
+.sidebar{width:260px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-muted);border-right:1px solid var(--border);font-size:13px;--hover:color-mix(in srgb,var(--text) 5%,transparent);--active:color-mix(in srgb,var(--text) 8%,transparent)}
+.side-head{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 18px}
+.side-head h1{font-size:14px;font-weight:600;margin:0;flex:1;letter-spacing:.01em}
+.side-body{flex:1;min-height:0;overflow-y:auto;padding:2px 6px 8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.side-foot{display:flex;flex-direction:column;gap:1px;padding:6px 6px 8px;border-top:1px solid var(--border)}
+.side-conn{display:flex;align-items:center;gap:10px;height:28px;padding:0 10px;font-size:12px;color:var(--muted)}
+.side-conn .dot{width:16px;display:inline-flex;justify-content:center;background:none;margin:0}
+.side-conn .dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.5}
+.side-conn .dot.live::before{background:#2e9d5b;opacity:1}
 .icon-btn{background:transparent;color:var(--muted);border:0;border-radius:8px;padding:4px 8px;font-size:16px;line-height:1}
 .icon-btn:hover:not(:disabled){background:var(--border);color:var(--text)}
+.side-close{width:28px;height:28px;padding:0;align-items:center;justify-content:center;border-radius:6px}
 #sideOpen,.side-close{display:none}
 .scrim{display:none}
-/* generic sidebar entries for plugins: .side-item buttons */
-.side-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;color:var(--text);border:0;border-radius:8px;padding:7px 10px;font-size:14px}
-.side-item:hover:not(:disabled){background:var(--border)}
+/* generic sidebar entries for plugins: .side-item buttons (16px .gah-ico + label, one shared left edge) */
+.side-item{display:flex;align-items:center;gap:10px;width:100%;height:32px;text-align:left;background:transparent;color:var(--text);border:0;border-radius:6px;padding:0 10px;font:inherit;font-size:13px;white-space:nowrap;overflow:hidden}
+.side-item .gah-ico{color:var(--muted)}
+.side-item:hover:not(:disabled){background:var(--hover)}
+.side-item:hover:not(:disabled) .gah-ico{color:var(--text)}
+/* sidebar icon set (lucide outlines as CSS masks; colour = currentColor): <span class="gah-ico" data-i="folder"> */
+.gah-ico{display:inline-block;flex:none;width:16px;height:16px;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
+.gah-ico[data-i="pen"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'/%3E%3Cpath d='M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z'/%3E%3C/svg%3E")}
+.gah-ico[data-i="plus"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M12 5v14'/%3E%3C/svg%3E")}
+.gah-ico[data-i="folder"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E")}
+.gah-ico[data-i="folder-open"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2'/%3E%3C/svg%3E")}
+.gah-ico[data-i="folder-plus"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 10v6M9 13h6'/%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E")}
+.gah-ico[data-i="pencil"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z'/%3E%3C/svg%3E")}
+.gah-ico[data-i="trash"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'/%3E%3C/svg%3E")}
+.gah-ico[data-i="cpu"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='16' height='16' x='4' y='4' rx='2'/%3E%3Crect width='6' height='6' x='9' y='9' rx='1'/%3E%3Cpath d='M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2'/%3E%3C/svg%3E")}
+.gah-ico[data-i="puzzle"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z'/%3E%3C/svg%3E")}
+.gah-ico[data-i="x"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E")}
 @media (max-width:760px){
   .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:30;width:min(280px,84vw);transform:translateX(-100%);transition:transform .18s ease;box-shadow:none}
   .app.side-open .sidebar{transform:none;box-shadow:0 0 24px rgba(0,0,0,.18)}
@@ -96,9 +114,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 <body>
 <div class="app" id="app">
 <aside class="sidebar" id="sidebar" aria-label="侧边栏">
-  <div class="side-head"><span class="dot" id="dot"></span><h1>ga-harness</h1><button type="button" class="icon-btn side-close" data-gah-close aria-label="收起侧边栏">×</button></div>
+  <div class="side-head"><h1>ga-harness</h1><button type="button" class="icon-btn side-close" data-gah-close aria-label="收起侧边栏"><span class="gah-ico" data-i="x"></span></button></div>
   <div class="side-body"><div class="gah-slot" data-slot="sidebar"></div></div>
-  <div class="side-foot"><div class="gah-slot" data-slot="sidebar-foot"></div><span id="conn">连接中…</span></div>
+  <div class="side-foot"><div class="gah-slot" data-slot="sidebar-foot"></div><div class="side-conn"><span class="dot" id="dot"></span><span id="conn">连接中…</span></div></div>
 </aside>
 <div class="scrim" data-gah-close></div>
 <div class="main-col">

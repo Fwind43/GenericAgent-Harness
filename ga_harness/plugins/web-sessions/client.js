@@ -8,10 +8,10 @@ GAH.define('web-sessions', api => {
   let toggled = {}, lastScope = null;
   try { toggled = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { toggled = {}; }
   const add = h('button', { type: 'button', class: 'side-item gah-sess-new', 'data-gah-close': '', onclick: () => act('new') },
-    h('span', { class: 'gah-sess-plus', 'aria-hidden': 'true' }, '+'), '\u65b0\u4f1a\u8bdd');
+    h('span', { class: 'gah-ico', dataset: { i: 'pen' }, 'aria-hidden': 'true' }), '\u65b0\u4f1a\u8bdd');
   const list = h('div', { class: 'gah-sess-list', 'aria-label': '\u4f1a\u8bdd\u5217\u8868' });
   const newProject = h('button', { type: 'button', class: 'gah-sess-head-btn', title: '\u65b0\u5efa\u9879\u76ee', 'aria-label': '\u65b0\u5efa\u9879\u76ee',
-    onclick: () => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action: 'create' } })) }, '+ \u9879\u76ee');
+    onclick: () => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action: 'create' } })) }, h('span', { class: 'gah-ico', dataset: { i: 'folder-plus' }, 'aria-hidden': 'true' }));
   const head = h('div', { class: 'gah-sess-label' }, h('span', {}, '\u4f1a\u8bdd'), newProject);
   const box = h('div', { class: 'gah-sessions', hidden: true }, add, head, list);
   const base = p => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
@@ -26,8 +26,8 @@ GAH.define('web-sessions', api => {
     const open = h('button', { type: 'button', class: 'gah-sess-open', 'data-gah-close': '', title: x.title,
       'aria-current': cur ? 'true' : null, onclick: () => { if (!cur) act('select', { id: x.id }); } },
       h('span', { class: 'gah-sess-title' }, x.title || '\u672a\u547d\u540d'));
-    const ren = h('button', { type: 'button', class: 'gah-sess-act', title: '\u91cd\u547d\u540d', 'aria-label': '\u91cd\u547d\u540d', onclick: () => rename(x) }, '\u270e');
-    const del = h('button', { type: 'button', class: 'gah-sess-act', title: '\u5220\u9664', 'aria-label': '\u5220\u9664', onclick: () => remove(x) }, '\u00d7');
+    const ren = h('button', { type: 'button', class: 'gah-sess-act', title: '\u91cd\u547d\u540d', 'aria-label': '\u91cd\u547d\u540d', onclick: () => rename(x) }, h('span', { class: 'gah-ico', dataset: { i: 'pencil' }, 'aria-hidden': 'true' }));
+    const del = h('button', { type: 'button', class: 'gah-sess-act', title: '\u5220\u9664', 'aria-label': '\u5220\u9664', onclick: () => remove(x) }, h('span', { class: 'gah-ico', dataset: { i: 'trash' }, 'aria-hidden': 'true' }));
     return h('div', { class: 'gah-sess-row' + (cur ? ' current' : ''), role: 'listitem' }, open, h('span', { class: 'gah-sess-acts' }, ren, del));
   }
   // [{key, kind:'project'|'workspace', name, title, body, items, current}]
@@ -63,14 +63,13 @@ GAH.define('web-sessions', api => {
         toggled[g.key] = next;
         try { localStorage.setItem(KEY, JSON.stringify(toggled)); } catch (e) {}
       } },
-      h('span', { class: 'gah-group-caret', 'aria-hidden': 'true' }),
-      h('span', { class: 'gah-group-kind', 'aria-hidden': 'true' }, g.kind === 'project' ? '\u25a0' : '\u25a1'),
-      h('span', { class: 'gah-group-name' }, g.name),
-      h('span', { class: 'gah-group-count' }, String(g.items.length)));
+      h('span', { class: 'gah-ico gah-ico-closed', dataset: { i: 'folder' }, 'aria-hidden': 'true' }),
+      h('span', { class: 'gah-ico gah-ico-open', dataset: { i: 'folder-open' }, 'aria-hidden': 'true' }),
+      h('span', { class: 'gah-group-name' }, g.name));
     const plus = h('button', { type: 'button', class: 'gah-group-add', 'data-gah-close': '',
       title: '\u5728\u6b64' + (g.kind === 'project' ? '\u9879\u76ee' : '\u5de5\u4f5c\u533a') + '\u65b0\u5efa\u5bf9\u8bdd',
       'aria-label': '\u5728 ' + g.name + ' \u65b0\u5efa\u5bf9\u8bdd',
-      onclick: () => g.current ? act('new') : enter(g.body) }, '+');
+      onclick: () => g.current ? act('new') : enter(g.body) }, h('span', { class: 'gah-ico', dataset: { i: 'plus' }, 'aria-hidden': 'true' }));
     return h('section', { class: 'gah-group ' + g.kind + (g.current ? ' current' : ''), dataset: { key: g.key } },
       h('div', { class: 'gah-group-head' }, toggle, plus), items);
   }

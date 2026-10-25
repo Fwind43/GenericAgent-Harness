@@ -5,7 +5,7 @@ GAH.define('web-plugins', api => {
   let cfg = null, editing = null, busy = false, running = false, working = false;
   /* ---- toolbar ---- */
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => load() },
-    h('span', { class: 'gah-side-icon', 'aria-hidden': 'true' }, '\u29c9'), '\u63d2\u4ef6\u7ba1\u7406');
+    h('span', { class: 'gah-ico', dataset: { i: 'puzzle' }, 'aria-hidden': 'true' }), '\u63d2\u4ef6\u7ba1\u7406');
   const summary = h('span', { class: 'plugin-note' }, '\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548');
   summary.hidden = true;
   const group = h('div', { class: 'gah-plugins', hidden: true }, open, summary);
