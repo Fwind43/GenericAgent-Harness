@@ -74,3 +74,18 @@ def test_busy_and_invalid_operations_preserve_selection(tmp_path):
             store.change(action, sid, title)
         assert store.current()["id"] == first
     assert len(store.listing()) == 1
+
+
+def test_reasoning_effort_is_per_conversation():
+    from ga_harness.sessions import apply_effort, capture, restore
+    backend = NS(reasoning_effort="medium", history=[], name="m")
+    client = NS(backend=backend)
+    agent = NS(llmclient=client, llmclients=[client], history=[], handler=None)
+    restore(agent, {"effort": "high"})
+    apply_effort(agent)
+    assert backend.reasoning_effort == "high" and capture(agent)["effort"] == "high"
+    restore(agent, {})  # new conversation falls back to the model's own setting
+    apply_effort(agent)
+    assert agent.gah_reasoning_effort is None and backend.reasoning_effort == "medium"
+    restore(agent, {"effort": "bogus"})
+    assert agent.gah_reasoning_effort is None

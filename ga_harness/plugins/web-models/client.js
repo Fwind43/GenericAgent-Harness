@@ -7,7 +7,10 @@ GAH.define('web-models', api => {
   // model picker lives inside the composer; the config entry sits in the sidebar footer
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
     h('span', { class: 'gah-side-icon', 'aria-hidden': 'true' }, '\u2699'), '\u6a21\u578b\u914d\u7f6e');
-  const group = h('div', { class: 'gah-models', role: 'group', 'aria-label': '\u6a21\u578b', hidden: true }, pick);
+  // reasoning effort: per conversation, saved with the session
+  const EFFORT_LABEL = { '': '\u9ed8\u8ba4\u5f3a\u5ea6', low: '\u4f4e', medium: '\u4e2d', high: '\u9ad8', xhigh: '\u8d85\u9ad8' };
+  const effort = h('select', { class: 'gah-effort', 'aria-label': '\u63a8\u7406\u5f3a\u5ea6', title: '\u63a8\u7406\u5f3a\u5ea6\uff08\u4ec5\u5f53\u524d\u5bf9\u8bdd\uff09', hidden: true, onchange: () => setEffort(effort.value) });
+  const group = h('div', { class: 'gah-models', role: 'group', 'aria-label': '\u6a21\u578b', hidden: true }, effort, pick);
   /* ---- dialog ---- */
   const entry = h('select', { 'aria-label': '\u9009\u62e9\u914d\u7f6e', onchange: () => fill(entry.value) });
   const addBtn = h('button', { type: 'button', class: 'secondary', onclick: () => { fill(null); name.focus(); } }, '\u65b0\u589e');
@@ -48,11 +51,17 @@ GAH.define('web-models', api => {
     const m = s && s.models; group.hidden = open.hidden = !m; if (!m) return;
     pick.replaceChildren(...m.items.map(x => h('option', { value: String(x.id) }, x.name + (x.model && x.name !== x.model ? ' / ' + x.model : ''))));
     pick.value = m.current == null ? '' : String(m.current);
+    const e = s.effort; effort.hidden = !e;
+    if (e) {
+      effort.replaceChildren(...['', ...e.options].map(v => h('option', { value: v }, EFFORT_LABEL[v] || v)));
+      effort.value = e.current || '';
+    }
     controls();
   }
   function controls() {
     const s = api.state() || {}, b = busy || working, locked = b || !(cfg && cfg.writable);
     pick.disabled = b || !(s.models && s.models.items.length);
+    effort.disabled = b;
     open.disabled = b;
     for (const n of [entry, addBtn, saveBtn, name, model, ctxwin, base, secret]) n.disabled = locked;
     key.disabled = protocol.disabled = locked || editingKey !== null;
@@ -84,6 +93,13 @@ GAH.define('web-models', api => {
     if (busy || working) return;
     begin(); api.notice('');
     try { api.setState(await api.host.post('/api/models/select', { id })); }
+    catch (e) { api.notice(e.message); render(api.state()); }
+    finally { end(); }
+  }
+  async function setEffort(v) {
+    if (busy || working) return;
+    begin(); api.notice('');
+    try { api.setState(await api.host.post('/api/effort', { effort: v || null })); }
     catch (e) { api.notice(e.message); render(api.state()); }
     finally { end(); }
   }

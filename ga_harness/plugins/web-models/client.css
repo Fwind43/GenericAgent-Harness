@@ -5,3 +5,8 @@
 .gah-models select{max-width:min(260px,52vw);height:30px;border:0;border-radius:15px;padding:0 26px 0 10px;background-color:var(--surface-muted);color:var(--text);font-size:13px;text-overflow:ellipsis;cursor:pointer}
 .gah-models select:hover:not(:disabled){background-color:var(--border)}
 .gah-side-icon{display:inline-flex;width:20px;justify-content:center;color:var(--muted);font-size:15px}
+/* reasoning effort chip sits left of the model chip */
+.gah-models{display:inline-flex;align-items:center;gap:6px}
+.gah-models[hidden],.gah-models select[hidden]{display:none}
+.gah-models select.gah-effort{max-width:120px}
+@media (max-width:560px){.gah-models{min-width:0;flex:0 1 auto;gap:4px}.gah-models select{min-width:0;padding:0 22px 0 8px}.gah-models select{font-size:12px}.gah-models select.gah-effort{width:auto;flex:none}.gah-models select:not(.gah-effort){max-width:130px}}

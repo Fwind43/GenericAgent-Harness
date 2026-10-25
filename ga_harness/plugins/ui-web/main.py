@@ -28,6 +28,8 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from ga_harness.sessions import EFFORTS, apply_effort
+
 PAGE = Path(__file__).with_name("index.html")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
@@ -161,6 +163,9 @@ class WebFrontend:
         if self.models:
             data["models"] = self.models.catalog()
         data["plugins_enabled"] = self.plugins is not None
+        agent = self.ctx.get("ga.agent")
+        if self.sessions and agent is not None:
+            data["effort"] = {"current": getattr(agent, "gah_reasoning_effort", None), "options": list(EFFORTS)}
         data = copy.deepcopy(data)
         data["web_plugins"] = self.web.manifest()
         return self.ctx.waterfall("web.snapshot", data)
@@ -218,6 +223,27 @@ class WebFrontend:
                 return 200, self.models.config()
             except Exception:
                 return 503, {"error": "model configuration could not be read"}
+
+    def effort_action(self, body):
+        agent = self.ctx.get("ga.agent")
+        if not self.sessions or agent is None:
+            return 404, {"error": "session-store is not enabled"}
+        value = body.get("effort") or None
+        if value is not None and value not in EFFORTS:
+            return 400, {"error": "unknown reasoning effort"}
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+            old = getattr(agent, "gah_reasoning_effort", None)
+            agent.gah_reasoning_effort = value
+            try:
+                self.sessions.save(self.messages)
+            except Exception:
+                agent.gah_reasoning_effort = old
+                return 503, {"error": "session could not be saved"}
+            snap = self.snapshot()
+            self._broadcast("snapshot", snap)
+            return 200, snap
 
     def model_action(self, body, configure=False):
         if not self.models:
@@ -322,6 +348,9 @@ class WebFrontend:
     def _work(self, task):
         status, error = "done", None
         try:
+            ga = self.ctx.get("ga.agent")
+            if self.sessions and ga is not None:
+                apply_effort(ga)
             self.ctx.get("agent").run(task, timeout=self._timeout)
         except BaseException as e:  # report it; never take the server down
             status, error = "error", f"{type(e).__name__}: {e}"
@@ -551,6 +580,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.session_action(body))
         elif path == "/api/plugins":
             self._json(*self.frontend.plugin_action(body))
+        elif path == "/api/effort":
+            self._json(*self.frontend.effort_action(body))
         elif path == "/api/models/select":
             self._json(*self.frontend.model_action(body))
         elif path == "/api/models/config":

@@ -20,7 +20,21 @@ def capture(agent):
         "raw": agent.llmclient.backend.history,
         "working": {k: working[k] for k in ("key_info", "passed_sessions") if k in working},
         "model": getattr(agent.llmclient.backend, "name", ""),
+        "effort": getattr(agent, "gah_reasoning_effort", None),
     })
+
+
+EFFORTS = ("low", "medium", "high", "xhigh")
+
+
+def apply_effort(agent):
+    """Per-conversation reasoning effort override; None keeps the model's own config."""
+    backend = getattr(getattr(agent, "llmclient", None), "backend", None)
+    if backend is None or not hasattr(backend, "reasoning_effort"):
+        return
+    if not hasattr(backend, "_gah_effort_default"):
+        backend._gah_effort_default = backend.reasoning_effort
+    backend.reasoning_effort = getattr(agent, "gah_reasoning_effort", None) or backend._gah_effort_default
 
 
 def restore(agent, state):
@@ -32,6 +46,8 @@ def restore(agent, state):
         if hasattr(client, "last_tools"):
             client.last_tools = ""
     agent.history = state.get("history", [])
+    effort = state.get("effort")
+    agent.gah_reasoning_effort = effort if effort in EFFORTS else None
     agent.llmclient.backend.history = state.get("raw", [])
     working = state.get("working", {})
     agent.handler = SimpleNamespace(working=working, code_stop_signal=[]) if working else None
