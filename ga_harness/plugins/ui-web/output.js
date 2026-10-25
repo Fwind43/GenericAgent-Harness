@@ -34,7 +34,7 @@
     if (active && active.isConnected) active.focus({ preventScroll: true });
     if (!ok) throw new Error('Clipboard unavailable');
   }
-  function copyButton(getText, label = '\u590d\u5236') {
+  function copyButton(getText, label = T('\u590d\u5236','Copy')) {
     const button = make('button', 'output-copy');
     button.type = 'button';
     button.title = label;
@@ -48,9 +48,9 @@
       button.disabled = true;
       try {
         await copyText(String(getText() || ''));
-        text.textContent = '\u5df2\u590d\u5236';
+        text.textContent = T('\u5df2\u590d\u5236','Copied');
         button.classList.add('copied');
-      } catch (_) { text.textContent = '\u590d\u5236\u5931\u8d25'; }
+      } catch (_) { text.textContent = T('\u590d\u5236\u5931\u8d25','Copy failed'); }
       finally { button.disabled = false; }
       clearTimeout(timer);
       timer = setTimeout(() => { text.textContent = label; button.classList.remove('copied'); }, 2000);
@@ -100,7 +100,7 @@
       const card = make('div', 'md-code');
       const head = make('div', 'md-code-head');
       const lang = Array.from(code.classList).find(c => c.startsWith('language-'));
-      head.append(make('span', null, lang ? lang.slice(9) : 'text'), copyButton(() => code.textContent, '\u590d\u5236\u4ee3\u7801'));
+      head.append(make('span', null, lang ? lang.slice(9) : 'text'), copyButton(() => code.textContent, T('\u590d\u5236\u4ee3\u7801','Copy code')));
       pre.replaceWith(card);
       card.append(head, pre);
     });
@@ -108,7 +108,7 @@
       const wrap = make('div', 'md-table');
       wrap.tabIndex = 0;
       wrap.setAttribute('role', 'region');
-      wrap.setAttribute('aria-label', '\u8868\u683c');
+      wrap.setAttribute('aria-label', T('\u8868\u683c','Table'));
       table.replaceWith(wrap);
       wrap.append(table);
     });

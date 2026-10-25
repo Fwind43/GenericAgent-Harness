@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ga-harness</title>
+<script>/* i18n: 'gah-lang' in localStorage (zh/en) wins, else browser language. T(zh,en) picks the active one. */(function(){var s=null;try{s=localStorage.getItem('gah-lang')}catch(e){}var l=s==='zh'||s==='en'?s:(/^zh/i.test(navigator.language||'')?'zh':'en');window.GAH_LANG=l;document.documentElement.lang=l==='zh'?'zh-CN':'en';window.T=function(zh,en){return l==='en'?en:zh}})();</script>
 <style>
 /* Base palette (light). Theme plugins override these variables. */
 :root{--bg:#fff;--surface:#fff;--surface-muted:#f7f7f7;--border:#e5e5e5;--text:#0d0d0d;--muted:#6b6b6b;--accent:#373737;--on-accent:#fff;--code-bg:#f7f7f8;--danger:#c0392b;color-scheme:light}
@@ -48,6 +49,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 .side-conn .dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.5}
 .side-conn .dot.live::before{background:#2e9d5b;opacity:1}
 .icon-btn{background:transparent;color:var(--muted);border:0;border-radius:8px;padding:4px 8px;font-size:16px;line-height:1}
+.lang-btn{font-size:13px;font-weight:600;min-width:32px}
 .icon-btn:hover:not(:disabled){background:var(--border);color:var(--text)}
 .side-close{width:28px;height:28px;padding:0;align-items:center;justify-content:center;border-radius:6px}
 #sideOpen,.side-close{display:none}
@@ -113,47 +115,51 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 </head>
 <body>
 <div class="app" id="app">
-<aside class="sidebar" id="sidebar" aria-label="侧边栏">
-  <div class="side-head"><h1>ga-harness</h1><button type="button" class="icon-btn side-close" data-gah-close aria-label="收起侧边栏"><span class="gah-ico" data-i="x"></span></button></div>
+<aside class="sidebar" id="sidebar" aria-label="侧边栏" data-en-aria-label="Sidebar">
+  <div class="side-head"><h1>ga-harness</h1><button type="button" class="icon-btn side-close" data-gah-close aria-label="收起侧边栏" data-en-aria-label="Close sidebar"><span class="gah-ico" data-i="x"></span></button></div>
   <div class="side-body"><div class="gah-slot" data-slot="sidebar"></div></div>
-  <div class="side-foot"><div class="gah-slot" data-slot="sidebar-foot"></div><div class="side-conn"><span class="dot" id="dot"></span><span id="conn">连接中…</span></div></div>
+  <div class="side-foot"><div class="gah-slot" data-slot="sidebar-foot"></div><div class="side-conn"><span class="dot" id="dot"></span><span id="conn" data-en="Connecting…">连接中…</span></div></div>
 </aside>
 <div class="scrim" data-gah-close></div>
 <div class="main-col">
 <header>
-  <button type="button" class="icon-btn" id="sideOpen" aria-label="打开侧边栏" aria-controls="sidebar">☰</button>
+  <button type="button" class="icon-btn" id="sideOpen" aria-label="打开侧边栏" data-en-aria-label="Open sidebar" aria-controls="sidebar">☰</button>
   <span class="spacer"></span>
   <div class="gah-slot" data-slot="header"></div>
+  <button type="button" class="icon-btn lang-btn" id="langBtn" title="Switch to English" data-en-title="切换到中文" aria-label="Switch to English" data-en-aria-label="切换到中文" data-en="中">EN</button>
 </header>
-<nav class="toolbar gah-bar" aria-label="工具栏"><div class="gah-slot" data-slot="toolbar"></div></nav>
+<nav class="toolbar gah-bar" aria-label="工具栏" data-en-aria-label="Toolbar"><div class="gah-slot" data-slot="toolbar"></div></nav>
 
 <div id="notice" role="status" hidden></div>
 <main id="scroll"><div id="thread"></div></main>
 <footer>
   <form id="form">
     <div class="gah-slot" data-slot="composer-top"></div>
-    <textarea id="input" rows="1" placeholder="给 GenericAgent 发消息…" autofocus></textarea>
+    <textarea id="input" rows="1" placeholder="给 GenericAgent 发消息…" data-en-placeholder="Message GenericAgent…" autofocus></textarea>
     <div class="composer-row">
       <div class="gah-slot" data-slot="composer"></div>
       <span class="spacer"></span>
-      <button type="button" id="stop" class="stop" hidden>停止</button>
-      <button type="submit" id="send">发送</button>
+      <button type="button" id="stop" class="stop" hidden data-en="Stop">停止</button>
+      <button type="submit" id="send" data-en="Send">发送</button>
     </div>
   </form>
-  <div class="hint">Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务</div>
+  <div class="hint" data-en="Enter to send · Shift+Enter for a new line · one task at a time">Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务</div>
 </footer>
 </div>
 </div>
 <div class="gah-slot" data-slot="overlay"></div>
 <script>
 const $=id=>document.getElementById(id);
+/* i18n: static markup carries data-en / data-en-<attr>; swap them in when English is active */
+if(GAH_LANG==='en')for(const n of document.querySelectorAll('*')){for(const a of [...n.attributes]){if(a.name==='data-en')n.textContent=a.value;else if(a.name.startsWith('data-en-'))n.setAttribute(a.name.slice(8),a.value)}}
+$('langBtn').addEventListener('click',()=>{try{localStorage.setItem('gah-lang',GAH_LANG==='en'?'zh':'en')}catch(e){}location.reload()});
 /* sidebar drawer (narrow screens): open via #sideOpen, close on any [data-gah-close] or Escape */
 function sideOpen(on){$('app').classList.toggle('side-open',!!on);$('sideOpen').setAttribute('aria-expanded',on?'true':'false')}
 document.addEventListener('click',e=>{if(e.target.closest('#sideOpen'))sideOpen(true);else if(e.target.closest('[data-gah-close]'))sideOpen(false)});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('app').classList.contains('side-open'))sideOpen(false)});
 const thread=$('thread'),scroll=$('scroll'),input=$('input'),send=$('send'),stop=$('stop');
 let state={running:false,messages:[]};
-const STATUS={aborted:'已停止',error:'出错'};
+const STATUS={aborted:T('已停止','Stopped'),error:T('出错','Error')};
 function nearBottom(){return scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<80}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 const opened=new Set();
@@ -168,22 +174,22 @@ function argPreview(a){if(a==null)return '';if(typeof a!=='object')return String
 function fmt(a){if(a==null)return '';return typeof a==='string'?a:JSON.stringify(a,null,2)}
 function renderTool(t,key){
   const d=det('tool',key,false),s=el('summary');
-  let st;if(t.status!=='done')st=el('span','tst run','运行中');
+  let st;if(t.status!=='done')st=el('span','tst run',T('运行中','Running'));
   else st=el('span','tst '+(t.ok?'ok':'fail'),(t.ok?'\u2713':'\u2717')+(t.seconds!=null?' '+Number(t.seconds).toFixed(1)+'s':''));
   s.append(chev(),el('span','tname',t.name||'tool'),el('span','targ',argPreview(t.args)),st);d.append(s);
   const b=el('div','tool-body');
-  if(t.args!=null){b.append(el('div','lbl','参数'),el('pre',null,fmt(t.args)))}
-  if(t.status==='done'){b.append(el('div','lbl','结果'),el('pre',null,t.data||'(空)'))}
+  if(t.args!=null){b.append(el('div','lbl',T('参数','Arguments')),el('pre',null,fmt(t.args)))}
+  if(t.status==='done'){b.append(el('div','lbl',T('结果','Result')),el('pre',null,t.data||T('(空)','(empty)')))}
   d.append(b);return d}
 function num(v){return Number(v||0).toLocaleString('en-US')}
-function tok(u){if(!u)return'';let s='\u8f93\u5165 '+num(u.input);
-  if(u.cache_read||u.cache_write)s+='\uff08\u7f13\u5b58\u547d\u4e2d '+num(u.cache_read)+(u.cache_write?' / \u5199\u5165 '+num(u.cache_write):'')+'\uff09';
-  return s+' \u00b7 \u8f93\u51fa '+num(u.output)}
+function tok(u){if(!u)return'';let s=T('\u8f93\u5165 ','In ')+num(u.input);
+  if(u.cache_read||u.cache_write)s+=T('\uff08\u7f13\u5b58\u547d\u4e2d ',' (cache hit ')+num(u.cache_read)+(u.cache_write?T(' / \u5199\u5165 ',' / write ')+num(u.cache_write):'')+T('\uff09',')');
+  return s+T(' \u00b7 \u8f93\u51fa ',' · Out ')+num(u.output)}
 function renderStep(t,key,live){
   const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
-  const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):'思考中…');
-  s.append(chev(),el('span','no','步骤 '+t.turn),el('span','ttl',title));
-  if(t.tools.length)s.append(el('span','cnt',t.tools.length+' 个工具'));
+  const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
+  s.append(chev(),el('span','no',T('步骤 ','Step ')+t.turn),el('span','ttl',title));
+  if(t.tools.length)s.append(el('span','cnt',t.tools.length+T(' 个工具',' tools')));
   if(t.usage)s.title=tok(t.usage);
   d.append(s);const b=el('div','step-body');
   if(t.reply)b.append(GAHOutput.markdown(t.reply,'reply'));
@@ -198,7 +204,7 @@ function renderTurns(m,mi,box){
   const streaming=running&&!!finalT;
   const steps=finalT?turns.slice(0,-1):turns;
   if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');d.classList.toggle('running',running);
-    s.append(chev(),el('span','process-dot'),el('span',null,(running?'执行中 · ':'执行过程 · ')+steps.length+' 步'));d.append(s);
+    s.append(chev(),el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')));d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
   if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
     const b=GAHOutput.markdown(typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply,'body'+(typing?' cursor':''));
@@ -217,17 +223,17 @@ function renderMsg(m,mi){
     const actions=el('div','message-actions');
     const finalTurn=(m.turns||[]).filter(Boolean).at(-1);
     const reply=finalTurn?finalTurn.reply:m.text;
-    if(reply&&m.status!=='running')actions.append(GAHOutput.copyButton(()=>reply,'\u590d\u5236\u56de\u590d'));
-    if(m.usage&&m.usage.calls)actions.append(el('div','usage',m.usage.calls+' \u6b21\u8c03\u7528 \u00b7 '+tok(m.usage)));
+    if(reply&&m.status!=='running')actions.append(GAHOutput.copyButton(()=>reply,T('\u590d\u5236\u56de\u590d','Copy reply')));
+    if(m.usage&&m.usage.calls)actions.append(el('div','usage',m.usage.calls+T(' \u6b21\u8c03\u7528 \u00b7 ',' calls · ')+tok(m.usage)));
     if(actions.childNodes.length)box.append(actions);
   }
-  if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?'\uFF1A'+m.error:'')))}
+  if(m.status==='aborted'||m.status==='error'){box.append(el('div','status '+m.status,STATUS[m.status]+(m.error?T('\uFF1A',': ')+m.error:'')))}
   return box;
 }
 function render(){
   const stick=nearBottom();
   thread.replaceChildren();
-  if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,'有什么可以帮你？'),el('span',null,'任务交给本机 GenericAgent 执行'));thread.append(e)}
+  if(!state.messages.length){const e=el('div','empty');e.append(el('b',null,T('有什么可以帮你？','How can I help?')),el('span',null,T('任务交给本机 GenericAgent 执行','Tasks run on the local GenericAgent')));thread.append(e)}
   state.messages.forEach((m,i)=>thread.append(renderMsg(m,i)));
   syncControls();
   if(stick)scroll.scrollTop=scroll.scrollHeight;
@@ -272,7 +278,7 @@ const GAH=(()=>{
       else if(k in e&&typeof v!=='string')e[k]=v;else e.setAttribute(k,v===true?'':v)}
     (function add(xs){for(const c of xs){if(c==null||c===false)continue;if(Array.isArray(c))add(c);else e.append(c instanceof Node?c:String(c))}})(kids);
     return e}
-  function report(name,err){console.error('[gah plugin '+name+']',err);notice('\u63d2\u4ef6 '+name+' \u51fa\u9519\uff1a'+(err&&err.message||err))}
+  function report(name,err){console.error('[gah plugin '+name+']',err);notice(T('\u63d2\u4ef6 ','Plugin ')+name+T(' \u51fa\u9519\uff1a',' failed: ')+(err&&err.message||err))}
   async function req(name,method,path,body){
     const opt={method,headers:{}};if(method==='POST'){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body||{})}
     const r=await fetch('/api/p/'+name+'/'+String(path||'').replace(/^\/+/,''),opt);let d=null;try{d=await r.json()}catch(e){}
@@ -314,7 +320,7 @@ const GAH=(()=>{
     for(const m of manifest){
       if(m.style)addTag(m.name,'link','href',m.style);
       if(m.head)addTag(m.name,'script','src',m.head);
-      if(m.script){if(defs[m.name])start(m.name);else{const n=addTag(m.name,'script','src',m.script);if(n)n.onerror=()=>report(m.name,new Error('\u811a\u672c\u52a0\u8f7d\u5931\u8d25'))}}
+      if(m.script){if(defs[m.name])start(m.name);else{const n=addTag(m.name,'script','src',m.script);if(n)n.onerror=()=>report(m.name,new Error(T('\u811a\u672c\u52a0\u8f7d\u5931\u8d25','script failed to load')))}}
     }
   }
   function define(name,setup){if(typeof setup!=='function')return report(name,new Error('define needs a function'));
@@ -327,8 +333,8 @@ const GAH=(()=>{
 window.GAH=GAH;
 function connect(){
   const es=new EventSource('/api/events');
-  es.onopen=()=>{$('conn').textContent='已连接';$('dot').classList.add('live')};
-  es.onerror=()=>{$('conn').textContent='已断开，重连中…';$('dot').classList.remove('live')};
+  es.onopen=()=>{$('conn').textContent=T('已连接','Connected');$('dot').classList.add('live')};
+  es.onerror=()=>{$('conn').textContent=T('已断开，重连中…','Disconnected, reconnecting…');$('dot').classList.remove('live')};
   es.addEventListener('snapshot',e=>{state=JSON.parse(e.data);render();GAH.sync(state.web_plugins);GAH.emitHost('snapshot',state);GAH.emitHost('state',state)});
   es.addEventListener('web.plugins',e=>GAH.sync(JSON.parse(e.data)));
   es.addEventListener('plugin',e=>GAH.dispatch(JSON.parse(e.data)));
@@ -356,7 +362,7 @@ $('form').onsubmit=async e=>{
   e.preventDefault();const task=input.value.trim();if(!task||state.running||changing)return;
   send.disabled=true;
   if(await GAH.claim(task)){input.value='';grow();syncControls();input.focus();return}
-  try{await post('/api/run',{task});input.value='';grow()}catch(err){alert('发送失败：'+err.message)}
+  try{await post('/api/run',{task});input.value='';grow()}catch(err){alert(T('发送失败：','Send failed: ')+err.message)}
   syncControls();input.focus();
 };
 stop.onclick=async()=>{stop.disabled=true;try{await post('/api/abort')}catch(e){}stop.disabled=false};

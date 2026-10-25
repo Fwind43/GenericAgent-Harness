@@ -48,7 +48,7 @@ def no_overflow(dialog):
 def test_cards_filter_detail_and_save(browser, plugins_app):
     manager, base = plugins_app
     names = [i["name"] for i in manager.catalog()["items"]]
-    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("dialog", lambda d: d.accept())
@@ -111,7 +111,7 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
 
 def test_mobile_cards_single_column(browser, plugins_app):
     _, base = plugins_app
-    page = browser.new_page(viewport={"width": 390, "height": 844})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 390, "height": 844})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     dialog = open_plugins(page, base)
@@ -126,4 +126,24 @@ def test_mobile_cards_single_column(browser, plugins_app):
     pw.expect(save).to_be_in_viewport()
     assert no_overflow(dialog)
     shot(page, "plugins_detail_390")
+    assert errors == []
+
+
+def test_language_follows_browser_and_toggle(browser, plugins_app):
+    _, base = plugins_app
+    page = browser.new_page(locale="en-US", viewport={"width": 1280, "height": 900})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    dialog = open_plugins(page, base)
+    assert page.evaluate("document.documentElement.lang") == "en"
+    pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["Protected"])
+    pw.expect(card(dialog, "ga-core")).to_contain_text("Host an unmodified GenericAgent")
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in dialog.inner_text())
+    page.keyboard.press("Escape")
+    page.locator("#langBtn").click()
+    page.wait_for_load_state()
+    assert page.evaluate("GAH_LANG") == "zh"
+    dialog = open_plugins(page, base)
+    pw.expect(card(dialog, "ga-core")).to_contain_text("\u627f\u8f7d\u672a\u7ecf\u4fee\u6539\u7684 GenericAgent")
+    pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["\u53d7\u4fdd\u62a4"])
     assert errors == []

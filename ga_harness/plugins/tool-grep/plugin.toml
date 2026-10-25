@@ -1,11 +1,13 @@
 name = "tool-grep"
 entry = "main:apply"
 description = "Read-only regex search tool `grep` registered through ga.tools (example of a harness-owned tool)."
+description_zh = "通过 ga.tools 注册的只读正则搜索工具 `grep`（harness 自有工具的示例）。"
 inject = ["ga.tools"]
 
 [settings.max_results]
 type = "integer"
 label = "Maximum results"
+label_zh = "最大结果数"
 default = 200
 min = 1
 max = 10000
@@ -13,5 +15,6 @@ max = 10000
 [settings.root]
 type = "string"
 label = "Search root (blank uses working directory)"
+label_zh = "搜索根目录（留空则用工作目录）"
 default = ""
 max_length = 1024

@@ -121,7 +121,7 @@ def assert_layout(page):
 def test_markdown_safety_copy_and_themes(output_app, browser):
     fe, _, base = output_app
     fe.messages = seeded_messages()
-    context = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+    context = browser.new_context(locale="zh-CN", permissions=["clipboard-read", "clipboard-write"])
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
@@ -170,7 +170,7 @@ def test_markdown_safety_copy_and_themes(output_app, browser):
 
 def test_streaming_keeps_disclosure_and_final_markdown(output_app, browser):
     fe, agent, base = output_app
-    context = browser.new_context()
+    context = browser.new_context(locale="zh-CN")
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
@@ -209,7 +209,7 @@ def test_streaming_keeps_disclosure_and_final_markdown(output_app, browser):
 def test_parser_load_failure_is_plain_text(output_app, browser):
     fe, _, base = output_app
     fe.messages = seeded_messages()
-    page = browser.new_page()
+    page = browser.new_page(locale="zh-CN")
     page.route("**/marked.umd.js", lambda route: route.abort())
     page.goto(base)
     page.wait_for_selector(".body.md-plain")

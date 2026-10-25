@@ -8,26 +8,26 @@ GAH.define('web-sessions', api => {
   let toggled = {}, lastScope = null;
   try { toggled = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { toggled = {}; }
   const add = h('button', { type: 'button', class: 'side-item gah-sess-new', 'data-gah-close': '', onclick: () => act('new') },
-    h('span', { class: 'gah-ico', dataset: { i: 'pen' }, 'aria-hidden': 'true' }), '\u65b0\u4f1a\u8bdd');
-  const list = h('div', { class: 'gah-sess-list', 'aria-label': '\u4f1a\u8bdd\u5217\u8868' });
-  const newProject = h('button', { type: 'button', class: 'gah-sess-head-btn', title: '\u65b0\u5efa\u9879\u76ee', 'aria-label': '\u65b0\u5efa\u9879\u76ee',
+    h('span', { class: 'gah-ico', dataset: { i: 'pen' }, 'aria-hidden': 'true' }), T('\u65b0\u4f1a\u8bdd','New chat'));
+  const list = h('div', { class: 'gah-sess-list', 'aria-label': T('\u4f1a\u8bdd\u5217\u8868','Chats') });
+  const newProject = h('button', { type: 'button', class: 'gah-sess-head-btn', title: T('\u65b0\u5efa\u9879\u76ee','New project'), 'aria-label': T('\u65b0\u5efa\u9879\u76ee','New project'),
     onclick: () => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action: 'create' } })) }, h('span', { class: 'gah-ico', dataset: { i: 'folder-plus' }, 'aria-hidden': 'true' }));
-  const head = h('div', { class: 'gah-sess-label' }, h('span', {}, '\u4f1a\u8bdd'), newProject);
+  const head = h('div', { class: 'gah-sess-label' }, h('span', {}, T('\u4f1a\u8bdd','Chat')), newProject);
   const box = h('div', { class: 'gah-sessions', hidden: true }, add, head, list);
   const base = p => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
   function rename(x) {
-    const title = prompt('\u4f1a\u8bdd\u540d\u79f0', x.title || '');
+    const title = prompt(T('\u4f1a\u8bdd\u540d\u79f0','Chat name'), x.title || '');
     if (title != null && title.trim()) act('rename', { id: x.id, title: title.trim() });
   }
   function remove(x) {
-    if (confirm('\u4ece\u4f1a\u8bdd\u5217\u8868\u4e2d\u5220\u9664\u201c' + (x.title || '') + '\u201d\uff1f\u8bb0\u5f55\u5c06\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u4e2d\u3002')) act('delete', { id: x.id });
+    if (confirm(T('\u4ece\u4f1a\u8bdd\u5217\u8868\u4e2d\u5220\u9664\u201c','Remove “') + (x.title || '') + T('\u201d\uff1f\u8bb0\u5f55\u5c06\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u4e2d\u3002','” from the list? The history stays in the local database.'))) act('delete', { id: x.id });
   }
   function row(x, cur) {
-    const open = h('button', { type: 'button', class: 'gah-sess-open', 'data-gah-close': '', title: x.title,
+    const open = h('button', { type: 'button', class: 'gah-sess-open', 'data-gah-close': '', title: x.title === '\u65b0\u4f1a\u8bdd' ? T(x.title, 'New chat') : x.title,
       'aria-current': cur ? 'true' : null, onclick: () => { if (!cur) act('select', { id: x.id }); } },
-      h('span', { class: 'gah-sess-title' }, x.title || '\u672a\u547d\u540d'));
-    const ren = h('button', { type: 'button', class: 'gah-sess-act', title: '\u91cd\u547d\u540d', 'aria-label': '\u91cd\u547d\u540d', onclick: () => rename(x) }, h('span', { class: 'gah-ico', dataset: { i: 'pencil' }, 'aria-hidden': 'true' }));
-    const del = h('button', { type: 'button', class: 'gah-sess-act', title: '\u5220\u9664', 'aria-label': '\u5220\u9664', onclick: () => remove(x) }, h('span', { class: 'gah-ico', dataset: { i: 'trash' }, 'aria-hidden': 'true' }));
+      h('span', { class: 'gah-sess-title' }, x.title === '\u65b0\u4f1a\u8bdd' ? T(x.title, 'New chat') : (x.title || T('\u672a\u547d\u540d','Untitled'))));
+    const ren = h('button', { type: 'button', class: 'gah-sess-act', title: T('\u91cd\u547d\u540d','Rename'), 'aria-label': T('\u91cd\u547d\u540d','Rename'), onclick: () => rename(x) }, h('span', { class: 'gah-ico', dataset: { i: 'pencil' }, 'aria-hidden': 'true' }));
+    const del = h('button', { type: 'button', class: 'gah-sess-act', title: T('\u5220\u9664','Delete'), 'aria-label': T('\u5220\u9664','Delete'), onclick: () => remove(x) }, h('span', { class: 'gah-ico', dataset: { i: 'trash' }, 'aria-hidden': 'true' }));
     return h('div', { class: 'gah-sess-row' + (cur ? ' current' : ''), role: 'listitem' }, open, h('span', { class: 'gah-sess-acts' }, ren, del));
   }
   // [{key, kind:'project'|'workspace', name, title, body, items, current}]
@@ -55,7 +55,7 @@ GAH.define('web-sessions', api => {
     const open = g.key in toggled ? toggled[g.key] : g.current;
     const items = h('div', { class: 'gah-sess-items', role: 'list', hidden: !open });
     items.append(...g.items.map(x => row(x, x.id === sid)));
-    if (!g.items.length) items.append(h('div', { class: 'gah-sess-empty' }, '\u6682\u65e0\u4f1a\u8bdd'));
+    if (!g.items.length) items.append(h('div', { class: 'gah-sess-empty' }, T('\u6682\u65e0\u4f1a\u8bdd','No chats yet')));
     const toggle = h('button', { type: 'button', class: 'gah-group-toggle', 'aria-expanded': String(open), title: g.title,
       onclick: () => {
         const next = items.hidden;
@@ -67,8 +67,8 @@ GAH.define('web-sessions', api => {
       h('span', { class: 'gah-ico gah-ico-open', dataset: { i: 'folder-open' }, 'aria-hidden': 'true' }),
       h('span', { class: 'gah-group-name' }, g.name));
     const plus = h('button', { type: 'button', class: 'gah-group-add', 'data-gah-close': '',
-      title: '\u5728\u6b64' + (g.kind === 'project' ? '\u9879\u76ee' : '\u5de5\u4f5c\u533a') + '\u65b0\u5efa\u5bf9\u8bdd',
-      'aria-label': '\u5728 ' + g.name + ' \u65b0\u5efa\u5bf9\u8bdd',
+      title: g.kind === 'project' ? T('\u5728\u6b64\u9879\u76ee\u65b0\u5efa\u5bf9\u8bdd','New chat in this project') : T('\u5728\u6b64\u5de5\u4f5c\u533a\u65b0\u5efa\u5bf9\u8bdd','New chat in this workspace'),
+      'aria-label': T('\u5728 ','New chat in ') + g.name + T(' \u65b0\u5efa\u5bf9\u8bdd',''),
       onclick: () => g.current ? act('new') : enter(g.body) }, h('span', { class: 'gah-ico', dataset: { i: 'plus' }, 'aria-hidden': 'true' }));
     return h('section', { class: 'gah-group ' + g.kind + (g.current ? ' current' : ''), dataset: { key: g.key } },
       h('div', { class: 'gah-group-head' }, toggle, plus), items);

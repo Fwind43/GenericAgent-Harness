@@ -69,7 +69,7 @@ def assert_no_overflow(dialog):
 
 def test_provider_sections_and_crud(browser, models_app):
     store, base = models_app
-    page = browser.new_page(viewport={"width": 1280, "height": 1000})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("dialog", lambda d: d.accept())
@@ -159,7 +159,7 @@ def test_provider_sections_and_crud(browser, models_app):
 def test_loading_errors_readonly_and_busy(browser, models_app):
     store, base = models_app
     original = store.source.file.read_bytes()
-    page = browser.new_page(viewport={"width": 1280, "height": 1000})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 1000})
     pending = []
     try:
         page.route("**/api/models/config", lambda route: pending.append(route))

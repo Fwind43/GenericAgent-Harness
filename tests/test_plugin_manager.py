@@ -159,3 +159,15 @@ def test_profile_isolation_and_writer_lock(tmp_path):
         assert lock.read_text() == "another writer"
     finally:
         rt.dispose()
+
+
+def test_bundled_plugins_ship_chinese_descriptions(tmp_path):
+    rt, m = make_manager(tmp_path)
+    try:
+        bundled = discover([PLUGINS])
+        assert bundled and all(x.description and x.description_zh for x in bundled.values())
+        core = item(m.catalog(), "ga-core")
+        assert core["description_zh"] == bundled["ga-core"].description_zh
+        assert item(m.catalog())["description_zh"] == ""
+    finally:
+        rt.dispose()

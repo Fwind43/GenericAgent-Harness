@@ -1,4 +1,5 @@
 name = "web-plugins"
 entry = "main:apply"
 description = "Web plugin manager dialog for ui-web (uses /api/plugins); changes apply on next start."
+description_zh = "ui-web 的插件管理对话框（使用 /api/plugins）；改动在下次启动时生效。"
 inject = ["web.host"]

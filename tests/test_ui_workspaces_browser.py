@@ -21,7 +21,7 @@ def screenshot(page, name):
 
 def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser, tmp_path):
     _, _, _, base = workspace_app
-    page = browser.new_page(viewport={"width": 1280, "height": 820})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 820})
     page.set_default_timeout(6000)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -143,7 +143,7 @@ def test_sidebar_groups_sessions_by_scope(workspace_app, browser, tmp_path):
     assert created[0] == 200, created
     project_id = created[1]["scope"]["project_id"]
     assert _req(url, {"action": "select"})[0] == 200
-    page = browser.new_page(viewport={"width": 1280, "height": 820})
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 820})
     page.set_default_timeout(6000)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -172,5 +172,26 @@ def test_sidebar_groups_sessions_by_scope(workspace_app, browser, tmp_path):
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
         screenshot(page, "sidebar-groups")
         assert not errors, errors
+    finally:
+        page.close()
+
+
+def test_english_locale_has_no_chinese_ui_text(workspace_app, browser, tmp_path):
+    _, _, _, base = workspace_app
+    page = browser.new_page(locale="en-US", viewport={"width": 1280, "height": 820})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    try:
+        page.goto(base)
+        page.locator(".gah-sessions").wait_for()
+        page.wait_for_timeout(300)
+        text = page.evaluate("""() => [...document.body.querySelectorAll('*')].filter(e => e.id !== 'langBtn' && !e.children.length && !['SCRIPT','STYLE'].includes(e.tagName) && !e.closest('.gah-ws-path')).map(e => e.innerText || '').join(' ') + ' ' + [...document.querySelectorAll(
+            '[title],[placeholder],[aria-label]')].filter(e => e.id !== 'langBtn').map(e => [e.title, e.placeholder,
+            e.getAttribute('aria-label')].join(' ')).join(' ')""")
+        assert page.evaluate("document.documentElement.lang") == "en"
+        text = text.replace(str(tmp_path), "")  # the OS user name in temp paths is data, not UI copy
+        found = re.findall("[\u4e00-\u9fff]+", text)
+        assert found == [], found
+        assert errors == []
     finally:
         page.close()

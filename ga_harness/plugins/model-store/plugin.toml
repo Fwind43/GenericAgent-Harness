@@ -1,5 +1,6 @@
 name = "model-store"
 entry = "main:apply"
 description = "Busy-safe model selection and atomic local model configuration."
+description_zh = "忙碌安全的模型选择，以及原子写入的本地模型配置。"
 inject = ["ga.agent", "llm.config"]
 provides = ["models"]

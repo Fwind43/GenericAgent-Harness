@@ -1,12 +1,14 @@
 name = "ga-events"
 entry = "main:apply"
 description = "Structured run/turn/assistant/tool events from GA hooks, so frontends never parse GA's display text."
+description_zh = "从 GA 钩子产出结构化的运行/轮次/回复/工具事件，前端无需解析 GA 的显示文本。"
 inject = ["ga.hooks"]
 provides = []
 
 [settings.max_data]
 type = "integer"
 label = "Maximum tool event characters"
+label_zh = "工具事件最大字符数"
 default = 20000
 min = 100
 max = 200000

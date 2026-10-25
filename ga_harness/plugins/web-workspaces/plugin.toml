@@ -1,4 +1,5 @@
 name = "web-workspaces"
 entry = "main:apply"
 description = "Workspace and project controls for ui-web."
+description_zh = "ui-web 的工作区与项目控件。"
 inject = ["web.host", "workspaces"]

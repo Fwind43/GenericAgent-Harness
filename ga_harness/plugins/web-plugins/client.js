@@ -1,27 +1,30 @@
 GAH.define('web-plugins', api => {
   const { h } = api;
-  const STATES = { active: '\u8fd0\u884c\u4e2d', pending: '\u7b49\u5f85\u4f9d\u8d56', disabled: '\u672a\u52a0\u8f7d', error: '\u52a0\u8f7d\u5931\u8d25', removed: '\u5df2\u79fb\u9664' };
-  const PENDING = ' \u00b7 \u5f85\u91cd\u542f\u751f\u6548', PROTECTED = ' \u00b7 \u53d7\u4fdd\u62a4';
-  const FILTERS = [['all', '\u5168\u90e8'], ['active', '\u8fd0\u884c\u4e2d'], ['off', '\u672a\u52a0\u8f7d'], ['issue', '\u9700\u5904\u7406']];
+  const zh = typeof GAH_LANG !== 'undefined' && GAH_LANG === 'zh';
+  const descOf = p => (zh && p.description_zh) || p.description || '';
+  const labelOf = spec => (zh && spec.label_zh) || spec.label;
+  const STATES = { active: T('\u8fd0\u884c\u4e2d','Running'), pending: T('\u7b49\u5f85\u4f9d\u8d56','Waiting for dependencies'), disabled: T('\u672a\u52a0\u8f7d','Not loaded'), error: T('\u52a0\u8f7d\u5931\u8d25','Failed to load'), removed: T('\u5df2\u79fb\u9664','Removed') };
+  const PENDING = T(' \u00b7 \u5f85\u91cd\u542f\u751f\u6548',' · applies after restart'), PROTECTED = T(' \u00b7 \u53d7\u4fdd\u62a4',' · protected');
+  const FILTERS = [['all', T('\u5168\u90e8','All')], ['active', T('\u8fd0\u884c\u4e2d','Running')], ['off', T('\u672a\u52a0\u8f7d','Not loaded')], ['issue', T('\u9700\u5904\u7406','Needs attention')]];
   let cfg = null, editing = null, view = 'grid', filter = 'all', busy = false, running = false, working = false;
   /* ---- toolbar ---- */
   const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => { view = 'grid'; load(); } },
-    h('span', { class: 'gah-ico', dataset: { i: 'puzzle' }, 'aria-hidden': 'true' }), '\u63d2\u4ef6\u7ba1\u7406');
-  const summary = h('span', { class: 'plugin-note' }, '\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548');
+    h('span', { class: 'gah-ico', dataset: { i: 'puzzle' }, 'aria-hidden': 'true' }), T('\u63d2\u4ef6\u7ba1\u7406','Plugins'));
+  const summary = h('span', { class: 'plugin-note' }, T('\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Changes take effect on next start'));
   summary.hidden = true;
   const group = h('div', { class: 'gah-plugins', hidden: true }, open, summary);
   /* ---- catalog (one card per plugin) ---- */
   const profile = h('p', { class: 'plugin-note plugin-profile' });
-  const search = h('input', { type: 'search', class: 'plugin-search', placeholder: '\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'aria-label': '\u641c\u7d22\u63d2\u4ef6', oninput: () => renderCards() });
-  const reload = h('button', { type: 'button', class: 'secondary', onclick: () => load() }, '\u5237\u65b0');
-  const tabs = h('div', { class: 'plugin-filters', role: 'tablist', 'aria-label': '\u6309\u72b6\u6001\u7b5b\u9009' });
-  const cards = h('ul', { class: 'plugin-grid', 'aria-label': '\u63d2\u4ef6\u5217\u8868' });
+  const search = h('input', { type: 'search', class: 'plugin-search', placeholder: T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e','Search plugin names or descriptions'), 'aria-label': T('\u641c\u7d22\u63d2\u4ef6','Search plugins'), oninput: () => renderCards() });
+  const reload = h('button', { type: 'button', class: 'secondary', onclick: () => load() }, T('\u5237\u65b0','Refresh'));
+  const tabs = h('div', { class: 'plugin-filters', role: 'tablist', 'aria-label': T('\u6309\u72b6\u6001\u7b5b\u9009','Filter by status') });
+  const cards = h('ul', { class: 'plugin-grid', 'aria-label': T('\u63d2\u4ef6\u5217\u8868','Plugin list') });
   const empty = h('p', { class: 'plugin-empty', hidden: true });
   const catalogErr = h('p', { class: 'gah-error', role: 'status', hidden: true });
   const gridView = h('section', { class: 'plugin-catalog' },
     profile, h('div', { class: 'plugin-toolbar' }, search, reload), tabs, catalogErr, cards, empty);
   /* ---- detail (selected plugin) ---- */
-  const back = h('button', { type: 'button', class: 'secondary plugin-back', onclick: () => showGrid() }, '\u2190 \u5168\u90e8\u63d2\u4ef6');
+  const back = h('button', { type: 'button', class: 'secondary plugin-back', onclick: () => showGrid() }, T('\u2190 \u5168\u90e8\u63d2\u4ef6','← All plugins'));
   const title = h('h3', { class: 'plugin-title' });
   const status = h('span', { class: 'plugin-badge plugin-status' });
   const tags = h('div', { class: 'plugin-tags' });
@@ -33,23 +36,23 @@ GAH.define('web-plugins', api => {
   const note = h('p', { class: 'plugin-note' });
   const err = h('p', { class: 'gah-error', role: 'status', hidden: true });
   const resetBtn = h('button', { type: 'button', class: 'secondary plugin-reset', onclick: () => {
-    if (confirm('\u6e05\u9664\u8fd9\u4e2a\u63d2\u4ef6\u7684\u7f51\u9875\u8986\u76d6\u8bbe\u7f6e\uff0c\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002')) change('reset'); } }, '\u6062\u590d\u542f\u52a8\u914d\u7f6e');
-  const saveBtn = h('button', { type: 'submit' }, '\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548');
+    if (confirm(T('\u6e05\u9664\u8fd9\u4e2a\u63d2\u4ef6\u7684\u7f51\u9875\u8986\u76d6\u8bbe\u7f6e\uff0c\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002','Clear this plugin\'s web overrides and restore the startup config? Takes effect on next start.'))) change('reset'); } }, T('\u6062\u590d\u542f\u52a8\u914d\u7f6e','Restore startup config'));
+  const saveBtn = h('button', { type: 'submit' }, T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548','Save (applies on next start)'));
   const form = h('form', { onsubmit: e => { e.preventDefault(); change('save'); } },
-    h('label', { class: 'plugin-toggle plugin-enable' }, enabled, h('span', null, '\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528')),
+    h('label', { class: 'plugin-toggle plugin-enable' }, enabled, h('span', null, T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528','Enable on next start'))),
     fields, note, err,
     h('div', { class: 'model-actions plugin-actions' }, resetBtn, saveBtn));
   const detailView = h('section', { class: 'plugin-detail', hidden: true }, back,
     h('div', { class: 'plugin-detail-card' },
       h('div', { class: 'plugin-detail-head' }, h('span', { class: 'plugin-avatar', 'aria-hidden': 'true' }), title, status),
       tags, desc,
-      h('dl', { class: 'plugin-deps' }, h('dt', null, '\u4f9d\u8d56\u80fd\u529b'), deps.requires,
-        h('dt', null, '\u63d0\u4f9b\u80fd\u529b'), deps.provides, h('dt', null, '\u88ab\u63d2\u4ef6\u4f9d\u8d56'), deps.dependents),
+      h('dl', { class: 'plugin-deps' }, h('dt', null, T('\u4f9d\u8d56\u80fd\u529b','Requires')), deps.requires,
+        h('dt', null, T('\u63d0\u4f9b\u80fd\u529b','Provides')), deps.provides, h('dt', null, T('\u88ab\u63d2\u4ef6\u4f9d\u8d56','Required by')), deps.dependents),
       warning, form));
-  const closeBtn = h('button', { type: 'button', class: 'secondary', 'aria-label': '\u5173\u95ed\u63d2\u4ef6\u7ba1\u7406', onclick: () => { if (!working) dlg.close(); } }, '\u5173\u95ed');
-  const dlg = h('dialog', { class: 'gah-dialog gah-plugin-dialog', 'aria-label': '\u63d2\u4ef6\u7ba1\u7406',
+  const closeBtn = h('button', { type: 'button', class: 'secondary', 'aria-label': T('\u5173\u95ed\u63d2\u4ef6\u7ba1\u7406','Close plugins'), onclick: () => { if (!working) dlg.close(); } }, T('\u5173\u95ed','Close'));
+  const dlg = h('dialog', { class: 'gah-dialog gah-plugin-dialog', 'aria-label': T('\u63d2\u4ef6\u7ba1\u7406','Plugins'),
       oncancel: e => { if (working) e.preventDefault(); else if (view === 'detail') { e.preventDefault(); showGrid(); } } },
-    h('div', { class: 'dialog-head' }, h('h2', null, '\u63d2\u4ef6\u7ba1\u7406'), closeBtn),
+    h('div', { class: 'dialog-head' }, h('h2', null, T('\u63d2\u4ef6\u7ba1\u7406','Plugins')), closeBtn),
     h('div', { class: 'dialog-content' }, gridView, detailView));
   const selected = () => cfg && cfg.items.find(x => x.name === editing);
   const issue = p => p.state === 'error' || p.state === 'pending' || !!(p.missing && p.missing.length) || !!p.error;
@@ -57,10 +60,10 @@ GAH.define('web-plugins', api => {
   const stateLabel = p => STATES[p.state] || p.state;
   function badges(p) {
     const out = [];
-    if (p.protected) out.push(['protected', '\u53d7\u4fdd\u62a4']);
-    if (p.restart_required) out.push(['pending', '\u5f85\u91cd\u542f']);
-    if (p.overridden) out.push(['override', '\u7f51\u9875\u8986\u76d6']);
-    if (!p.enabled && p.state === 'active') out.push(['pending', '\u4e0b\u6b21\u505c\u7528']);
+    if (p.protected) out.push(['protected', T('\u53d7\u4fdd\u62a4','Protected')]);
+    if (p.restart_required) out.push(['pending', T('\u5f85\u91cd\u542f','Restart pending')]);
+    if (p.overridden) out.push(['override', T('\u7f51\u9875\u8986\u76d6','Web override')]);
+    if (!p.enabled && p.state === 'active') out.push(['pending', T('\u4e0b\u6b21\u505c\u7528','Off next start')]);
     return out.map(([k, t]) => h('span', { class: 'plugin-tag', dataset: { tag: k } }, t));
   }
   function error(t) { err.textContent = t || ''; err.hidden = !t; catalogErr.textContent = t || ''; catalogErr.hidden = !t || view !== 'grid'; }
@@ -73,9 +76,9 @@ GAH.define('web-plugins', api => {
     enabled.disabled = saveBtn.disabled = locked;
     resetBtn.disabled = locked || !(p && p.overridden);
     fields.querySelectorAll('input').forEach(x => { x.disabled = locked; });
-    note.textContent = running ? '\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\uff1b\u7ed3\u675f\u540e\u53ef\u4fdd\u5b58\u3002'
-      : p && p.protected ? '\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002'
-      : '\u4ec5\u663e\u793a\u63d2\u4ef6\u58f0\u660e\u7684\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002';
+    note.textContent = running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\uff1b\u7ed3\u675f\u540e\u53ef\u4fdd\u5b58\u3002','A task is running; view only. You can save after it finishes.')
+      : p && p.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002','Core and frontend plugins are protected; change them in the startup config.')
+      : T('\u4ec5\u663e\u793a\u63d2\u4ef6\u58f0\u660e\u7684\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002','Only public settings declared by the plugin are shown; manage keys in Models.');
   }
   function renderTabs() {
     const items = (cfg && cfg.items) || [];
@@ -85,43 +88,43 @@ GAH.define('web-plugins', api => {
   }
   function renderCards() {
     const q = search.value.trim().toLowerCase(), items = (cfg && cfg.items) || [];
-    const shown = items.filter(p => matches(p, filter) && (!q || (p.name + ' ' + (p.description || '')).toLowerCase().includes(q)));
+    const shown = items.filter(p => matches(p, filter) && (!q || (p.name + ' ' + (p.description || '') + ' ' + (p.description_zh || '')).toLowerCase().includes(q)));
     cards.replaceChildren(...shown.map(p => h('li', null, h('button', { type: 'button', class: 'plugin-card', dataset: { plugin: p.name, state: p.state },
-        'aria-label': p.name + '\uff0c' + stateLabel(p), onclick: () => showDetail(p.name) },
+        'aria-label': p.name + T('\uff0c',', ') + stateLabel(p), onclick: () => showDetail(p.name) },
       h('span', { class: 'plugin-card-head' },
         h('span', { class: 'plugin-avatar', 'aria-hidden': 'true' }, p.name.slice(0, 1).toUpperCase()),
         h('span', { class: 'plugin-name', title: p.name }, p.name),
         h('span', { class: 'plugin-badge', dataset: { state: p.state } }, stateLabel(p))),
-      h('span', { class: 'plugin-card-desc' }, p.description || '\u6682\u65e0\u8bf4\u660e'),
+      h('span', { class: 'plugin-card-desc' }, descOf(p) || T('\u6682\u65e0\u8bf4\u660e','No description')),
       h('span', { class: 'plugin-card-foot' }, ...badges(p),
-        h('span', { class: 'plugin-card-meta' }, (p.provides && p.provides.length ? '\u63d0\u4f9b ' + p.provides.length + ' \u9879\u80fd\u529b' : '')))))));
+        h('span', { class: 'plugin-card-meta' }, (p.provides && p.provides.length ? T('\u63d0\u4f9b ','Provides ') + p.provides.length + T(' \u9879\u80fd\u529b',' capabilities') : '')))))));
     empty.hidden = !!shown.length;
-    empty.textContent = items.length ? '\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6' : '\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6';
+    empty.textContent = items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6','No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
     controls();
   }
   function fill(name) {
     editing = name; const p = selected(); fields.replaceChildren();
     title.textContent = p ? p.name : '';
     detailView.querySelector('.plugin-avatar').textContent = p ? p.name.slice(0, 1).toUpperCase() : '';
-    status.textContent = p ? stateLabel(p) : '\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6';
+    status.textContent = p ? stateLabel(p) : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
     status.dataset.state = p ? p.state : '';
     tags.replaceChildren(...(p ? badges(p) : []));
-    desc.textContent = (p && p.description) || '\u6682\u65e0\u8bf4\u660e';
-    for (const k of Object.keys(deps)) deps[k].textContent = (p && p[k] && p[k].join('\u3001')) || '\u65e0';
-    warning.textContent = [p && p.missing && p.missing.length ? '\u5f53\u524d\u7f3a\u5c11\uff1a' + p.missing.join('\u3001') : '', (p && p.error) || ''].filter(Boolean).join('\uff1b');
+    desc.textContent = (p && descOf(p)) || T('\u6682\u65e0\u8bf4\u660e','No description');
+    for (const k of Object.keys(deps)) deps[k].textContent = (p && p[k] && p[k].join(T('\u3001',', '))) || T('\u65e0','None');
+    warning.textContent = [p && p.missing && p.missing.length ? T('\u5f53\u524d\u7f3a\u5c11\uff1a','Missing: ') + p.missing.join(T('\u3001',', ')) : '', (p && p.error) || ''].filter(Boolean).join(T('\uff1b','; '));
     warning.hidden = !warning.textContent;
     enabled.checked = !!(p && p.enabled);
     Object.entries((p && p.fields) || {}).forEach(([key, spec]) => {
       const bool = spec.type === 'boolean', input = h('input', { type: bool ? 'checkbox' : spec.type === 'integer' ? 'number' : 'text' });
       input.dataset.pluginField = key;
       let label;
-      if (bool) { input.checked = !!p.config[key]; label = h('label', { class: 'plugin-toggle' }, input, h('span', null, spec.label || key)); }
+      if (bool) { input.checked = !!p.config[key]; label = h('label', { class: 'plugin-toggle' }, input, h('span', null, labelOf(spec) || key)); }
       else {
         input.value = p.config[key] ?? '';
         if (spec.type === 'integer') { input.step = '1'; if (spec.min != null) input.min = spec.min; if (spec.max != null) input.max = spec.max; }
-        label = h('label', { class: 'model-field' }, h('span', null, spec.label || key), input);
+        label = h('label', { class: 'model-field' }, h('span', null, labelOf(spec) || key), input);
       }
-      if (spec.description) label.append(h('small', null, spec.description));
+      if (spec.description || spec.description_zh) label.append(h('small', null, (zh && spec.description_zh) || spec.description));
       fields.append(label);
     });
     fields.hidden = !fields.childElementCount;
@@ -131,14 +134,14 @@ GAH.define('web-plugins', api => {
   function showGrid() { if (working) return; setView('grid'); error(''); renderCards(); const c = editing && cards.querySelector('[data-plugin="' + CSS.escape(editing) + '"]'); if (c) c.focus(); }
   function showDetail(name) { if (working) return; error(''); fill(name); setView('detail'); back.focus(); }
   function fillCatalog(preferred) {
-    profile.textContent = '\u914d\u7f6e\u65b9\u6848\uff1a' + cfg.profile + '\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002';
+    profile.textContent = T('\u914d\u7f6e\u65b9\u6848\uff1a','Profile: ') + cfg.profile + T('\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002','. Changes are saved locally and apply on next start without interrupting running plugins.');
     summary.hidden = !cfg.restart_required;
-    summary.textContent = cfg.restart_required ? '\u914d\u7f6e\u5df2\u4fdd\u5b58' + PENDING : '\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548';
+    summary.textContent = cfg.restart_required ? T('\u914d\u7f6e\u5df2\u4fdd\u5b58','Settings saved') + PENDING : T('\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Changes take effect on next start');
     renderTabs(); renderCards();
     const keep = cfg.items.some(p => p.name === preferred);
     fill(keep ? preferred : null);
     if (view === 'detail' && !keep) setView('grid');
-    if (cfg.issues && cfg.issues.length) error('\u4f9d\u8d56\u68c0\u67e5\uff1a' + cfg.issues.join('\uff1b'));
+    if (cfg.issues && cfg.issues.length) error(T('\u4f9d\u8d56\u68c0\u67e5\uff1a','Dependency check: ') + cfg.issues.join(T('\uff1b','; ')));
   }
   function begin() { working = true; api.lock(true); controls(); }
   function end() { working = false; api.lock(false); controls(); }
@@ -162,7 +165,7 @@ GAH.define('web-plugins', api => {
       });
     }
     begin(); error('');
-    try { cfg = await api.host.post('/api/plugins', body); fillCatalog(p.name); api.notice('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548'); }
+    try { cfg = await api.host.post('/api/plugins', body); fillCatalog(p.name); api.notice(T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Plugin settings saved; they apply on next start')); }
     catch (e) { error(e.message); }
     finally { end(); }
   }

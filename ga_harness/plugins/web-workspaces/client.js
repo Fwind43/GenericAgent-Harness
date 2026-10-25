@@ -14,10 +14,10 @@ GAH.define('web-workspaces', api => {
   const kind = h('span', { class: 'gah-scope-kind' });
   const label = h('span', { class: 'gah-scope-name' });
   const path = h('button', { type: 'button', class: 'gah-ws-path', onclick: () => open('workspace') });
-  const edit = h('button', { type: 'button', class: 'gah-scope-btn', onclick: () => open('update'), title: '项目规则与笔记', 'aria-label': '项目规则与笔记' }, '设置');
-  const leave = h('button', { type: 'button', class: 'gah-scope-btn', onclick: () => enter({}), title: '退出到普通对话', 'aria-label': '退出项目' }, '退出');
+  const edit = h('button', { type: 'button', class: 'gah-scope-btn', onclick: () => open('update'), title: T('项目规则与笔记','Project rules and notes'), 'aria-label': T('项目规则与笔记','Project rules and notes') }, T('设置','Settings'));
+  const leave = h('button', { type: 'button', class: 'gah-scope-btn', onclick: () => enter({}), title: T('退出到普通对话','Back to a normal chat'), 'aria-label': T('退出项目','Leave project') }, T('退出','Leave'));
   const chip = h('div', { class: 'gah-scope', hidden: true }, kind, label, path, edit, leave);
-  const menu = h('div', { class: 'gah-slash', role: 'listbox', hidden: true, 'aria-label': '命令' });
+  const menu = h('div', { class: 'gah-slash', role: 'listbox', hidden: true, 'aria-label': T('命令','Command') });
   const top = h('div', { class: 'gah-scope-bar' }, menu, chip);
 
   // ---- dialog ----
@@ -29,16 +29,16 @@ GAH.define('web-workspaces', api => {
   const rules = h('textarea', { name: 'rules', maxlength: '16000', rows: '5' });
   const memory = h('textarea', { name: 'memory', maxlength: '16000', rows: '5' });
   const field = (text, control) => h('label', { class: 'gah-ws-field' }, h('span', {}, text), control);
-  const nameField = field('项目名称', name);
-  const projectIdField = field('项目 ID（可选中复制，用于 --project）', projectId);
-  const rulesField = field('共享规则', rules);
-  const memoryField = field('共享笔记', memory);
+  const nameField = field(T('项目名称','Project name'), name);
+  const projectIdField = field(T('项目 ID（可选中复制，用于 --project）','Project ID (select to copy, for --project)'), projectId);
+  const rulesField = field(T('共享规则','Shared rules'), rules);
+  const memoryField = field(T('共享笔记','Shared notes'), memory);
   const error = h('p', { class: 'gah-ws-error', role: 'alert' });
-  const cancel = h('button', { type: 'button', onclick: () => dialog.close() }, '取消');
-  const save = h('button', { type: 'submit', class: 'gah-ws-save' }, '保存');
-  const form = h('form', { onsubmit: submit }, title, help, nameField, projectIdField, field('服务器上的绝对目录', directory),
+  const cancel = h('button', { type: 'button', onclick: () => dialog.close() }, T('取消','Cancel'));
+  const save = h('button', { type: 'submit', class: 'gah-ws-save' }, T('保存','Save'));
+  const form = h('form', { onsubmit: submit }, title, help, nameField, projectIdField, field(T('服务器上的绝对目录','Absolute directory on the server'), directory),
     rulesField, memoryField, error, h('div', { class: 'gah-ws-actions' }, cancel, save));
-  const dialog = h('dialog', { class: 'gah-ws-dialog', 'aria-label': '工作区与项目设置' }, form);
+  const dialog = h('dialog', { class: 'gah-ws-dialog', 'aria-label': T('工作区与项目设置','Workspace and project settings') }, form);
   document.body.append(dialog);
   dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
   api.cleanup(() => dialog.remove());
@@ -49,11 +49,11 @@ GAH.define('web-workspaces', api => {
     chip.hidden = !s;
     if (!s) return;
     chip.classList.toggle('in-project', !!s.project);
-    kind.textContent = s.project ? '项目' : '工作区';
+    kind.textContent = s.project ? T('项目','Project') : T('工作区','Workspace');
     label.textContent = s.project ? s.project.name : '';
     label.hidden = !s.project;
     path.textContent = s.workspace;
-    path.title = s.workspace + (s.project ? ' · 项目目录固定，点击查看设置' : ' · 点击切换目录（/workspace）');
+    path.title = s.workspace + (s.project ? T(' · 项目目录固定，点击查看设置',' · project directory is fixed; click for settings') : T(' · 点击切换目录（/workspace）',' · click to switch directory (/workspace)'));
     edit.hidden = leave.hidden = !s.project;
     sync(busy);
   }
@@ -71,10 +71,10 @@ GAH.define('web-workspaces', api => {
     const project = action === 'update' ? s.project : null;
     if (action === 'update' && !project) return;
     editing = { action, ...(project ? { id: project.id, updated: project.updated } : {}) };
-    title.textContent = action === 'workspace' ? '切换工作区' : action === 'create' ? '新建项目' : '项目设置';
+    title.textContent = action === 'workspace' ? T('切换工作区','Switch workspace') : action === 'create' ? T('新建项目','New project') : T('项目设置','Project settings');
     help.textContent = action === 'workspace'
-      ? '使用已存在的服务器目录。空对话直接切换，已有记录的对话会新开一个，旧对话保留原目录和历史。工作区不是权限沙箱。'
-      : '项目共享目录、规则和笔记，各对话历史独立。内容在每次模型请求时注入；笔记由你在此维护，不会自动总结。';
+      ? T('使用已存在的服务器目录。空对话直接切换，已有记录的对话会新开一个，旧对话保留原目录和历史。工作区不是权限沙箱。','Uses an existing directory on the server. An empty chat switches in place; a chat with history opens a new chat and the old one keeps its directory and history. A workspace is not a permission sandbox.')
+      : T('项目共享目录、规则和笔记，各对话历史独立。内容在每次模型请求时注入；笔记由你在此维护，不会自动总结。','Chats in a project share its directory, rules and notes, but keep separate histories. Rules and notes are injected into every model request; notes are maintained by you here and never summarized automatically.');
     nameField.hidden = rulesField.hidden = memoryField.hidden = action === 'workspace';
     name.required = action !== 'workspace';
     name.value = project ? project.name : '';
@@ -85,7 +85,7 @@ GAH.define('web-workspaces', api => {
     rules.value = project ? project.rules : '';
     memory.value = project ? project.memory : '';
     error.textContent = '';
-    save.textContent = action === 'workspace' ? '进入工作区' : action === 'create' ? '创建并进入' : '保存';
+    save.textContent = action === 'workspace' ? T('进入工作区','Enter workspace') : action === 'create' ? T('创建并进入','Create and enter') : T('保存','Save');
     dialog.showModal();
     (action === 'workspace' ? directory : name).focus();
   }
@@ -120,7 +120,7 @@ GAH.define('web-workspaces', api => {
   }
 
   // ---- slash commands ----
-  const EXIT = ['off', 'exit', 'none', '退出'];
+  const EXIT = ['off', 'exit', 'none', T('退出','Leave')];
   function find(arg) {
     const s = scope(), q = arg.toLowerCase();
     const ps = (s && s.projects) || [];
@@ -135,23 +135,23 @@ GAH.define('web-workspaces', api => {
     if (!s) return [];
     if (arg === undefined && !/\s$/.test(text)) {
       return [
-        { label: '/project', hint: '进入项目（本对话）', fill: '/project ' },
-        { label: '/workspace', hint: '切换工作目录（本对话）', fill: '/workspace ' },
+        { label: '/project', hint: T('进入项目（本对话）','Enter project (this chat)'), fill: '/project ' },
+        { label: '/workspace', hint: T('切换工作目录（本对话）','Switch directory (this chat)'), fill: '/workspace ' },
       ].filter(x => x.label.startsWith('/' + cmd));
     }
     const q = (arg || '').trim().toLowerCase();
     if (cmd === 'project') {
       const out = s.projects.filter(p => !q || p.name.toLowerCase().includes(q))
-        .map(p => ({ label: p.name, hint: p.id === s.project_id ? '当前' : p.workspace, run: () => enter({ id: p.id }) }));
-      if (!q || '新建'.includes(q) || 'new'.startsWith(q)) out.push({ label: '新建项目…', hint: 'new', run: () => open('create') });
-      if (s.project && (!q || EXIT.some(x => x.startsWith(q)))) out.push({ label: '退出项目', hint: 'off', run: () => enter({}) });
+        .map(p => ({ label: p.name, hint: p.id === s.project_id ? T('当前','Current') : p.workspace, run: () => enter({ id: p.id }) }));
+      if (!q || '新建'.includes(q) || 'new'.startsWith(q)) out.push({ label: T('新建项目…','New project…'), hint: 'new', run: () => open('create') });
+      if (s.project && (!q || EXIT.some(x => x.startsWith(q)))) out.push({ label: T('退出项目','Leave project'), hint: 'off', run: () => enter({}) });
       return out;
     }
     if (cmd === 'workspace') {
       const out = [];
-      if (q) out.push({ label: '进入 ' + arg.trim(), hint: '目录', run: () => enter({ workspace: arg.trim() }) });
-      else out.push({ label: '选择目录…', hint: s.workspace, run: () => open('workspace') });
-      if (s.project || !q) out.push({ label: '退出到默认工作区', hint: 'off', run: () => enter({}) });
+      if (q) out.push({ label: T('进入 ','Enter ') + arg.trim(), hint: T('目录','Directory'), run: () => enter({ workspace: arg.trim() }) });
+      else out.push({ label: T('选择目录…','Choose directory…'), hint: s.workspace, run: () => open('workspace') });
+      if (s.project || !q) out.push({ label: T('退出到默认工作区','Back to default workspace'), hint: 'off', run: () => enter({}) });
       return out;
     }
     return [];
@@ -198,7 +198,7 @@ GAH.define('web-workspaces', api => {
     if (cmd === 'workspace') { enter({ workspace: arg }); return true; }
     if (arg.toLowerCase() === 'new') { open('create'); return true; }
     const p = find(arg);
-    if (!p) throw new Error('没有找到项目：' + arg + '（输入 /project new 新建）');
+    if (!p) throw new Error(T('没有找到项目：','Project not found: ') + arg + T('（输入 /project new 新建）',' (type /project new to create one)'));
     enter({ id: p.id });
     return true;
   });

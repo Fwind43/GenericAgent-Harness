@@ -1,5 +1,6 @@
 name = "ga-stdout"
 entry = "main:apply"
 description = "Capture everything GA prints to stdout/stderr ([Info]/[Debug]/code run output) as `agent.log` events; frontends write to the `console` capability."
+description_zh = "捕获 GA 打印到 stdout/stderr 的全部内容（[Info]/[Debug]/代码运行输出），作为 `agent.log` 事件；前端写入 `console` 能力。"
 inject = []
 provides = ["console"]
