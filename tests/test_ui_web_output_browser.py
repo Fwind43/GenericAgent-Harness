@@ -119,6 +119,42 @@ def assert_layout(page):
     assert dims["root"] <= 1 and dims["thread"] <= 1 and dims["visible"] > 200, dims
 
 
+@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("running", [False, True])
+def test_disclosure_chevrons_trail_content(output_app, browser, width, running):
+    fe, _, base = output_app
+    fe.messages = seeded_messages()
+    if running:
+        message = fe.messages[-1]
+        message["status"] = "running"
+        message["turns"] = message["turns"][:1]
+        message["turns"][0]["tools"][0]["status"] = "running"
+    page = browser.new_page(locale="zh-CN", viewport={"width": width, "height": 844})
+    page.goto(base)
+    page.wait_for_selector(".steps > summary")
+    for selector in (".steps", ".step", ".tool"):
+        summary = page.locator(selector + " > summary")
+        assert summary.evaluate("""s => {
+            const arrow = s.querySelector('.chev'), r = arrow.getBoundingClientRect();
+            const content = [...s.children].filter(n => n !== arrow);
+            const edge = s.getBoundingClientRect().right - parseFloat(getComputedStyle(s).paddingRight);
+            return s.lastElementChild === arrow && Math.abs(r.right - edge) < 1
+                && content.every(n => n.getBoundingClientRect().right <= r.left);
+        }""")
+        was_open = page.locator(selector).evaluate("d => d.open")
+        summary.press("Enter")
+        assert page.locator(selector).evaluate("d => d.open") is not was_open
+        summary.press("Space")
+        assert page.locator(selector).evaluate("d => d.open") is was_open
+        if not was_open:
+            summary.click()
+        assert page.locator(selector).evaluate("d => d.open")
+    assert_layout(page)
+    page.evaluate("document.getElementById('scroll').scrollTop=0")
+    shot(page, f"{width}-trailing-{'running' if running else 'done'}")
+    page.close()
+
+
 def test_markdown_safety_copy_and_themes(output_app, browser):
     fe, _, base = output_app
     fe.messages = seeded_messages()

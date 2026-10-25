@@ -20,7 +20,7 @@
 .status.error{color:var(--danger)}
 .cursor::after{content:"";display:inline-block;width:6px;height:15px;vertical-align:-2px;margin-left:3px;background:var(--muted);animation:blink 1s steps(1) infinite}
 .working{font-size:13px;color:var(--muted)}
-/* Collapsed chevrons face left, as in Admin. No connector lines or number badges. */
+/* Trailing disclosure chevrons. No connector lines or number badges. */
 details>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;min-width:0;user-select:none}
 details>summary::-webkit-details-marker{display:none}
 .chev{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(90deg)}
@@ -29,7 +29,7 @@ details[open]>summary>.chev{transform:none}
 .steps>summary{padding:5px 0;font-size:12px;min-height:30px}
 .steps>summary .process-title{color:var(--muted)}
 .steps>summary .process-count{font-size:11px}
-.steps>summary .chev{margin-left:2px}
+.steps>summary .chev{margin-left:auto}
 .steps[open]>summary{margin-bottom:3px}
 .process-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none}
 .steps.running .process-dot{background:#19a37f;animation:blink 1.4s ease-in-out infinite}
