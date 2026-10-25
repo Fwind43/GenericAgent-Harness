@@ -42,9 +42,12 @@ details[open]>summary>.chev{transform:none}
 .step .tok,.final-step-label .tok{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;max-width:50%;color:var(--muted);font-size:11px;flex:none;font-variant-numeric:tabular-nums;line-height:1.5}
 .tok>span{white-space:nowrap}
 .tok .tok-cache{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;white-space:normal}
-.step-body{padding:3px 0 12px 20px;min-width:0}
+/* The container owns outer spacing; child margins only separate content. */
+.step-body{padding:4px 0 4px 20px;min-width:0}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .thinking{margin:3px 0 10px;min-width:0}
+.step-body>:first-child{margin-top:0}
+.step-body>:last-child{margin-bottom:0}
 .thinking-label{margin-bottom:4px;color:var(--muted);font-size:11px;line-height:20px}
 .thinking .md{color:var(--muted);font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
