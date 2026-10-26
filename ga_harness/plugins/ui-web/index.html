@@ -242,7 +242,7 @@ function renderTurns(m,mi,box){
   const turns=m.turns.filter(Boolean),running=m.status==='running';
   const fin=turns[turns.length-1];
   // Only the latest unanswered prompt opens its ancestors; old steps stay collapsed.
-  const awaiting=mi===S.messages.length-1&&!['aborted','error'].includes(m.status)&&!!fin&&
+  const awaiting=mi===state.messages.length-1&&!['aborted','error'].includes(m.status)&&!!fin&&
     fin.tools.some(t=>GAHOutput.isAskUser(t.name)&&(t.status!=='done'||t.ok));
   // A tool-free last turn is the answer even after its own turn event lands and before the
   // run's done event; demoting it into the steps list in that gap makes the reply vanish.
