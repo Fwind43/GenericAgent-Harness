@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { type PluginAPI, type PluginCatalog, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, defineReact } from '@gah/sdk';
+import { type PluginAPI, type PluginCatalog, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
 import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel } from './helpers';
 
@@ -21,9 +21,9 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     setOpen(true); setError('');
     await run(async () => { setConfig(await api.host.get<PluginCatalog>('/api/plugins')); }, setError, true);
   };
-  const change: PluginChange = (action, enabled, values) => {
+  const change: PluginChange = async (action, enabled, values) => {
     if (!selected || selected.protected || busy || !config) return;
-    if (action === 'reset' && !window.confirm(T('\u6e05\u9664\u7f51\u9875\u8986\u76d6\u5e76\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', 'Clear web overrides and restore startup settings? Applies on next start.'))) return;
+    if (action === 'reset' && !(await confirmDialog({ title: T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings'), danger: true, message: T('\u6e05\u9664\u7f51\u9875\u8986\u76d6\u5e76\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', 'Clear web overrides and restore startup settings? Applies on next start.') }))) return;
     setError('');
     void run(async () => {
       setConfig(await api.host.post<PluginCatalog>('/api/plugins', { action, name: selected.name, revision: config.revision, ...(action === 'save' ? { enabled, config: values } : {}) }));

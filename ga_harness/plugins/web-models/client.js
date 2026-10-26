@@ -162,8 +162,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       ] }),
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions", children: [
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("保存并生效", "Save and apply") }),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry, onClick: () => {
-          if (window.confirm(sdk.T("删除这个模型？", "Delete this model?"))) onSave("delete", id);
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry, onClick: async () => {
+          if (await sdk.confirmDialog({ title: sdk.T("删除这个模型？", "Delete this model?"), danger: true, confirm: sdk.T("删除", "Delete") })) onSave("delete", id);
         }, children: sdk.T("删除", "Delete") })
       ] })
     ] });
@@ -185,8 +185,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: used ? sdk.T("仍有模型引用此服务商，不能删除。", "This provider is still used by models and cannot be deleted.") : sdk.T("默认协议仅用于新模型，不会改变已有模型。", "The default protocol is for new models and does not change existing models.") }),
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions", children: [
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("保存并生效", "Save and apply") }),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry || used > 0, onClick: () => {
-          if (window.confirm(sdk.T("删除这个服务商？", "Delete this provider?"))) onSave("provider_delete", id);
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry || used > 0, onClick: async () => {
+          if (await sdk.confirmDialog({ title: sdk.T("删除这个服务商？", "Delete this provider?"), danger: true, confirm: sdk.T("删除", "Delete") })) onSave("provider_delete", id);
         }, children: sdk.T("删除", "Delete") })
       ] })
     ] });

@@ -90,6 +90,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 /* Shared dialog + form kit for web plugins: dialog.gah-dialog > .dialog-head + .dialog-content; .model-grid/.model-field/.model-actions/.model-picker */
 .gah-dialog{width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .gah-dialog::backdrop{background:rgba(0,0,0,.35)}
+/* alertDialog/confirmDialog/promptDialog: replaces native window.alert/confirm/prompt */
+.gah-ask{width:min(420px,calc(100vw - 24px))}.gah-ask .dialog-head{border-bottom:0;padding-bottom:4px}.gah-ask-msg{margin:0 0 16px;color:var(--muted);font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.gah-ask-input{display:block;width:100%;box-sizing:border-box;margin:0 0 16px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}.gah-ask-input:focus{outline:2px solid var(--accent);outline-offset:-1px}.gah-ask-actions{display:flex;justify-content:flex-end;gap:8px}.gah-ask-actions button{min-width:72px}.gah-ask-actions button.danger{background:var(--danger);color:#fff}
 .dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
 .dialog-head h2{font-size:17px;margin:0;font-weight:600}
 .dialog-content{padding:16px 20px 20px}

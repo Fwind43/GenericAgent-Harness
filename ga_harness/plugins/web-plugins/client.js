@@ -120,9 +120,9 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         setConfig(await api.host.get("/api/plugins"));
       }, setError, true);
     };
-    const change = (action, enabled, values) => {
+    const change = async (action, enabled, values) => {
       if (!selected || selected.protected || busy || !config) return;
-      if (action === "reset" && !window.confirm(sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start."))) return;
+      if (action === "reset" && !await sdk.confirmDialog({ title: sdk.T("恢复启动配置", "Restore startup settings"), danger: true, message: sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start.") })) return;
       setError("");
       void run(async () => {
         setConfig(await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values } : {} }));

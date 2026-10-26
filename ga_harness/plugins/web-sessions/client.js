@@ -58,12 +58,12 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         activity.has(session.id) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${activity.get(session.id)}`, role: "status", title: activity.get(session.id) === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": activity.get(session.id) === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: () => {
-          const title = prompt(sdk.T("会话名称", "Chat name"), session.title);
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: async () => {
+          const title = await sdk.promptDialog({ title: sdk.T("重命名会话", "Rename chat"), placeholder: sdk.T("会话名称", "Chat name"), value: session.title, confirm: sdk.T("保存", "Save") });
           if (title == null ? void 0 : title.trim()) void act("rename", { id: session.id, title: title.trim() });
         }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("删除", "Remove"), onClick: () => {
-          if (confirm(sdk.T("从列表删除此会话？历史记录保留在本地数据库。", "Remove this chat from the list? History stays in the local database."))) void act("delete", { id: session.id });
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("删除", "Remove"), onClick: async () => {
+          if (await sdk.confirmDialog({ title: sdk.T("删除会话", "Remove chat"), danger: true, confirm: sdk.T("删除", "Remove"), message: sdk.T("从列表删除此会话？历史记录保留在本地数据库。", "Remove this chat from the list? History stays in the local database.") })) void act("delete", { id: session.id });
         }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }) })
       ] })
     ] }, session.id);

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { T, type ModelConfig, type ModelEntry, type ModelValues, type ProviderEntry } from '@gah/sdk';
+import { T, confirmDialog, type ModelConfig, type ModelEntry, type ModelValues, type ProviderEntry } from '@gah/sdk';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;
@@ -44,6 +44,6 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
       <Field label={T('\u4e0a\u4e0b\u6587\u7a97\u53e3', 'Context window')}><input type="number" min={1} step={1} value={context} disabled={disabled} onChange={event => setContext(event.target.value)} /></Field>
       {!provider && <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} />}
     </div>
-    <div className="model-actions"><button type="submit" disabled={disabled}>{T('\u4fdd\u5b58\u5e76\u751f\u6548', 'Save and apply')}</button><button type="button" className="danger" disabled={disabled || !entry} onClick={() => { if (window.confirm(T('\u5220\u9664\u8fd9\u4e2a\u6a21\u578b\uff1f', 'Delete this model?'))) onSave('delete', id); }}>{T('\u5220\u9664', 'Delete')}</button></div>
+    <div className="model-actions"><button type="submit" disabled={disabled}>{T('\u4fdd\u5b58\u5e76\u751f\u6548', 'Save and apply')}</button><button type="button" className="danger" disabled={disabled || !entry} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u6a21\u578b\uff1f', 'Delete this model?'), danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('delete', id); }}>{T('\u5220\u9664', 'Delete')}</button></div>
   </form>;
 }
