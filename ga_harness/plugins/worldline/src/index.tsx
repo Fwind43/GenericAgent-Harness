@@ -25,6 +25,9 @@ function bar(api: PluginAPI, sid: string, index: number, text: string, info: Var
     if (value !== null && value.trim()) await act(api, 'fork', { session_id: sid, index, text: value });
   }, busy));
   box.append(button('\u21bb', T('\u91cd\u65b0\u751f\u6210', 'Regenerate'), () => act(api, 'fork', { session_id: sid, index }), busy));
+  const branch = button('', T('\u4ece\u6b64\u5904\u65b0\u5efa\u4f1a\u8bdd', 'New session from here'), () => act(api, 'branch', { session_id: sid, index }), busy);
+  branch.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-12 3-12 8"/></svg>';
+  box.append(branch);
   if (info && info.branches.length) {
     const ids = info.branches;
     const nav = document.createElement('span');
@@ -40,7 +43,8 @@ function bar(api: PluginAPI, sid: string, index: number, text: string, info: Var
 }
 
 function textOf(message: unknown) {
-  const content = (message as { content?: unknown })?.content;
+  const m = message as { content?: unknown; text?: unknown } | undefined;
+  const content = typeof m?.text === 'string' ? m.text : m?.content;
   return typeof content === 'string' ? content : '';
 }
 

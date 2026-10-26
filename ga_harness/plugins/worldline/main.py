@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS branches(id INTEGER PRIMARY KEY AUTOINCREMENT, sessio
             raise ValueError("branch not found")
         return json.loads(row["messages"]), json.loads(row["state"])
 
+    def copy_checkpoints(self, src, dst, limit):
+        """Let a branched session edit/regenerate its inherited messages."""
+        with self.lock, self._db() as db:
+            db.execute("INSERT OR IGNORE INTO checkpoints SELECT ?,idx,prefix,state FROM checkpoints "
+                       "WHERE session_id=? AND idx<?", (dst, src, limit))
+
 
 def _store_path(sessions):
     base = getattr(sessions, "path", None) or getattr(sessions, "db_path", None)
@@ -187,6 +193,27 @@ def apply(ctx, config):
             sessions._write(db, current, messages, state)
         return _refresh(sid, messages)
 
+    def branch(body):
+        """Open a new child session holding the conversation up to the end of this turn."""
+        sid, current = _session(body)
+        messages, idx = current["messages"], int(body.get("index", -1))
+        if not (0 <= idx < len(messages)) or messages[idx].get("role") != "user":
+            raise ValueError("index must point at a user message")
+        end = next((i for i in _user_indexes(messages) if i > idx), len(messages))
+        if end == len(messages):
+            state = current["state"]
+        else:
+            state = store.state_before(sid, end, _hash(messages[:end]))
+            if state is None:
+                raise RuntimeError("no checkpoint for this message; it predates the worldline plugin")
+        kept = messages[:end]
+        child = sessions.create(parent_id=sid)
+        with sessions._db() as db:
+            sessions._write(db, child, kept, state)
+        store.copy_checkpoints(sid, child["id"], end)
+        sessions.change("select", child["id"])
+        return _refresh(child["id"], kept)
+
     def listing(body):
         sid = body.get("session_id")
         if not sid:
@@ -196,5 +223,5 @@ def apply(ctx, config):
     ctx.on("run.started", started)
     ctx.on("web.snapshot", snapshot)
     ctx.scope.add(host.register("worldline", script=(HERE / "client.js") if (HERE / "client.js").is_file() else None, style=HERE / "client.css", order=40,
-        routes={("POST", "fork"): _guard(fork), ("POST", "switch"): _guard(switch),
+        routes={("POST", "fork"): _guard(fork), ("POST", "switch"): _guard(switch), ("POST", "branch"): _guard(branch),
                 ("POST", "list"): _guard(listing)}))

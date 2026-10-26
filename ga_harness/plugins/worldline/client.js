@@ -29,6 +29,9 @@
       if (value !== null && value.trim()) await act(api, "fork", { session_id: sid, index, text: value });
     }, busy));
     box.append(button("↻", sdk.T("重新生成", "Regenerate"), () => act(api, "fork", { session_id: sid, index }), busy));
+    const branch = button("", sdk.T("从此处新建会话", "New session from here"), () => act(api, "branch", { session_id: sid, index }), busy);
+    branch.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-12 3-12 8"/></svg>';
+    box.append(branch);
     if (info && info.branches.length) {
       const ids = info.branches;
       const nav = document.createElement("span");
@@ -43,7 +46,8 @@
     return box;
   }
   function textOf(message) {
-    const content = message == null ? void 0 : message.content;
+    const m = message;
+    const content = typeof (m == null ? void 0 : m.text) === "string" ? m.text : m == null ? void 0 : m.content;
     return typeof content === "string" ? content : "";
   }
   function Worldline({ api }) {
