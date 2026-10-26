@@ -42,12 +42,12 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
   if (!catalog) return null;
   return <>
     <PluginSlot api={api} name="composer"><div className="gah-models">
-      <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setQuery(''); setProvider(''); setOpen(value => !value); }}>
+      <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy} aria-haspopup="dialog" aria-controls="gah-model-picker" aria-expanded={open} onClick={() => { setQuery(''); setProvider(''); setOpen(value => !value); }}>
         <span className="gah-model-name">{current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b', 'Choose model')}</span>
-        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<span aria-hidden="true">{'\u2304'}</span>
+        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<span className="gah-model-caret" aria-hidden="true">{'\u2303'}</span>
       </button>
     </div></PluginSlot>
-    {open && createPortal(<div ref={popup} popover="auto" role="dialog" aria-label={T('\u6a21\u578b\u4e0e\u601d\u8003\u5f3a\u5ea6', 'Model and reasoning effort')} className="gah-model-popover" onToggle={event => { if (event.newState === 'closed') setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') close(true); }}>
+    {open && createPortal(<div ref={popup} popover="auto" role="dialog" aria-label={T('\u6a21\u578b\u4e0e\u601d\u8003\u5f3a\u5ea6', 'Model and reasoning effort')} id="gah-model-picker" className="gah-model-popover" onToggle={event => { if (event.newState === 'closed') setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') close(true); }}>
       <div className="gah-picker-toolbar"><input ref={search} type="search" className="gah-picker-search" value={query} placeholder={T('\u641c\u7d22\u6a21\u578b', 'Search models')} aria-label={T('\u641c\u7d22\u6a21\u578b', 'Search models')} onChange={event => setQuery(event.target.value)} />
         <div className="gah-picker-filters"><select className="gah-picker-filter" value={filter} aria-label={T('\u7b5b\u9009\u670d\u52a1\u5546', 'Filter providers')} onChange={event => setProvider(event.target.value)}><option value="">{T('\u5168\u90e8\u670d\u52a1\u5546', 'All providers')}</option>{[...groups].map(([id, group]) => <option key={id} value={id}>{group.name} ({group.count})</option>)}</select><span className="gah-picker-count">{items.length} / {catalog.items.length}</span></div>
       </div>

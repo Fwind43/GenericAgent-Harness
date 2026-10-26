@@ -53,6 +53,7 @@ declare global {
       toolSummary(name: string, args?: Json): { kind: string; tool: string; target: string; detail: string };
       isAskUser(name: string): boolean;
       askUserPayload(name: string, args?: Json, data?: Json): { question: string; candidates: string[] } | null;
+      copyButton(getText: () => string, label?: string): HTMLButtonElement;
     };
   }
 }

@@ -45,7 +45,7 @@ export function Models({ api }: { api: PluginAPI }) {
   const locked = busy || !config?.writable;
   return <>
     <ModelPicker api={api} />
-    {state.models && <PluginSlot api={api} name="sidebar-foot"><button type="button" className="side-item" disabled={busy} onClick={() => void load()}><Icon name="settings" />{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</button></PluginSlot>}
+    {state.models && <PluginSlot api={api} name="sidebar-foot"><button type="button" className="side-item" disabled={busy} onClick={() => void load()}><Icon name="cpu" />{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</button></PluginSlot>}
     {open && <Modal className="gah-model-dialog" label={T('\u6a21\u578b\u914d\u7f6e', 'Models')} busy={working} onClose={() => setOpen(false)}>
       <div className="dialog-head"><h2>{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</h2><button type="button" className="secondary" disabled={working} onClick={() => setOpen(false)}>{T('\u5173\u95ed', 'Close')}</button></div>
       <div className="dialog-content">

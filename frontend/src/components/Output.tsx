@@ -9,31 +9,27 @@ export const Markdown = memo(function Markdown({ text, className = 'body' }: { t
   useLayoutEffect(() => { if (ref.current) window.GAHOutput.setMarkdown(ref.current, text); }, [text]);
   return <div ref={ref} className={className} />;
 });
-export function Disclosure({ title, children, initial = false, className = '', state }: {
+/** Native details whose summary mirrors the legacy DOM: the chevron leads or trails per element kind. */
+export function Disclosure({ title, children, initial = false, className = '', state, chevron = 'end', label }: {
   title: ReactNode; children: ReactNode; initial?: boolean; className?: string; state?: string;
+  chevron?: 'start' | 'end'; label?: string;
 }) {
   const [open, setOpen] = useState(initial);
   return <details className={className} data-state={state} open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary>{title}<Chevron /></summary>{children}
+    <summary aria-label={label}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{children}
   </details>;
 }
-export function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return <button type="button" className="copy-btn" aria-label={T('复制', 'Copy')} onClick={async () => {
-    try {
-      try { await navigator.clipboard.writeText(text); }
-      catch {
-        // Clipboard API requires HTTPS; retain copying on local HTTP hosts.
-        const field = document.createElement('textarea');
-        const previous = document.activeElement;
-        field.value = text; field.readOnly = true;
-        Object.assign(field.style, { position: 'fixed', top: '-9999px', left: '-9999px' });
-        document.body.append(field);
-        try { field.select(); if (!document.execCommand('copy')) throw new Error('Copy failed'); }
-        finally { field.remove(); if (previous instanceof HTMLElement) previous.focus(); }
-      }
-      setCopied(true);
-    } catch { setCopied(false); }
-  }}>{copied ? T('已复制', 'Copied') : T('复制', 'Copy')}</button>;
+/** Shared output copy button (icon, feedback, HTTP fallback) so styling matches output.css. */
+export function CopyButton({ text, label }: { text: string; label?: string }) {
+  const ref = useRef<HTMLSpanElement>(null), latest = useRef(text);
+  latest.current = text;
+  useLayoutEffect(() => {
+    const slot = ref.current;
+    if (!slot) return;
+    const button = window.GAHOutput.copyButton(() => latest.current, label ?? T('复制', 'Copy'));
+    slot.append(button);
+    return () => button.remove();
+  }, [label]);
+  return <span ref={ref} style={{ display: 'contents' }} />;
 }
 export const format = (value: unknown) => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value, null, 2);
