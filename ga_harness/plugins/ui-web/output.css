@@ -26,15 +26,16 @@ details>summary::-webkit-details-marker{display:none}
 .chev{width:13px;height:13px;flex:none;color:var(--muted);transform:rotate(-90deg)}
 details[open]>summary>.chev{transform:none}
 .steps{margin:0 0 20px;color:var(--muted)}
-.steps>summary{padding:5px 0;font-size:12px;min-height:30px}
+.steps>summary{padding:5px 0;font-size:12px;line-height:20px;min-height:30px}
 .steps>summary .process-title{color:var(--muted)}
 .steps>summary .process-count{font-size:11px}
 .steps>summary .chev{margin-left:auto}
-.steps[open]>summary{margin-bottom:3px}
+.steps[open]>summary{margin-bottom:4px}
+.steps>.step{margin-left:20px}
 .process-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none}
 .steps.running .process-dot{background:#19a37f;animation:blink 1.4s ease-in-out infinite}
 .step{padding:0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}
-.step>summary{padding:8px 0;min-height:36px;font-size:13px;color:var(--text)}
+.step>summary{padding:8px 0;min-height:36px;font-size:13px;line-height:20px;color:var(--text)}
 .step>summary:hover .ttl{color:var(--accent)}
 .step .no{color:var(--muted);font-size:11px;flex:none;font-weight:400}
 .step .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -44,11 +45,16 @@ details[open]>summary>.chev{transform:none}
 .tok .tok-cache{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;white-space:normal}
 /* The container owns outer spacing; child margins only separate content. */
 .step-body{padding:4px 0 4px 20px;min-width:0}
+.step-body:empty{display:none}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
 .thinking{margin:3px 0 10px;min-width:0}
+.thinking>summary{padding:4px 0;min-height:24px;color:var(--muted);font-size:12px}
+.thinking>summary:hover .thinking-label{color:var(--text)}
+.thinking>summary .chev{opacity:.7}
+.thinking[open]>summary{margin-bottom:4px}
 .step-body>:first-child{margin-top:0}
 .step-body>:last-child{margin-bottom:0}
-.thinking-label{margin-bottom:4px;color:var(--muted);font-size:11px;line-height:20px}
+.thinking-label{margin:0;color:var(--muted);font-size:11px;line-height:20px}
 .thinking .md{color:var(--muted);font-size:14px;line-height:1.75}
 .step-usage{margin-top:7px}
 .final-step-label{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:400;line-height:20px}
@@ -108,6 +114,7 @@ details[open]>summary>.chev{transform:none}
   .md{font-size:14px;line-height:1.85}
   .meta{margin-bottom:10px;font-size:11px}
   .steps{margin-bottom:16px}
+  .steps>.step{margin-left:16px}
   .step>summary{gap:7px}.step .cnt,.step .tok{font-size:10px}
   .step-body{padding-left:16px}
   .tool>summary{padding:6px 0;gap:6px}
