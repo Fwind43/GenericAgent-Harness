@@ -46,6 +46,15 @@ def restore(agent, state):
         if hasattr(client, "last_tools"):
             client.last_tools = ""
     agent.history = state.get("history", [])
+    model = state.get("model")
+    if model:
+        # Per-conversation model; an unconfigured model keeps the current client.
+        for i, client in enumerate(agent.llmclients):
+            if getattr(getattr(client, "backend", None), "name", None) == model:
+                agent.llmclient = client
+                if hasattr(agent, "llm_no"):
+                    agent.llm_no = i
+                break
     effort = state.get("effort")
     agent.gah_reasoning_effort = effort if effort in EFFORTS else None
     agent.llmclient.backend.history = state.get("raw", [])
@@ -183,6 +192,18 @@ class Sessions:
                 raise RuntimeError("session is running")
             with self._db() as db:
                 self._write(db, current, messages, capture(self.agent))
+
+    def remember(self, **values):
+        """Persist per-conversation settings (model/effort) without touching the transcript."""
+        with self.lock:
+            current = self.current()
+            if current["id"] in self.active:
+                raise RuntimeError("session is running")
+            state = dict(current["state"] or {})
+            state.update(values)
+            with self._db() as db:
+                db.execute("UPDATE sessions SET state=? WHERE id=?",
+                           (json.dumps(state, ensure_ascii=False, allow_nan=False), current["id"]))
 
     def save_for(self, sid, messages, state, *, run_id=None):
         """Save an explicitly identified session; never follow UI selection.

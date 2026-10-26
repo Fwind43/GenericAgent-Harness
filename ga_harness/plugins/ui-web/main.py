@@ -255,7 +255,10 @@ class WebFrontend:
             old = getattr(agent, "gah_reasoning_effort", None)
             agent.gah_reasoning_effort = value
             try:
-                self.sessions.save(self.messages)
+                self.sessions.remember(effort=value)
+            except RuntimeError as e:
+                agent.gah_reasoning_effort = old
+                return 409, {"error": str(e)}
             except Exception:
                 agent.gah_reasoning_effort = old
                 return 503, {"error": "session could not be saved"}
@@ -273,6 +276,9 @@ class WebFrontend:
                 settings = self.models.change(body) if configure else None
                 if not configure:
                     self.models.select(body.get("id"))
+                    agent = self.ctx.get("ga.agent")
+                    if self.sessions and agent is not None:
+                        self.sessions.remember(model=getattr(agent.llmclient.backend, "name", ""))
                 snap = self.snapshot()
             except ValueError as e:
                 return 400, {"error": str(e)}
