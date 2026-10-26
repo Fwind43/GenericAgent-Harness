@@ -5,7 +5,10 @@
 .msg.user .body{max-width:85%;padding:10px 16px;background:var(--surface-muted);border:1px solid var(--border);border-radius:18px;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.assistant{padding:0}
 .meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;margin:0 0 12px;line-height:20px}
-.meta .dot{width:4px;height:4px;background:#19a37f}
+.meta .dot{width:4px;height:4px;background:#19a37f;flex:none}
+.meta .assistant-name{flex:none}
+.meta .model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta .model-name::before{content:"\00b7";margin-right:7px}
 .msg.assistant .body{min-width:0}
 .usage{display:flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums}
 .message-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:28px}

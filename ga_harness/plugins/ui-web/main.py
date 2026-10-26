@@ -333,8 +333,10 @@ class WebFrontend:
         with self.lock:
             if self.running:
                 return 409, {"error": "a task is already running"}
+            backend = getattr(getattr(self.ctx.get("ga.agent"), "llmclient", None), "backend", None)
+            model = getattr(backend, "model", "") or getattr(backend, "name", "") or ""
             messages = self.messages + [{"role": "user", "text": task, "status": "done"},
-                                        {"role": "assistant", "text": "", "status": "running"}]
+                                        {"role": "assistant", "text": "", "status": "running", "model": model}]
             if self.sessions:
                 try:
                     self.sessions.save(messages)
@@ -342,7 +344,7 @@ class WebFrontend:
                     return 503, {"error": "session could not be saved; task was not started"}
             self.messages = messages
             self.running, self.aborting = True, False
-            self._broadcast("start", {"task": task})
+            self._broadcast("start", {"task": task, "model": model})
         threading.Thread(target=self._work, args=(task,), name="ui-web-turn", daemon=True).start()
         return 202, {"ok": True}
 

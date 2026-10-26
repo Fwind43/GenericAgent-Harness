@@ -237,7 +237,13 @@ function renderTurns(m,mi,box){
 }
 function renderMsg(m,mi){
   const box=el('div','msg '+m.role);
-  if(m.role==='assistant'){const meta=el('div','meta');meta.append(el('span','dot'),el('span',null,'GenericAgent'));box.append(meta)}
+  if(m.role==='assistant'){
+    const meta=el('div','meta');meta.append(el('span','dot'),el('span','assistant-name','GenericAgent'));
+    if(typeof m.model==='string'&&m.model.trim()){
+      const model=el('span','model-name',m.model);model.title=T('使用的模型：','Model used: ')+m.model;meta.append(model);
+    }
+    box.append(meta);
+  }
   if(m.role==='assistant'&&m.turns&&m.turns.length){renderTurns(m,mi,box)}
   else{const body=m.role==='assistant'?GAHOutput.markdown(m.text,'body'):el('div','body',m.text);
     if(m.role==='assistant'&&m.status==='running'){body.classList.add('cursor');if(!m.text)body.textContent='';}
@@ -362,7 +368,7 @@ function connect(){
   es.addEventListener('web.plugins',e=>GAH.sync(JSON.parse(e.data)));
   es.addEventListener('plugin',e=>GAH.dispatch(JSON.parse(e.data)));
   es.addEventListener('start',e=>{const d=JSON.parse(e.data);state.running=true;
-    state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running'});render()});
+    state.messages.push({role:'user',text:d.task,status:'done'},{role:'assistant',text:'',status:'running',model:d.model||''});render()});
   es.addEventListener('chunk',e=>{const m=last();if(!m||m.role!=='assistant')return;const stick=nearBottom();
     m.text+=JSON.parse(e.data).text;if(m.turns&&m.turns.length)return;const b=thread.lastElementChild&&thread.lastElementChild.querySelector('.body');
     if(b)GAHOutput.setMarkdown(b,m.text);else render();if(stick)scroll.scrollTop=scroll.scrollHeight});
