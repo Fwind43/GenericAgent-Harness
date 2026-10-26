@@ -225,7 +225,8 @@ function appendTurnSummary(parent,text){
   const row=el('div','turn-summary'),icon=document.createElementNS('http://www.w3.org/2000/svg','svg');
   icon.setAttribute('viewBox','0 0 16 16');icon.setAttribute('aria-hidden','true');
   icon.innerHTML='<path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>';
-  row.append(icon,el('span','turn-summary-text',text.trim()));parent.append(row)}
+  // Keep the complete summary in the body; only the step heading may ellipsize.
+  row.append(icon,el('div','turn-summary-text',text));parent.append(row)}
 function renderStep(t,key,live,awaiting=false){
   const d=det('step',key,live||awaiting),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
