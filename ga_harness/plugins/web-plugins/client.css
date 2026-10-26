@@ -17,12 +17,6 @@
 .gah-plugin-dialog .plugin-count{font-variant-numeric:tabular-nums;opacity:.7}
 .gah-plugin-dialog .plugin-groups{display:flex;flex-direction:column;gap:18px}
 .gah-plugin-dialog .plugin-group-title{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
-.gah-plugin-dialog .plugin-avatar[data-category]{--cat:var(--muted);color:var(--cat);background:color-mix(in srgb,var(--cat) 12%,transparent);border-color:color-mix(in srgb,var(--cat) 28%,transparent)}
-.gah-plugin-dialog .plugin-avatar[data-category=core]{--cat:#c2410c}
-.gah-plugin-dialog .plugin-avatar[data-category=extension]{--cat:#2563eb}
-.gah-plugin-dialog .plugin-avatar[data-category=observe]{--cat:#0d9488}
-.gah-plugin-dialog .plugin-avatar[data-category=service]{--cat:#7c3aed}
-.gah-plugin-dialog .plugin-avatar[data-category=ui]{--cat:#be185d}
 .gah-plugin-dialog .plugin-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
 .gah-plugin-dialog .plugin-grid>li{display:flex;min-width:0}
 .gah-plugin-dialog .plugin-card{display:flex;flex-direction:column;gap:8px;width:100%;min-width:0;min-height:132px;padding:14px;text-align:left;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
@@ -31,7 +25,6 @@
 .gah-plugin-dialog .plugin-card[data-state="disabled"],.gah-plugin-dialog .plugin-card[data-state="removed"]{background:var(--surface-muted)}
 .gah-plugin-dialog .plugin-card[data-state="disabled"] .plugin-name,.gah-plugin-dialog .plugin-card[data-state="removed"] .plugin-name{color:var(--muted)}
 .gah-plugin-dialog .plugin-card-head,.gah-plugin-dialog .plugin-detail-head{display:flex;align-items:center;gap:10px;min-width:0}
-.gah-plugin-dialog .plugin-avatar{flex:none;display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--surface-muted);border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--muted)}
 .gah-plugin-dialog .plugin-name{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
 .gah-plugin-dialog .plugin-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:18px;padding:0 8px;border-radius:999px;color:var(--muted);background:var(--surface-muted);white-space:nowrap}
 .gah-plugin-dialog .plugin-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}

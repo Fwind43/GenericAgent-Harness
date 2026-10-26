@@ -5,9 +5,9 @@ GAH.define('web-plugins', api => {
   const labelOf = spec => (zh && spec.label_zh) || spec.label;
   const STATES = { active: T('\u8fd0\u884c\u4e2d','Running'), pending: T('\u7b49\u5f85\u4f9d\u8d56','Waiting for dependencies'), disabled: T('\u672a\u52a0\u8f7d','Not loaded'), error: T('\u52a0\u8f7d\u5931\u8d25','Failed to load'), removed: T('\u5df2\u79fb\u9664','Removed') };
   const PENDING = T(' \u00b7 \u5f85\u91cd\u542f\u751f\u6548',' · applies after restart'), PROTECTED = T(' \u00b7 \u53d7\u4fdd\u62a4',' · protected');
-  const CATS = [['core', T('核心','Core'), T('核','C')], ['extension', T('GA 扩展','GA extensions'), T('扩','E')],
-    ['observe', T('观测记录','Observability'), T('观','O')], ['service', T('数据与服务','Data & services'), T('数','S')],
-    ['ui', T('界面','Interface'), T('界','U')], ['other', T('其他','Other'), T('其','?')]];
+  const CATS = [['core', T('核心','Core')], ['extension', T('GA 扩展','GA extensions')],
+    ['observe', T('观测记录','Observability')], ['service', T('数据与服务','Data & services')],
+    ['ui', T('界面','Interface')], ['other', T('其他','Other')]];
   const catOf = p => CATS.find(c => c[0] === p.category) || CATS[CATS.length - 1];
   const FILTERS = [['all', T('\u5168\u90e8','All')], ['active', T('\u8fd0\u884c\u4e2d','Running')], ['off', T('\u672a\u52a0\u8f7d','Not loaded')], ['issue', T('\u9700\u5904\u7406','Needs attention')]];
   let cfg = null, editing = null, view = 'grid', filter = 'all', busy = false, running = false, working = false;
@@ -48,7 +48,7 @@ GAH.define('web-plugins', api => {
     h('div', { class: 'model-actions plugin-actions' }, resetBtn, saveBtn));
   const detailView = h('section', { class: 'plugin-detail', hidden: true }, back,
     h('div', { class: 'plugin-detail-card' },
-      h('div', { class: 'plugin-detail-head' }, h('span', { class: 'plugin-avatar', 'aria-hidden': 'true' }), title, status),
+      h('div', { class: 'plugin-detail-head' }, title, status),
       tags, desc,
       h('dl', { class: 'plugin-deps' }, h('dt', null, T('\u4f9d\u8d56\u80fd\u529b','Requires')), deps.requires,
         h('dt', null, T('\u63d0\u4f9b\u80fd\u529b','Provides')), deps.provides, h('dt', null, T('\u88ab\u63d2\u4ef6\u4f9d\u8d56','Required by')), deps.dependents),
@@ -96,7 +96,6 @@ GAH.define('web-plugins', api => {
     const card = p => h('li', null, h('button', { type: 'button', class: 'plugin-card', dataset: { plugin: p.name, state: p.state },
         'aria-label': p.name + T('\uff0c',', ') + stateLabel(p), onclick: () => showDetail(p.name) },
       h('span', { class: 'plugin-card-head' },
-        h('span', { class: 'plugin-avatar', 'aria-hidden': 'true', dataset: { category: catOf(p)[0] } }, catOf(p)[2]),
         h('span', { class: 'plugin-name', title: p.name }, p.name),
         h('span', { class: 'plugin-badge', dataset: { state: p.state } }, stateLabel(p))),
       h('span', { class: 'plugin-card-desc' }, descOf(p) || T('\u6682\u65e0\u8bf4\u660e','No description')),
@@ -113,7 +112,6 @@ GAH.define('web-plugins', api => {
   function fill(name) {
     editing = name; const p = selected(); fields.replaceChildren();
     title.textContent = p ? p.name : '';
-    const av = detailView.querySelector('.plugin-avatar'); av.textContent = p ? catOf(p)[2] : ''; av.dataset.category = p ? catOf(p)[0] : '';
     status.textContent = p ? stateLabel(p) : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
     status.dataset.state = p ? p.state : '';
     tags.replaceChildren(...(p ? badges(p) : []));
