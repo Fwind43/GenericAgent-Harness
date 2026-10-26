@@ -53,6 +53,9 @@ details[open]>summary>.chev{transform:none}
 .step-body{padding:4px 0 4px 20px;min-width:0}
 .step-body:empty{display:none}
 .step-body .reply{margin:3px 0 10px;font-size:14px;line-height:1.75}
+.turn-summary{display:flex;align-items:flex-start;gap:6px;min-width:0;margin:2px 0 6px;color:var(--muted);font-size:14px;line-height:1.75}
+.turn-summary>svg{width:1em;height:1em;flex:none;margin-top:.375em}
+.turn-summary-text{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .thinking,.tool{margin:2px 0;min-width:0}
 .thinking>summary,.tool>summary{padding:6px 0;min-height:34px;line-height:20px}
 .thinking>summary{color:var(--muted);font-size:12px}

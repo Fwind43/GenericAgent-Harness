@@ -204,6 +204,12 @@ function renderThinking(text,key){
   const d=det('thinking',key,false),s=el('summary');
   s.append(chev(),el('span','thinking-label',T('思考','Thinking')));
   d.append(s,GAHOutput.markdown(text,'thinking-body'));return d}
+function appendTurnSummary(parent,text){
+  if(typeof text!=='string'||!text.trim())return;
+  const row=el('div','turn-summary'),icon=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  icon.setAttribute('viewBox','0 0 16 16');icon.setAttribute('aria-hidden','true');
+  icon.innerHTML='<path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>';
+  row.append(icon,el('span','turn-summary-text',text.trim()));parent.append(row)}
 function renderStep(t,key,live){
   const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
@@ -212,6 +218,7 @@ function renderStep(t,key,live){
   if(t.usage)s.append(tokChip(t.usage));
   s.append(chev());d.append(s);const b=el('div','step-body');
   if(t.thinking)b.append(renderThinking(t.thinking,key+':thinking'));
+  appendTurnSummary(b,t.summary);
   if(t.reply)b.append(GAHOutput.markdown(t.reply,'reply'));
   t.tools.forEach((x,j)=>b.append(renderTool(x,key+':'+(x.id||j))));
   d.append(b);return d}
@@ -230,10 +237,11 @@ function renderTurns(m,mi,box){
     const label=el('div','final-step-label');label.append(el('span',null,T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
     if(finalT.usage)label.append(tokChip(finalT.usage));box.append(label);
     if(finalT.thinking)box.append(renderThinking(finalT.thinking,mi+':final:'+finalT.turn+':thinking'));
+    appendTurnSummary(box,finalT.summary);
     const b=GAHOutput.markdown(typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply,'body'+(typing?' cursor':''));
     if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
   else if(running)box.append(el('div','body working cursor',''));
-  else if(fin&&fin.reply)box.append(GAHOutput.markdown(fin.reply,'body'));
+  else if(fin&&fin.reply){appendTurnSummary(box,fin.summary);box.append(GAHOutput.markdown(fin.reply,'body'));}
 }
 function renderMsg(m,mi){
   const box=el('div','msg '+m.role);
