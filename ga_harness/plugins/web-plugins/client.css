@@ -4,7 +4,7 @@
 .gah-plugins .plugin-note{display:block;padding:2px 10px 6px 36px}
 .gah-plugins .plugin-note[hidden]{display:none}
 /* Plugin manager: one card per plugin, detail opens in place. */
-.gah-plugin-dialog{width:min(1040px,calc(100vw - 24px))}
+.gah-dialog.gah-plugin-dialog{width:min(1040px,calc(100vw - 24px))}
 .gah-plugin-dialog [hidden]{display:none!important}
 .gah-plugin-dialog .plugin-profile{margin:0 0 12px}
 .gah-plugin-dialog .plugin-toolbar{display:flex;gap:8px;align-items:center}

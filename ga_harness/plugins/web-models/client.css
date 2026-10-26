@@ -38,7 +38,7 @@
 .gah-picker-search:focus-visible,.gah-picker-filter:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .gah-picker-models{flex:1 1 auto;overscroll-behavior:contain;scrollbar-width:thin}
 /* Model list and detail share one workspace; providers are an optional filter. */
-.gah-model-dialog{width:min(1040px,calc(100vw - 24px))}
+.gah-dialog.gah-model-dialog{width:min(1040px,calc(100vw - 24px))}
 .gah-model-dialog [hidden]{display:none!important}
 .gah-model-dialog .dialog-content{padding:16px 20px 20px}
 .gah-model-dialog .model-layout{display:grid;gap:18px;margin-top:16px;min-width:0}
