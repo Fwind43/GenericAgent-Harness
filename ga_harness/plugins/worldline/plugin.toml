@@ -1,0 +1,6 @@
+name = "worldline"
+category = "core"
+entry = "main:apply"
+description = "Conversation worldlines: edit and resend, regenerate, and switch between branches."
+description_zh = "对话世界线：编辑重发、重新生成，以及在分支之间切换。"
+inject = ["web.host", "runs", "sessions"]

@@ -1,0 +1,8 @@
+.msg.user.gah-wl { position: relative; }
+.gah-wl-bar { display: flex; gap: 4px; align-items: center; justify-content: flex-end; margin-top: 4px; opacity: 0; transition: opacity .15s; font-size: 12px; }
+.msg.user.gah-wl:hover .gah-wl-bar, .gah-wl-bar:focus-within, .gah-wl-bar:has(.gah-wl-nav) { opacity: 1; }
+.gah-wl-btn { border: 0; background: transparent; color: inherit; opacity: .65; cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1; }
+.gah-wl-btn:hover:not(:disabled) { opacity: 1; background: rgba(127,127,127,.15); }
+.gah-wl-btn:disabled { opacity: .3; cursor: default; }
+.gah-wl-nav { display: inline-flex; align-items: center; gap: 2px; }
+.gah-wl-count { min-width: 2.5em; text-align: center; opacity: .7; font-variant-numeric: tabular-nums; }
