@@ -48,9 +48,9 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       const next = await api.host.post(path, body);
       api.setState(next, reset);
     });
-    const act = (action, extra = {}) => change("/api/sessions", { action, id: state.session_id, ...extra }, ["new", "open", "delete", "clear"].includes(action));
+    const act = (action, extra = {}) => change("/api/sessions", { action, id: state.session_id, ...extra }, ["new", "select", "delete", "clear"].includes(action));
     const row = (session) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}`, role: "listitem", children: [
-      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("open", { id: session.id }), title: session.title, children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: session.title === "新会话" ? sdk.T("新会话", "New chat") : session.title || sdk.T("新会话", "New chat") }) }),
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: session.title, children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: session.title === "新会话" ? sdk.T("新会话", "New chat") : session.title || sdk.T("新会话", "New chat") }) }),
       /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: () => {
           const title = prompt(sdk.T("会话名称", "Chat name"), session.title);

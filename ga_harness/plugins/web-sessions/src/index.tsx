@@ -30,9 +30,9 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const change = (path: string, body: object, reset: boolean) => run(async () => {
     const next = await api.host.post<HostState>(path, body); api.setState(next, reset);
   });
-  const act = (action: string, extra: object = {}) => change('/api/sessions', { action, id: state.session_id, ...extra }, ['new', 'open', 'delete', 'clear'].includes(action));
+  const act = (action: string, extra: object = {}) => change('/api/sessions', { action, id: state.session_id, ...extra }, ['new', 'select', 'delete', 'clear'].includes(action));
   const row = (session: Session) => <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}`} role="listitem">
-    <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('open', { id: session.id })} title={session.title}><span className="gah-sess-title">{session.title === '\u65b0\u4f1a\u8bdd' ? T('\u65b0\u4f1a\u8bdd', 'New chat') : session.title || T('\u65b0\u4f1a\u8bdd', 'New chat')}</span></button>
+    <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={session.title}><span className="gah-sess-title">{session.title === '\u65b0\u4f1a\u8bdd' ? T('\u65b0\u4f1a\u8bdd', 'New chat') : session.title || T('\u65b0\u4f1a\u8bdd', 'New chat')}</span></button>
     <span className="gah-sess-acts"><button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u91cd\u547d\u540d', 'Rename')} onClick={() => { const title = prompt(T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), session.title); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); }}><Icon name="pencil" /></button>
       <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u5220\u9664', 'Remove')} onClick={() => { if (confirm(T('\u4ece\u5217\u8868\u5220\u9664\u6b64\u4f1a\u8bdd\uff1f\u5386\u53f2\u8bb0\u5f55\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u3002', 'Remove this chat from the list? History stays in the local database.'))) void act('delete', { id: session.id }); }}><Icon name="trash" /></button></span>
   </div>;
