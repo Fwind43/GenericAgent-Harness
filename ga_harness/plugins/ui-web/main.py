@@ -27,6 +27,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from ga_harness.sessions import EFFORTS, apply_effort
 
@@ -131,6 +132,7 @@ class WebFrontend:
                                          else print(*m, flush=True))
         self.lock = threading.Lock()
         self.sessions = ctx.get("sessions")
+        self.runs = ctx.get("runs")
         self.models = ctx.get("models")
         self.plugins = ctx.get("plugin.manager")
         self.messages = self.sessions.current()["messages"] if self.sessions else []
@@ -143,6 +145,9 @@ class WebFrontend:
         self.stopped = threading.Event()
         self._timeout = None
         self.web = WebHost(self)
+        if self.runs:
+            for kind in ("run.started", "run.event", "run.cancelling", "run.finished"):
+                ctx.on(kind, lambda data, kind=kind: self.broadcast(kind, data))
 
     def broadcast(self, kind, data):
         with self.lock:
@@ -162,6 +167,13 @@ class WebFrontend:
         if self.sessions:
             data.update(session_id=self.sessions.current()["id"], sessions=self.sessions.listing(),
                         persistence_error=self.persistence_error)
+        if self.runs:
+            with self.sessions.lock:
+                selected = self.sessions.current()
+                active = self.runs.active_for(selected["id"])
+                data.update(session_id=selected["id"], messages=selected["messages"],
+                            running=active is not None, run_id=active["id"] if active else None,
+                            runs=self.runs.listing(), parallel_runs=True)
         if self.models:
             data["models"] = self.models.catalog()
         data["plugins_enabled"] = self.plugins is not None
@@ -179,8 +191,12 @@ class WebFrontend:
             if self.running:
                 return 409, {"error": "wait for the running task to finish"}
             try:
-                self.sessions.save(self.messages)
-                selected = self.sessions.change(body.get("action"), body.get("id"), body.get("title"))
+                if not self.runs:
+                    self.sessions.save(self.messages)
+                selected = self.sessions.change(
+                    body.get("action"), body.get("id"), body.get("title"),
+                    workspace=body.get("workspace"), project_id=body.get("project_id"),
+                    parent_id=body.get("parent_id"))
                 self.messages = selected["messages"]
                 self.persistence_error = None
                 snap = self.snapshot()
@@ -330,7 +346,36 @@ class WebFrontend:
                 t["llm"] = {"seconds": d.get("seconds"), "ttft": d.get("ttft")}
             self._push(turns, i)
 
-    def submit(self, task):
+    def run_query(self, query):
+        if not self.runs:
+            return 404, {"error": "run-store is not enabled"}
+        try:
+            rid = query.get("run_id", [None])[0]
+            if rid and query.get("events", [None])[0] == "1":
+                self.runs.get(rid)
+                return 200, {"events": self.runs.events(rid, after=query.get("after", [0])[0])}
+            if rid:
+                return 200, {"run": self.runs.get(rid)}
+            return 200, {"runs": self.runs.listing(session_id=query.get("session_id", [None])[0])}
+        except (TypeError, ValueError) as e:
+            return 400, {"error": str(e)}
+        except Exception:
+            return 503, {"error": "run storage could not be read"}
+
+    def submit(self, task, *, session_id=None, source="user"):
+        if self.runs:
+            if not isinstance(session_id, str) or not session_id:
+                return 400, {"error": "session_id is required"}
+            try:
+                # No frontend lock here: start emits committed run events.
+                run = self.runs.start(task, session_id=session_id, source=source, timeout=self._timeout)
+                return 202, {"ok": True, "run": run, "session_id": run["session_id"], "run_id": run["id"]}
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            except RuntimeError as e:
+                return 409, {"error": str(e)}
+            except Exception:
+                return 503, {"error": "run could not be started"}
         task = (task or "").strip() if isinstance(task, str) else ""
         if not task:
             return 400, {"error": "empty task"}
@@ -402,7 +447,20 @@ class WebFrontend:
             if self.sessions:
                 self._broadcast("snapshot", self.snapshot())
 
-    def abort(self):
+    def abort(self, body=None):
+        if self.runs:
+            body = body or {}
+            rid, sid = body.get("run_id"), body.get("session_id")
+            if not isinstance(rid, str) or not rid or not isinstance(sid, str) or not sid:
+                return 400, {"error": "run_id and session_id are required"}
+            try:
+                if self.runs.get(rid)["session_id"] != sid:
+                    return 400, {"error": "run does not belong to this session"}
+                return 202, {"ok": True, "run": self.runs.cancel(rid)}
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            except Exception:
+                return 503, {"error": "run could not be cancelled"}
         with self.lock:
             if not self.running:
                 return 202, {"ok": True, "running": False}
@@ -581,6 +639,8 @@ class _Handler(BaseHTTPRequestHandler):
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
             self._json(200, snap)
+        elif path == "/api/runs":
+            self._json(*self.frontend.run_query(parse_qs(urlsplit(self.path).query)))
         elif path == "/api/plugins":
             self._json(*self.frontend.plugin_catalog())
         elif path == "/api/models/config":
@@ -610,7 +670,7 @@ class _Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/p/"):
             return self._plugin_route("POST", path, body)
         if path == "/api/run":
-            self._json(*self.frontend.submit(body.get("task")))
+            self._json(*self.frontend.submit(body.get("task"), session_id=body.get("session_id"), source=body.get("source", "user")))
         elif path == "/api/sessions":
             self._json(*self.frontend.session_action(body))
         elif path == "/api/plugins":
@@ -622,7 +682,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/models/config":
             self._json(*self.frontend.model_action(body, configure=True))
         elif path == "/api/abort":
-            self._json(*self.frontend.abort())
+            self._json(*self.frontend.abort(body))
         else:
             self._json(404, {"error": "not found"})
 

@@ -1,5 +1,5 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-export type Status = 'running' | 'done' | 'error' | 'aborted';
+export type Status = 'running' | 'done' | 'error' | 'aborted' | 'interrupted';
 export interface Usage { calls?: number; input?: number; output?: number; cache_read?: number; cache_write?: number }
 export interface ToolCall { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number }
 export interface Turn {
@@ -9,11 +9,19 @@ export interface Turn {
 export interface LlmTiming { seconds?: number; ttft?: number | null }
 export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
-  turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string;
+  turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; run_id?: string;
 }
 export interface Project { id: string; name: string; workspace: string; rules?: string; memory?: string }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; projects: Project[] }
-export interface Session { id: string; title: string; project_id?: string | null; workspace?: string }
+export interface Session { id: string; title: string; project_id?: string | null; workspace?: string; parent_id?: string | null }
+export interface Run {
+  id: string; session_id: string; source: string; status: Status | 'cancelling'; seq: number;
+  workspace: string; project_id?: string | null; created: number; ended?: number | null; error?: string | null;
+}
+export interface RunEvent {
+  run_id: string; session_id: string; seq: number; run?: Run;
+  messages?: Message[]; message?: Message; name?: string; data?: Json;
+}
 export interface RuntimeModel { id: string; name?: string; model?: string; provider?: string; provider_id?: string }
 export interface RuntimeCatalog { current: string; items: RuntimeModel[] }
 export interface Effort { current: string; options: string[] }
@@ -21,7 +29,7 @@ export interface WebManifest { name: string; rev: number; script?: string; style
 export interface HostState {
   running: boolean; messages: Message[]; session_id?: string; sessions?: Session[];
   web_plugins?: WebManifest[]; scope?: Scope; plugins_enabled?: boolean;
-  models?: RuntimeCatalog; effort?: Effort; [key: string]: unknown;
+  models?: RuntimeCatalog; effort?: Effort; parallel_runs?: boolean; run_id?: string | null; runs?: Run[]; [key: string]: unknown;
 }
 export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string }
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }

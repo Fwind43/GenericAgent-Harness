@@ -48,12 +48,16 @@ class Workspaces:
             return [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY updated DESC, id")]
 
     def current(self):
+        return self.context(self.sessions.current()["id"])
+
+    def context(self, session_id):
+        """Resolve a pinned session, independently of the UI's selection."""
         with self.sessions.lock:
-            current = self.sessions.current()
+            current = self.sessions.get(session_id)
             project = next((p for p in self.projects() if p["id"] == current["project_id"]), None)
             if current["project_id"] and project is None:
                 raise ValueError("project no longer exists")
-            return {"workspace": current["workspace"] or self.default_workspace,
+            return {"workspace": self.directory(current["workspace"] or self.default_workspace),
                     "project_id": current["project_id"], "project": project}
 
     def snapshot(self):

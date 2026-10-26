@@ -61,14 +61,14 @@ export function App() {
     if (!task || busy || submitting.current) return;
     submitting.current = true; setSending(true); host.notice();
     try {
-      if (!(await plugins.claim(task))) await request('/api/run', { task });
+      if (!(await plugins.claim(task))) await request('/api/run', { task, session_id: state.session_id });
       setDraft(''); stick.current = true;
     } catch (error) { host.report(error); }
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
   }
   async function abort() {
     setStopping(true);
-    try { await request('/api/abort', {}); } catch (error) { host.report(error); }
+    try { await request('/api/abort', { run_id: state.run_id, session_id: state.session_id }); } catch (error) { host.report(error); }
     finally { setStopping(false); }
   }
   return <>

@@ -21,18 +21,18 @@ export function Modal({ className, label, busy = false, onClose, children }: {
   }}>{children}</dialog>, document.body);
 }
 // A local ref closes the same-tick double-submit window; the host lock coordinates plugins.
-export function useOperation(api: PluginAPI) {
+export function useOperation(api: PluginAPI, allowRunning = false) {
   const { state, changing } = useHost();
   const pending = useRef(false), alive = useRef(true);
   const [working, setWorking] = useState(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  async function run(work: () => Promise<void>, failed: (message: string) => void = api.notice, allowRunning = false) {
+  async function run(work: () => Promise<void>, failed: (message: string) => void = api.notice, allowWhenRunning = allowRunning) {
     const snapshot = host.getSnapshot();
-    if (pending.current || api.signal.aborted || (!allowRunning && snapshot.state.running) || snapshot.changing) return false;
+    if (pending.current || api.signal.aborted || (!allowWhenRunning && snapshot.state.running) || snapshot.changing) return false;
     pending.current = true; setWorking(true); api.lock(true); api.notice('');
     try { await work(); return !api.signal.aborted; }
     catch (error) { if (!api.signal.aborted) failed(errorText(error)); return false; }
     finally { pending.current = false; api.lock(false); if (alive.current) setWorking(false); }
   }
-  return { busy: state.running || changing || working, working, run };
+  return { busy: (!allowRunning && state.running) || changing || working, working, run };
 }

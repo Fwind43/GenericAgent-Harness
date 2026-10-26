@@ -5,7 +5,7 @@ type Action = 'workspace' | 'create' | 'update';
 type Edit = { action: Action; id?: string; workspace: string; name: string; rules: string; memory: string };
 type Suggestion = { label: string; hint: string; fill?: string; run?: () => void };
 export function Workspaces({ api }: { api: PluginAPI }) {
-  const { state } = useHost(), { busy, working, run } = useOperation(api), scope = state.scope;
+  const { state } = useHost(), { busy, working, run } = useOperation(api, !!state.parallel_runs), scope = state.scope;
   const [editing, setEditing] = useState<Edit | null>(null), [error, setError] = useState('');
   const [draft, setDraft] = useState(''), [focused, setFocused] = useState(false), [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);

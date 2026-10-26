@@ -48,6 +48,11 @@ def _tree(args, manifests=None):
     tree = build_tree(args.profile, PROFILE_DIRS + _extra_dirs("GAH_PROFILE_PATH"), args.patch)
     if manifests is not None:
         tree = select_frontend(tree, manifests, getattr(args, "ui", None))
+        enabled = {e["name"] for e in tree if not e["disabled"]}
+        if {"ui-web", "session-store", "workspace-store"} <= enabled and "run-store" in manifests:
+            if not any(e["name"] == "run-store" for e in tree):
+                index = next(i for i, e in enumerate(tree) if e["name"] == "ui-web")
+                tree.insert(index, {"name": "run-store", "config": {}, "disabled": False})
     if args.ga_root:
         for e in tree:
             if e["name"].startswith("ga-"):

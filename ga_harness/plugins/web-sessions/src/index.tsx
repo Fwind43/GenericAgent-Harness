@@ -19,7 +19,7 @@ function groupSessions(state: HostState) {
   return [...groups.values()];
 }
 export function Sessions({ api }: { api: PluginAPI }) {
-  const { state } = useHost(), { busy, run } = useOperation(api);
+  const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
   const [toggled, setToggled] = useState<Record<string, boolean>>(() => {
     try { const value: unknown = JSON.parse(saved('gah.sessions.groups') ?? '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, boolean> : {}; } catch { return {}; }
   });

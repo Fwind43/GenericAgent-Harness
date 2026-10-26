@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { request } from './api';
 import { T, errorText } from './i18n';
-import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest } from './types';
+import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest, RunEvent } from './types';
 
 type Listener = () => void;
 type HostListener = (data: unknown) => void;
@@ -13,6 +13,8 @@ export class HostStore {
   private source: EventSource | null = null;
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private publishedState = this.snapshot.state;
+  private runSeq = new Map<string, number>();
+  private refreshVersion = 0;
   getSnapshot = () => this.snapshot;
   subscribe = (listener: Listener) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   on(type: string, listener: HostListener) {
@@ -37,7 +39,11 @@ export class HostStore {
     if (!batch) this.flush();
     else if (!this.flushTimer) this.flushTimer = setTimeout(this.flush, 50);
   }
-  setState = (state: HostState) => { this.update({ state }); };
+  setState = (state: HostState) => {
+    ++this.refreshVersion;
+    this.runSeq = new Map((state.runs ?? []).map(run => [run.id, run.seq]));
+    this.update({ state });
+  };
   notice = (notice = '') => this.update({ notice });
   lock() {
     const token = Symbol(); this.locks.add(token); this.update({ changing: true });
@@ -53,6 +59,30 @@ export class HostStore {
     if (!old || old.role !== 'assistant') return;
     this.update({ state: { ...state, messages: [...messages.slice(0, -1), update(old)] } }, batch);
   }
+  private acceptRun(kind: string, event: RunEvent) {
+    const state = this.snapshot.state;
+    if (!state.parallel_runs || event.seq <= (this.runSeq.get(event.run_id) ?? 0)) return;
+    this.runSeq.set(event.run_id, event.seq);
+    ++this.refreshVersion;
+    const previous = state.runs?.find(run => run.id === event.run_id);
+    const record = event.run ?? (previous ? { ...previous, seq: event.seq } : undefined);
+    const runs = record ? [record, ...(state.runs ?? []).filter(run => run.id !== record.id)] : state.runs;
+    let next: HostState = { ...state, runs };
+    if (event.session_id === state.session_id) {
+      if (event.messages) next = { ...next, messages: event.messages };
+      else if (event.message) {
+        const message = event.message;
+        const index = state.messages.findLastIndex(item => item.role === 'assistant' && item.run_id === event.run_id);
+        // If the initial event was missed, recover from the authoritative snapshot.
+        if (index < 0) { void this.refresh().catch(error => this.report(error)); return; }
+        next.messages = state.messages.map((item, i) => i === index ? message : item);
+      }
+      if (kind === 'run.started' || kind === 'run.cancelling') next = { ...next, running: true, run_id: event.run_id };
+      if (kind === 'run.finished' && state.run_id === event.run_id) next = { ...next, running: false, run_id: null };
+    }
+    this.update({ state: next }, kind === 'run.event');
+    this.emit(kind, event);
+  }
   connect() {
     if (this.source) return () => {};
     const es = this.source = new EventSource('/api/events');
@@ -63,6 +93,7 @@ export class HostStore {
     es.onopen = () => this.update({ connected: true });
     es.onerror = () => this.update({ connected: false });
     listen<HostState>('snapshot', state => { this.setState(state); this.emit('snapshot', state); });
+    for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
     listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
     listen<unknown>('plugin', data => this.emit('plugin', data));
     listen<{ task: string; model?: string; reasoning_effort?: string }>('start', data => {
@@ -92,7 +123,11 @@ export class HostStore {
     });
     return () => { es.close(); if (this.source === es) this.source = null; clearTimeout(this.flushTimer); this.flushTimer = undefined; };
   }
-  async refresh() { this.setState(await request<HostState>('/api/state')); }
+  async refresh() {
+    const version = this.refreshVersion;
+    const state = await request<HostState>('/api/state');
+    if (version === this.refreshVersion) this.setState(state);
+  }
   report(error: unknown) { this.notice(errorText(error)); }
 }
 export const host = new HostStore();

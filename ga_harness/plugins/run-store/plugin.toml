@@ -1,0 +1,16 @@
+name = "run-store"
+category = "service"
+entry = "main:apply"
+description = "Durable runs with per-session ownership and isolated worker processes."
+inject = ["sessions", "workspaces", "plugin.catalog"]
+provides = ["runs"]
+
+[settings.max_parallel]
+type = "integer"
+label = "Maximum concurrent runs"
+default = 4
+
+[settings.cancel_grace]
+type = "number"
+label = "Cancellation grace period (seconds)"
+default = 5
