@@ -4,7 +4,8 @@
 
 The web host now has a React 19 + strict TypeScript implementation in `frontend/`.
 It uses Vite; the Python HTTP server and plugin manifest/API protocol remain in
-place. This is an incremental migration, not a rewrite of every plugin UI.
+place. The host and all five built-in web plugin UIs use React components;
+legacy assets remain available for the fallback page and third-party plugins.
 
 - `src/App.tsx`: application shell, composer, sidebar, plugin slots and controls.
 - `src/store.ts`: immutable host snapshots, `useSyncExternalStore`, SSE updates
@@ -16,12 +17,16 @@ place. This is an incremental migration, not a rewrite of every plugin UI.
 - `src/sdk.ts`: TypeScript browser SDK and plugin API contracts.
 - `src/plugin-runtime.tsx`: manifest/revision synchronization, shared React,
   plugin roots/error boundaries, cancellation and owned cleanup.
-- `src/plugins.tsx`: native React theme plugin, enabled by the backend manifest.
+- `src/plugins.tsx`: registers the five native React built-ins, enabled by backend
+  manifests. `src/plugins/` owns sessions, workspace/project commands and forms,
+  model/provider configuration and the plugin catalog/detail editor.
 - `src/host.css`: host layout; existing output and plugin styles remain reused.
 
-Models, plugin management, sessions and workspaces still run their existing
-JavaScript UIs through `GAH.define`. Their backend plugins, assets and richer
-behaviors are retained. They are **not yet native React components**.
+All bundled web plugin UIs (theme, sessions, workspaces, models and plugin
+management) now have native React implementations. The React runtime loads their
+manifest styles but does not execute their legacy `client.js` files. Backend
+plugins and API contracts are retained. The legacy page still uses those assets;
+third-party `GAH.define` plugins remain supported by the compatibility SDK.
 
 ## Development and build
 
@@ -119,6 +124,7 @@ are therefore not yet verified; no performance improvement is claimed.
 
 When verification is authorized, start with typechecking/building, then focus on
 SSE updates/reconnect, turn content and disclosure state, ask_user, composer
-locking, plugin enable/disable/revision cleanup, the four compatibility UIs and
-production asset routing. Existing browser coverage targets the legacy host;
-it must be deliberately exercised against the React build as well.
+locking, plugin enable/disable/revision cleanup, the five native built-in UIs,
+third-party compatibility plugins and production asset routing. Existing browser
+coverage targets the legacy host; it must be deliberately exercised against the
+React build as well.

@@ -10,7 +10,7 @@ export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string;
 }
-export interface Project { id: string; name: string; workspace: string }
+export interface Project { id: string; name: string; workspace: string; rules?: string; memory?: string }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; projects: Project[] }
 export interface Session { id: string; title: string; project_id?: string | null; workspace?: string }
 export interface RuntimeModel { id: string; name?: string; model?: string; provider?: string; provider_id?: string }
@@ -26,16 +26,24 @@ export interface HostSnapshot { state: HostState; connected: boolean; changing: 
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }
 export interface ModelEntry { key: string; protocol: string; provider?: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
 export interface ProviderEntry { id: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
-export interface ModelConfig { entries: ModelEntry[]; providers: ProviderEntry[]; revision: string; writable: boolean; reason?: string; source?: string; format?: string; can_convert?: boolean }
+export interface ModelConfig {
+  entries: ModelEntry[]; providers: ProviderEntry[]; revision: string; writable: boolean;
+  reason?: string; reason_code?: string; source?: string; format?: string;
+  convert?: { target: string; blocked?: boolean };
+}
 export interface ModelResult { config: ModelConfig; state: HostState }
-export interface PluginField { type: 'boolean' | 'integer' | 'string'; label?: string; label_zh?: string; default?: Json; required?: boolean; min?: number; max?: number; choices?: Json[]; secret?: boolean }
+export interface PluginField {
+  type: 'boolean' | 'integer' | 'string' | 'choice'; label?: string; label_zh?: string;
+  description?: string; description_zh?: string; multiline?: boolean; min?: number; max?: number;
+  options?: { value: string; label?: string; label_zh?: string }[];
+}
 export interface PluginInfo {
   name: string; state: string; category?: string; description?: string; description_zh?: string;
-  enabled: boolean; core?: boolean; restart_required?: boolean; runtime_error?: string; reason?: string;
-  requires?: string[]; provides?: string[]; error?: string; fields?: Record<string, PluginField>;
-  config: Record<string, Json>; configured_enabled?: boolean;
+  enabled: boolean; protected?: boolean; overridden?: boolean; restart_required?: boolean;
+  requires?: string[]; provides?: string[]; dependents?: string[]; missing?: string[];
+  error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;
 }
-export interface PluginCatalog { plugins: PluginInfo[]; revision: string; writable: boolean; reason?: string; source?: string }
+export interface PluginCatalog { items: PluginInfo[]; revision: string; profile: string; restart_required: boolean }
 
 declare global {
   interface Window {

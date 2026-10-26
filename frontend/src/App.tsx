@@ -23,6 +23,7 @@ export function App() {
   }, [state.web_plugins]);
   useEffect(() => () => plugins.dispose(), []);
   useEffect(() => host.on('draft', value => { setDraft(String(value)); input.current?.focus(); }), []);
+  useEffect(() => { host.emit('composer-draft', draft); }, [draft]);
   useEffect(() => host.on('reset', () => { setDraft(''); stick.current = true; setSidebar(false); }), []);
   useEffect(() => {
     // Legacy plugins dispatch a non-bubbling input event after setting .value.
@@ -87,7 +88,9 @@ export function App() {
       </main>
       <footer><form id="form" onSubmit={send}>
         <Slot name="composer-top" />
-        <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
+        <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onFocus={() => host.emit('composer-focus', true)} onBlur={() => host.emit('composer-focus', false)} onKeyDown={event => {
+          host.emit('composer-key', event);
+          if (event.defaultPrevented) return;
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
         }} />
         <div className="composer-row"><Slot name="composer" /><span className="spacer" />
