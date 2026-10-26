@@ -8,7 +8,7 @@ Events (emit, payload is one dict):
   run.start       {}
   turn.start      {turn}
   assistant.delta {turn, part, text}   live model output, part = summary | thinking | reply
-  assistant.text  {turn, text, reply, thinking, summary}   reply = text minus <summary>/<thinking>
+  assistant.text  {turn, text, reply, thinking, summary}   reply = text minus leading protocol blocks
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
   turn.end        {turn, exit}
@@ -17,10 +17,10 @@ Events (emit, payload is one dict):
 ``id`` is "<turn>.<index>" (GA does not pass the provider tool-call id to dispatch).
 ``assistant.delta`` comes from wrapping ``client.chat`` on the client instance for the
 duration of one LLM call (installed in llm_before, removed when the stream ends), so it
-runs on the agent thread in exactly the order GA consumes tokens. The stream is split on
-<summary>/<thinking> tags (tags removed, leading blank of the reply dropped), so a
-frontend can append ``text`` to the matching field. ``assistant.text`` is authoritative
-and should replace whatever was accumulated from deltas.
+runs on the agent thread in exactly the order GA consumes tokens. Only leading
+<summary>/<thinking> blocks are protocol; once reply text starts, all later tags
+are literal reply content. A frontend can append ``text`` to the matching field.
+``assistant.text`` uses the same splitter and is authoritative, replacing deltas.
 ``no_tool`` (GA's pseudo tool for a plain reply) is not reported as a tool.
 config:
   max_data  truncate string results to this many chars (default 20000, 0 = no limit)
@@ -30,8 +30,6 @@ import json
 import re
 import time
 
-_SUMMARY = re.compile(r"<summary>(.*?)</summary>", re.S)
-_TAGS = re.compile(r"<(summary|thinking)>.*?(</\1>|$)", re.S)
 _PRIVATE = ("_index", "_tool_num")
 
 
@@ -57,7 +55,7 @@ def _plain(v):
 
 
 class _Split:
-    """Incrementally split a model stream into (part, text) by <summary>/<thinking> tags."""
+    """Split leading protocol blocks; after reply starts, tags are literal text."""
     TAGS = ("summary", "thinking")
 
     def __init__(self):
@@ -80,6 +78,10 @@ class _Split:
     def _drain(self, final: bool) -> list:
         out: list = []
         while self.buf:
+            if self.part == "reply" and self.reply_started:
+                self._add(out, self.buf)
+                self.buf = ""
+                break
             i = self.buf.find("<")
             if i != 0:
                 text, self.buf = (self.buf, "") if i < 0 else (self.buf[:i], self.buf[i:])
@@ -176,13 +178,17 @@ def apply(ctx, config):
         unwrap(g.get("client"))
         r = g.get("response")
         text = getattr(r, "content", None) or ""
-        m = _SUMMARY.search(text)
+        split = _Split()
+        parts = {name: [] for name in ("summary", "thinking", "reply")}
+        for part, chunk in split.feed(text) + split.flush():
+            parts[part].append(chunk)
+        fields = {part: "".join(chunks).strip() for part, chunks in parts.items()}
         ctx.emit("assistant.text", {
             "turn": g.get("turn"),
             "text": text,
-            "reply": re.sub(r"\n{3,}", "\n\n", _TAGS.sub("", text)).strip(),
-            "thinking": getattr(r, "thinking", None) or "",
-            "summary": m.group(1).strip() if m else "",
+            "reply": re.sub(r"\n{3,}", "\n\n", fields["reply"]),
+            "thinking": getattr(r, "thinking", None) or fields["thinking"],
+            "summary": fields["summary"],
         })
         return nxt(g)
 

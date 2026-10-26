@@ -58,6 +58,71 @@ def test_full_turn_sequence():
     rt.remove("ga-hooks")
 
 
+@pytest.mark.parametrize("chunk_size", [1, 7, 10000])
+@pytest.mark.parametrize("prefix, summary, thinking, reply", [
+    ("<summary>go</summary>", "go", "", "Received! Above in `<summary>` is the example.\n\nStill here."),
+    ("<summary>go</summary>", "go", "", "If you cannot see `<summary>`, the rest must survive."),
+    ("<summary>go</summary>", "go", "", "Use `<summary>example</summary>` and `<thinking>example</thinking>`."),
+    ("", "", "", "`<summary>` and `<thinking>` are literal code, not protocol."),
+    ("", "", "", "```html\n<summary>example</summary>\n<thinking>example</thinking>\n```\nTail."),
+    ("<summary>go</summary>", "go", "", "Text before <summary>literal</summary> and <thinking>literal</thinking>."),
+    (" \n<thinking>plan</thinking>\n<summary>go</summary>\n", "go", "plan", "Answer with `<thinking>` intact."),
+    ("<summary>go</summary><thinking>plan</thinking>", "go", "plan", "Answer with `<summary>` intact."),
+    ("<summary>go</summary><thinking>plan</thinking>", "go", "plan", ""),
+])
+def test_protocol_prefix_preserves_body_in_stream_and_final(chunk_size, prefix, summary, thinking, reply):
+    rt, hooks, seen = _mount()
+    deltas = []
+    rt.ctx.events.on("assistant.delta", deltas.append)
+    raw = prefix + reply
+    response = SimpleNamespace(content=raw, thinking="")
+
+    class Client:
+        def chat(self, messages=None, tools=None):
+            for i in range(0, len(raw), chunk_size):
+                yield raw[i:i + chunk_size]
+            return response
+
+    try:
+        client = Client()
+        hooks.trigger("llm_before", {"turn": 1, "client": client})
+        gen = client.chat()
+        chunks = []
+        while True:
+            try:
+                chunks.append(next(gen))
+            except StopIteration as stop:
+                assert stop.value is response
+                break
+        assert "".join(chunks) == raw
+        assert "chat" not in client.__dict__
+        expected = {"summary": summary, "thinking": thinking, "reply": reply}
+        for part, text in expected.items():
+            assert "".join(d["text"] for d in deltas if d["part"] == part) == text
+        hooks.trigger("llm_after", {"turn": 1, "client": client, "response": response})
+        final = dict(seen)["assistant.text"]
+        assert final["text"] == raw
+        assert {part: final[part] for part in expected} == expected
+    finally:
+        rt.remove("ga-events")
+        rt.remove("ga-hooks")
+
+
+def test_provider_thinking_takes_precedence_over_inline_protocol():
+    rt, hooks, seen = _mount()
+    try:
+        response = SimpleNamespace(content="<thinking>inline</thinking><summary>go</summary>ok",
+                                   thinking="provider thinking")
+        hooks.trigger("llm_after", {"turn": 1, "response": response})
+        final = dict(seen)["assistant.text"]
+        assert final["thinking"] == "provider thinking"
+        assert final["summary"] == "go"
+        assert final["reply"] == "ok"
+    finally:
+        rt.remove("ga-events")
+        rt.remove("ga-hooks")
+
+
 def test_llm_stream_emits_deltas_and_unwraps():
     rt, hooks, seen = _mount()
     deltas = []
