@@ -31,7 +31,7 @@ details[open]>summary>.chev{transform:none}
 .steps>summary .process-count{font-size:11px}
 .steps>summary .chev{margin-left:auto}
 .steps[open]>summary{margin-bottom:4px}
-.steps>.step{margin-left:20px}
+.steps>.step{padding-left:20px}
 .process-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none}
 .steps.running .process-dot{background:#19a37f;animation:blink 1.4s ease-in-out infinite}
 .step{padding:0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}
@@ -114,7 +114,7 @@ details[open]>summary>.chev{transform:none}
   .md{font-size:14px;line-height:1.85}
   .meta{margin-bottom:10px;font-size:11px}
   .steps{margin-bottom:16px}
-  .steps>.step{margin-left:16px}
+  .steps>.step{padding-left:16px}
   .step>summary{gap:7px}.step .cnt,.step .tok{font-size:10px}
   .step-body{padding-left:16px}
   .tool>summary{padding:6px 0;gap:6px}
