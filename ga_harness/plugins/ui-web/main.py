@@ -530,7 +530,9 @@ class _Handler(BaseHTTPRequestHandler):
             if not built_page.is_file():
                 return self._bytes(503, UNBUILT.encode("utf-8"), "text/html; charset=utf-8")
             page = built_page.read_text(encoding="utf-8")
-            body = page.replace("<!--gah:head-->", self.frontend.web.head_html()).encode("utf-8")
+            # Plugin assets go last in <head> so plugin CSS overrides the host bundle at equal specificity.
+            page = page.replace("<!--gah:head-->", "")
+            body = page.replace("</head>", self.frontend.web.head_html() + "</head>", 1).encode("utf-8")
             self._bytes(200, body, "text/html; charset=utf-8")
         elif path.startswith("/assets/"):
             # Vite's hashed assets only; reject traversal and symlinks outside dist.
