@@ -255,7 +255,8 @@ function renderTurns(m,mi,box){
     s.append(el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')),chev());d.append(s);
     steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&!finalT&&j===steps.length-1)));box.append(d)}
   if(finalT){const reply=finalT.reply||'',typing=streaming||(finalT._shown!=null&&finalT._shown<reply.length);
-    const label=el('div','final-step-label');label.append(el('span',null,T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
+    const label=el('div','final-step-label');label.append(el('span','no',T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
+    if(finalT.summary)label.append(el('span','ttl',finalT.summary));
     if(finalT.usage)label.append(tokChip(finalT.usage));box.append(label);
     if(finalT.thinking)box.append(renderThinking(finalT.thinking,mi+':final:'+finalT.turn+':thinking'));
     appendTurnSummary(box,finalT.summary);
