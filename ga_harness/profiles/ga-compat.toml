@@ -63,3 +63,7 @@ name = "web-plugins"
 
 [[plugins]]
 name = "web-workspaces"
+
+# per-message edit/regenerate and branch switching; add-on for ui-web
+[[plugins]]
+name = "worldline"
