@@ -1,6 +1,7 @@
 """Feishu/Lark adapter for the channels hub (long-connection bot).
 
-Credentials: env GAH_FEISHU_APP_ID / GAH_FEISHU_APP_SECRET, else settings.
+Credentials: plugin settings app_id / app_secret; env GAH_FEISHU_APP_ID /
+GAH_FEISHU_APP_SECRET are a fallback when a setting is empty.
 ``lark-oapi`` is imported lazily so the plugin loads without it.
 """
 import asyncio
@@ -14,7 +15,7 @@ from ga_harness.channels import Adapter
 
 
 def _cred(config, key, env):
-    return (os.environ.get(env) or (config or {}).get(key) or "").strip()
+    return ((config or {}).get(key) or os.environ.get(env) or "").strip()
 
 
 def _allowed(config):
@@ -108,7 +109,7 @@ def apply(ctx, config):
     app_id = _cred(config, "app_id", "GAH_FEISHU_APP_ID")
     app_secret = _cred(config, "app_secret", "GAH_FEISHU_APP_SECRET")
     if not (app_id and app_secret):
-        raise RuntimeError("feishu: set app_id/app_secret (or GAH_FEISHU_APP_ID/SECRET)")
+        raise RuntimeError("feishu: set App ID / App Secret in the plugin settings")
     try:
         import lark_oapi  # noqa: F401
     except ImportError as e:

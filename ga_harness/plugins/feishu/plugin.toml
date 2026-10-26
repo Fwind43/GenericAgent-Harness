@@ -7,14 +7,14 @@ inject = ["channels"]
 
 [settings.app_id]
 type = "string"
-label = "App ID (env GAH_FEISHU_APP_ID overrides)"
-label_zh = "App ID（环境变量 GAH_FEISHU_APP_ID 优先）"
+label = "App ID"
+label_zh = "App ID"
 default = ""
 
 [settings.app_secret]
 type = "string"
-label = "App Secret (plain text; prefer env GAH_FEISHU_APP_SECRET)"
-label_zh = "App Secret（明文保存，建议用环境变量 GAH_FEISHU_APP_SECRET）"
+label = "App Secret (stored as plain text in settings)"
+label_zh = "App Secret（明文保存在设置中）"
 default = ""
 
 [settings.allowed_users]
