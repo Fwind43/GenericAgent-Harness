@@ -1,11 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { PluginAPI } from '../sdk';
-import type { HostState, RuntimeModel } from '../types';
-import { useHost } from '../store';
-import { T } from '../i18n';
-import { PluginSlot, useOperation } from './shared';
-import { matches } from './model-helpers';
+import { type PluginAPI, type HostState, type RuntimeModel, useHost, T, PluginSlot, useOperation, matches } from '@gah/sdk';
 
 const providerId = (model: RuntimeModel) => model.provider_id || model.provider || '__standalone';
 export function ModelPicker({ api }: { api: PluginAPI }) {

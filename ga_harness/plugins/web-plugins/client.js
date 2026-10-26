@@ -1,188 +1,201 @@
-GAH.define('web-plugins', api => {
-  const { h } = api;
-  const zh = typeof GAH_LANG !== 'undefined' && GAH_LANG === 'zh';
-  const descOf = p => (zh && p.description_zh) || p.description || '';
-  const labelOf = spec => (zh && spec.label_zh) || spec.label;
-  const STATES = { active: T('\u8fd0\u884c\u4e2d','Running'), pending: T('\u7b49\u5f85\u4f9d\u8d56','Waiting for dependencies'), disabled: T('\u672a\u52a0\u8f7d','Not loaded'), error: T('\u52a0\u8f7d\u5931\u8d25','Failed to load'), removed: T('\u5df2\u79fb\u9664','Removed') };
-  const PENDING = T(' \u00b7 \u5f85\u91cd\u542f\u751f\u6548',' · applies after restart'), PROTECTED = T(' \u00b7 \u53d7\u4fdd\u62a4',' · protected');
-  const CATS = [['core', T('核心','Core')], ['extension', T('GA 扩展','GA extensions')],
-    ['observe', T('观测记录','Observability')], ['service', T('数据与服务','Data & services')],
-    ['ui', T('界面','Interface')], ['other', T('其他','Other')]];
-  const catOf = p => CATS.find(c => c[0] === p.category) || CATS[CATS.length - 1];
-  const FILTERS = [['all', T('\u5168\u90e8','All')], ['active', T('\u8fd0\u884c\u4e2d','Running')], ['off', T('\u672a\u52a0\u8f7d','Not loaded')], ['issue', T('\u9700\u5904\u7406','Needs attention')]];
-  let cfg = null, editing = null, view = 'grid', filter = 'all', busy = false, running = false, working = false;
-  /* ---- toolbar ---- */
-  const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => { view = 'grid'; load(); } },
-    h('span', { class: 'gah-ico', dataset: { i: 'puzzle' }, 'aria-hidden': 'true' }), T('\u63d2\u4ef6\u7ba1\u7406','Plugins'));
-  const summary = h('span', { class: 'plugin-note' }, T('\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Changes take effect on next start'));
-  summary.hidden = true;
-  const group = h('div', { class: 'gah-plugins', hidden: true }, open, summary);
-  /* ---- catalog (one card per plugin) ---- */
-  const profile = h('p', { class: 'plugin-note plugin-profile' });
-  const search = h('input', { type: 'search', class: 'plugin-search', placeholder: T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e','Search plugin names or descriptions'), 'aria-label': T('\u641c\u7d22\u63d2\u4ef6','Search plugins'), oninput: () => renderCards() });
-  const reload = h('button', { type: 'button', class: 'secondary', onclick: () => load() }, T('\u5237\u65b0','Refresh'));
-  const tabs = h('div', { class: 'plugin-filters', role: 'tablist', 'aria-label': T('\u6309\u72b6\u6001\u7b5b\u9009','Filter by status') });
-  const cards = h('div', { class: 'plugin-groups', 'aria-label': T('\u63d2\u4ef6\u5217\u8868','Plugin list') });
-  const empty = h('p', { class: 'plugin-empty', hidden: true });
-  const catalogErr = h('p', { class: 'gah-error', role: 'status', hidden: true });
-  const gridView = h('section', { class: 'plugin-catalog' },
-    profile, h('div', { class: 'plugin-toolbar' }, search, reload), tabs, catalogErr, cards, empty);
-  /* ---- detail (selected plugin) ---- */
-  const back = h('button', { type: 'button', class: 'secondary plugin-back', onclick: () => showGrid() }, T('\u2190 \u5168\u90e8\u63d2\u4ef6','← All plugins'));
-  const title = h('h3', { class: 'plugin-title' });
-  const status = h('span', { class: 'plugin-badge plugin-status' });
-  const tags = h('div', { class: 'plugin-tags' });
-  const desc = h('p', { class: 'plugin-description' });
-  const deps = { requires: h('dd'), provides: h('dd'), dependents: h('dd') };
-  const warning = h('p', { class: 'plugin-note plugin-warning' });
-  const enabled = h('input', { type: 'checkbox', role: 'switch' });
-  const fields = h('div', { class: 'model-grid plugin-fields' });
-  const note = h('p', { class: 'plugin-note' });
-  const err = h('p', { class: 'gah-error', role: 'status', hidden: true });
-  const resetBtn = h('button', { type: 'button', class: 'secondary plugin-reset', onclick: () => {
-    if (confirm(T('\u6e05\u9664\u8fd9\u4e2a\u63d2\u4ef6\u7684\u7f51\u9875\u8986\u76d6\u8bbe\u7f6e\uff0c\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002','Clear this plugin\'s web overrides and restore the startup config? Takes effect on next start.'))) change('reset'); } }, T('\u6062\u590d\u542f\u52a8\u914d\u7f6e','Restore startup config'));
-  const saveBtn = h('button', { type: 'submit' }, T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548','Save (applies on next start)'));
-  const form = h('form', { onsubmit: e => { e.preventDefault(); change('save'); } },
-    h('label', { class: 'plugin-toggle plugin-enable' }, enabled, h('span', null, T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528','Enable on next start'))),
-    fields, note, err,
-    h('div', { class: 'model-actions plugin-actions' }, resetBtn, saveBtn));
-  const detailView = h('section', { class: 'plugin-detail', hidden: true }, back,
-    h('div', { class: 'plugin-detail-card' },
-      h('div', { class: 'plugin-detail-head' }, title, status),
-      tags, desc,
-      h('dl', { class: 'plugin-deps' }, h('dt', null, T('\u4f9d\u8d56\u80fd\u529b','Requires')), deps.requires,
-        h('dt', null, T('\u63d0\u4f9b\u80fd\u529b','Provides')), deps.provides, h('dt', null, T('\u88ab\u63d2\u4ef6\u4f9d\u8d56','Required by')), deps.dependents),
-      warning, form));
-  const closeBtn = h('button', { type: 'button', class: 'secondary', 'aria-label': T('\u5173\u95ed\u63d2\u4ef6\u7ba1\u7406','Close plugins'), onclick: () => { if (!working) dlg.close(); } }, T('\u5173\u95ed','Close'));
-  const dlg = h('dialog', { class: 'gah-dialog gah-plugin-dialog', 'aria-label': T('\u63d2\u4ef6\u7ba1\u7406','Plugins'),
-      oncancel: e => { if (working) e.preventDefault(); else if (view === 'detail') { e.preventDefault(); showGrid(); } } },
-    h('div', { class: 'dialog-head' }, h('h2', null, T('\u63d2\u4ef6\u7ba1\u7406','Plugins')), closeBtn),
-    h('div', { class: 'dialog-content' }, gridView, detailView));
-  const selected = () => cfg && cfg.items.find(x => x.name === editing);
-  const issue = p => p.state === 'error' || p.state === 'pending' || !!(p.missing && p.missing.length) || !!p.error;
-  const matches = (p, f) => f === 'all' || (f === 'active' ? p.state === 'active' : f === 'off' ? p.state === 'disabled' || p.state === 'removed' : issue(p));
-  const stateLabel = p => STATES[p.state] || p.state;
-  function badges(p) {
-    const out = [];
-    if (p.protected) out.push(['protected', T('\u53d7\u4fdd\u62a4','Protected')]);
-    if (p.restart_required) out.push(['pending', T('\u5f85\u91cd\u542f','Restart pending')]);
-    if (p.overridden) out.push(['override', T('\u7f51\u9875\u8986\u76d6','Web override')]);
-    if (!p.enabled && p.state === 'active') out.push(['pending', T('\u4e0b\u6b21\u505c\u7528','Off next start')]);
-    return out.map(([k, t]) => h('span', { class: 'plugin-tag', dataset: { tag: k } }, t));
+var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
+  "use strict";
+  const categories = [
+    ["core", sdk.T("核心", "Core")],
+    ["extension", sdk.T("GA 扩展", "GA extensions")],
+    ["observe", sdk.T("观测记录", "Observability")],
+    ["service", sdk.T("数据与服务", "Data & services")],
+    ["ui", sdk.T("界面", "Interface")],
+    ["other", sdk.T("其他", "Other")]
+  ];
+  const filters = [["all", sdk.T("全部", "All")], ["active", sdk.T("运行中", "Running")], ["off", sdk.T("未加载", "Not loaded")], ["issue", sdk.T("需处理", "Needs attention")]];
+  const states = { active: sdk.T("运行中", "Running"), pending: sdk.T("等待依赖", "Waiting for dependencies"), disabled: sdk.T("未加载", "Not loaded"), error: sdk.T("加载失败", "Failed to load"), removed: sdk.T("已移除", "Removed") };
+  const stateLabel = (plugin) => states[plugin.state] || plugin.state;
+  const categoryOf = (plugin) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
+  const descriptionOf = (item) => sdk.T(item.description_zh || item.description || "", item.description || "");
+  const inFilter = (plugin, filter) => {
+    var _a;
+    return filter === "all" || (filter === "active" ? plugin.state === "active" : filter === "off" ? ["disabled", "removed"].includes(plugin.state) : ["error", "pending"].includes(plugin.state) || !!((_a = plugin.missing) == null ? void 0 : _a.length) || !!plugin.error);
+  };
+  function PluginTags({ plugin }) {
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "protected", children: sdk.T("受保护", "Protected") }),
+      plugin.restart_required && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("待重启", "Restart pending") }),
+      plugin.overridden && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "override", children: sdk.T("网页覆盖", "Web override") }),
+      !plugin.enabled && plugin.state === "active" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("下次停用", "Off next start") })
+    ] });
   }
-  function error(t) { err.textContent = t || ''; err.hidden = !t; catalogErr.textContent = t || ''; catalogErr.hidden = !t || view !== 'grid'; }
-  function controls() {
-    const p = selected(), b = working || busy, locked = b || running || !p || p.protected;
-    open.disabled = b;
-    search.disabled = reload.disabled = back.disabled = working;
-    cards.querySelectorAll('button').forEach(x => { x.disabled = working; });
-    closeBtn.disabled = working;
-    enabled.disabled = saveBtn.disabled = locked;
-    resetBtn.disabled = locked || !(p && p.overridden);
-    fields.querySelectorAll('[data-plugin-field]').forEach(x => { x.disabled = locked; });
-    note.textContent = running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\uff1b\u7ed3\u675f\u540e\u53ef\u4fdd\u5b58\u3002','A task is running; view only. You can save after it finishes.')
-      : p && p.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002','Core and frontend plugins are protected; change them in the startup config.')
-      : T('\u4ec5\u663e\u793a\u63d2\u4ef6\u58f0\u660e\u7684\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002','Only public settings declared by the plugin are shown; manage keys in Models.');
-  }
-  function renderTabs() {
-    const items = (cfg && cfg.items) || [];
-    tabs.replaceChildren(...FILTERS.map(([k, t]) => h('button', { type: 'button', role: 'tab', class: 'plugin-filter',
-      'aria-selected': String(filter === k), dataset: { filter: k }, onclick: () => { filter = k; renderTabs(); renderCards(); } },
-      t, h('span', { class: 'plugin-count' }, String(items.filter(p => matches(p, k)).length)))));
-  }
-  function renderCards() {
-    const q = search.value.trim().toLowerCase(), items = (cfg && cfg.items) || [];
-    const shown = items.filter(p => matches(p, filter) && (!q || (p.name + ' ' + (p.description || '') + ' ' + (p.description_zh || '') + ' ' + catOf(p)[1]).toLowerCase().includes(q)));
-    const card = p => h('li', null, h('button', { type: 'button', class: 'plugin-card', dataset: { plugin: p.name, state: p.state },
-        'aria-label': p.name + T('\uff0c',', ') + stateLabel(p), onclick: () => showDetail(p.name) },
-      h('span', { class: 'plugin-card-head' },
-        h('span', { class: 'plugin-name', title: p.name }, p.name),
-        h('span', { class: 'plugin-badge', dataset: { state: p.state } }, stateLabel(p))),
-      h('span', { class: 'plugin-card-desc' }, descOf(p) || T('\u6682\u65e0\u8bf4\u660e','No description')),
-      h('span', { class: 'plugin-card-foot' }, ...badges(p),
-        h('span', { class: 'plugin-card-meta' }, (p.provides && p.provides.length ? T('\u63d0\u4f9b ','Provides ') + p.provides.length + T(' \u9879\u80fd\u529b',' capabilities') : '')))));
-    cards.replaceChildren(...CATS.map(c => [c, shown.filter(p => catOf(p) === c)]).filter(([, ps]) => ps.length).map(([c, ps]) =>
-      h('section', { class: 'plugin-group', dataset: { category: c[0] } },
-        h('h3', { class: 'plugin-group-title' }, c[1], h('span', { class: 'plugin-count' }, String(ps.length))),
-        h('ul', { class: 'plugin-grid', 'aria-label': c[1] }, ...ps.map(card)))));
-    empty.hidden = !!shown.length;
-    empty.textContent = items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6','No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
-    controls();
-  }
-  function fill(name) {
-    editing = name; const p = selected(); fields.replaceChildren();
-    title.textContent = p ? p.name : '';
-    status.textContent = p ? stateLabel(p) : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6','No manageable plugins found');
-    status.dataset.state = p ? p.state : '';
-    tags.replaceChildren(...(p ? badges(p) : []));
-    desc.textContent = (p && descOf(p)) || T('\u6682\u65e0\u8bf4\u660e','No description');
-    for (const k of Object.keys(deps)) deps[k].textContent = (p && p[k] && p[k].join(T('\u3001',', '))) || T('\u65e0','None');
-    warning.textContent = [p && p.missing && p.missing.length ? T('\u5f53\u524d\u7f3a\u5c11\uff1a','Missing: ') + p.missing.join(T('\u3001',', ')) : '', (p && p.error) || ''].filter(Boolean).join(T('\uff1b','; '));
-    warning.hidden = !warning.textContent;
-    enabled.checked = !!(p && p.enabled);
-    Object.entries((p && p.fields) || {}).forEach(([key, spec]) => {
-      const bool = spec.type === 'boolean', choice = spec.type === 'choice';
-      const input = choice ? h('select', null, ...(spec.options || []).map(o => h('option', { value: o.value }, (zh && o.label_zh) || o.label || o.value)))
-        : spec.type === 'string' && spec.multiline ? h('textarea', { rows: 4 })
-        : h('input', { type: bool ? 'checkbox' : spec.type === 'integer' ? 'number' : 'text' });
-      input.dataset.pluginField = key;
-      let label;
-      if (bool) { input.checked = !!p.config[key]; label = h('label', { class: 'plugin-toggle' }, input, h('span', null, labelOf(spec) || key)); }
-      else {
-        input.value = p.config[key] ?? '';
-        if (spec.type === 'integer') { input.step = '1'; if (spec.min != null) input.min = spec.min; if (spec.max != null) input.max = spec.max; }
-        label = h('label', { class: 'model-field' }, h('span', null, labelOf(spec) || key), input);
+  function PluginDetails({ plugin, busy, running, error, onChange }) {
+    var _a;
+    const [enabled, setEnabled] = react.useState(plugin.enabled);
+    const [values, setValues] = react.useState({ ...plugin.config });
+    const locked = busy || running || plugin.protected;
+    const update = (key, value) => setValues((previous) => ({ ...previous, [key]: value }));
+    const warning = [((_a = plugin.missing) == null ? void 0 : _a.length) ? sdk.T("当前缺少：", "Missing: ") + plugin.missing.join(", ") : "", plugin.error].filter(Boolean).join("; ");
+    const submit = () => {
+      if (locked) return;
+      const config = {};
+      for (const [key, spec] of Object.entries(plugin.fields)) {
+        const value = values[key] ?? "";
+        if (spec.type === "boolean") config[key] = !!value;
+        else if (value !== "" || spec.type === "string") config[key] = spec.type === "integer" ? Number(value) : value;
       }
-      if (spec.description || spec.description_zh) label.append(h('small', null, (zh && spec.description_zh) || spec.description));
-      fields.append(label);
+      onChange("save", enabled, config);
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-card", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-head", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("h3", { className: "plugin-title", children: plugin.name }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge plugin-status", "data-state": plugin.state, children: stateLabel(plugin) })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-tags", children: /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin }) }),
+      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-description", children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
+      /* @__PURE__ */ jsxRuntime.jsx("dl", { className: "plugin-deps", children: [
+        ["requires", sdk.T("依赖能力", "Requires")],
+        ["provides", sdk.T("提供能力", "Provides")],
+        ["dependents", sdk.T("被插件依赖", "Required by")]
+      ].map(([key, label]) => {
+        var _a2;
+        return /* @__PURE__ */ jsxRuntime.jsxs(react.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntime.jsx("dt", { children: label }),
+          /* @__PURE__ */ jsxRuntime.jsx("dd", { children: ((_a2 = plugin[key]) == null ? void 0 : _a2.join(sdk.T("、", ", "))) || sdk.T("无", "None") })
+        ] }, key);
+      }) }),
+      warning && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-warning", children: warning }),
+      /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: (event) => {
+        event.preventDefault();
+        submit();
+      }, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-toggle plugin-enable", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", role: "switch", checked: enabled, disabled: locked, onChange: (event) => setEnabled(event.target.checked) }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("下次启动时启用", "Enable on next start") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid plugin-fields", hidden: !Object.keys(plugin.fields).length, children: Object.entries(plugin.fields).map(([key, spec]) => {
+          var _a2;
+          const label = sdk.T(spec.label_zh || spec.label || key, spec.label || key);
+          const common = { "data-plugin-field": key, disabled: locked };
+          const text = String(values[key] ?? "");
+          return /* @__PURE__ */ jsxRuntime.jsxs("label", { className: spec.type === "boolean" ? "plugin-toggle" : "model-field", children: [
+            spec.type !== "boolean" && /* @__PURE__ */ jsxRuntime.jsx("span", { children: label }),
+            spec.type === "boolean" ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+              /* @__PURE__ */ jsxRuntime.jsx("input", { ...common, type: "checkbox", checked: !!values[key], onChange: (event) => update(key, event.target.checked) }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: label })
+            ] }) : spec.type === "choice" ? /* @__PURE__ */ jsxRuntime.jsx("select", { ...common, value: text, onChange: (event) => update(key, event.target.value), children: (_a2 = spec.options) == null ? void 0 : _a2.map((option) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: option.value, children: sdk.T(option.label_zh || option.label || option.value, option.label || option.value) }, option.value)) }) : spec.multiline && spec.type === "string" ? /* @__PURE__ */ jsxRuntime.jsx("textarea", { ...common, rows: 4, value: text, onChange: (event) => update(key, event.target.value) }) : /* @__PURE__ */ jsxRuntime.jsx("input", { ...common, type: spec.type === "integer" ? "number" : "text", step: spec.type === "integer" ? 1 : void 0, min: spec.min, max: spec.max, value: text, onChange: (event) => update(key, event.target.value) }),
+            descriptionOf(spec) && /* @__PURE__ */ jsxRuntime.jsx("small", { children: descriptionOf(spec) })
+          ] }, key);
+        }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", children: running ? sdk.T("任务运行中，仅可查看。", "A task is running; view only.") : plugin.protected ? sdk.T("基础能力与前端受保护，请通过启动配置调整。", "Core and frontend plugins are protected; change them in the startup config.") : sdk.T("仅显示公开配置；密钥请到模型配置中管理。", "Only public settings are shown; manage keys in Models.") }),
+        error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions plugin-actions", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-reset", disabled: locked || !plugin.overridden, onClick: () => onChange("reset"), children: sdk.T("恢复启动配置", "Restore startup settings") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: locked, children: sdk.T("保存，下次启动生效", "Save (applies on next start)") })
+        ] })
+      ] })
+    ] });
+  }
+  function PluginManager({ api }) {
+    const { state, changing } = sdk.useHost();
+    const { busy, working, run } = sdk.useOperation(api);
+    const [open, setOpen] = react.useState(false), [config, setConfig] = react.useState(null);
+    const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
+    const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all");
+    const cards = react.useRef(null), back = react.useRef(null);
+    const selected = config == null ? void 0 : config.items.find((plugin) => plugin.name === editing);
+    const shown = ((config == null ? void 0 : config.items) || []).filter((plugin) => {
+      var _a, _b;
+      return inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
     });
-    fields.hidden = !fields.childElementCount;
-    controls();
-  }
-  function setView(v) { view = v; gridView.hidden = v !== 'grid'; detailView.hidden = v !== 'detail'; catalogErr.hidden = !catalogErr.textContent || v !== 'grid'; }
-  function showGrid() { if (working) return; setView('grid'); error(''); renderCards(); const c = editing && cards.querySelector('[data-plugin="' + CSS.escape(editing) + '"]'); if (c) c.focus(); }
-  function showDetail(name) { if (working) return; error(''); fill(name); setView('detail'); back.focus(); }
-  function fillCatalog(preferred) {
-    profile.textContent = T('\u914d\u7f6e\u65b9\u6848\uff1a','Profile: ') + cfg.profile + T('\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002','. Changes are saved locally and apply on next start without interrupting running plugins.');
-    summary.hidden = !cfg.restart_required;
-    summary.textContent = cfg.restart_required ? T('\u914d\u7f6e\u5df2\u4fdd\u5b58','Settings saved') + PENDING : T('\u66f4\u6539\u5728\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Changes take effect on next start');
-    renderTabs(); renderCards();
-    const keep = cfg.items.some(p => p.name === preferred);
-    fill(keep ? preferred : null);
-    if (view === 'detail' && !keep) setView('grid');
-    if (cfg.issues && cfg.issues.length) error(T('\u4f9d\u8d56\u68c0\u67e5\uff1a','Dependency check: ') + cfg.issues.join(T('\uff1b','; ')));
-  }
-  function begin() { working = true; api.lock(true); controls(); }
-  function end() { working = false; api.lock(false); controls(); }
-  async function load() {
-    if (working || busy) return;
-    if (!dlg.open) dlg.showModal();
-    setView(view); begin(); error('');
-    try { cfg = await api.host.get('/api/plugins'); fillCatalog(editing); }
-    catch (e) { cfg = null; renderTabs(); renderCards(); fill(null); setView('grid'); error(e.message); }
-    finally { end(); }
-  }
-  async function change(action) {
-    const p = selected(); if (working || busy || running || !p || p.protected) return;
-    const body = { action, name: p.name, revision: cfg.revision };
-    if (action === 'save') {
-      body.enabled = enabled.checked; body.config = {};
-      fields.querySelectorAll('[data-plugin-field]').forEach(f => {
-        const key = f.dataset.pluginField, kind = p.fields[key].type;
-        if (kind === 'boolean') body.config[key] = f.checked;
-        else if (f.value !== '' || kind === 'string') body.config[key] = kind === 'integer' ? Number(f.value) : f.value;
+    const toGrid = () => {
+      if (working) return;
+      setEditing(null);
+      setError("");
+      requestAnimationFrame(() => {
+        var _a, _b;
+        if (editing) (_b = (_a = cards.current) == null ? void 0 : _a.querySelector('[data-plugin="' + CSS.escape(editing) + '"]')) == null ? void 0 : _b.focus();
       });
-    }
-    begin(); error('');
-    try { cfg = await api.host.post('/api/plugins', body); fillCatalog(p.name); api.notice(T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548','Plugin settings saved; they apply on next start')); }
-    catch (e) { error(e.message); }
-    finally { end(); }
+    };
+    const load = async () => {
+      setOpen(true);
+      setError("");
+      await run(async () => {
+        setConfig(await api.host.get("/api/plugins"));
+      }, setError, true);
+    };
+    const change = (action, enabled, values) => {
+      if (!selected || selected.protected || busy || !config) return;
+      if (action === "reset" && !window.confirm(sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start."))) return;
+      setError("");
+      void run(async () => {
+        setConfig(await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values } : {} }));
+        api.notice(sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));
+      }, setError);
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar-foot", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-plugins", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item", disabled: working || changing, onClick: () => void load(), children: [
+          /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "puzzle" }),
+          sdk.T("插件管理", "Plugins")
+        ] }),
+        (config == null ? void 0 : config.restart_required) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-note", children: sdk.T("已保存，下次启动生效", "Saved; applies on next start") })
+      ] }) }),
+      open && /* @__PURE__ */ jsxRuntime.jsxs(sdk.Modal, { className: "gah-plugin-dialog", label: sdk.T("插件管理", "Plugins"), busy: working, onClose: () => selected ? toGrid() : setOpen(false), children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-head", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("插件管理", "Plugins") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working, onClick: () => setOpen(false), children: sdk.T("关闭", "Close") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-catalog", hidden: !!selected, children: [
+            /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改仅保存到本地，下次启动生效，不中断当前插件。", ". Changes are saved locally and apply on next start without interrupting running plugins.") : "" }),
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
+              label,
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: (config == null ? void 0 : config.items.filter((plugin) => inFilter(plugin, key)).length) || 0 })
+            ] }, key)) }),
+            error && !selected && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
+            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-groups", ref: cards, "aria-label": sdk.T("插件列表", "Plugin list"), children: categories.map(([key, label]) => {
+              const items = shown.filter((plugin) => categoryOf(plugin)[0] === key);
+              return items.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-group", "data-category": key, children: [
+                /* @__PURE__ */ jsxRuntime.jsxs("h3", { className: "plugin-group-title", children: [
+                  label,
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: items.length })
+                ] }),
+                /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "plugin-grid", "aria-label": label, children: items.map((plugin) => {
+                  var _a;
+                  return /* @__PURE__ */ jsxRuntime.jsx("li", { children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "plugin-card", "data-plugin": plugin.name, "data-state": plugin.state, "aria-label": plugin.name + sdk.T("，", ", ") + stateLabel(plugin), disabled: working, onClick: () => {
+                    setEditing(plugin.name);
+                    setError("");
+                    requestAnimationFrame(() => {
+                      var _a2;
+                      return (_a2 = back.current) == null ? void 0 : _a2.focus();
+                    });
+                  }, children: [
+                    /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-head", children: [
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-name", title: plugin.name, children: plugin.name }),
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", "data-state": plugin.state, children: stateLabel(plugin) })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-desc", children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
+                    /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-foot", children: [
+                      /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin }),
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-meta", children: ((_a = plugin.provides) == null ? void 0 : _a.length) ? sdk.T("提供 ", "Provides ") + plugin.provides.length + sdk.T(" 项能力", " capabilities") : "" })
+                    ] })
+                  ] }) }, plugin.name);
+                }) })
+              ] }, key);
+            }) }),
+            !shown.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-empty", children: working ? sdk.T("加载中...", "Loading...") : (config == null ? void 0 : config.items.length) ? sdk.T("没有符合条件的插件", "No matching plugins") : sdk.T("没有发现可管理的插件", "No manageable plugins found") })
+          ] }),
+          selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
+            /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change }, selected.name + ":" + (config == null ? void 0 : config.revision))
+          ] })
+        ] })
+      ] })
+    ] });
   }
-  function render(s) { group.hidden = !(s && s.plugins_enabled); }
-  api.onHost('state', render);
-  api.onHost('sync', d => { running = !!d.running; busy = !!d.changing && !working; controls(); });
-  api.slot('sidebar-foot', group);
-  api.slot('overlay', dlg);
-  const s = api.state(); render(s); running = !!(s && s.running); controls();
-  return () => { if (dlg.open) dlg.close(); };
-});
+  sdk.defineReact("web-plugins", PluginManager);
+  exports.PluginManager = PluginManager;
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+  return exports;
+})({}, GAH.jsxRuntime, GAH.React, GAH);

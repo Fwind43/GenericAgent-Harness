@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { PluginAPI, SlotName } from '../sdk';
-import { host, useHost } from '../store';
-import { errorText } from '../i18n';
+import type { PluginAPI, SlotName } from './sdk';
+import { host, useHost } from './store';
+import { errorText } from './i18n';
 
+export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
   const [container] = useState(() => document.createElement('div'));
   useLayoutEffect(() => { api.slot(name, container); return () => container.remove(); }, [api, name, container]);

@@ -1,12 +1,7 @@
 import { useRef, useState } from 'react';
-import type { PluginAPI } from '../sdk';
-import type { PluginCatalog } from '../types';
-import { useHost } from '../store';
-import { T } from '../i18n';
-import { Icon, Modal, PluginSlot, useOperation } from './shared';
+import { type PluginAPI, type PluginCatalog, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
-import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel } from './plugin-helpers';
-import { matches } from './model-helpers';
+import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel } from './helpers';
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
@@ -60,3 +55,5 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     </Modal>}
   </>;
 }
+
+defineReact('web-plugins', PluginManager);

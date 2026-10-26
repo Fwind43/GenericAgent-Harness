@@ -1,419 +1,367 @@
-GAH.define('web-models', api => {
-  const { h } = api;
-  let cfg = null, editingKey = null, busy = false, working = false;
-  let sections = [], sectionId = null, catalog = null;
-  const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
-  /* ---- one composer entry for model + per-conversation effort ---- */
-  const EFFORT_LABEL = { '': 'default', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' };
-  const pickName = h('span', { class: 'gah-model-name' });
-  const pickEffort = h('span', { class: 'gah-model-effort' });
-  const pick = h('button', { type: 'button', class: 'gah-model-trigger', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
-    'aria-controls': 'gah-model-picker', onclick: () => togglePicker() }, pickName, pickEffort,
-    h('span', { class: 'gah-model-caret', 'aria-hidden': 'true' }, '\u2303'));
-  const group = h('div', { class: 'gah-models', hidden: true }, pick);
-  const effortChoices = h('div', { class: 'gah-effort-options', role: 'group', 'aria-label': T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort') });
-  const effortBox = h('div', { class: 'gah-picker-effort' },
-    h('div', { class: 'gah-picker-label' }, T('\u63a8\u7406\u5f3a\u5ea6','Reasoning effort'),
-      h('small', null, T('\u4ec5\u5f53\u524d\u5bf9\u8bdd','This chat only'))), effortChoices);
-  const pickerSearch = h('input', { type: 'search', class: 'gah-picker-search', autocomplete: 'off',
-    placeholder: T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
-    'aria-label': T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'), oninput: () => renderPicker(true) });
-  const pickerProvider = h('select', { class: 'gah-picker-filter',
-    'aria-label': T('\u7b5b\u9009\u670d\u52a1\u5546','Filter providers'), onchange: () => renderPicker(true) });
-  const pickerCount = h('span', { class: 'gah-picker-count', role: 'status', 'aria-live': 'polite' });
-  const pickerModels = h('div', { class: 'gah-picker-models' });
-  const picker = h('div', { id: 'gah-model-picker', class: 'gah-model-popover', popover: 'auto', role: 'dialog',
-    'aria-label': T('\u6a21\u578b\u4e0e\u63a8\u7406\u5f3a\u5ea6','Model and reasoning effort'),
-    ontoggle: () => { pick.setAttribute('aria-expanded', String(picker.matches(':popover-open'))); },
-    onkeydown: e => pickerKeys(e) }, h('div', { class: 'gah-picker-toolbar' }, pickerSearch,
-      h('div', { class: 'gah-picker-filters' }, pickerProvider, pickerCount)), pickerModels, effortBox);
-  const open = h('button', { type: 'button', class: 'side-item', 'data-gah-close': '', onclick: () => openDialog(), hidden: true },
-    h('span', { class: 'gah-ico', dataset: { i: 'cpu' }, 'aria-hidden': 'true' }), T('\u6a21\u578b\u914d\u7f6e','Models'));
-  function positionPicker() {
-    if (!picker.matches(':popover-open')) return;
-    const r = pick.getBoundingClientRect(), w = picker.offsetWidth, height = picker.offsetHeight;
-    picker.style.left = Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + 'px';
-    picker.style.top = Math.max(12, Math.min(r.top - height - 8, innerHeight - height - 12)) + 'px';
-  }
-  function closePicker(focus = false) {
-    if (!picker.matches(':popover-open')) return;
-    picker.hidePopover(); pick.setAttribute('aria-expanded', 'false');
-    if (focus) pick.focus();
-  }
-  function togglePicker() {
-    if (pick.disabled) return;
-    if (picker.matches(':popover-open')) return closePicker(true);
-    pickerSearch.value = ''; pickerProvider.value = ''; renderPicker(true);
-    picker.showPopover(); positionPicker(); pick.setAttribute('aria-expanded', 'true');
-    if (matchMedia('(pointer: fine)').matches) pickerSearch.focus({ preventScroll: true });
-    else (pickerModels.querySelector('[aria-pressed="true"]') || pickerModels.querySelector('button'))?.focus({ preventScroll: true });
-  }
-  function pickerKeys(e) {
-    if (e.isComposing || e.target === pickerProvider) return;
-    const buttons = [...pickerModels.querySelectorAll('button:not(:disabled)')];
-    if (e.target === pickerSearch) {
-      if (e.key === 'Enter' && buttons.length) { e.preventDefault(); buttons[0].click(); }
-      else if (['ArrowDown', 'ArrowUp'].includes(e.key) && buttons.length) {
-        e.preventDefault(); buttons[e.key === 'ArrowDown' ? 0 : buttons.length - 1].focus();
-      }
-      return;
+var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) {
+  "use strict";
+  const providerId = (model) => model.provider_id || model.provider || "__standalone";
+  function ModelPicker({ api }) {
+    const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
+    const [open, setOpen] = react.useState(false), [query, setQuery] = react.useState(""), [provider, setProvider] = react.useState("");
+    const trigger = react.useRef(null), popup = react.useRef(null), search = react.useRef(null);
+    const catalog = state.models, effort = state.effort;
+    const current = catalog == null ? void 0 : catalog.items.find((item) => item.id === catalog.current);
+    const groups = /* @__PURE__ */ new Map();
+    for (const item of (catalog == null ? void 0 : catalog.items) || []) {
+      const id = providerId(item), group = groups.get(id) || { name: item.provider || sdk.T("独立配置", "Standalone"), count: 0 };
+      group.count++;
+      groups.set(id, group);
     }
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
-    const i = buttons.indexOf(document.activeElement);
-    if (i < 0 || !buttons.length) return;
-    e.preventDefault();
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
-    buttons[next].focus();
+    const filter = groups.has(provider) ? provider : "";
+    const items = (catalog == null ? void 0 : catalog.items.filter((item) => (!filter || filter === providerId(item)) && sdk.matches(query, item.name, item.model, item.provider))) || [];
+    const close = (focus = false) => {
+      var _a;
+      setOpen(false);
+      if (focus) (_a = trigger.current) == null ? void 0 : _a.focus();
+    };
+    react.useEffect(() => {
+      if (busy || !catalog) setOpen(false);
+    }, [busy, catalog]);
+    react.useLayoutEffect(() => {
+      var _a;
+      if (!open || !popup.current) return;
+      const node = popup.current;
+      const position = () => {
+        var _a2;
+        const rect = (_a2 = trigger.current) == null ? void 0 : _a2.getBoundingClientRect();
+        if (!rect) return;
+        const w = node.offsetWidth, h = node.offsetHeight;
+        node.style.left = Math.max(12, Math.min(rect.right - w, window.innerWidth - w - 12)) + "px";
+        node.style.top = Math.max(12, Math.min(rect.top - h - 8, window.innerHeight - h - 12)) + "px";
+      };
+      node.showPopover();
+      position();
+      (_a = search.current) == null ? void 0 : _a.focus();
+      window.addEventListener("resize", position);
+      return () => {
+        window.removeEventListener("resize", position);
+        if (node.matches(":popover-open")) node.hidePopover();
+      };
+    }, [open]);
+    const select = (path, body) => {
+      close(true);
+      void run(async () => api.setState(await api.host.post(path, body)));
+    };
+    if (!catalog) return null;
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "composer", children: /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-models", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { ref: trigger, type: "button", className: "gah-model-trigger", disabled: busy, "aria-haspopup": "dialog", "aria-controls": "gah-model-picker", "aria-expanded": open, onClick: () => {
+        setQuery("");
+        setProvider("");
+        setOpen((value) => !value);
+      }, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-name", children: (current == null ? void 0 : current.name) || (current == null ? void 0 : current.model) || sdk.T("选择模型", "Choose model") }),
+        effort && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-effort", children: effort.current || "default" }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-caret", "aria-hidden": "true", children: "⌃" })
+      ] }) }) }),
+      open && reactDom.createPortal(/* @__PURE__ */ jsxRuntime.jsxs("div", { ref: popup, popover: "auto", role: "dialog", "aria-label": sdk.T("模型与思考强度", "Model and reasoning effort"), id: "gah-model-picker", className: "gah-model-popover", onToggle: (event) => {
+        if (event.newState === "closed") setOpen(false);
+      }, onKeyDown: (event) => {
+        if (event.key === "Escape") close(true);
+      }, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-toolbar", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { ref: search, type: "search", className: "gah-picker-search", value: query, placeholder: sdk.T("搜索模型或服务商", "Search models or providers"), "aria-label": sdk.T("搜索模型或服务商", "Search models or providers"), onChange: (event) => setQuery(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-filters", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("select", { className: "gah-picker-filter", value: filter, "aria-label": sdk.T("筛选服务商", "Filter providers"), onChange: (event) => setProvider(event.target.value), children: [
+              /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("全部服务商", "All providers") }),
+              [...groups].map(([id, group]) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: id, children: [
+                group.name,
+                " (",
+                group.count,
+                ")"
+              ] }, id))
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-picker-count", children: [
+              items.length,
+              " / ",
+              catalog.items.length
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-models", children: [
+          items.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-picker-option", "data-model-id": item.id, "aria-pressed": item.id === catalog.current, disabled: busy, onClick: () => select("/api/models/select", { id: item.id }), children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-picker-option-copy", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.name || item.model }),
+              /* @__PURE__ */ jsxRuntime.jsx("small", { children: [item.provider || sdk.T("独立配置", "Standalone"), item.name && item.model !== item.name ? item.model : ""].filter(Boolean).join(" · ") })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-picker-check", "aria-hidden": "true", children: item.id === catalog.current ? "✓" : "" })
+          ] }, item.id)),
+          !items.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-picker-empty", children: sdk.T("没有匹配的模型", "No matching models") })
+        ] }),
+        effort && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-effort", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-label", children: [
+            sdk.T("推理强度", "Reasoning effort"),
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅当前对话", "This chat only") })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-effort-options", role: "group", "aria-label": sdk.T("推理强度", "Reasoning effort"), children: ["", ...effort.options].map((option) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", "aria-pressed": option === (effort.current || ""), disabled: busy, onClick: () => select("/api/effort", { value: option }), children: option || "default" }, option)) })
+        ] })
+      ] }), document.body)
+    ] });
   }
-  function matchesQuery(query, ...values) {
-    const text = values.filter(Boolean).join(' ').toLocaleLowerCase();
-    return query.trim().toLocaleLowerCase().split(/\s+/).every(word => text.includes(word));
+  function Field({ label, wide, children }) {
+    return /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field" + (wide ? " wide" : ""), children: [
+      label,
+      children
+    ] });
   }
-  function pickerProviderId(x) { return x.provider_id || x.provider || 'independent'; }
-  function renderPicker(reset = false) {
-    if (!catalog) return;
-    const focused = pickerModels.contains(document.activeElement) ? document.activeElement.dataset.modelId : null;
-    const scroll = reset ? 0 : pickerModels.scrollTop;
-    const items = catalog.items.filter(x => (!pickerProvider.value || pickerProviderId(x) === pickerProvider.value)
-      && matchesQuery(pickerSearch.value, x.name, x.model, x.provider));
-    pickerModels.replaceChildren(...items.map(x => h('button', { type: 'button', class: 'gah-picker-option',
-      dataset: { modelId: String(x.id), provider: pickerProviderId(x) },
-      'aria-pressed': String(x.id === catalog.current), disabled: busy || working,
-      onclick: () => { closePicker(true); select(x.id); } },
-      h('span', { class: 'gah-picker-option-copy' }, h('span', null, x.name || x.model),
-        h('small', null, [x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), x.name && x.model !== x.name ? x.model : ''].filter(Boolean).join(' \u00b7 '))),
-      h('span', { class: 'gah-picker-check', 'aria-hidden': 'true' }, x.id === catalog.current ? '\u2713' : ''))));
-    pickerCount.textContent = items.length + ' / ' + catalog.items.length;
-    if (!items.length) pickerModels.append(h('p', { class: 'gah-picker-empty' }, T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b','No matching models')));
-    if (focused !== null) [...pickerModels.querySelectorAll('button')].find(b => b.dataset.modelId === focused)?.focus({ preventScroll: true });
-    pickerModels.scrollTop = scroll; positionPicker();
+  function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase, onSecret }) {
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: "API Base URL", wide: true, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, disabled, value: base, autoComplete: "off", onChange: (e) => onBase(e.target.value) }),
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: hiddenURL ? sdk.T("原 URL 含敏感信息已隐藏，请重新填写。", "The original URL contained sensitive data and is hidden. Enter it again.") : sdk.T("支持 ${ENV_NAME} 环境变量引用。", "Supports ${ENV_NAME} environment variable references.") })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: "API Key", wide: true, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "password", autoComplete: "new-password", required: !hasKey, disabled, value: secret, placeholder: hasKey ? "******" : "", onChange: (e) => onSecret(e.target.value) }),
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: hasKey ? sdk.T("留空保留原密钥或环境变量引用。", "Leave empty to keep the existing key or environment variable reference.") : sdk.T("填写密钥或 ${ENV_NAME}。", "Enter a key or ${ENV_NAME}.") })
+      ] })
+    ] });
   }
-  window.addEventListener('resize', positionPicker);
-  /* ---- dialog ---- */
-  const addBtn = h('button', { type: 'button', onclick: () => newModel() }, T('\u65b0\u589e\u6a21\u578b','Add model'));
-  const reason = h('p', { class: 'model-help', hidden: true });
-  const protocol = h('select', { onchange: () => { if (editingKey === null) key.value = 'native_' + protocol.value + '_config_' + Date.now(); } },
-    h('option', { value: 'oai' }, 'OpenAI compatible'), h('option', { value: 'claude' }, 'Anthropic Claude'));
-  const name = h('input', { maxlength: '120', autocomplete: 'off' });
-  const key = h('input', { required: true, pattern: '[A-Za-z][A-Za-z0-9_]{0,99}', autocomplete: 'off' });
-  const model = h('input', { required: true, autocomplete: 'off', placeholder: 'gpt-4.1' });
-  const ctxwin = h('input', { type: 'number', min: '1024', step: '1', placeholder: '131072' });
-  const base = h('input', { required: true, autocomplete: 'off', placeholder: 'https://api.openai.com/v1' });
-  const secret = h('input', { type: 'password', autocomplete: 'new-password' });
-  const secretHint = h('small');
-  const err = h('p', { class: 'gah-error', role: 'status', hidden: true });
-  const prov = h('select', { 'aria-label': T('\u6240\u5c5e\u670d\u52a1\u5546','Provider'), onchange: () => provChanged() });
-  const baseField = field('API Base URL', base, { wide: true }, h('small', null, T('\u652f\u6301 ${ENV_NAME} \u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002','Supports ${ENV_NAME} environment variable references.')));
-  const secretField = field('API Key', secret, { wide: true }, secretHint);
-  /* ---- provider form ---- */
-  const paddBtn = h('button', { type: 'button', class: 'secondary', onclick: () => editProvider(null) }, T('\u65b0\u589e\u670d\u52a1\u5546','Add provider'));
-  const pid = h('input', { required: true, pattern: '[a-z0-9][a-z0-9_\\-]{0,39}', autocomplete: 'off', placeholder: 'openai' });
-  const pname = h('input', { maxlength: '120', autocomplete: 'off' });
-  const pproto = h('select', null, h('option', { value: 'oai' }, 'OpenAI compatible'), h('option', { value: 'claude' }, 'Anthropic Claude'));
-  const pbase = h('input', { required: true, autocomplete: 'off', placeholder: 'https://api.openai.com/v1' });
-  const psecret = h('input', { type: 'password', autocomplete: 'new-password' });
-  const psecretHint = h('small');
-  const perr = h('p', { class: 'gah-error', role: 'status', hidden: true });
-  let editingPid = null;
-  const pDelBtn = h('button', { type: 'button', class: 'secondary', onclick: () => {
-    if (confirm(T('\u5220\u9664\u6b64\u670d\u52a1\u5546\uff1f\u5176\u4e0b\u4ecd\u6709\u6a21\u578b\u65f6\u4e0d\u80fd\u5220\u9664\u3002','Delete this provider? Providers that still have models cannot be deleted.'))) pchange('provider_delete'); } }, T('\u5220\u9664\u670d\u52a1\u5546','Delete provider'));
-  const pSaveBtn = h('button', { type: 'submit' }, T('\u4fdd\u5b58\u670d\u52a1\u5546','Save provider'));
-  const pform = h('form', { onsubmit: e => { e.preventDefault(); pchange('provider_save'); } },
-    h('div', { class: 'model-grid' },
-      field(T('\u670d\u52a1\u5546\u6807\u8bc6','Provider ID'), pid, {}, h('small', null, T('\u5c0f\u5199\u5b57\u6bcd/\u6570\u5b57/-/_\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u6539\u3002','Lowercase letters, digits, - and _. Cannot be changed after creation.'))),
-      field(T('\u663e\u793a\u540d\u79f0','Display name'), pname),
-      field(T('\u9ed8\u8ba4\u534f\u8bae','Default protocol'), pproto),
-      field('API Base URL', pbase, { wide: true }, h('small', null, T('\u652f\u6301 ${ENV_NAME} \u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002','Supports ${ENV_NAME} environment variable references.'))),
-      field('API Key', psecret, { wide: true }, psecretHint)),
-    perr,
-    h('div', { class: 'model-actions' }, pDelBtn, pSaveBtn));
-  const removeBtn = h('button', { type: 'button', class: 'secondary', onclick: () => {
-    if (confirm(T('\u5220\u9664\u6b64\u6a21\u578b\u914d\u7f6e\uff1f\u81f3\u5c11\u9700\u4fdd\u7559\u4e00\u4e2a\u6a21\u578b\u3002','Delete this model? At least one model must remain.'))) change('delete'); } }, T('\u5220\u9664\u914d\u7f6e','Delete model'));
-  const saveBtn = h('button', { type: 'submit' }, T('\u4fdd\u5b58\u5e76\u751f\u6548','Save and apply'));
-  const closeBtn = h('button', { type: 'button', class: 'secondary', onclick: () => dlg.close() }, T('\u5173\u95ed','Close'));
-  const form = h('form', { onsubmit: e => { e.preventDefault(); change('save'); } },
-    h('div', { class: 'model-grid' },
-      field(T('\u6240\u5c5e\u670d\u52a1\u5546','Provider'), prov, { wide: true }),
-      field(T('\u534f\u8bae','Protocol'), protocol),
-      field(T('\u663e\u793a\u540d\u79f0','Display name'), name),
-      field(T('\u914d\u7f6e\u6807\u8bc6','Config ID'), key, { wide: true }, h('small', null, T('\u6807\u8bc6\u9700\u5305\u542b oai \u6216 claude \u53ca config\u3002\u5df2\u6709\u914d\u7f6e\u7684\u6807\u8bc6\u4e0d\u53ef\u4fee\u6539\u3002','The ID must contain oai or claude, and config. Existing IDs cannot be changed.'))),
-      field(T('\u6a21\u578b ID','Model ID'), model),
-      field(T('\u4e0a\u4e0b\u6587\u7a97\u53e3','Context window'), ctxwin),
-      baseField, secretField),
-    h('div', { class: 'model-actions' }, removeBtn, saveBtn));
-  const help = h('p', { class: 'model-help' }, T('\u914d\u7f6e\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u56de\u663e\u5df2\u6709\u7684 API Key\u3002\u4fdd\u5b58\u6210\u529f\u540e\u5373\u65f6\u751f\u6548\u3002','Settings are stored on this machine; existing API keys are never shown. Changes apply immediately after saving.'));
-  const convertBtn = h('button', { type: 'button', onclick: () => convert() }, T('\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e','Convert to editable config'));
-  const convertBox = h('div', { class: 'model-actions model-convert', hidden: true }, convertBtn);
-  const modelSearch = h('input', { type: 'search', class: 'model-search', autocomplete: 'off',
-    placeholder: T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
-    'aria-label': T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546','Search models or providers'),
-    oninput: () => selectSection(sectionId, editingKey, true) });
-  const sectionList = h('select', { class: 'model-provider-filter',
-    'aria-label': T('\u7b5b\u9009\u670d\u52a1\u5546','Filter providers'), onchange: () => selectSection(sectionList.value || null) });
-  const sectionTitle = h('h3');
-  const sectionHint = h('p', { class: 'model-help' });
-  const editProviderBtn = h('button', { type: 'button', class: 'secondary', onclick: () => editProvider(currentSection()?.provider) }, T('\u670d\u52a1\u5546\u8bbe\u7f6e','Provider settings'));
-  const backBtn = h('button', { type: 'button', class: 'secondary', onclick: () => selectSection(sectionId, editingKey) }, T('\u8fd4\u56de\u6a21\u578b','Back to model'));
-  const modelList = h('div', { class: 'model-list', role: 'group', 'aria-label': T('\u8be5\u5206\u533a\u7684\u6a21\u578b','Models in this group') });
-  const empty = h('p', { class: 'model-empty' }, T('\u6682\u65e0\u6a21\u578b\uff0c\u70b9\u51fb\u201c\u65b0\u589e\u6a21\u578b\u201d\u6dfb\u52a0\u3002','No models yet. Click “Add model” to add one.'));
-  const editorTitle = h('h4', { class: 'model-editor-title' });
-  const editor = h('div', { class: 'model-editor' }, editorTitle, form);
-  const modelArea = h('div', { class: 'model-area' }, h('div', { class: 'model-list-pane' }, modelList, empty), editor);
-  const sectionBody = h('section', { class: 'model-section-body' },
-    h('div', { class: 'model-section-head' }, h('div', { class: 'model-section-heading' }, sectionTitle, sectionHint),
-      h('div', { class: 'model-section-tools' }, backBtn, editProviderBtn, addBtn)), modelArea, pform);
-  const layout = h('div', { class: 'model-layout', hidden: true },
-    h('div', { class: 'model-browser-tools' }, modelSearch, sectionList, paddBtn), sectionBody);
-  const loading = h('p', { class: 'model-help', role: 'status', hidden: true }, T('\u6b63\u5728\u52a0\u8f7d\u6a21\u578b\u914d\u7f6e\u2026','Loading models…'));
-  const dlg = h('dialog', { class: 'gah-dialog gah-model-dialog', 'aria-label': T('\u6a21\u578b\u914d\u7f6e','Models'),
-      oncancel: e => { if (working) e.preventDefault(); }, onclose: () => { secret.value = ''; psecret.value = ''; } },
-    h('div', { class: 'dialog-head' }, h('h2', null, T('\u6a21\u578b\u914d\u7f6e','Models')), closeBtn),
-    h('div', { class: 'dialog-content' }, help, reason, convertBox, loading, err, layout));
-  function currentSection() { return sections.find(g => g.id === sectionId); }
-  // Legacy grouping is presentation only: never merge credentials or infer a provider.
-  function sectionKey(e) {
-    return e.provider ? 'provider:' + e.provider : 'legacy:' + JSON.stringify([e.protocol, e.values.apibase || (e.url_hidden ? e.key : '')]);
+  function Protocol({ value, disabled, onChange }) {
+    return /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("协议", "Protocol"), children: /* @__PURE__ */ jsxRuntime.jsxs("select", { value, disabled, onChange: (e) => onChange(e.target.value), children: [
+      /* @__PURE__ */ jsxRuntime.jsx("option", { value: "oai", children: "OpenAI compatible" }),
+      /* @__PURE__ */ jsxRuntime.jsx("option", { value: "claude", children: "Anthropic Claude" })
+    ] }) });
   }
-  function endpointLabel(value) {
-    try { const u = new URL(value); return u.host + (u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '')); }
-    catch (_) { return value || T('\u672a\u8bbe\u7f6e API \u5730\u5740','No API URL set'); }
+  function ModelForm({ entry, config, initialProvider = "", disabled, onSave }) {
+    const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.protocol) || "oai");
+    const [id, setId] = react.useState((entry == null ? void 0 : entry.key) || "native_oai_config_" + Date.now());
+    const [provider, setProvider] = react.useState((entry == null ? void 0 : entry.provider) || initialProvider);
+    const [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || ""), [model, setModel] = react.useState((entry == null ? void 0 : entry.values.model) || "");
+    const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
+    const [context, setContext] = react.useState(String((entry == null ? void 0 : entry.values.context_win) ?? ""));
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-form", onSubmit: (event) => {
+      event.preventDefault();
+      if (disabled) return;
+      const values = provider ? { name: name.trim(), model: model.trim(), provider } : { name: name.trim(), model: model.trim(), apibase: base.trim(), apikey: secret };
+      if (context) values.context_win = Number(context);
+      onSave("save", id.trim(), values);
+    }, children: [
+      /* @__PURE__ */ jsxRuntime.jsx("h3", { children: entry ? sdk.T("模型详情", "Model details") : sdk.T("新增模型", "Add model") }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
+        /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled: disabled || !!entry, onChange: (value) => {
+          setProtocol(value);
+          setId("native_" + value + "_config_" + Date.now());
+        } }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("配置标识", "Config key"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, disabled: disabled || !!entry, onChange: (event) => setId(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("服务商", "Provider"), wide: true, children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("select", { disabled, value: provider, onChange: (event) => setProvider(event.target.value), children: [
+            /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("独立配置", "Standalone") }),
+            config.providers.map((item) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: item.id, children: item.values.name || item.id }, item.id))
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("协议属于模型，服务商共享 URL 和密钥。", "Protocol belongs to the model; providers share the URL and key.") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { value: name, disabled, onChange: (event) => setName(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("模型名", "Model name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: model, disabled, onChange: (event) => setModel(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("上下文窗口", "Context window"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1, step: 1, value: context, disabled, onChange: (event) => setContext(event.target.value) }) }),
+        !provider && /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("保存并生效", "Save and apply") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry, onClick: () => {
+          if (window.confirm(sdk.T("删除这个模型？", "Delete this model?"))) onSave("delete", id);
+        }, children: sdk.T("删除", "Delete") })
+      ] })
+    ] });
   }
-  function buildSections() {
-    const map = new Map((cfg.providers || []).map(p => ['provider:' + p.id,
-      { id: 'provider:' + p.id, provider: p.id, title: p.values.name || p.id,
-        hint: p.values.protocol === 'claude' ? 'Anthropic Claude' : 'OpenAI compatible', entries: [] }]));
-    for (const e of cfg.entries) {
-      const id = sectionKey(e);
-      if (!map.has(id)) map.set(id, { id, title: e.provider || endpointLabel(e.values.apibase),
-        hint: T('\u672a\u7ed1\u5b9a\u670d\u52a1\u5546 \u00b7 ','No provider · ') + (e.protocol === 'claude' ? 'Claude' : 'OpenAI'), entries: [] });
-      map.get(id).entries.push(e);
-    }
-    sections = [...map.values()];
-    sectionList.replaceChildren(h('option', { value: '' }, T('\u5168\u90e8\u670d\u52a1\u5546','All providers') + ' (' + cfg.entries.length + ')'),
-      ...sections.map(g => h('option', { value: g.id }, g.title + ' (' + g.entries.length + ')')));
+  function ProviderForm({ entry, used, disabled, onSave }) {
+    const [id, setId] = react.useState((entry == null ? void 0 : entry.id) || ""), [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || "");
+    const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.values.protocol) || "oai");
+    const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-provider-form", onSubmit: (event) => {
+      event.preventDefault();
+      if (!disabled) onSave("provider_save", id.trim(), { name: name.trim(), protocol, apibase: base.trim(), apikey: secret });
+    }, children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("服务商标识", "Provider ID"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[a-z0-9_-]+", disabled: disabled || !!entry, value: id, onChange: (event) => setId(event.target.value), autoFocus: !entry }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { disabled, value: name, onChange: (event) => setName(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled, onChange: setProtocol }),
+        /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: used ? sdk.T("仍有模型引用此服务商，不能删除。", "This provider is still used by models and cannot be deleted.") : sdk.T("默认协议仅用于新模型，不会改变已有模型。", "The default protocol is for new models and does not change existing models.") }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("保存并生效", "Save and apply") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: disabled || !entry || used > 0, onClick: () => {
+          if (window.confirm(sdk.T("删除这个服务商？", "Delete this provider?"))) onSave("provider_delete", id);
+        }, children: sdk.T("删除", "Delete") })
+      ] })
+    ] });
   }
-  function markSelection() {
-    for (const b of modelList.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.key === editingKey));
-  }
-  function selectSection(id, preferred, keepEdits = false) {
-    sectionId = id; sectionList.value = id || ''; const g = currentSection();
-    pform.hidden = true; modelArea.hidden = false; backBtn.hidden = true;
-    editProviderBtn.hidden = !g?.provider; addBtn.hidden = false;
-    const all = g?.entries || cfg.entries;
-    const es = all.filter(e => matchesQuery(modelSearch.value, e.values.name, e.values.model, e.key,
-      sections.find(s => s.id === sectionKey(e))?.title, e.provider, e.protocol));
-    sectionTitle.textContent = (g?.title || T('\u5168\u90e8\u6a21\u578b','All models')) + ' \u00b7 ' + es.length + (es.length !== all.length ? ' / ' + all.length : '');
-    sectionHint.textContent = !g ? T('\u70b9\u9009\u6a21\u578b\u7f16\u8f91\u8be6\u60c5\uff0c\u6216\u6309\u670d\u52a1\u5546\u7b5b\u9009\u3002','Select a model to edit, or filter by provider.') : g.provider
-      ? T('\u6b64\u670d\u52a1\u5546\u4e0b\u7684\u6a21\u578b\u5171\u7528 API \u5730\u5740\u4e0e\u5bc6\u94a5\u3002','These models share the provider\'s API URL and key.')
-      : T('\u65e7\u914d\u7f6e\u4ec5\u6309 API \u5730\u5740\u5c55\u793a\uff0c\u5bc6\u94a5\u4ecd\u72ec\u7acb\u4fdd\u7559\u3002','Legacy models grouped by API URL; each keeps its own key.');
-    modelList.replaceChildren(...es.map(e => {
-      const provider = sections.find(s => s.id === sectionKey(e))?.title;
-      return h('button', { type: 'button', class: 'model-list-item', dataset: { key: e.key }, onclick: () => fill(e.key) },
-        h('strong', null, e.values.name || e.values.model || e.key),
-        h('small', null, [provider, e.values.model || e.key].filter(Boolean).join(' \u00b7 ')));
-    }));
-    empty.textContent = modelSearch.value.trim() ? T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b\uff0c\u8bf7\u66f4\u6362\u5173\u952e\u8bcd\u6216\u670d\u52a1\u5546\u3002','No matching models. Try another search or provider.')
-      : T('\u6682\u65e0\u6a21\u578b\uff0c\u70b9\u51fb\u201c\u65b0\u589e\u6a21\u578b\u201d\u6dfb\u52a0\u3002','No models yet. Click "Add model" to add one.');
-    empty.hidden = !!es.length; modelList.hidden = !es.length;
-    const next = es.find(e => e.key === preferred)?.key || es[0]?.key || null;
-    if (!keepEdits || next !== editingKey) fill(next);
-    editor.hidden = !es.length;
-    markSelection(); controls();
-  }
-  function newModel() {
-    fill(null); const g = currentSection();
-    if (g?.provider) {
-      prov.value = g.provider; protocol.value = cfg.providers.find(p => p.id === g.provider)?.values.protocol || 'oai'; provChanged();
-    }
-    else if (g?.entries.length) {
-      base.value = g.entries[0].values.apibase || ''; protocol.value = g.entries[0].protocol;
-      key.value = 'native_' + protocol.value + '_config_' + Date.now();
-    }
-    empty.hidden = true; editor.hidden = false; name.focus();
-  }
-  function editProvider(id) {
-    pfill(id); error(''); modelArea.hidden = true; pform.hidden = false;
-    addBtn.hidden = editProviderBtn.hidden = true; backBtn.hidden = false;
-    sectionTitle.textContent = id ? T('\u670d\u52a1\u5546\u8bbe\u7f6e','Provider settings') : T('\u65b0\u589e\u670d\u52a1\u5546','Add provider');
-    sectionHint.textContent = T('\u914d\u7f6e\u4e00\u6b21 API \u5730\u5740\u4e0e\u5bc6\u94a5\uff0c\u4f9b\u8be5\u670d\u52a1\u5546\u4e0b\u7684\u6a21\u578b\u5171\u7528\u3002','Set the API URL and key once; all models under this provider share them.');
-    if (!id) pid.focus();
-    controls();
-  }
-  function error(t) { err.textContent = t || ''; err.hidden = !t; }
-  function render(s) {
-    const m = s && s.models; group.hidden = open.hidden = !m;
-    if (!m) { catalog = null; closePicker(); return; }
-    const current = m.items.find(x => x.id === m.current), e = s.effort;
-    pickName.textContent = current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b','Choose model');
-    pickEffort.hidden = !e; pickEffort.textContent = e ? EFFORT_LABEL[e.current || ''] || e.current : '';
-    pick.title = [current?.provider, pickName.textContent, e && T('\u63a8\u7406\u5f3a\u5ea6\uff1a','Reasoning effort: ') + pickEffort.textContent].filter(Boolean).join(' / ');
-    pick.setAttribute('aria-label', T('\u6a21\u578b\u4e0e\u63a8\u7406\u5f3a\u5ea6\uff1a','Model and reasoning effort: ') + pick.title);
-    effortBox.hidden = !e;
-    effortChoices.replaceChildren(...(e ? ['', ...e.options].map(v => h('button', { type: 'button', dataset: { effort: v },
-      'aria-pressed': String(v === (e.current || '')), onclick: () => { closePicker(true); setEffort(v); } }, EFFORT_LABEL[v] || v)) : []));
-    catalog = m;
-    const groups = new Map(), selectedProvider = pickerProvider.value;
-    for (const x of m.items) {
-      const id = pickerProviderId(x);
-      if (!groups.has(id)) groups.set(id, { title: x.provider || T('\u72ec\u7acb\u914d\u7f6e','Standalone'), count: 0 });
-      groups.get(id).count++;
-    }
-    pickerProvider.replaceChildren(h('option', { value: '' }, T('\u5168\u90e8\u670d\u52a1\u5546','All providers')),
-      ...[...groups].map(([id, g]) => h('option', { value: id }, g.title + ' (' + g.count + ')')));
-    pickerProvider.value = groups.has(selectedProvider) ? selectedProvider : '';
-    renderPicker();
-    controls(); positionPicker();
-  }
-  function controls() {
-    const s = api.state() || {}, b = busy || working, locked = b || !(cfg && cfg.writable);
-    pick.disabled = b || !(s.models && s.models.items.length);
-    for (const n of picker.querySelectorAll('button, input, select')) n.disabled = b;
-    if (busy && !working) closePicker();
-    open.disabled = b;
-    convertBtn.disabled = b;
-    for (const n of [addBtn, saveBtn, name, model, ctxwin, base, secret, prov, paddBtn, pSaveBtn, pname, pbase, psecret]) n.disabled = locked;
-    key.disabled = locked || editingKey !== null;
-    protocol.disabled = locked || editingKey !== null;
-    pid.disabled = locked || editingPid !== null;
-    pproto.disabled = locked;
-    pDelBtn.disabled = locked || editingPid === null;
-    removeBtn.disabled = locked || editingKey === null;
-    closeBtn.disabled = working;
-    editProviderBtn.disabled = backBtn.disabled = b;
-    sectionList.disabled = modelSearch.disabled = b;
-    for (const n of modelList.querySelectorAll('button')) n.disabled = b;
-  }
-  function fill(k) {
-    const e = cfg && cfg.entries.find(x => x.key === k), v = (e && e.values) || {};
-    editingKey = e ? e.key : null;
-    editorTitle.textContent = e ? T('\u6a21\u578b\u8be6\u60c5','Model details') : T('\u65b0\u589e\u6a21\u578b','Add model');
-    markSelection();
-    protocol.value = editingKey && editingKey.includes('claude') ? 'claude' : 'oai';
-    prov.value = (e && e.provider) || '';
-    key.value = editingKey || 'native_oai_config_' + Date.now();
-    name.value = v.name ?? ''; model.value = v.model ?? ''; base.value = v.apibase ?? ''; ctxwin.value = v.context_win ?? '';
-    const has = !!(e && e.has_key);
-    secret.value = ''; secret.required = !has; secret.placeholder = has ? '******' : '';
-    secretHint.textContent = has ? T('\u7559\u7a7a\u4fdd\u7559\u539f\u5bc6\u94a5\u6216\u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002','Leave empty to keep the existing key or environment variable reference.') : T('\u586b\u5199\u5bc6\u94a5\u6216 ${ENV_NAME}\u3002','Enter a key or ${ENV_NAME}.');
-    provToggle();
-    error(e && e.url_hidden ? T('\u539f URL \u542b\u654f\u611f\u4fe1\u606f\u5df2\u9690\u85cf\uff0c\u8bf7\u91cd\u65b0\u586b\u5199\u4e0d\u542b\u5bc6\u94a5\u7684 URL\u3002','The original URL contained sensitive data and is hidden. Enter a URL without the key.') : '');
-    controls();
-  }
-  function provToggle() {
-    const p = cfg && cfg.providers && cfg.providers.find(x => x.id === prov.value);
-    baseField.hidden = secretField.hidden = !!p;
-    base.required = !p; if (p) secret.required = false;
-  }
-  function provChanged() {
-    provToggle();
-    if (editingKey === null) key.value = 'native_' + protocol.value + '_config_' + Date.now();
-    else if (!prov.value) { const e = cfg.entries.find(x => x.key === editingKey); secret.required = !(e && e.has_key); }
-    controls();
-  }
-  function pfill(id) {
-    const p = cfg && cfg.providers && cfg.providers.find(x => x.id === id), v = (p && p.values) || {};
-    editingPid = p ? p.id : null;
-    pid.value = editingPid || ''; pname.value = v.name ?? ''; pproto.value = v.protocol || 'oai'; pbase.value = v.apibase ?? '';
-    const has = !!(p && p.has_key);
-    psecret.value = ''; psecret.required = !has; psecret.placeholder = has ? '******' : '';
-    psecretHint.textContent = has ? T('\u7559\u7a7a\u4fdd\u7559\u539f\u5bc6\u94a5\u6216\u73af\u5883\u53d8\u91cf\u5f15\u7528\u3002','Leave empty to keep the existing key or environment variable reference.') : T('\u586b\u5199\u5bc6\u94a5\u6216 ${ENV_NAME}\u3002','Enter a key or ${ENV_NAME}.');
-    perror(p && p.url_hidden ? T('\u539f URL \u542b\u654f\u611f\u4fe1\u606f\u5df2\u9690\u85cf\uff0c\u8bf7\u91cd\u65b0\u586b\u5199\u3002','The original URL contained sensitive data and is hidden. Please enter it again.') : '');
-    controls();
-  }
-  function perror(t) { perr.textContent = t || ''; perr.hidden = !t; }
-  function fillConfig(preferred, ppreferred) {
-    const ps = cfg.providers || [];
-    prov.replaceChildren(h('option', { value: '' }, T('\u65e0\uff08\u5355\u72ec\u586b\u5199 URL / Key\uff09','None (enter URL / key separately)')),
-      ...ps.map(x => h('option', { value: x.id }, (x.values.name || x.id) + ' (' + x.values.protocol + ')')));
-    buildSections();
-    const e = cfg.entries.find(x => x.key === preferred);
-    const id = ppreferred ? 'provider:' + ppreferred : e && sectionId ? sectionKey(e) : sectionId;
-    if (preferred) modelSearch.value = '';
-    selectSection(sections.some(g => g.id === id) ? id : null, preferred);
-    layout.hidden = false;
-    reason.textContent = cfg.writable ? '' : readonlyText(cfg); reason.hidden = !!cfg.writable;
-    help.hidden = !cfg.writable;
-    convertBox.hidden = !(cfg.convert && !cfg.convert.blocked);
-  }
-  function readonlyText(c) {
-    const t = c.convert && c.convert.target;
-    if (c.reason_code === 'ga_mykey' && t && c.convert.blocked)
-      return T('\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u53ea\u80fd\u67e5\u770b\u3002','Currently using GA\'s own mykey.py; it is read-only here.') + t + T(' \u5df2\u5b58\u5728\u4f46\u5c1a\u672a\u542f\u7528\uff0c\u91cd\u542f gah \u540e\u5373\u53ef\u5728\u8fd9\u91cc\u7f16\u8f91\u3002',' exists but is not active yet. Restart gah to edit it here.');
-    if (c.reason_code === 'ga_mykey' && t)
-      return T('\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u4e0d\u80fd\u4fee\u6539\u3002\u70b9\u51fb\u4e0b\u65b9\u6309\u94ae\u4f1a\u628a\u5b83\u590d\u5236\u5230 ','Currently using GA\'s own mykey.py, which cannot be edited here. The button below copies it to ') + t + T('\uff0c\u4ee5\u540e\u5728\u8fd9\u91cc\u7f16\u8f91\uff1b\u539f mykey.py \u4fdd\u6301\u4e0d\u53d8\uff0c\u8f6c\u6362\u540e\u7acb\u5373\u751f\u6548\u3002',' so you can edit it here. The original mykey.py stays unchanged, and the conversion applies immediately.');
-    if (c.reason_code === 'ga_mykey') return T('\u5f53\u524d\u4f7f\u7528 GA \u81ea\u5e26\u7684 mykey.py\uff0c\u7f51\u9875\u91cc\u4e0d\u80fd\u4fee\u6539\u3002\u8fd0\u884c gah llm migrate \u8f6c\u6362\u540e\u5373\u53ef\u5728\u8fd9\u91cc\u7f16\u8f91\u3002','Currently using GA\'s own mykey.py, which cannot be edited here. Run gah llm migrate to make it editable.');
-    if (c.reason_code === 'inline') return T('\u6a21\u578b\u914d\u7f6e\u5199\u5728 profile \u7684 keys \u91cc\uff0c\u8bf7\u76f4\u63a5\u4fee\u6539 profile\u3002','Models are defined in the profile\'s keys; edit the profile directly.');
-    return T('\u914d\u7f6e\u6587\u4ef6\u6682\u65f6\u65e0\u6cd5\u7f16\u8f91\uff1a','The config file cannot be edited right now: ') + (c.reason || '');
-  }
-  async function convert() {
-    if (working || busy || !(cfg && cfg.convert)) return;
-    begin(); error('');
+  const sectionKey = (entry) => entry.provider ? "provider:" + entry.provider : "legacy:" + JSON.stringify([entry.protocol, entry.values.apibase || (entry.url_hidden ? entry.key : "")]);
+  function endpoint(value) {
     try {
-      const d = await api.host.post('/api/models/config', { action: 'convert' });
-      cfg = d.config; api.setState(d.state); fillConfig();
-      api.notice(T('\u5df2\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e\u5e76\u751f\u6548','Converted to an editable config and applied'));
-    } catch (e) { error(e.message); }
-    finally { end(); }
-  }
-  function begin() { working = true; api.lock(true); controls(); }
-  function end() { working = false; api.lock(false); controls(); }
-  async function select(id) {
-    if (busy || working) return;
-    begin(); api.notice('');
-    try { api.setState(await api.host.post('/api/models/select', { id })); }
-    catch (e) { api.notice(e.message); render(api.state()); }
-    finally { end(); }
-  }
-  async function setEffort(v) {
-    if (busy || working) return;
-    begin(); api.notice('');
-    try { api.setState(await api.host.post('/api/effort', { effort: v || null })); }
-    catch (e) { api.notice(e.message); render(api.state()); }
-    finally { end(); }
-  }
-  async function openDialog() {
-    closePicker();
-    cfg = null; editingKey = null; sectionId = null; modelSearch.value = ''; error(''); secret.value = ''; psecret.value = '';
-    layout.hidden = true; loading.hidden = false; reason.hidden = convertBox.hidden = true;
-    dlg.showModal(); begin();
-    try { cfg = await api.host.get('/api/models/config'); fillConfig(); }
-    catch (e) { error(e.message); }
-    finally { loading.hidden = true; end(); }
-  }
-  async function change(action) {
-    if (working || busy || !(cfg && cfg.writable)) return;
-    const k = key.value.trim(), body = { action, key: k, revision: cfg.revision };
-    if (action === 'save') {
-      body.values = prov.value ? { name: name.value.trim(), model: model.value.trim(), provider: prov.value }
-        : { name: name.value.trim(), model: model.value.trim(), apibase: base.value.trim(), apikey: secret.value };
-      if (ctxwin.value) body.values.context_win = Number(ctxwin.value);
+      const url = new URL(value || "");
+      return url.host + url.pathname.replace(/\/$/, "");
+    } catch {
+      return value || sdk.T("未设置 API 地址", "No API URL set");
     }
-    begin(); error('');
-    try {
-      const d = await api.host.post('/api/models/config', body);
-      cfg = d.config; api.setState(d.state); fillConfig(action === 'save' ? k : undefined);
-      api.notice(T('\u6a21\u578b\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u751f\u6548','Model saved and applied'));
-    } catch (e) { error(e.message); }
-    finally { end(); }
   }
-  async function pchange(action) {
-    if (working || busy || !(cfg && cfg.writable)) return;
-    const id = pid.value.trim(), body = { action, id, revision: cfg.revision };
-    if (action === 'provider_save') body.values = { name: pname.value.trim(), protocol: pproto.value, apibase: pbase.value.trim(), apikey: psecret.value };
-    begin(); perror('');
-    try {
-      const d = await api.host.post('/api/models/config', body);
-      cfg = d.config; api.setState(d.state); fillConfig(undefined, action === 'provider_save' ? id : null);
-      api.notice(T('\u670d\u52a1\u5546\u5df2\u4fdd\u5b58\u5e76\u751f\u6548','Provider saved and applied'));
-    } catch (e) { perror(e.message); }
-    finally { end(); }
+  function sections(config) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const provider of config.providers || []) groups.set("provider:" + provider.id, {
+      id: "provider:" + provider.id,
+      title: provider.values.name || provider.id,
+      provider,
+      entries: []
+    });
+    for (const entry of config.entries) {
+      const id = sectionKey(entry);
+      if (!groups.has(id)) groups.set(id, { id, title: endpoint(entry.values.apibase) + " / " + entry.protocol, entries: [] });
+      groups.get(id).entries.push(entry);
+    }
+    return [...groups.values()];
   }
-  api.onHost('state', render);
-  api.onHost('sync', d => { busy = !!d.running || (!!d.changing && !working); controls(); });
-  api.slot('composer', group);
-  api.slot('sidebar-foot', open);
-  api.slot('overlay', picker);
-  api.slot('overlay', dlg);
-  render(api.state());
-  return () => { closePicker(); window.removeEventListener('resize', positionPicker); if (dlg.open) dlg.close(); };
-});
+  function readonlyText(config) {
+    var _a;
+    return (config.reason || sdk.T("当前配置只读", "This configuration is read-only")) + (((_a = config.convert) == null ? void 0 : _a.blocked) ? "\n" + config.convert.target + sdk.T(" 已存在，不会覆盖。", " already exists and will not be overwritten.") : "");
+  }
+  function Models({ api }) {
+    var _a;
+    const { state } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
+    const [open, setOpen] = react.useState(false), [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
+    const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
+    const [edit, setEdit] = react.useState({ kind: "model", serial: 0 });
+    const groups = config ? sections(config) : [], group = groups.find((item) => item.id === section);
+    const entries = ((group == null ? void 0 : group.entries) || (config == null ? void 0 : config.entries) || []).filter((item) => sdk.matches(query, item.key, item.values.name, item.values.model, item.values.apibase));
+    const entry = config == null ? void 0 : config.entries.find((item) => item.key === edit.id), provider = config == null ? void 0 : config.providers.find((item) => item.id === edit.id);
+    const choose = (kind, id) => {
+      setError("");
+      setEdit((old) => ({ kind, id, serial: old.serial + 1 }));
+    };
+    const filter = (id) => {
+      var _a2, _b;
+      setSection(id);
+      const items = ((_a2 = groups.find((item) => item.id === id)) == null ? void 0 : _a2.entries) || (config == null ? void 0 : config.entries) || [];
+      choose("model", (_b = items.find((item) => sdk.matches(query, item.key, item.values.name, item.values.model, item.values.apibase))) == null ? void 0 : _b.key);
+    };
+    async function load() {
+      if (busy) return;
+      setOpen(true);
+      setConfig(null);
+      setError("");
+      setQuery("");
+      setSection("");
+      await run(async () => {
+        var _a2;
+        const next = await api.host.get("/api/models/config");
+        setConfig(next);
+        choose("model", (_a2 = next.entries[0]) == null ? void 0 : _a2.key);
+      }, setError);
+    }
+    const change = (action, id, values) => {
+      if (!(config == null ? void 0 : config.writable) || busy) return;
+      setError("");
+      void run(async () => {
+        var _a2;
+        const next = await api.host.post("/api/models/config", { action, revision: config.revision, [action.startsWith("provider_") ? "id" : "key"]: id, ...values ? { values } : {} });
+        setConfig(next.config);
+        api.setState(next.state);
+        const saved = next.config.entries.find((item) => item.key === id);
+        const nextSection = action === "provider_save" ? "provider:" + id : saved && section ? sectionKey(saved) : section;
+        setSection(sections(next.config).some((item) => item.id === nextSection) ? nextSection : "");
+        setQuery("");
+        choose("model", (saved == null ? void 0 : saved.key) || ((_a2 = next.config.entries.find((item) => !nextSection || sectionKey(item) === nextSection)) == null ? void 0 : _a2.key));
+        api.notice(sdk.T("配置已保存并生效", "Configuration saved and applied"));
+      }, setError);
+    };
+    const convert = () => {
+      if (!(config == null ? void 0 : config.convert) || config.convert.blocked) return;
+      setError("");
+      void run(async () => {
+        var _a2;
+        const next = await api.host.post("/api/models/config", { action: "convert" });
+        setConfig(next.config);
+        api.setState(next.state);
+        setSection("");
+        choose("model", (_a2 = next.config.entries[0]) == null ? void 0 : _a2.key);
+        api.notice(sdk.T("已转换为可编辑配置", "Converted to an editable configuration"));
+      }, setError);
+    };
+    const locked = busy || !(config == null ? void 0 : config.writable);
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsx(ModelPicker, { api }),
+      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar-foot", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item", disabled: busy, onClick: () => void load(), children: [
+        /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "cpu" }),
+        sdk.T("模型配置", "Models")
+      ] }) }),
+      open && /* @__PURE__ */ jsxRuntime.jsxs(sdk.Modal, { className: "gah-model-dialog", label: sdk.T("模型配置", "Models"), busy: working, onClose: () => setOpen(false), children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-head", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("模型配置", "Models") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working, onClick: () => setOpen(false), children: sdk.T("关闭", "Close") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
+          error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),
+          !config && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: working ? sdk.T("加载中...", "Loading...") : sdk.T("加载失败", "Unable to load configuration") }),
+          config && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+            !config.writable && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: readonlyText(config) }),
+            config.convert && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-convert", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: config.convert.target }),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: busy || config.convert.blocked, onClick: convert, children: sdk.T("转换为可编辑配置", "Convert to editable configuration") })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-layout", children: [
+              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-browser-tools", children: [
+                /* @__PURE__ */ jsxRuntime.jsx("input", { type: "search", className: "model-search", value: query, disabled: busy, placeholder: sdk.T("搜索模型", "Search models"), "aria-label": sdk.T("搜索模型", "Search models"), onChange: (event) => setQuery(event.target.value) }),
+                /* @__PURE__ */ jsxRuntime.jsxs("select", { className: "model-provider-filter", "aria-label": sdk.T("服务商筛选", "Filter by provider"), value: section, disabled: busy, onChange: (event) => filter(event.target.value), children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("option", { value: "", children: [
+                    sdk.T("全部模型", "All models"),
+                    " (",
+                    config.entries.length,
+                    ")"
+                  ] }),
+                  groups.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: item.id, children: [
+                    item.title,
+                    " (",
+                    item.entries.length,
+                    ")"
+                  ] }, item.id))
+                ] }),
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: locked, onClick: () => choose("provider"), children: sdk.T("新增服务商", "Add provider") })
+              ] }),
+              /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "model-section-body", children: [
+                /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-section-head", children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-section-heading", children: [
+                    /* @__PURE__ */ jsxRuntime.jsx("h3", { children: (group == null ? void 0 : group.title) || sdk.T("全部模型", "All models") }),
+                    /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "model-help", children: [
+                      entries.length,
+                      " / ",
+                      config.entries.length
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-section-actions", children: [
+                    (group == null ? void 0 : group.provider) && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: busy, onClick: () => choose("provider", group.provider.id), children: sdk.T("编辑服务商", "Edit provider") }),
+                    /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: locked, onClick: () => choose("model"), children: sdk.T("新增模型", "Add model") })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-area", children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-list", "aria-label": sdk.T("模型列表", "Model list"), children: [
+                    entries.map((item) => {
+                      var _a2;
+                      return /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: busy, "aria-pressed": edit.kind === "model" && edit.id === item.key, onClick: () => choose("model", item.key), children: [
+                        /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.values.model || item.key }),
+                        /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+                          item.values.model || item.key,
+                          " · ",
+                          (_a2 = groups.find((candidate) => candidate.id === sectionKey(item))) == null ? void 0 : _a2.title
+                        ] })
+                      ] }, item.key);
+                    }),
+                    !entries.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", children: sdk.T("没有匹配的模型", "No matching models") })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-editor", children: edit.kind === "provider" ? /* @__PURE__ */ jsxRuntime.jsx(ProviderForm, { entry: provider, used: provider ? config.entries.filter((item) => item.provider === provider.id).length : 0, disabled: locked, onSave: change }, edit.serial) : /* @__PURE__ */ jsxRuntime.jsx(ModelForm, { entry, config, initialProvider: (_a = group == null ? void 0 : group.provider) == null ? void 0 : _a.id, disabled: locked, onSave: change }, edit.serial) })
+                ] })
+              ] })
+            ] })
+          ] })
+        ] })
+      ] })
+    ] });
+  }
+  sdk.defineReact("web-models", Models);
+  exports.Models = Models;
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+  return exports;
+})({}, GAH.jsxRuntime, GAH.React, GAH, GAH.ReactDOM);

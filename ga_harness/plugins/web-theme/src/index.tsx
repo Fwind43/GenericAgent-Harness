@@ -1,12 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { plugins } from './plugin-runtime';
-import { saved, save, T } from './i18n';
-import type { PluginAPI } from './sdk';
-import { Sessions } from './plugins/Sessions';
-import { Workspaces } from './plugins/Workspaces';
-import { Models } from './plugins/Models';
-import { PluginManager } from './plugins/PluginManager';
+import { defineReact, saved, save, T, type PluginAPI } from '@gah/sdk';
 
 const themes = ['light', 'dark', 'warm'] as const;
 function Theme({ api }: { api: PluginAPI }) {
@@ -24,11 +18,5 @@ function Theme({ api }: { api: PluginAPI }) {
     setTheme(event.target.value); save('gah-theme', event.target.value);
   }}><option value="light">{T('浅色', 'Light')}</option><option value="dark">{T('深色', 'Dark')}</option><option value="warm">{T('暖色', 'Warm')}</option></select>, container);
 }
-export function registerBuiltins() {
-  // Backend registration still controls availability, styles and revisions.
-  plugins.register('web-theme', Theme);
-  plugins.register('web-sessions', Sessions);
-  plugins.register('web-workspaces', Workspaces);
-  plugins.register('web-models', Models);
-  plugins.register('web-plugins', PluginManager);
-}
+
+defineReact('web-theme', Theme);

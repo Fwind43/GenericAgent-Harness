@@ -1,5 +1,4 @@
-import { T } from '../i18n';
-import type { PluginInfo } from '../types';
+import { T, type PluginInfo } from '@gah/sdk';
 
 export const categories = [
   ['core', T('\u6838\u5fc3', 'Core')], ['extension', T('GA \u6269\u5c55', 'GA extensions')],

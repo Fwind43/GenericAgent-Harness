@@ -4,7 +4,12 @@
     "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx",
     "strict": true, "skipLibCheck": true, "esModuleInterop": true,
     "resolveJsonModule": true, "isolatedModules": true, "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".", "paths": {
+      "@gah/sdk": ["src/gah-sdk.ts"],
+      "react": ["node_modules/@types/react"], "react/*": ["node_modules/@types/react/*"],
+      "react-dom": ["node_modules/@types/react-dom"], "react-dom/*": ["node_modules/@types/react-dom/*"]
+    }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "../ga_harness/plugins/*/src"]
 }

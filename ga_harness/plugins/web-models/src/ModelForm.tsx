@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { T } from '../i18n';
-import type { ModelConfig, ModelEntry, ModelValues, ProviderEntry } from '../types';
+import { T, type ModelConfig, type ModelEntry, type ModelValues, type ProviderEntry } from '@gah/sdk';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;

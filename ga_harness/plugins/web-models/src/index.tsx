@@ -1,13 +1,9 @@
 import { useState } from 'react';
-import type { PluginAPI } from '../sdk';
-import type { ModelConfig, ModelResult } from '../types';
-import { useHost } from '../store';
-import { T } from '../i18n';
-import { Icon, Modal, PluginSlot, useOperation } from './shared';
+import { type PluginAPI, type ModelConfig, type ModelResult, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, defineReact } from '@gah/sdk';
 import { ModelPicker } from './ModelPicker';
 import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
-import { sections as modelSections, matches, readonlyText, sectionKey } from './model-helpers';
+import { sections as modelSections, readonlyText, sectionKey } from './helpers';
 
 type Edit = { kind: 'model' | 'provider'; id?: string; serial: number };
 export function Models({ api }: { api: PluginAPI }) {
@@ -68,3 +64,5 @@ export function Models({ api }: { api: PluginAPI }) {
     </Modal>}
   </>;
 }
+
+defineReact('web-models', Models);

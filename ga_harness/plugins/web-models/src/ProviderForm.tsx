@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { T } from '../i18n';
-import type { ProviderEntry } from '../types';
+import { T, type ProviderEntry } from '@gah/sdk';
 import { Credentials, Field, Protocol, type SaveModel } from './ModelForm';
 
 export function ProviderForm({ entry, used, disabled, onSave }: { entry?: ProviderEntry; used: number; disabled: boolean; onSave: SaveModel }) {

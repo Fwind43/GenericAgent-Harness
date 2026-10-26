@@ -1,7 +1,5 @@
-import type { ModelConfig, ModelEntry, ProviderEntry } from '../types';
-import { T } from '../i18n';
+import { type ModelConfig, type ModelEntry, type ProviderEntry, T } from '@gah/sdk';
 
-export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export const sectionKey = (entry: ModelEntry) => entry.provider ? 'provider:' + entry.provider : 'legacy:' + JSON.stringify([entry.protocol, entry.values.apibase || (entry.url_hidden ? entry.key : '')]);
 export function endpoint(value?: string) {
   try { const url = new URL(value || ''); return url.host + url.pathname.replace(/\/$/, ''); }

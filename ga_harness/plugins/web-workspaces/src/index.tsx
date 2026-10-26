@@ -1,9 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type FormEvent } from 'react';
-import { host, useHost } from '../store';
-import { T } from '../i18n';
-import type { PluginAPI } from '../sdk';
-import type { HostState } from '../types';
-import { Modal, PluginSlot, useOperation } from './shared';
+import { host, useHost, T, type PluginAPI, type HostState, Modal, PluginSlot, useOperation, defineReact } from '@gah/sdk';
 
 type Action = 'workspace' | 'create' | 'update';
 type Edit = { action: Action; id?: string; workspace: string; name: string; rules: string; memory: string };
@@ -105,3 +101,5 @@ export function Workspaces({ api }: { api: PluginAPI }) {
     </form></Modal>}
   </>;
 }
+
+defineReact('web-workspaces', Workspaces);

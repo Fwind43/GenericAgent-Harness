@@ -1,6 +1,6 @@
 """ui-web: local browser frontend (stdlib only).
 
-Serves ``index.html`` plus a tiny JSON/SSE API on 127.0.0.1 (another bind address only
+Serves the built React page plus a tiny JSON/SSE API on 127.0.0.1 (another bind address only
 if the config sets ``host``). One agent, one task at a time, any number of browser tabs.
 
   GET  /              the page
@@ -30,8 +30,9 @@ from pathlib import Path
 
 from ga_harness.sessions import EFFORTS, apply_effort
 
-PAGE = Path(__file__).with_name("index.html")
-DIST = PAGE.with_name("dist")
+DIST = Path(__file__).with_name("dist")
+UNBUILT = ("<!doctype html><meta charset=\"utf-8\"><title>GA Harness</title>"
+           "<p>Web UI is not built. Run <code>npm install</code> and <code>npm run build</code> in <code>frontend/</code>.</p>")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
 EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
@@ -524,9 +525,11 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            # Source checkouts remain usable before the separate frontend build.
+            # The React host and plugin client.js bundles both come from the frontend build.
             built_page = DIST / "index.html"
-            page = (built_page if built_page.is_file() else PAGE).read_text(encoding="utf-8")
+            if not built_page.is_file():
+                return self._bytes(503, UNBUILT.encode("utf-8"), "text/html; charset=utf-8")
+            page = built_page.read_text(encoding="utf-8")
             body = page.replace("<!--gah:head-->", self.frontend.web.head_html()).encode("utf-8")
             self._bytes(200, body, "text/html; charset=utf-8")
         elif path.startswith("/assets/"):
@@ -553,7 +556,7 @@ class _Handler(BaseHTTPRequestHandler):
             if name not in assets:
                 return self._json(404, {"error": "not found"})
             try:
-                self._bytes(200, PAGE.with_name(name).read_bytes(), assets[name])
+                self._bytes(200, DIST.with_name(name).read_bytes(), assets[name])
             except OSError:
                 self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/web/"):

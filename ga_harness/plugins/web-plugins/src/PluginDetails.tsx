@@ -1,7 +1,6 @@
 import { Fragment, useState } from 'react';
-import { T } from '../i18n';
-import type { Json, PluginInfo } from '../types';
-import { descriptionOf, PluginTags, stateLabel } from './plugin-helpers';
+import { T, type Json, type PluginInfo } from '@gah/sdk';
+import { descriptionOf, PluginTags, stateLabel } from './helpers';
 
 export type PluginChange = (action: 'save' | 'reset', enabled?: boolean, config?: Record<string, Json>) => void;
 export function PluginDetails({ plugin, busy, running, error, onChange }: {

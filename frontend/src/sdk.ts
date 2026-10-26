@@ -34,7 +34,6 @@ export interface BrowserSDK {
   define(name: string, setup: PluginSetup): void;
   defineReact(name: string, component: ReactPlugin): void;
 }
-declare global { interface Window { GAH: BrowserSDK } }
 
 export function el(tag: string, className?: string, text?: string) {
   const node = document.createElement(tag);

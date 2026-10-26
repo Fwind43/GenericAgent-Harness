@@ -1,104 +1,97 @@
-GAH.define('web-sessions', api => {
-  const { h } = api;
-  let busy = false;
-  // Sidebar: "new session" (in the current scope) on top, then sessions grouped by
-  // project / workspace when web-workspaces provides `scope`; a flat list otherwise.
-  // Group "+" opens a conversation in that scope (an empty current one is rebound in place).
-  const KEY = 'gah.sessions.groups';
-  let toggled = {}, lastScope = null;
-  try { toggled = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { toggled = {}; }
-  const add = h('button', { type: 'button', class: 'side-item gah-sess-new', 'data-gah-close': '', onclick: () => act('new') },
-    h('span', { class: 'gah-ico', dataset: { i: 'pen' }, 'aria-hidden': 'true' }), T('\u65b0\u4f1a\u8bdd','New chat'));
-  const list = h('div', { class: 'gah-sess-list', 'aria-label': T('\u4f1a\u8bdd\u5217\u8868','Chats') });
-  const newProject = h('button', { type: 'button', class: 'gah-sess-head-btn', title: T('\u65b0\u5efa\u9879\u76ee','New project'), 'aria-label': T('\u65b0\u5efa\u9879\u76ee','New project'),
-    onclick: () => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action: 'create' } })) }, h('span', { class: 'gah-ico', dataset: { i: 'folder-plus' }, 'aria-hidden': 'true' }));
-  const head = h('div', { class: 'gah-sess-label' }, h('span', {}, T('\u4f1a\u8bdd','Chat')), newProject);
-  const box = h('div', { class: 'gah-sessions', hidden: true }, add, head, list);
-  const base = p => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
-  function rename(x) {
-    const title = prompt(T('\u4f1a\u8bdd\u540d\u79f0','Chat name'), x.title || '');
-    if (title != null && title.trim()) act('rename', { id: x.id, title: title.trim() });
-  }
-  function remove(x) {
-    if (confirm(T('\u4ece\u4f1a\u8bdd\u5217\u8868\u4e2d\u5220\u9664\u201c','Remove “') + (x.title || '') + T('\u201d\uff1f\u8bb0\u5f55\u5c06\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u4e2d\u3002','” from the list? The history stays in the local database.'))) act('delete', { id: x.id });
-  }
-  function row(x, cur) {
-    const open = h('button', { type: 'button', class: 'gah-sess-open', 'data-gah-close': '', title: x.title === '\u65b0\u4f1a\u8bdd' ? T(x.title, 'New chat') : x.title,
-      'aria-current': cur ? 'true' : null, onclick: () => { if (!cur) act('select', { id: x.id }); } },
-      h('span', { class: 'gah-sess-title' }, x.title === '\u65b0\u4f1a\u8bdd' ? T(x.title, 'New chat') : (x.title || T('\u672a\u547d\u540d','Untitled'))));
-    const ren = h('button', { type: 'button', class: 'gah-sess-act', title: T('\u91cd\u547d\u540d','Rename'), 'aria-label': T('\u91cd\u547d\u540d','Rename'), onclick: () => rename(x) }, h('span', { class: 'gah-ico', dataset: { i: 'pencil' }, 'aria-hidden': 'true' }));
-    const del = h('button', { type: 'button', class: 'gah-sess-act', title: T('\u5220\u9664','Delete'), 'aria-label': T('\u5220\u9664','Delete'), onclick: () => remove(x) }, h('span', { class: 'gah-ico', dataset: { i: 'trash' }, 'aria-hidden': 'true' }));
-    return h('div', { class: 'gah-sess-row' + (cur ? ' current' : ''), role: 'listitem' }, open, h('span', { class: 'gah-sess-acts' }, ren, del));
-  }
-  // [{key, kind:'project'|'workspace', name, title, body, items, current}]
-  function groups(s, items) {
-    const scope = s.scope, projects = scope.projects || [], byId = {}, out = [], index = {};
-    for (const p of projects) byId[p.id] = p;
-    const get = (key, make) => index[key] || (out.push(index[key] = make()), index[key]);
-    for (const x of items) {
-      const p = x.project_id && byId[x.project_id];
-      const g = p
-        ? get('p:' + p.id, () => ({ key: 'p:' + p.id, kind: 'project', name: p.name, title: p.workspace, body: { id: p.id }, items: [] }))
-        : get('w:' + x.workspace, () => ({ key: 'w:' + x.workspace, kind: 'workspace', name: base(x.workspace), title: x.workspace, body: { workspace: x.workspace }, items: [] }));
-      g.items.push(x);
+var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
+  "use strict";
+  const base = (path = "") => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+  const scopeKey = (state) => {
+    var _a, _b;
+    return ((_a = state.scope) == null ? void 0 : _a.project_id) ? `p:${state.scope.project_id}` : `w:${((_b = state.scope) == null ? void 0 : _b.workspace) ?? ""}`;
+  };
+  function groupSessions(state) {
+    const groups = /* @__PURE__ */ new Map(), scope = state.scope;
+    if (!scope) return [];
+    const get = (group) => {
+      if (!groups.has(group.key)) groups.set(group.key, group);
+      return groups.get(group.key);
+    };
+    const projectGroup = (p) => ({ key: `p:${p.id}`, kind: "project", name: p.name, path: p.workspace, body: { id: p.id }, items: [] });
+    const workspaceGroup = (path = "") => ({ key: `w:${path}`, kind: "workspace", name: base(path), path, body: { workspace: path }, items: [] });
+    for (const session of state.sessions ?? []) {
+      const project = scope.projects.find((p) => p.id === session.project_id);
+      get(project ? projectGroup(project) : workspaceGroup(session.workspace)).items.push(session);
     }
-    for (const p of projects) get('p:' + p.id, () => ({ key: 'p:' + p.id, kind: 'project', name: p.name, title: p.workspace, body: { id: p.id }, items: [] }));
-    const cur = scope.project_id ? 'p:' + scope.project_id : 'w:' + scope.workspace;
-    if (!index[cur] && !scope.project_id) get(cur, () => ({ key: cur, kind: 'workspace', name: base(scope.workspace), title: scope.workspace, body: { workspace: scope.workspace }, items: [] }));
-    for (const g of out) g.current = g.key === cur;
-    // Entering a scope always reveals it; a manual collapse only sticks while it stays current.
-    // (the first render after a page load is not a switch, so a saved collapse survives reload).
-    if (cur !== lastScope) { if (lastScope !== null) delete toggled[cur]; lastScope = cur; }
-    return out;
+    scope.projects.forEach((p) => get(projectGroup(p)));
+    if (!scope.project_id) get(workspaceGroup(scope.workspace));
+    return [...groups.values()];
   }
-  function group(g, sid) {
-    const open = g.key in toggled ? toggled[g.key] : g.current;
-    const items = h('div', { class: 'gah-sess-items', role: 'list', hidden: !open });
-    items.append(...g.items.map(x => row(x, x.id === sid)));
-    if (!g.items.length) items.append(h('div', { class: 'gah-sess-empty' }, T('\u6682\u65e0\u4f1a\u8bdd','No chats yet')));
-    const toggle = h('button', { type: 'button', class: 'gah-group-toggle', 'aria-expanded': String(open), title: g.title,
-      onclick: () => {
-        const next = items.hidden;
-        items.hidden = !next; toggle.setAttribute('aria-expanded', String(next));
-        toggled[g.key] = next;
-        try { localStorage.setItem(KEY, JSON.stringify(toggled)); } catch (e) {}
-      } },
-      h('span', { class: 'gah-ico gah-ico-closed', dataset: { i: 'folder' }, 'aria-hidden': 'true' }),
-      h('span', { class: 'gah-ico gah-ico-open', dataset: { i: 'folder-open' }, 'aria-hidden': 'true' }),
-      h('span', { class: 'gah-group-name' }, g.name));
-    const plus = h('button', { type: 'button', class: 'gah-group-add', 'data-gah-close': '',
-      title: g.kind === 'project' ? T('\u5728\u6b64\u9879\u76ee\u65b0\u5efa\u5bf9\u8bdd','New chat in this project') : T('\u5728\u6b64\u5de5\u4f5c\u533a\u65b0\u5efa\u5bf9\u8bdd','New chat in this workspace'),
-      'aria-label': T('\u5728 ','New chat in ') + g.name + T(' \u65b0\u5efa\u5bf9\u8bdd',''),
-      onclick: () => g.current ? act('new') : enter(g.body) }, h('span', { class: 'gah-ico', dataset: { i: 'plus' }, 'aria-hidden': 'true' }));
-    return h('section', { class: 'gah-group ' + g.kind + (g.current ? ' current' : ''), dataset: { key: g.key } },
-      h('div', { class: 'gah-group-head' }, toggle, plus), items);
+  function Sessions({ api }) {
+    var _a;
+    const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
+    const [toggled, setToggled] = react.useState(() => {
+      try {
+        const value = JSON.parse(sdk.saved("gah.sessions.groups") ?? "{}");
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      } catch {
+        return {};
+      }
+    });
+    const current = scopeKey(state), previous = react.useRef(current);
+    react.useEffect(() => {
+      if (previous.current !== current) {
+        previous.current = current;
+        setToggled((old) => {
+          const next = { ...old };
+          delete next[current];
+          return next;
+        });
+      }
+    }, [current]);
+    const change = (path, body, reset) => run(async () => {
+      const next = await api.host.post(path, body);
+      api.setState(next, reset);
+    });
+    const act = (action, extra = {}) => change("/api/sessions", { action, id: state.session_id, ...extra }, ["new", "open", "delete", "clear"].includes(action));
+    const row = (session) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}`, role: "listitem", children: [
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("open", { id: session.id }), title: session.title, children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: session.title === "新会话" ? sdk.T("新会话", "New chat") : session.title || sdk.T("新会话", "New chat") }) }),
+      /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: () => {
+          const title = prompt(sdk.T("会话名称", "Chat name"), session.title);
+          if (title == null ? void 0 : title.trim()) void act("rename", { id: session.id, title: title.trim() });
+        }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("删除", "Remove"), onClick: () => {
+          if (confirm(sdk.T("从列表删除此会话？历史记录保留在本地数据库。", "Remove this chat from the list? History stays in the local database."))) void act("delete", { id: session.id });
+        }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }) })
+      ] })
+    ] }, session.id);
+    return /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sessions", hidden: !state.sessions, children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item gah-sess-new", disabled: busy, "data-gah-close": "", onClick: () => void act("new"), children: [
+        /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pen" }),
+        sdk.T("新会话", "New chat")
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-label", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("会话", "Chat") }),
+        state.scope && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn", disabled: busy, "aria-label": sdk.T("新建项目", "New project"), onClick: () => window.dispatchEvent(new CustomEvent("gah:workspace-dialog", { detail: { action: "create" } })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder-plus" }) })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-list", "aria-label": sdk.T("会话列表", "Chats"), children: state.scope ? groupSessions(state).map((group) => {
+        const isCurrent = group.key === current, open = toggled[group.key] ?? isCurrent;
+        return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group ${group.kind}${isCurrent ? " current" : ""}`, "data-key": group.key, children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-group-head", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-group-toggle", title: group.path, "aria-expanded": open, onClick: () => setToggled((old) => {
+              const next = { ...old, [group.key]: !open };
+              sdk.save("gah.sessions.groups", JSON.stringify(next));
+              return next;
+            }), children: [
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-closed", "data-i": "folder", "aria-hidden": "true" }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-open", "data-i": "folder-open", "aria-hidden": "true" }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-name", children: group.name })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${group.name}`, onClick: () => void (isCurrent ? act("new") : change("/api/p/web-workspaces/", { action: "enter", ...group.body }, true)), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-items", role: "list", hidden: !open, children: group.items.length ? group.items.map(row) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: sdk.T("暂无会话", "No chats yet") }) })
+        ] }, group.key);
+      }) : (_a = state.sessions) == null ? void 0 : _a.map(row) })
+    ] }) });
   }
-  function render(s) {
-    const items = s && s.sessions;
-    box.hidden = !Array.isArray(items);
-    if (!Array.isArray(items)) return;
-    newProject.hidden = !s.scope;
-    if (s.scope) {
-      list.removeAttribute('role');
-      list.replaceChildren(...groups(s, items).map(g => group(g, s.session_id)));
-    } else {
-      list.setAttribute('role', 'list');
-      list.replaceChildren(...items.map(x => row(x, x.id === s.session_id)));
-    }
-    sync(busy);
-  }
-  function sync(b) { busy = b; for (const n of box.querySelectorAll('button:not(.gah-group-toggle)')) n.disabled = b; }
-  async function run(fn) {
-    if (busy) return;
-    api.lock(true); api.notice('');
-    try { const prev = api.state().session_id, next = await fn(); api.setState(next, next.session_id !== prev); }
-    catch (e) { api.notice(e.message); render(api.state()); }
-    finally { api.lock(false); }
-  }
-  const act = (action, extra = {}) => run(() => api.host.post('/api/sessions', { action, id: api.state().session_id, ...extra }));
-  const enter = body => run(() => api.host.post('/api/p/web-workspaces/', { action: 'enter', ...body }));
-  api.onHost('state', render);
-  api.onHost('sync', d => sync(d.running || d.changing));
-  api.slot('sidebar', box);
-  const s = api.state(); render(s); sync(!!(s && s.running));
-});
+  sdk.defineReact("web-sessions", Sessions);
+  exports.Sessions = Sessions;
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+  return exports;
+})({}, GAH.jsxRuntime, GAH.React, GAH);

@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PluginAPI } from '../sdk';
-import type { HostState, Session } from '../types';
-import { useHost } from '../store';
-import { saved, save, T } from '../i18n';
-import { Icon, PluginSlot, useOperation } from './shared';
+import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, PluginSlot, useOperation, defineReact } from '@gah/sdk';
 
 type Group = { key: string; kind: string; name: string; path: string; body: { id?: string; workspace?: string }; items: Session[] };
 const base = (path = '') => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
@@ -54,3 +50,5 @@ export function Sessions({ api }: { api: PluginAPI }) {
       }) : state.sessions?.map(row)}
     </div></div></PluginSlot>;
 }
+
+defineReact('web-sessions', Sessions);

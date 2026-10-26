@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node build-plugins.mjs",
+    "build:plugins": "node build-plugins.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" },

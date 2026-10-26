@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: '/',
+  resolve: { alias: { '@gah/sdk': '/src/gah-sdk.ts' } },
   build: {
     outDir: '../ga_harness/plugins/ui-web/dist',
     emptyOutDir: true,
