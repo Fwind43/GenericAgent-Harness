@@ -551,6 +551,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path.startswith("/ui-web-assets/"):
             # Host-owned assets only; never expose arbitrary files beside the page.
             assets = {
+                "ga-logo.png": "image/png",
                 "output.css": "text/css; charset=utf-8",
                 "output.js": "text/javascript; charset=utf-8",
                 "marked.umd.js": "text/javascript; charset=utf-8",

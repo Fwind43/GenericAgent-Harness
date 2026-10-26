@@ -73,7 +73,7 @@ export function App() {
   }
   return <>
     <aside className="sidebar" id="sidebar">
-      <div className="side-head"><h1>ga-harness</h1><button type="button" className="icon-btn side-close" data-gah-close aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
+      <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>ga-harness</h1><button type="button" className="icon-btn side-close" data-gah-close aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
       <div className="side-body"><Slot name="sidebar" /></div>
       <div className="side-foot"><Slot name="sidebar-foot" /><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>

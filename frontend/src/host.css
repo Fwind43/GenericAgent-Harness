@@ -38,6 +38,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 .main-col{flex:1;min-width:0;display:flex;flex-direction:column}
 .sidebar{width:260px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-muted);border-right:1px solid var(--border);font-size:13px;--hover:color-mix(in srgb,var(--text) 5%,transparent);--active:color-mix(in srgb,var(--text) 8%,transparent)}
 .side-head{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 18px}
+.side-logo{display:block;width:28px;height:28px;flex:none;object-fit:contain}
 .side-head h1{font-size:14px;font-weight:600;margin:0;flex:1;letter-spacing:.01em}
 .side-body{flex:1;min-height:0;overflow-y:auto;padding:2px 6px 8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 .side-foot{display:flex;flex-direction:column;gap:1px;padding:6px 6px 8px;border-top:1px solid var(--border)}
