@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 sessions/
 *.egg-info/
+node_modules/
+frontend/.vite/
+ga_harness/plugins/ui-web/dist/

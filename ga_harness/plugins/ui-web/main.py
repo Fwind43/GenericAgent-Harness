@@ -31,6 +31,7 @@ from pathlib import Path
 from ga_harness.sessions import EFFORTS, apply_effort
 
 PAGE = Path(__file__).with_name("index.html")
+DIST = PAGE.with_name("dist")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
 EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total")
@@ -523,9 +524,23 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            page = PAGE.read_text(encoding="utf-8")
+            # Source checkouts remain usable before the separate frontend build.
+            built_page = DIST / "index.html"
+            page = (built_page if built_page.is_file() else PAGE).read_text(encoding="utf-8")
             body = page.replace("<!--gah:head-->", self.frontend.web.head_html()).encode("utf-8")
             self._bytes(200, body, "text/html; charset=utf-8")
+        elif path.startswith("/assets/"):
+            # Vite's hashed assets only; reject traversal and symlinks outside dist.
+            root = (DIST / "assets").resolve()
+            asset = (root / path.removeprefix("/assets/")).resolve()
+            types = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                     ".svg": "image/svg+xml", ".woff2": "font/woff2"}
+            if not asset.is_relative_to(root) or asset.suffix not in types or not asset.is_file():
+                return self._json(404, {"error": "not found"})
+            try:
+                self._bytes(200, asset.read_bytes(), types[asset.suffix])
+            except OSError:
+                self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/ui-web-assets/"):
             # Host-owned assets only; never expose arbitrary files beside the page.
             assets = {
