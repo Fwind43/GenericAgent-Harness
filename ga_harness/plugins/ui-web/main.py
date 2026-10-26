@@ -333,10 +333,19 @@ class WebFrontend:
         with self.lock:
             if self.running:
                 return 409, {"error": "a task is already running"}
-            backend = getattr(getattr(self.ctx.get("ga.agent"), "llmclient", None), "backend", None)
+            agent = self.ctx.get("ga.agent")
+            backend = getattr(getattr(agent, "llmclient", None), "backend", None)
             model = getattr(backend, "model", "") or getattr(backend, "name", "") or ""
+            effort = None
+            if backend is not None and hasattr(backend, "reasoning_effort"):
+                effort = backend.reasoning_effort
+                if self.sessions:
+                    # Match apply_effort without mutating the client before the task is saved.
+                    effort = getattr(agent, "gah_reasoning_effort", None) or getattr(backend, "_gah_effort_default", effort)
+                effort = effort or "default"
+            metadata = {"model": model, "reasoning_effort": effort}
             messages = self.messages + [{"role": "user", "text": task, "status": "done"},
-                                        {"role": "assistant", "text": "", "status": "running", "model": model}]
+                                        {"role": "assistant", "text": "", "status": "running", **metadata}]
             if self.sessions:
                 try:
                     self.sessions.save(messages)
@@ -344,7 +353,7 @@ class WebFrontend:
                     return 503, {"error": "session could not be saved; task was not started"}
             self.messages = messages
             self.running, self.aborting = True, False
-            self._broadcast("start", {"task": task, "model": model})
+            self._broadcast("start", {"task": task, **metadata})
         threading.Thread(target=self._work, args=(task,), name="ui-web-turn", daemon=True).start()
         return 202, {"ok": True}
 

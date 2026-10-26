@@ -8,7 +8,8 @@
 .meta .dot{width:4px;height:4px;background:#19a37f;flex:none}
 .meta .assistant-name{flex:none}
 .meta .model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta .model-name::before{content:"\00b7";margin-right:7px}
+.meta .model-name::before,.meta .reasoning-effort::before{content:"\00b7";margin-right:7px}
+.meta .reasoning-effort{flex:none;white-space:nowrap}
 .msg.assistant .body{min-width:0}
 .usage{display:flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums}
 .message-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:28px}
