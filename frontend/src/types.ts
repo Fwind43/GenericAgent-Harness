@@ -4,8 +4,9 @@ export interface Usage { calls?: number; input?: number; output?: number; cache_
 export interface ToolCall { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number }
 export interface Turn {
   turn: number; summary?: string; thinking?: string; reply?: string;
-  status?: Status; tools: ToolCall[]; usage?: Usage;
+  status?: Status; tools: ToolCall[]; usage?: Usage; llm?: LlmTiming;
 }
+export interface LlmTiming { seconds?: number; ttft?: number | null }
 export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string;

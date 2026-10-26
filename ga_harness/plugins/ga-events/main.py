@@ -11,6 +11,7 @@ Events (emit, payload is one dict):
   assistant.text  {turn, text, reply, thinking, summary}   reply = text minus leading protocol blocks
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
+  llm.timed       {turn, seconds, ttft}   one LLM call: wall time and time to first chunk (None if not streamed)
   turn.end        {turn, exit}
   run.end         {exit}
 
@@ -138,8 +139,11 @@ def apply(ctx, config):
         if d is not None and getattr(d.get("chat"), "_ga_events_tap", False):
             del d["chat"]
 
+    llm = {"t0": None, "first": None}
+
     def on_llm_before(g, nxt):
         client, turn = g.get("client"), g.get("turn")
+        llm.update(t0=time.monotonic(), first=None)
         orig = getattr(client, "chat", None)
         if callable(orig) and not getattr(orig, "_ga_events_tap", False):
             def chat(*a, **k):
@@ -169,6 +173,8 @@ def apply(ctx, config):
                     emit(split.flush())
                     return e.value
                 if isinstance(chunk, str) and chunk:
+                    if llm["first"] is None:
+                        llm["first"] = time.monotonic()
                     emit(split.feed(chunk))
                 yield chunk
         finally:
@@ -176,6 +182,12 @@ def apply(ctx, config):
 
     def on_llm_after(g, nxt):
         unwrap(g.get("client"))
+        t0, first = llm["t0"], llm["first"]
+        llm.update(t0=None, first=None)
+        if t0 is not None:
+            now = time.monotonic()
+            ctx.emit("llm.timed", {"turn": g.get("turn"), "seconds": round(now - t0, 3),
+                                   "ttft": None if first is None else round(first - t0, 3)})
         r = g.get("response")
         text = getattr(r, "content", None) or ""
         split = _Split()

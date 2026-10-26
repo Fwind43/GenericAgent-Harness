@@ -4,6 +4,7 @@ import { language, save, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
 import { ChatMessage } from './components/ChatMessage';
+import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
 
 // React never reconciles the children owned by a plugin.
@@ -17,6 +18,7 @@ export function App() {
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
   const stick = useRef(true), submitting = useRef(false);
   const busy = state.running || changing || sending;
+  const stats = sessionStats(state.messages ?? []);
   useEffect(() => host.connect(), []);
   useEffect(() => {
     plugins.sync(state.web_plugins ?? []);
@@ -97,7 +99,7 @@ export function App() {
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
           <button type="submit" id="send" disabled={busy || !draft.trim()}>{T('发送', 'Send')}</button>
         </div>
-      </form><div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div></footer>
+      </form>{stats.length ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />
   </>;
 }
