@@ -241,24 +241,26 @@ function renderStep(t,key,live,awaiting=false){
 function renderTurns(m,mi,box){
   const turns=m.turns.filter(Boolean),running=m.status==='running';
   const fin=turns[turns.length-1];
-  // Only the latest unanswered prompt opens its ancestors; old steps stay collapsed.
-  const awaiting=mi===state.messages.length-1&&!['aborted','error'].includes(m.status)&&!!fin&&
+  // A terminal question is user-facing output, not a hidden execution step.
+  const finalQuestion=!!fin&&!['aborted','error'].includes(m.status)&&
     fin.tools.some(t=>GAHOutput.isAskUser(t.name)&&(t.status!=='done'||t.ok));
+  const awaiting=mi===state.messages.length-1&&finalQuestion;
   // A tool-free last turn is the answer even after its own turn event lands and before the
   // run's done event; demoting it into the steps list in that gap makes the reply vanish.
-  const finalT=fin&&!fin.tools.length&&fin.reply?fin:null;
-  const streaming=running&&!!finalT;
+  const finalT=fin&&((!fin.tools.length&&fin.reply)||finalQuestion)?fin:null;
+  const streaming=running&&!!finalT&&!finalT.tools.length;
   const steps=finalT?turns.slice(0,-1):turns;
-  if(steps.length){const d=det('steps',mi+':steps',running||awaiting),s=el('summary');d.classList.toggle('running',running);
+  if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');d.classList.toggle('running',running);
     s.append(el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')),chev());d.append(s);
-    steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1,awaiting&&t===fin)));box.append(d)}
-  if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
+    steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&!finalT&&j===steps.length-1)));box.append(d)}
+  if(finalT){const reply=finalT.reply||'',typing=streaming||(finalT._shown!=null&&finalT._shown<reply.length);
     const label=el('div','final-step-label');label.append(el('span',null,T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
     if(finalT.usage)label.append(tokChip(finalT.usage));box.append(label);
     if(finalT.thinking)box.append(renderThinking(finalT.thinking,mi+':final:'+finalT.turn+':thinking'));
     appendTurnSummary(box,finalT.summary);
-    const b=GAHOutput.markdown(typing?finalT.reply.slice(0,finalT._shown||0):finalT.reply,'body'+(typing?' cursor':''));
-    if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
+    if(reply){const b=GAHOutput.markdown(typing?reply.slice(0,finalT._shown||0):reply,'body'+(typing?' cursor':''));
+      if(typing){typer.el=b;typer.t=finalT;kickTyper()}box.append(b)}
+    finalT.tools.forEach((t,j)=>box.append(renderTool(t,mi+':'+finalT.turn+':'+(t.id||j),awaiting&&GAHOutput.isAskUser(t.name))))}
   else if(running)box.append(el('div','body working cursor',''));
   else if(fin&&fin.reply){appendTurnSummary(box,fin.summary);box.append(GAHOutput.markdown(fin.reply,'body'));}
 }
