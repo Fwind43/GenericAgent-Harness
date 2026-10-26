@@ -24,7 +24,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
   }
   function Sessions({ api }) {
     var _a;
-    const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
+    const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api, !!state.parallel_runs);
     const [toggled, setToggled] = react.useState(() => {
       try {
         const value = JSON.parse(sdk.saved("gah.sessions.groups") ?? "{}");

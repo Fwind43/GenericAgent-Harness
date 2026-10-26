@@ -1,7 +1,7 @@
 var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
   "use strict";
   function Workspaces({ api }) {
-    const { state } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api), scope = state.scope;
+    const { state } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api, !!state.parallel_runs), scope = state.scope;
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
     const [draft, setDraft] = react.useState(""), [focused, setFocused] = react.useState(false), [active, setActive] = react.useState(0);
     const [dismissed, setDismissed] = react.useState(false);
