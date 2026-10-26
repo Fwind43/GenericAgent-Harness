@@ -243,9 +243,8 @@ function renderMsg(m,mi){
       const model=el('span','model-name',m.model);model.title=T('使用的模型：','Model used: ')+m.model;meta.append(model);
     }
     if(typeof m.reasoning_effort==='string'&&m.reasoning_effort.trim()){
-      const labels={low:T('低','Low'),medium:T('中','Medium'),high:T('高','High'),xhigh:T('超高','Extra high'),default:T('默认','Default')};
-      const label=labels[m.reasoning_effort]||m.reasoning_effort;
-      const effort=el('span','reasoning-effort',T('思考：','Effort: ')+label);
+      const label=m.reasoning_effort.trim();
+      const effort=el('span','reasoning-effort',label);
       effort.title=T('本条回复的思考强度：','Reasoning effort for this reply: ')+label;meta.append(effort);
     }
     box.append(meta);

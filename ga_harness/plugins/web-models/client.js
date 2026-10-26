@@ -4,7 +4,7 @@ GAH.define('web-models', api => {
   let sections = [], sectionId = null, catalog = null;
   const field = (label, input, extra = {}, hint) => h('label', { class: 'model-field' + (extra.wide ? ' wide' : '') }, label, input, hint || null);
   /* ---- one composer entry for model + per-conversation effort ---- */
-  const EFFORT_LABEL = { '': T('\u9ed8\u8ba4','Default'), low: T('\u4f4e','Low'), medium: T('\u4e2d','Medium'), high: T('\u9ad8','High'), xhigh: T('\u8d85\u9ad8','Extra high') };
+  const EFFORT_LABEL = { '': 'default', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh' };
   const pickName = h('span', { class: 'gah-model-name' });
   const pickEffort = h('span', { class: 'gah-model-effort' });
   const pick = h('button', { type: 'button', class: 'gah-model-trigger', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
