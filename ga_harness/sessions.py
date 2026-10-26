@@ -24,7 +24,7 @@ def capture(agent):
     })
 
 
-EFFORTS = ("low", "medium", "high", "xhigh")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def apply_effort(agent):
