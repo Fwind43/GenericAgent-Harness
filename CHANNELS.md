@@ -38,3 +38,13 @@ def apply(ctx, config):
 Inbound messages: `self.hub.receive(self.name, chat_id, text, user=...)`.
 Your plugin's `plugin.toml` should `inject = ["channels"]`.
 Keep tokens in plugin settings or environment variables, never in code.
+
+## Feishu adapter
+
+`ga_harness/plugins/feishu/` is a ready adapter using Feishu's long-connection
+bot (no public callback URL needed). Install `pip install -e .[feishu]`, enable
+the `feishu` plugin, and give it credentials via `GAH_FEISHU_APP_ID` /
+`GAH_FEISHU_APP_SECRET` (preferred) or the plugin settings. `allowed_users`
+optionally restricts senders by open_id. The bot app needs the
+`im.message.receive_v1` event and permission to send messages. Text and
+rich-text (post) messages are handled; other types are ignored.

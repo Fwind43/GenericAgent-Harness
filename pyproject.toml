@@ -7,6 +7,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+feishu = ["lark-oapi>=1.4"]
 
 [project.scripts]
 gah = "ga_harness.cli:main"
