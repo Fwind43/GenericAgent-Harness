@@ -117,6 +117,10 @@ name = "llm-config"   # 必须在 ga-core 之前
 name = "ga-hooks"
 
 [[plugins]]
+name = "ga-timing"    # 工具耗时（tool.timed），默认不打印 stderr
+config = { print = false }
+
+[[plugins]]
 name = "ga-events"    # 结构化的 run/turn/tool 事件
 
 [[plugins]]
@@ -124,14 +128,20 @@ name = "ga-usage"     # 每步/每次任务的 token 用量
 
 [[plugins]]
 name = "ga-core"
+
+[[plugins]]
+name = "ga-prompt"    # 系统提示词覆盖，未配置时不生效
+
+[[plugins]]
+name = "ga-tools"     # 工具集覆盖，未配置时不生效
 ```
 
-patch 在不修改 profile 的情况下插入插件，例如 `examples/patches/ga-timing.toml`：
+patch 在不修改 profile 的情况下插入或调整插件，例如 `examples/patches/ga-timing.toml` 打开耗时打印：
 
 ```toml
 [[patch]]
-after = "ga-hooks"
-insert = { name = "ga-timing", config = { print = true } }
+id = "ga-timing"
+config = { print = true }
 ```
 
 ```bat

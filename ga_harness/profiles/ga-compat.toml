@@ -15,6 +15,11 @@ name = "llm-config"
 [[plugins]]
 name = "ga-hooks"
 
+# per-tool timing (tool.timed events); stderr echo off by default
+[[plugins]]
+name = "ga-timing"
+config = { print = false }
+
 # structured run/turn/tool events for frontends (no parsing of GA's display text)
 [[plugins]]
 name = "ga-events"
@@ -25,6 +30,13 @@ name = "ga-usage"
 
 [[plugins]]
 name = "ga-core"
+
+# system prompt / tool set overrides (no-op until configured)
+[[plugins]]
+name = "ga-prompt"
+
+[[plugins]]
+name = "ga-tools"
 
 [[plugins]]
 name = "session-store"
