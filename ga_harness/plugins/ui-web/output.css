@@ -78,13 +78,21 @@ details[open]>summary>.chev{transform:none}
 .tool .targ{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:13px}
 .tool .tst{flex:none;font-size:11px;white-space:nowrap;color:var(--muted)}
 .tool .tst.fail,.tool-meta.fail{color:var(--danger)}
-.tool .tst.run{color:var(--accent)}
+.tool .tst.run,.tool .tst.wait,.tool-meta.wait{color:var(--accent)}
 .tool>summary .chev{opacity:.65}
 .tool>summary:hover .chev,.tool[open]>summary .chev{opacity:1}
 .tool-body{border:0;border-left:1px solid var(--border);margin-left:6px;padding:2px 0 10px 15px;min-width:0}
 .tool-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin:0 0 8px}
 .tool-body .lbl{font-size:11px;color:var(--muted);margin:4px 0}
 .tool-body pre{margin:0 0 7px;background:var(--code-bg);border-radius:4px;padding:8px 10px;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.ask-question{margin:0 0 8px;min-width:0}
+.ask-candidates{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;min-width:0}
+.ask-candidate{max-width:100%;min-height:32px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);font:inherit;font-size:13px;line-height:1.5;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+.ask-candidate:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ask-candidate:disabled{opacity:.5;cursor:default}
+.ask-hint{margin:6px 0;color:var(--muted);font-size:12px;line-height:1.6}
+.ask-raw{margin:8px 0 0;min-width:0}
+.ask-raw>summary{display:flex;align-items:center;gap:6px;min-height:28px;padding:4px 0;color:var(--muted);font-size:11px;line-height:20px;cursor:pointer}
 /* Markdown stays inside the transcript; only code and tables scroll horizontally. */
 .md{font-size:15px;line-height:1.85;font-weight:400;color:var(--text);overflow-wrap:anywhere;min-width:0}
 .md>:first-child{margin-top:0}

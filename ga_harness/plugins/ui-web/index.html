@@ -170,21 +170,37 @@ function det(cls,key,dflt){const d=el('details',cls);d.open=opened.has(key)?true
 function chev(){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('class','chev');s.setAttribute('viewBox','0 0 16 16');s.setAttribute('aria-hidden','true');
   s.innerHTML='<path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';return s}
 function fmt(a){if(a==null)return '';return typeof a==='string'?a:JSON.stringify(a,null,2)}
-function renderTool(t,key){
-  const d=det('tool',key,false),s=el('summary'),receipt=GAHOutput.toolSummary(t.name,t.args);
-  const state=t.status!=='done'?'run':t.ok?'ok':'fail';d.dataset.state=state;
-  const status=state==='run'?T('\u6267\u884c\u4e2d','Running'):state==='fail'?T('\u5931\u8d25','Failed'):T('\u5df2\u5b8c\u6210','Completed');
+function renderTool(t,key,awaiting=false){
+  const ask=GAHOutput.askUserPayload(t.name,t.args,t.data);
+  const d=det('tool'+(ask?' ask-user':''),key,!!ask),s=el('summary'),receipt=GAHOutput.toolSummary(t.name,t.args);
+  if(ask)receipt.target=receipt.detail=ask.question||T('等待回复','Awaiting reply');
+  const state=ask&&awaiting&&(t.status!=='done'||t.ok)?'wait':t.status!=='done'?'run':t.ok?'ok':'fail';d.dataset.state=state;
+  const status=state==='wait'?T('等待回复','Awaiting reply'):state==='run'?T('执行中','Running'):state==='fail'?T('失败','Failed'):ask?T('已提问','Asked'):T('已完成','Completed');
   const seconds=t.seconds==null?null:Number(t.seconds);
-  const elapsed=state!=='run'&&seconds!=null&&Number.isFinite(seconds)&&seconds>=0?' \u00b7 '+seconds.toFixed(1)+'s':'';
+  const elapsed=state!=='run'&&state!=='wait'&&seconds!=null&&Number.isFinite(seconds)&&seconds>=0?' · '+seconds.toFixed(1)+'s':'';
   const name=el('span','tname',receipt.tool);name.title=t.name||receipt.tool;
   const target=el('span','targ',receipt.target);target.title=receipt.detail;
   s.append(chev(),el('span','tkind',receipt.kind),name);
   if(state!=='ok')s.append(el('span','tst '+state,status));
   s.append(target);d.append(s);
-  s.setAttribute('aria-label',[receipt.kind,t.name||receipt.tool,receipt.detail,status+elapsed].filter(Boolean).join(' \u00b7 '));
+  s.setAttribute('aria-label',[receipt.kind,t.name||receipt.tool,receipt.detail,status+elapsed].filter(Boolean).join(' · '));
   const b=el('div','tool-body');b.append(el('div','tool-meta '+state,status+elapsed));
-  if(t.args!=null){b.append(el('div','lbl',T('\u53c2\u6570','Arguments')),el('pre',null,fmt(t.args)))}
-  if(t.status==='done'){b.append(el('div','lbl',T('\u7ed3\u679c','Result')),el('pre',null,fmt(t.data)||T('(\u7a7a)','(empty)')))}
+  let raw=b;
+  if(ask){
+    if(ask.question)b.append(GAHOutput.markdown(ask.question,'ask-question'));
+    else b.append(el('div','ask-hint',T('未解析到问题，请展开原始数据查看。','Could not parse the question. Expand raw data to inspect it.')));
+    if(ask.candidates.length){const choices=el('div','ask-candidates');
+      choices.setAttribute('role','group');choices.setAttribute('aria-label',T('候选回答','Suggested replies'));
+      ask.candidates.forEach(text=>{const button=el('button','ask-candidate',text);button.type='button';
+        button.disabled=state==='fail';button.title=T('填入输入框，不会自动发送','Fill the composer without sending');
+        button.onclick=()=>{input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(text.length,text.length)};
+        choices.append(button)});b.append(choices)}
+    if(awaiting&&state!=='fail')b.append(el('div','ask-hint',ask.candidates.length?T('选择一个选项或在下方输入回答，确认后发送。','Choose an option or type your answer below, then send when ready.'):T('请在下方输入回答并发送。','Type your answer below and send it.')));
+    raw=det('ask-raw',key+':raw',false);const title=el('summary');
+    title.append(chev(),el('span',null,T('原始数据','Raw data')));raw.append(title);b.append(raw);
+  }
+  if(t.args!=null){raw.append(el('div','lbl',T('参数','Arguments')),el('pre',null,fmt(t.args)))}
+  if(t.status==='done'){raw.append(el('div','lbl',T('结果','Result')),el('pre',null,fmt(t.data)||T('(空)','(empty)')))}
   d.append(b);return d}
 function num(v){return Number(v||0).toLocaleString('en-US')}
 function tok(u){if(!u)return'';let s=T('\u8f93\u5165 ','In ')+num(u.input);
@@ -210,8 +226,8 @@ function appendTurnSummary(parent,text){
   icon.setAttribute('viewBox','0 0 16 16');icon.setAttribute('aria-hidden','true');
   icon.innerHTML='<path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>';
   row.append(icon,el('span','turn-summary-text',text.trim()));parent.append(row)}
-function renderStep(t,key,live){
-  const d=det('step',key,live),s=el('summary');d.classList.toggle('running',live);
+function renderStep(t,key,live,awaiting=false){
+  const d=det('step',key,live||awaiting),s=el('summary');d.classList.toggle('running',live);
   const title=t.summary||(t.reply||'').split('\n').find(x=>x.trim())||(t.tools.length?t.tools.map(x=>x.name).join(', '):T('思考中…','Thinking…'));
   s.append(el('span','no',T('步骤 ','Step ')+t.turn),el('span','ttl',title));
   if(t.tools.length)s.append(el('span','cnt',t.tools.length+T(' 个工具',' tools')));
@@ -220,19 +236,22 @@ function renderStep(t,key,live){
   if(t.thinking)b.append(renderThinking(t.thinking,key+':thinking'));
   appendTurnSummary(b,t.summary);
   if(t.reply)b.append(GAHOutput.markdown(t.reply,'reply'));
-  t.tools.forEach((x,j)=>b.append(renderTool(x,key+':'+(x.id||j))));
+  t.tools.forEach((x,j)=>b.append(renderTool(x,key+':'+(x.id||j),awaiting&&GAHOutput.isAskUser(x.name))));
   d.append(b);return d}
 function renderTurns(m,mi,box){
   const turns=m.turns.filter(Boolean),running=m.status==='running';
   const fin=turns[turns.length-1];
+  // Only the latest unanswered prompt opens its ancestors; old steps stay collapsed.
+  const awaiting=mi===S.messages.length-1&&!['aborted','error'].includes(m.status)&&!!fin&&
+    fin.tools.some(t=>GAHOutput.isAskUser(t.name)&&(t.status!=='done'||t.ok));
   // A tool-free last turn is the answer even after its own turn event lands and before the
   // run's done event; demoting it into the steps list in that gap makes the reply vanish.
   const finalT=fin&&!fin.tools.length&&fin.reply?fin:null;
   const streaming=running&&!!finalT;
   const steps=finalT?turns.slice(0,-1):turns;
-  if(steps.length){const d=det('steps',mi+':steps',running),s=el('summary');d.classList.toggle('running',running);
+  if(steps.length){const d=det('steps',mi+':steps',running||awaiting),s=el('summary');d.classList.toggle('running',running);
     s.append(el('span','process-dot'),el('span',null,(running?T('执行中 · ','Working · '):T('执行过程 · ','Steps · '))+steps.length+T(' 步',' steps')),chev());d.append(s);
-    steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1)));box.append(d)}
+    steps.forEach((t,j)=>d.append(renderStep(t,mi+':'+t.turn,running&&j===steps.length-1,awaiting&&t===fin)));box.append(d)}
   if(finalT){const typing=streaming||(finalT._shown!=null&&finalT._shown<finalT.reply.length);
     const label=el('div','final-step-label');label.append(el('span',null,T('\u6b65\u9aa4 ','Step ')+(finalT.turn??turns.length)));
     if(finalT.usage)label.append(tokChip(finalT.usage));box.append(label);

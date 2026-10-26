@@ -118,6 +118,52 @@
     setMarkdown(node, text);
     return node;
   }
+  // ask_user returns an interrupt payload, not an ordinary tool receipt.
+  const isAskUser = name => String(name || '').split('.').filter(Boolean).pop() === 'ask_user';
+  function askPayload(value, depth = 0) {
+    if (depth > 6 || value == null) return null;
+    if (typeof value === 'string') {
+      const source = value.trim();
+      try { return askPayload(JSON.parse(source), depth + 1); } catch (_) { /* fenced/verbose JSON */ }
+      // Find complete JSON objects without mistaking braces inside quoted questions for delimiters.
+      let start = -1, level = 0, quoted = false, escaped = false;
+      for (let i = 0; i < source.length; i++) {
+        const c = source[i];
+        if (start < 0) { if (c === '{') { start = i; level = 1; } continue; }
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (c === '\\') escaped = true;
+          else if (c === '"') quoted = false;
+          continue;
+        }
+        if (c === '"') quoted = true;
+        else if (c === '{') level++;
+        else if (c === '}' && --level === 0) {
+          try {
+            const parsed = askPayload(JSON.parse(source.slice(start, i + 1)), depth + 1);
+            if (parsed) return parsed;
+          } catch (_) { /* Keep looking; plain waiting text is not a structured question. */ }
+          start = -1;
+        }
+      }
+      return null;
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) return null;
+    const payload = {};
+    if (typeof value.question === 'string' && value.question.trim()) payload.question = value.question;
+    if (Array.isArray(value.candidates)) payload.candidates = value.candidates.filter(x => typeof x === 'string' && x.trim());
+    if (Object.keys(payload).length) return payload;
+    for (const key of ['data', 'result', 'arguments', 'args']) {
+      const parsed = askPayload(value[key], depth + 1);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+  function askUserPayload(name, args, result) {
+    if (!isAskUser(name)) return null;
+    const payload = { ...(askPayload(args) || {}), ...(askPayload(result) || {}) };
+    return { question: payload.question || '', candidates: payload.candidates || [] };
+  }
   // Quiet, semantic tool receipts: details stay in the expandable body.
   function toolSummary(name, value) {
     const tool = String(name || 'tool').split('.').filter(Boolean).pop() || 'tool';
@@ -151,5 +197,5 @@
     } else if (!target) target = detail = text(args.query || args.pattern || args.url || args.command);
     return { kind, tool, target, detail };
   }
-  window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton, toolSummary });
+  window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton, toolSummary, isAskUser, askUserPayload });
 })();
