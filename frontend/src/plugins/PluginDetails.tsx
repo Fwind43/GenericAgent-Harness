@@ -46,8 +46,8 @@ export function PluginDetails({ plugin, busy, running, error, onChange }: {
         </label>;
       })}</div>
       <p className="plugin-note">{running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\u3002', 'A task is running; view only.') : plugin.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002', 'Core and frontend plugins are protected; change them in the startup config.') : T('\u4ec5\u663e\u793a\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002', 'Only public settings are shown; manage keys in Models.')}</p>
-      {error && <p className="gah-error" role="alert">{error}</p>}
-      <div className="model-actions plugin-actions"><button type="button" className="secondary plugin-reset" disabled={locked || !plugin.overridden} onClick={() => onChange('reset')}>{T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings')}</button><button type="submit" disabled={locked}>{T('\u4fdd\u5b58', 'Save')}</button></div>
+      {error && <p className="gah-error" role="status">{error}</p>}
+      <div className="model-actions plugin-actions"><button type="button" className="secondary plugin-reset" disabled={locked || !plugin.overridden} onClick={() => onChange('reset')}>{T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings')}</button><button type="submit" disabled={locked}>{T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Save (applies on next start)')}</button></div>
     </form>
   </div>;
 }
