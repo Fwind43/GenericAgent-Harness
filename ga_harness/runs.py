@@ -139,6 +139,17 @@ class Runs:
         with self.lock:
             return bool(self.live)
 
+    def _seed_selection(self, state):
+        state = dict(state or {})
+        agent = getattr(self.sessions, "agent", None)
+        backend = getattr(getattr(agent, "llmclient", None), "backend", None)
+        name = getattr(backend, "name", None)
+        if not state.get("model") and isinstance(name, str) and name:
+            state["model"] = name
+        if "effort" not in state and agent is not None:
+            state["effort"] = getattr(agent, "gah_reasoning_effort", None)
+        return state
+
     def start(self, task, *, session_id=None, source="user", timeout=None):
         if not isinstance(task, str) or not task.strip():
             raise ValueError("empty task")
@@ -160,6 +171,9 @@ class Runs:
             recipe = self.recipe()
             rid = uuid.uuid4().hex
             created_at = time.time()
+            # A session that never stored a model/effort runs with the selection the
+            # UI shows (the host agent's), not the worker's config default.
+            session["state"] = self._seed_selection(session["state"])
             messages = copy.deepcopy(session["messages"])
             messages.extend([{"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at},
                              {"role": "assistant", "text": "", "status": "running", "turns": [],

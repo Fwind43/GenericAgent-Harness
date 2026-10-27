@@ -292,10 +292,17 @@ class WebFrontend:
             try:
                 settings = self.models.change(body) if configure else None
                 if not configure:
+                    previous = self.models.catalog().get("current")
                     self.models.select(body.get("id"))
                     agent = self.ctx.get("ga.agent")
                     if self.sessions and agent is not None:
-                        self.sessions.remember(model=getattr(agent.llmclient.backend, "name", ""))
+                        try:
+                            self.sessions.remember(model=getattr(agent.llmclient.backend, "name", ""))
+                        except Exception:
+                            # Keep the shown selection identical to what the session will run.
+                            if isinstance(previous, int):
+                                self.models.select(previous)
+                            raise
                 snap = self.snapshot()
             except ValueError as e:
                 return 400, {"error": str(e)}
