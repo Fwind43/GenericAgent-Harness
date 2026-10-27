@@ -96,6 +96,12 @@ switches); inactive panel children are unmounted. Keep reloadable state in the
 plugin component, and use `useOperation` for requests so the shared close button
 and tabs stay locked during changes. Do not nest `Modal` in a settings panel.
 
+Pass `onBeforeLeave={() => boolean | Promise<boolean>}` to protect unsaved edits.
+The host awaits the active panel's guard before closing Settings or changing a
+settings tab; return `false` to stay in the panel. Only one host navigation can
+be pending at a time. Internal list/detail navigation and browser unload warnings
+remain the panel's responsibility. Plugin unload is not a cancellable navigation.
+
 
 - `api.slot(name, node)`: attach a DOM node owned by the plugin.
 - `api.mount(name, reactNode)`: create an owned React root in a slot; returns an

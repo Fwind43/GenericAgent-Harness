@@ -37,39 +37,71 @@
 .gah-picker-count{flex:none;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .gah-picker-search:focus-visible,.gah-picker-filter:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .gah-picker-models{flex:1 1 auto;overscroll-behavior:contain;scrollbar-width:thin}
-/* Model list and detail share one workspace; providers are an optional filter. */
-.gah-dialog.gah-model-dialog{width:min(1040px,calc(100vw - 24px))}
+/* Compact settings workspace: browse on the left, edit on the right. */
 .gah-model-dialog [hidden]{display:none!important}
-.gah-model-dialog .dialog-content{padding:16px 20px 20px}
-.gah-model-dialog .model-layout{display:grid;gap:18px;margin-top:16px;min-width:0}
-.gah-model-dialog .model-browser-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,240px) auto;align-items:center;gap:10px}
-.gah-model-dialog .model-browser-tools input,.gah-model-dialog .model-browser-tools select{box-sizing:border-box;width:100%;min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font:inherit;font-size:13px}
-.gah-model-dialog .model-browser-tools button{white-space:nowrap;font-size:12px;padding:9px 11px}
-.gah-model-dialog .model-section-body{min-width:0}
-.gah-model-dialog .model-section-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
-.gah-model-dialog .model-section-heading{min-width:0;flex:1}
-.gah-model-dialog .model-section-heading h3{font-size:15px;margin:0 0 5px;font-weight:600;overflow-wrap:anywhere}
-.gah-model-dialog .model-section-heading .model-help{margin:0;line-height:1.6}
-.gah-model-dialog .model-section-tools{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px}
-.gah-model-dialog .model-section-tools button{white-space:nowrap;padding:7px 11px;font-size:12px}
-.gah-model-dialog .model-area{display:grid;grid-template-columns:minmax(200px,.6fr) minmax(0,1fr);align-items:start;gap:22px}
-.gah-model-dialog .model-list-pane{min-width:0}
-.gah-model-dialog .model-list{display:flex;flex-direction:column;gap:4px;max-height:440px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:2px}
+.gah-settings-panel.gah-model-dialog>.dialog-content.model-workspace{display:flex;flex-direction:column;gap:12px;padding:14px 20px 16px;overflow:hidden}
+.gah-model-dialog .model-workspace-head{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px}
+.gah-model-dialog .model-view-switch{display:flex;gap:4px;padding:3px;border-radius:8px;background:var(--surface-muted)}
+.gah-model-dialog .model-view-switch button{display:flex;align-items:center;gap:8px;padding:7px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:13px}
+.gah-model-dialog .model-view-switch button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:0 1px 3px #0001}
+.gah-model-dialog .model-view-switch span{font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.gah-model-dialog .model-refresh{padding:7px 10px;font-size:12px}
+.gah-model-dialog .model-layout{display:grid;flex:1;grid-template-columns:minmax(220px,.52fr) minmax(0,1fr);gap:20px;min-width:0;min-height:0}
+.gah-model-dialog .model-list-pane{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.gah-model-dialog .model-browser-tools{display:grid;flex:none;gap:8px}
+.gah-model-dialog .model-browser-tools input,.gah-model-dialog .model-browser-tools select{box-sizing:border-box;width:100%;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font:inherit;font-size:13px}
+.gah-model-dialog .model-browser-tools button{font-size:12px;padding:8px 11px}
+.gah-model-dialog .model-source{flex:none;border-top:1px solid var(--border);padding-top:8px;font-size:11px;color:var(--muted);min-width:0;max-height:90px;overflow:auto}
+.gah-model-dialog .model-source summary{cursor:pointer}
+.gah-model-dialog .model-source p{overflow-wrap:anywhere;margin:6px 0 0;line-height:1.5}
+
+.gah-model-dialog .model-secret-input{display:flex;gap:6px;min-width:0}
+.gah-model-dialog .model-secret-input input{flex:1;min-width:0}
+.gah-model-dialog .model-secret-input button{flex:none;font-size:12px;padding:7px 10px}
+.gah-model-dialog .model-connection{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted)}
+.gah-model-dialog .model-connection>div{display:grid;gap:4px;min-width:0;flex:1}
+.gah-model-dialog .model-connection strong{font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.gah-model-dialog .model-connection span,.gah-model-dialog .model-connection small{font-size:11px;color:var(--muted);overflow-wrap:anywhere;line-height:1.6}
+.gah-model-dialog .model-connection small{flex-basis:100%}
+.gah-model-dialog .model-connection button{flex:none;font-size:12px;padding:7px 10px}
+.gah-model-dialog .model-text-button{border:0;background:transparent;color:var(--accent);font:inherit;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.gah-model-dialog .model-help{font-size:12px;color:var(--muted);line-height:1.7;margin:12px 0}
+.gah-model-dialog .model-advanced{border-top:1px solid var(--border);margin-top:16px;padding-top:12px}
+.gah-model-dialog .model-advanced summary{font-size:12px;color:var(--muted);cursor:pointer}
+.gah-model-dialog .model-advanced .model-grid{margin-top:12px}
+.gah-model-dialog .model-list{display:flex;flex:1;min-height:0;flex-direction:column;gap:4px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:2px}
 .gah-model-dialog .model-list-item{display:grid;flex:none;gap:4px;text-align:left;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--text);padding:10px 12px;font-size:13px;overflow-wrap:anywhere;min-width:0;line-height:1.4;cursor:pointer}
 .gah-model-dialog .model-list-item strong{font-weight:500}
 .gah-model-dialog .model-list-item small{font-size:11px;color:var(--muted);font-weight:400}
 .gah-model-dialog .model-list-item:hover:not(:disabled){background:var(--surface-muted)}
 .gah-model-dialog .model-list-item[aria-pressed=true]{border-color:var(--border);background:var(--surface-muted);box-shadow:inset 2px 0 var(--accent)}
-.gah-model-dialog .model-editor{min-width:0;border-left:1px solid var(--border);padding-left:22px}
-.gah-model-dialog .model-editor-title{font-size:13px;margin:0 0 14px;font-weight:600}
+.gah-model-dialog .model-editor{display:flex;flex-direction:column;min-width:0;min-height:0;border-left:1px solid var(--border);padding-left:20px}
+.gah-model-dialog .model-editor-head{display:flex;flex:none;align-items:center;gap:12px;padding:2px 0 12px;min-width:0}
+.gah-model-dialog .model-editor-head>div{min-width:0}
+.gah-model-dialog .model-editor-head h3{font-size:16px;line-height:1.4;margin:3px 0 0;font-weight:600;overflow-wrap:anywhere}
+.gah-model-dialog .model-eyebrow{font-size:11px;color:var(--muted)}
+.gah-model-dialog .model-back{display:none}
+.gah-model-dialog .model-editor form{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;margin:0}
+.gah-model-dialog .model-form-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:2px 4px 14px 0}
+.gah-model-dialog .model-actions{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0;padding:12px 0 0;border-top:1px solid var(--border);background:var(--surface)}
+.gah-model-dialog .model-actions button{font-size:12px;padding:8px 11px;white-space:nowrap}
+.gah-model-dialog .model-delete{margin-right:auto}
+.gah-model-dialog .model-draft-state{flex:1;min-width:0;color:var(--muted);font-size:11px}
 .gah-model-dialog .model-empty{padding:28px 12px;color:var(--muted);font-size:13px;text-align:center;line-height:1.7;margin:0}
-.gah-model-dialog .model-list-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gah-model-dialog .model-list-item:focus-visible,.gah-model-dialog .model-view-switch button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 @media(max-width:700px){
-  .gah-model-dialog .dialog-content{padding:14px}
+  .gah-settings-panel.gah-model-dialog>.dialog-content.model-workspace{padding:12px;gap:10px}
+  .gah-model-dialog .model-view-switch button{padding:7px 9px;gap:5px}
+  .gah-model-dialog .model-layout{grid-template-columns:minmax(0,1fr);gap:0}
   .gah-model-dialog .model-browser-tools{grid-template-columns:minmax(0,1fr) auto;gap:8px}
   .gah-model-dialog .model-search{grid-column:1/-1}
-  .gah-model-dialog .model-area{grid-template-columns:minmax(0,1fr);gap:18px}
-  .gah-model-dialog .model-list{max-height:180px}
-  .gah-model-dialog .model-editor{border-left:0;border-top:1px solid var(--border);padding:18px 0 0}
-  .gah-model-dialog .model-section-heading{flex-basis:100%}
+  .gah-model-dialog .model-editor{display:none;border:0;padding:0}
+  .gah-model-dialog .model-layout.is-detail .model-list-pane{display:none}
+  .gah-model-dialog .model-layout.is-detail .model-editor{display:flex}
+  .gah-model-dialog .model-back{display:inline-flex;flex:none;font-size:12px;padding:8px 10px}
+  .gah-model-dialog .model-editor-head h3{font-size:15px}
+  .gah-model-dialog .model-grid{grid-template-columns:minmax(0,1fr)}
+  .gah-model-dialog .model-draft-state{flex-basis:100%}
+  .gah-model-dialog .model-actions{padding-top:10px}
+  .gah-model-dialog .model-actions button{min-height:40px}
 }

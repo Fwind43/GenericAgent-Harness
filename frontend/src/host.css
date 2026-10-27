@@ -128,9 +128,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-ico[data-i="channels"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='6' rx='1'/%3E%3Crect x='2' y='15' width='6' height='6' rx='1'/%3E%3Crect x='16' y='15' width='6' height='6' rx='1'/%3E%3Cpath d='M12 9v3M5 15v-3h14v3'/%3E%3C/svg%3E")}
 .gah-settings-dialog{width:min(1080px,calc(100vw - 32px));max-width:none;height:min(760px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);overflow:hidden}
 .gah-settings-dialog[open]{display:flex;flex-direction:column}
-.gah-settings-head{flex:none;padding:18px 24px}
+.gah-settings-head{flex:none;padding:10px 20px}
+.gah-settings-head .secondary{padding:6px 12px;font-size:13px}
 .gah-settings-tabs{display:flex;flex:none;align-items:stretch;gap:6px;padding:0 20px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin}
-.gah-settings-tab{display:inline-flex;flex:none;align-items:center;justify-content:center;gap:8px;min-height:46px;margin:0 0 -1px;padding:10px 15px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:13px;white-space:nowrap}
+.gah-settings-tab{display:inline-flex;flex:none;align-items:center;justify-content:center;gap:8px;min-height:40px;margin:0 0 -1px;padding:8px 14px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;white-space:nowrap}
 .gah-settings-tab:hover:not(:disabled){color:var(--text);background:var(--surface-muted)}
 .gah-settings-tab[aria-selected="true"]{border-bottom-color:var(--accent);color:var(--text);font-weight:600}
 .gah-settings-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-4px;border-radius:6px}
