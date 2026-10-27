@@ -98,7 +98,7 @@ export function Models({ api }: { api: PluginAPI }) {
     api.notice(T('\u5df2\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e', 'Converted to an editable configuration'));
   }, setError); };
   const ungrouped = config?.entries.filter(item => !item.provider).length ?? 0;
-  const group = async () => { if (!config?.writable || busy || !ungrouped) return;
+  const autoGroup = async () => { if (!config?.writable || busy || !ungrouped) return;
     if (!await confirmDialog({ title: T('\u6309\u5730\u5740\u548c\u5bc6\u94a5\u81ea\u52a8\u5f52\u7ec4\uff1f', 'Group models by URL and key?'), message: T('\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\u7684\u672a\u5f52\u7ec4\u6a21\u578b\u5c06\u5408\u5e76\u4e3a\u670d\u52a1\u5546\uff0c\u6a21\u578b\u5b9e\u9645\u8fde\u63a5\u4e0d\u53d8\u3002', 'Ungrouped models with an identical URL and key become providers. Model connections stay the same.'), confirm: T('\u5f52\u7ec4', 'Group') })) return;
     setError(''); void run(async () => {
     const next = await api.host.post<ModelResult>('/api/models/config', { action: 'provider_group', revision: config.revision });
@@ -130,7 +130,7 @@ export function Models({ api }: { api: PluginAPI }) {
               <div className="model-browser-tools">
                 <input className="model-search" type="search" value={query} disabled={browsing} placeholder={isModel ? T('\u641c\u7d22\u6a21\u578b...', 'Search models...') : T('\u641c\u7d22\u670d\u52a1\u5546...', 'Search providers...')} aria-label={isModel ? T('\u641c\u7d22\u6a21\u578b', 'Search models') : T('\u641c\u7d22\u670d\u52a1\u5546', 'Search providers')} onChange={event => setQuery(event.target.value)} />
                 {isModel && <select className="model-provider-filter" value={section} disabled={browsing} aria-label={T('\u6309\u670d\u52a1\u5546\u7b5b\u9009', 'Filter by provider')} onChange={event => filter(event.target.value)}><option value="">{T('\u5168\u90e8\u6a21\u578b', 'All models')}</option>{groups.map(item => <option key={item.id} value={item.id}>{item.title} ({item.entries.length})</option>)}</select>}
-                {!isModel && ungrouped > 0 && <button type="button" className="secondary model-group" disabled={locked} title={T('\u6309\u76f8\u540c\u5730\u5740+\u5bc6\u94a5\u5f52\u7ec4\u672a\u5f52\u5c5e\u6a21\u578b', 'Group unassigned models by identical URL + key')} onClick={() => { void group(); }}>{T('\u81ea\u52a8\u5f52\u7ec4', 'Auto-group')} ({ungrouped})</button>}
+                {!isModel && ungrouped > 0 && <button type="button" className="secondary model-group" disabled={locked} title={T('\u6309\u76f8\u540c\u5730\u5740+\u5bc6\u94a5\u5f52\u7ec4\u672a\u5f52\u5c5e\u6a21\u578b', 'Group unassigned models by identical URL + key')} onClick={() => { void autoGroup(); }}>{T('\u81ea\u52a8\u5f52\u7ec4', 'Auto-group')} ({ungrouped})</button>}
                 <button type="button" className="model-add" disabled={locked} onClick={() => choose(edit.kind)}>{isModel ? T('+ \u65b0\u589e\u6a21\u578b', '+ Add model') : T('+ \u65b0\u589e\u670d\u52a1\u5546', '+ Add provider')}</button>
               </div>
               <div className="model-list" aria-label={isModel ? T('\u6a21\u578b\u5217\u8868', 'Model list') : T('\u670d\u52a1\u5546\u5217\u8868', 'Provider list')}>
