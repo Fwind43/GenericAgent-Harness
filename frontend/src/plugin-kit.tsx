@@ -4,12 +4,28 @@ import { createRoot } from 'react-dom/client';
 import type { PluginAPI, SlotName } from './sdk';
 import { host, useHost } from './store';
 import { T, errorText } from './i18n';
+import { settings, useSettings } from './settings';
 
 export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
   const [container] = useState(() => document.createElement('div'));
   useLayoutEffect(() => { api.slot(name, container); return () => container.remove(); }, [api, name, container]);
   return createPortal(children, container);
+}
+export function SettingsPanel({ api, label, icon, order = 0, className = '', onOpen, children }: {
+  api: PluginAPI; label: string; icon: string; order?: number; className?: string; onOpen?: () => unknown; children: ReactNode;
+}) {
+  const id = api.name;
+  const { open, active } = useSettings();
+  const visible = open && active === id;
+  const load = useRef(onOpen);
+  useLayoutEffect(() => { load.current = onOpen; }, [onOpen]);
+  useLayoutEffect(() => settings.register({ id, label, icon, order }), [id, label, icon, order]);
+  useEffect(() => { if (visible) void load.current?.(); }, [visible]);
+  return <PluginSlot api={api} name="settings"><section id={'gah-settings-panel-' + id} role="tabpanel"
+    aria-labelledby={'gah-settings-tab-' + id} className={'gah-settings-panel ' + className} hidden={!visible}>
+    {visible && children}
+  </section></PluginSlot>;
 }
 export function Icon({ name }: { name: string }) { return <span className="gah-ico" data-i={name} aria-hidden="true" />; }
 export function Modal({ className, label, busy = false, onClose, children }: {

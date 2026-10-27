@@ -3,6 +3,7 @@ import { request } from './api';
 import { language, save, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
+import { Settings } from './components/Settings';
 import { ChatMessage } from './components/ChatMessage';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
@@ -75,7 +76,7 @@ export function App() {
     <aside className="sidebar" id="sidebar">
       <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>ga-harness</h1><button type="button" className="icon-btn side-close" data-gah-close aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
       <div className="side-body"><Slot name="sidebar" /></div>
-      <div className="side-foot"><Slot name="sidebar-foot" /><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
+      <div className="side-foot"><Slot name="sidebar-foot" /><Settings><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>
     <div className="scrim" data-gah-close />
     <div className="main-col">

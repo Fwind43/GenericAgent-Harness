@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { type PluginAPI, useHost, T, Icon, Modal, PluginSlot, useOperation, confirmDialog, defineReact } from '@gah/sdk';
+import { type PluginAPI, useHost, T, Icon, SettingsPanel, useOperation, confirmDialog, defineReact } from '@gah/sdk';
 
 // Channel management UI backed by the channel_manager service (see main.py).
 type Field = { key: string; label: string; label_zh?: string; secret?: boolean; required?: boolean; default?: string };
@@ -167,12 +167,12 @@ function ChannelDetail({ api, channel, provider, busy, onAct, onEdit, onRemove }
 export function ChannelManager({ api }: { api: PluginAPI }) {
   const { changing } = useHost();
   const { working, run } = useOperation(api, true);
-  const [open, setOpen] = useState(false), [data, setData] = useState<Snapshot | null>(null);
+  const [data, setData] = useState<Snapshot | null>(null);
   const [selected, setSelected] = useState<string | null>(null), [editing, setEditing] = useState<Editor | null>(null);
   const [error, setError] = useState('');
   const busy = working || changing;
   const load = () => run(async () => {
-    setError(''); setData(await api.get<Snapshot>('')); setOpen(true);
+    setError(''); setData(await api.get<Snapshot>(''));
   }, message => { setError(message); api.notice(message); }, true);
   const act = (body: Record<string, unknown>, after?: (snapshot: Snapshot) => void) => run(async () => {
     setError('');
@@ -188,7 +188,6 @@ export function ChannelManager({ api }: { api: PluginAPI }) {
   const current = channels.find(channel => channel.id === selected) || channels[0] || null;
   const edited = editing?.kind === 'edit' ? channels.find(channel => channel.id === editing.id) : undefined;
   const running = channels.filter(channel => channel.available && channel.state === 'running').length;
-  const close = () => { if (!busy) { setOpen(false); setEditing(null); setError(''); } };
   const create = () => { setEditing({ kind: 'new' }); setError(''); };
   const save = (body: Record<string, unknown>) => void act(body, snapshot => {
     if (editing?.kind === 'new') {
@@ -197,18 +196,13 @@ export function ChannelManager({ api }: { api: PluginAPI }) {
     setEditing(null);
   });
   return <>
-    <PluginSlot api={api} name="sidebar-foot"><div className="gah-channels">
-      <button type="button" className="side-item" disabled={busy} onClick={() => void load()}>
-        <Icon name="cpu" />{T('\u901a\u9053\u7ba1\u7406', 'Channels')}</button>
-    </div></PluginSlot>
-    {open && <Modal className="channel-dialog" label={T('\u901a\u9053\u7ba1\u7406', 'Channels')} busy={busy} onClose={close}>
+    <SettingsPanel api={api} label={T('\u901a\u9053', 'Channels')} icon="channels" order={20} className="channel-dialog" onOpen={load}>
       <div className="dialog-head channel-dialog-head"><div className="channel-heading">
         <h2>{T('\u901a\u9053\u7ba1\u7406', 'Channels')}</h2>
         <p>{channels.length ? T(`${channels.length} \u4e2a\u901a\u9053 \u00b7 ${running} \u4e2a\u8fd0\u884c\u4e2d`, `${channels.length} channels \u00b7 ${running} running`)
           : T('\u7ba1\u7406\u6d88\u606f\u63a5\u5165\u4e0e\u901a\u9053\u8fd0\u884c\u72b6\u6001', 'Manage your messaging connections')}</p>
       </div><div className="channel-header-actions">
         {!editing && channels.length > 0 && <button type="button" className="btn channel-refresh" disabled={busy} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button>}
-        <button type="button" className="icon-btn" disabled={busy} onClick={close} aria-label={T('\u5173\u95ed', 'Close')}><Icon name="x" /></button>
       </div></div>
       {error && <div className="channel-error channel-page-error" role="alert">{error}</div>}
       <div className="channel-body" data-has-channels={channels.length > 0}>
@@ -247,7 +241,7 @@ export function ChannelManager({ api }: { api: PluginAPI }) {
             </div>}
         </section>
       </div>
-    </Modal>}
+    </SettingsPanel>
   </>;
 }
 

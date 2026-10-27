@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { type PluginAPI, type ModelConfig, type ModelResult, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, defineReact } from '@gah/sdk';
+import { type PluginAPI, type ModelConfig, type ModelResult, useHost, T, SettingsPanel, useOperation, matches, defineReact } from '@gah/sdk';
 import { ModelPicker } from './ModelPicker';
 import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
@@ -8,7 +8,7 @@ import { sections as modelSections, readonlyText, sectionKey } from './helpers';
 type Edit = { kind: 'model' | 'provider'; id?: string; serial: number };
 export function Models({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, working, run } = useOperation(api);
-  const [open, setOpen] = useState(false), [config, setConfig] = useState<ModelConfig | null>(null), [error, setError] = useState('');
+  const [config, setConfig] = useState<ModelConfig | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [section, setSection] = useState('');
   const [edit, setEdit] = useState<Edit>({ kind: 'model', serial: 0 });
   const groups = config ? modelSections(config) : [], group = groups.find(item => item.id === section);
@@ -17,9 +17,8 @@ export function Models({ api }: { api: PluginAPI }) {
   const choose = (kind: Edit['kind'], id?: string) => { setError(''); setEdit(old => ({ kind, id, serial: old.serial + 1 })); };
   const filter = (id: string) => { setSection(id); const items = groups.find(item => item.id === id)?.entries || config?.entries || []; choose('model', items.find(item => matches(query, item.key, item.values.name, item.values.model, item.values.apibase))?.key); };
   async function load() {
-    if (busy) return;
-    setOpen(true); setConfig(null); setError(''); setQuery(''); setSection('');
-    await run(async () => { const next = await api.host.get<ModelConfig>('/api/models/config'); setConfig(next); choose('model', next.entries[0]?.key); }, setError);
+    setConfig(null); setError(''); setQuery(''); setSection('');
+    await run(async () => { const next = await api.host.get<ModelConfig>('/api/models/config'); setConfig(next); choose('model', next.entries[0]?.key); }, setError, true);
   }
   const change: SaveModel = (action, id, values) => {
     if (!config?.writable || busy) return;
@@ -41,9 +40,8 @@ export function Models({ api }: { api: PluginAPI }) {
   const locked = busy || !config?.writable;
   return <>
     <ModelPicker api={api} />
-    {state.models && <PluginSlot api={api} name="sidebar-foot"><button type="button" className="side-item" disabled={busy} onClick={() => void load()}><Icon name="cpu" />{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</button></PluginSlot>}
-    {open && <Modal className="gah-model-dialog" label={T('\u6a21\u578b\u914d\u7f6e', 'Models')} busy={working} onClose={() => setOpen(false)}>
-      <div className="dialog-head"><h2>{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</h2><button type="button" className="secondary" disabled={working} onClick={() => setOpen(false)}>{T('\u5173\u95ed', 'Close')}</button></div>
+    {state.models && <SettingsPanel api={api} label={T('\u6a21\u578b', 'Models')} icon="cpu" order={10} className="gah-model-dialog" onOpen={load}>
+      <div className="dialog-head"><h2>{T('\u6a21\u578b\u914d\u7f6e', 'Models')}</h2><button type="button" className="secondary" disabled={working} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button></div>
       <div className="dialog-content">
         {error && <p className="model-error" role="alert">{error}</p>}
         {!config && <p className="model-help">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : T('\u52a0\u8f7d\u5931\u8d25', 'Unable to load configuration')}</p>}
@@ -61,7 +59,7 @@ export function Models({ api }: { api: PluginAPI }) {
           </div>
         </>}
       </div>
-    </Modal>}
+    </SettingsPanel>}
   </>;
 }
 

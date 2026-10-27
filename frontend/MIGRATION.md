@@ -74,8 +74,28 @@ bundle.
 
 ## Plugin API
 
-Slots: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`
-and `overlay`. The host does not reconcile plugin-owned children inside slots.
+Slots: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`,
+`overlay` and `settings`. The host does not reconcile plugin-owned children inside slots.
+
+The host owns one Settings entry and dialog. Built-in model, channel and plugin
+management panels register with the shared `SettingsPanel` component exported by
+`@gah/sdk`, rather than adding their own sidebar buttons or modal shells:
+
+```tsx
+<SettingsPanel api={api} label={T('Example', 'Example')} icon="settings"
+  order={40} className="example-settings" onOpen={load}>
+  <div className="dialog-content">{/* plugin-owned settings UI */}</div>
+</SettingsPanel>
+```
+
+A panel is identified by `api.name`; lower `order` values appear first. It is
+registered only while mounted and is removed when its plugin unloads. The host
+retains the settings slot even while the dialog is closed, so plugins can mount
+at startup. `onOpen` runs each time the panel becomes visible (including tab
+switches); inactive panel children are unmounted. Keep reloadable state in the
+plugin component, and use `useOperation` for requests so the shared close button
+and tabs stay locked during changes. Do not nest `Modal` in a settings panel.
+
 
 - `api.slot(name, node)`: attach a DOM node owned by the plugin.
 - `api.mount(name, reactNode)`: create an owned React root in a slot; returns an

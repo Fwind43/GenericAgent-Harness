@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
-import { type PluginAPI, type PluginCatalog, useHost, T, Icon, Modal, PluginSlot, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
+import { type PluginAPI, type PluginCatalog, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
 import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel } from './helpers';
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
   const { busy, working, run } = useOperation(api);
-  const [open, setOpen] = useState(false), [config, setConfig] = useState<PluginCatalog | null>(null);
+  const [config, setConfig] = useState<PluginCatalog | null>(null);
   const [editing, setEditing] = useState<string | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all');
   const cards = useRef<HTMLDivElement>(null), back = useRef<HTMLButtonElement>(null);
@@ -18,7 +18,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     requestAnimationFrame(() => { if (editing) cards.current?.querySelector<HTMLButtonElement>('[data-plugin="' + CSS.escape(editing) + '"]')?.focus(); });
   };
   const load = async () => {
-    setOpen(true); setError('');
+    setError('');
     await run(async () => { setConfig(await api.host.get<PluginCatalog>('/api/plugins')); }, setError, true);
   };
   const change: PluginChange = async (action, enabled, values) => {
@@ -41,10 +41,10 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     }, setError);
   };
   return <>
-    {state.plugins_enabled && <PluginSlot api={api} name="sidebar-foot"><div className="gah-plugins"><button type="button" className="side-item" disabled={working || changing} onClick={() => void load()}><Icon name="puzzle" />{T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')}</button>{config?.restart_required && <span className="plugin-note">{T('\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Saved; applies on next start')}</span>}</div></PluginSlot>}
-    {open && <Modal className="gah-plugin-dialog" label={T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')} busy={working} onClose={() => selected ? toGrid() : setOpen(false)}>
-      <div className="dialog-head"><h2>{T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')}</h2><button type="button" className="secondary" disabled={working} onClick={() => setOpen(false)}>{T('\u5173\u95ed', 'Close')}</button></div>
+    {state.plugins_enabled && <SettingsPanel api={api} label={T('\u63d2\u4ef6', 'Plugins')} icon="puzzle" order={30} className="gah-plugin-dialog" onOpen={load}>
+      <div className="dialog-head"><h2>{T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')}</h2></div>
       <div className="dialog-content">
+        {config?.restart_required && <p className="plugin-note" role="status">{T('\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Saved; applies on next start')}</p>}
         <section className="plugin-catalog" hidden={!!selected}>
           <p className="plugin-note plugin-profile" hidden={!config}>{config ? T('\u914d\u7f6e\u65b9\u6848\uff1a', 'Profile: ') + config.profile + T('\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002', '. Changes are saved locally and apply on next start without interrupting running plugins.') : ''}</p>
           <div className="plugin-toolbar"><input className="plugin-search" type="search" value={query} placeholder={T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'Search plugin names or descriptions')} aria-label={T('\u641c\u7d22\u63d2\u4ef6', 'Search plugins')} disabled={working} onChange={event => setQuery(event.target.value)} /><button type="button" className="secondary" disabled={working || changing} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button></div>
@@ -62,7 +62,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
         </section>
         {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} onInstall={install} /></section>}
       </div>
-    </Modal>}
+    </SettingsPanel>}
   </>;
 }
 
