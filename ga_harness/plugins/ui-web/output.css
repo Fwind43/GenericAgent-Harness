@@ -51,6 +51,8 @@ details[open]>summary>.chev{transform:none}
 .step .tok,.final-step-label .tok{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;max-width:50%;color:var(--muted);font-size:11px;flex:none;font-variant-numeric:tabular-nums;line-height:1.5}
 .tok>span{white-space:nowrap}
 .tok .tok-cache{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;white-space:normal}
+.tok .tok-ico{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
+.tok .tok-ico svg{width:11px;height:11px;flex:none;opacity:.85}
 /* The container owns outer spacing; child margins only separate content. */
 .step-body{padding:4px 0 4px 20px;min-width:0}
 .step-body:empty{display:none}
