@@ -139,8 +139,44 @@ def apply_block(messages, text):
         messages[index] = {**message, "content": new}
 
 
+OFFICIAL_MODULE = "plugins.project_mode"
+
+
+def suppress_official(hooks):
+    """Detach GA's official project_mode injection so the model receives one memory policy.
+
+    The official plugin appends its own project context (single project_memory.md, write-back
+    reminder) to the user message on ``agent_before``; that contradicts the layered L1-L3 rules.
+    GA source is untouched: only its callbacks are removed from GA's hook registry.
+    Returns the removed callbacks so they can be restored when this plugin unloads.
+    """
+    registry = getattr(hooks, "_registry", None)
+    if not isinstance(registry, dict):
+        return []
+    removed = []
+    for event, callbacks in list(registry.items()):
+        for fn in list(callbacks or ()):
+            if getattr(fn, "__module__", None) == OFFICIAL_MODULE:
+                hooks.unregister(event, fn)
+                removed.append((event, fn))
+    return removed
+
+
 def apply(ctx, config):
     hooks = ctx.get("ga.hooks")
+    removed = []
+
+    def detach():
+        removed.extend(suppress_official(hooks))
+
+    def restore():
+        for event, fn in removed:
+            if fn not in hooks._registry.get(event, []):
+                hooks.register(event)(fn)
+        removed.clear()
+
+    detach()
+    ctx.scope.add(restore)
     facts_limit = int(config.get("facts_limit") or 10000)
     legacy_limit = int(config.get("legacy_limit") or 6000)
 
@@ -160,5 +196,10 @@ def apply(ctx, config):
             apply_block(messages, text)
         return nxt(g)
 
+    def agent_before(g, nxt):
+        detach()  # official plugin may load after this one; effective from the next hook dispatch
+        return nxt(g)
+
+    ctx.on("ga.agent_before", agent_before)
     ctx.on("ga.llm_before", before)
     ctx.provide("project.memory", {"project_dir": lambda name: project_dir(hooks, name)})
