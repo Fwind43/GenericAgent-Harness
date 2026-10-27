@@ -29,8 +29,8 @@ function timing(turns: Turn[]) {
   return parts.length ? ' · ' + parts.join(' · ') : '';
 }
 const svg = (d: string) => <svg viewBox="0 0 16 16" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
-// Cache hit = lightning (served from cache); cache write = arrow into tray (stored to cache).
-const CACHE_ICON = { cache_read: svg('M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z'), cache_write: svg('M8 2v7.5M4.8 6.5 8 9.7l3.2-3.2M2.5 10.5v2.5h11v-2.5') };
+// Input/output = up/down arrows; cache hit = lightning (served from cache); cache write = arrow into tray (stored to cache).
+const TOKEN_ICON = { input: svg('M8 13.5V2.5M4 6.5l4-4 4 4'), output: svg('M8 2.5v11M4 9.5l4 4 4-4'), cache_read: svg('M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z'), cache_write: svg('M8 2v7.5M4.8 6.5 8 9.7l3.2-3.2M2.5 10.5v2.5h11v-2.5') };
 export function Tokens({ usage }: { usage?: Usage }) {
   if (!usage) return null;
   const labels = [['cache_read', T('缓存命中 ', 'Cache hit ')], ['cache_write', T('缓存写入 ', 'Cache write ')]] as const;
@@ -38,9 +38,8 @@ export function Tokens({ usage }: { usage?: Usage }) {
   const title = [T('输入 ', 'In ') + num(usage.input), T('输出 ', 'Out ') + num(usage.output), ...present.map(([key, label]) => label + num(usage[key]))].join(' · ')
     + T('（输入已包含缓存）', ' (input includes cached tokens)');
   return <span className="tok" title={title} aria-label={T('Token 用量：', 'Token usage: ') + title}>
-    <span>↑{compact(usage.input)} ↓{compact(usage.output)}</span>
-    {!!present.length && <span className="tok-cache">{present.map(([key, label]) =>
-      <span key={key} className="tok-ico" title={label + num(usage[key])}>{CACHE_ICON[key]}{compact(usage[key])}</span>)}</span>}
+    <span className="tok-cache">{([['input', T('输入 ', 'In ')], ['output', T('输出 ', 'Out ')], ...present] as const).map(([key, label]) =>
+      <span key={key} className="tok-ico" title={label + num(usage[key])}>{TOKEN_ICON[key]}{compact(usage[key])}</span>)}</span>
   </span>;
 }
 function Thinking({ text }: { text?: string }) {
