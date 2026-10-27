@@ -417,6 +417,60 @@ class Models:
             self.source, self.fallback = src, None
             return self.config()
 
+    def _provider_group(self, data, *, native=False):
+        """Lift ungrouped models sharing an identical base URL + key into providers.
+
+        Only literal-equal apibase/apikey pairs are grouped (protocol stays per model);
+        an existing provider with the same pair is reused. Resolved models must not change.
+        """
+        providers = {pid: dict(p) for pid, p in self._providers(data).items()}  # never mutate live mykey dicts
+        data[llmconfig.PROVIDERS] = providers
+        try:
+            before = llmconfig.resolve_providers(data)
+        except llmconfig.ConfigError as e:
+            raise ValueError(str(e)) from None
+        same = {}
+        for pid, p in providers.items():
+            if isinstance(p.get("apibase"), str) and isinstance(p.get("apikey"), str):
+                same.setdefault((p["apibase"], p["apikey"]), pid)
+        groups = {}
+        for k, v in data.items():
+            if not _supported(k, v) or "provider" in v:
+                continue
+            base, key = v.get("apibase"), v.get("apikey")
+            if isinstance(base, str) and base.strip() and isinstance(key, str) and key.strip():
+                groups.setdefault((base, key), []).append(k)
+        if not groups:
+            raise ValueError("no ungrouped model has both a base URL and an API key")
+        taken = set(providers)
+        names = {p.get("name") for p in providers.values()}
+        for (base, key), keys in groups.items():
+            pid = same.get((base, key))
+            if pid is None:
+                pid = llmconfig._provider_id(base, taken)
+                try:
+                    host = urlsplit(llmconfig._expand(base)).hostname or pid
+                except Exception:
+                    host = pid
+                name, n = host, 2
+                while name in names:
+                    name, n = f"{host} ({n})", n + 1
+                names.add(name)
+                providers[pid] = {"name": name, "protocol": _protocol(keys[0]), "apibase": base, "apikey": key}
+            for k in keys:
+                cfg = dict(data[k], provider=pid)
+                if not native:  # harness files inherit; native mykey keeps concrete values
+                    cfg.pop("apibase", None)
+                    cfg.pop("apikey", None)
+                data[k] = cfg
+        try:
+            after = llmconfig.resolve_providers(data)
+        except llmconfig.ConfigError:
+            after = None
+        if after != before:
+            raise ValueError("grouping would change a model's connection; nothing was changed")
+        return False
+
     def change(self, body):
         with self.lock:
             self._idle()
@@ -433,6 +487,8 @@ class Models:
             expanded = None
             if action in ("provider_save", "provider_delete"):
                 affects_models = self._provider_change(data, action, body, native=mykey)
+            elif action == "provider_group":
+                affects_models = self._provider_group(data, native=mykey)
             else:
                 affects_models = True
                 key = body.get("key")
