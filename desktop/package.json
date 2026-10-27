@@ -1,0 +1,14 @@
+{
+  "name": "@ga-harness/desktop",
+  "private": true,
+  "version": "0.0.1",
+  "description": "GenericAgent-Harness desktop shell: Electron window around the ui-web backend",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/backend.js && node --check src/preload.js"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}

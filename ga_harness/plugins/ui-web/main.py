@@ -15,10 +15,18 @@ Web plugins: ordinary plugins that inject ``web.host`` and call
 ``/web/<name>/`` and their routes under ``/api/p/<name>/<path>``; the page loads them at
 runtime (``GAH.define`` in the browser) and drops them again when they are withdrawn.
 
-Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true).
+Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true), token, ready_file.
+Environment overrides for embedding (the desktop shell sets these):
+  GAH_WEB_PORT, GAH_WEB_OPEN_BROWSER (0/1), GAH_WEB_TOKEN (require this token; the page is
+  entered once via ``/?gah_token=...`` which sets an HttpOnly cookie), GAH_WEB_READY_FILE
+  (JSON {"url", "pid"} written atomically once listening; never contains the token),
+  GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed).
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
 import copy
+import hmac
+import os
+import sys
 import html
 import json
 import queue
@@ -26,6 +34,7 @@ import re
 import threading
 import time
 import webbrowser
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -127,8 +136,14 @@ class WebFrontend:
     def __init__(self, ctx, config):
         self.ctx = ctx
         self.host = config.get("host", "127.0.0.1")
-        self.port = int(config.get("port", 8765))
-        self.open_browser = bool(config.get("open_browser", True))
+        env = os.environ
+        self.port = int(env.get("GAH_WEB_PORT") or config.get("port", 8765))
+        flag = env.get("GAH_WEB_OPEN_BROWSER")
+        self.open_browser = (bool(config.get("open_browser", True)) if flag is None
+                             else flag.strip().lower() not in ("", "0", "false", "no"))
+        self.token = env.get("GAH_WEB_TOKEN") or config.get("token") or None
+        self.ready_file = env.get("GAH_WEB_READY_FILE") or config.get("ready_file") or None
+        self.exit_on_stdin_eof = env.get("GAH_WEB_EXIT_ON_STDIN_EOF") == "1"
         console = ctx.get("console")    # ga-stdout captures sys.stdout; talk to the real one
         self.log = config.get("log") or (lambda *m: print(*m, file=console.out, flush=True) if console
                                          else print(*m, flush=True))
@@ -529,8 +544,35 @@ class WebFrontend:
         self.server.daemon_threads = True
         host, port = self.server.server_address[:2]
         self.url = f"http://{host}:{port}/"
+        self.cookie_name = f"gah_token_{port}"   # cookies ignore ports; keep instances apart
         threading.Thread(target=self.server.serve_forever, name="ui-web-http", daemon=True).start()
         return self.url
+
+    def _write_ready(self):
+        if not self.ready_file:
+            return
+        target = Path(self.ready_file)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(json.dumps({"url": self.url, "pid": os.getpid()}), encoding="utf-8")
+        os.replace(tmp, target)
+
+    def _watch_stdin(self):
+        stream = getattr(sys.stdin, "buffer", None)
+        if stream is None:
+            return
+
+        def watch():
+            try:
+                while stream.read(4096):
+                    pass
+            except (OSError, ValueError):
+                pass
+            self.log("[web] parent closed stdin; stopping")
+            if self.running:
+                self.abort()
+            self.stop()
+        threading.Thread(target=watch, name="ui-web-stdin", daemon=True).start()
 
     def stop(self):
         server, self.server = self.server, None
@@ -555,10 +597,14 @@ class WebFrontend:
         try:
             url = self.start()
             self.log(f"[GenericAgent-Harness web] {url}  (Ctrl+C to stop)")
+            self._write_ready()
+            if self.exit_on_stdin_eof:
+                self._watch_stdin()
             if task:
                 self.submit(task)
             if self.open_browser:
-                webbrowser.open(url)
+                # A token-protected page must be entered once with the token to get its cookie.
+                webbrowser.open(url + (f"?gah_token={self.token}" if self.token else ""))
             try:
                 while not self.stopped.wait(0.5):
                     pass
@@ -633,8 +679,39 @@ class _Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin is None or origin.rstrip("/") + "/" == self.frontend.url
 
+    def _authorized(self):
+        token = self.frontend.token
+        if not token:
+            return True
+        header = self.headers.get("X-GAH-Token")
+        if header and hmac.compare_digest(header, token):
+            return True
+        try:
+            morsel = SimpleCookie(self.headers.get("Cookie") or "").get(self.frontend.cookie_name)
+        except CookieError:
+            return False
+        return bool(morsel) and hmac.compare_digest(morsel.value, token)
+
+    def _enter_with_token(self, path):
+        """``/?gah_token=X`` -> set the HttpOnly cookie and drop the token from the address bar."""
+        token = self.frontend.token
+        given = parse_qs(urlsplit(self.path).query).get("gah_token", [""])[0]
+        if not (token and given and path in ("/", "/index.html") and hmac.compare_digest(given, token)):
+            return False
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", f"{self.frontend.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict")
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        return True
+
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        if self._enter_with_token(path):
+            return
+        if not self._authorized():
+            return self._json(401, {"error": "unauthorized"})
         if path in ("/", "/index.html"):
             # The React host and plugin client.js bundles both come from the frontend build.
             built_page = DIST / "index.html"
@@ -705,6 +782,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if not self._same_origin():
             return self._json(403, {"error": "cross-origin request rejected"})
+        if not self._authorized():
+            return self._json(401, {"error": "unauthorized"})
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
