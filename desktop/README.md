@@ -44,7 +44,26 @@ Quit: stdin is closed first (graceful stop), then the process tree is killed aft
 Plugins must feature-detect it and keep a browser fallback. Native work beyond this belongs in the
 plugin's Python side, reached over HTTP.
 
+## Packaging
+
+```
+cd frontend && npm ci && npm run build
+cd ../desktop && npm ci && npm run dist      # needs uv on PATH
+```
+
+`scripts/prepare.mjs` stages a standalone CPython (`uv python install`, default 3.12, override with
+`GAH_DESKTOP_PYTHON_VERSION`) into `stage/python` and the `ga_harness` package (with built web
+bundles) into `stage/py`; electron-builder ships both as `resources/python` and `resources/py`.
+The packaged app runs `resources/python` with `PYTHONPATH=resources/py`; GA itself is still
+resolved by `--ga-root` / `$GA_ROOT` / `~/.ga-harness/config.toml` and its own interpreter.
+
+CI: `.github/workflows/desktop.yml` builds windows-x64, macos-arm64, macos-x64 and linux-x64 on
+pushes to `main`/`desktop` and on PRs touching desktop/frontend/ga_harness, uploading unsigned
+installers as artifacts. Pushing a `desktop-v<semver>` tag sets the app version and creates a
+**draft** GitHub release with all installers.
+
 ## Not done yet
 
-Embedded Python runtime + uv (so plugins can install dependencies), user plugin directory,
-packaging (electron-builder), CI matrix for win/mac/linux, signing/notarization, auto-update.
+User plugin directory and per-plugin venvs (uv), signing/notarization (installers are unsigned:
+Windows SmartScreen and macOS Gatekeeper will warn; on macOS use right-click > Open or
+`xattr -dr com.apple.quarantine`), auto-update.

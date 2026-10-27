@@ -15,16 +15,25 @@ const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..', '..');
 
-function defaultPython() {
+// Where the backend comes from. Packaged builds carry a standalone CPython under
+// resources/python and the ga_harness package under resources/py (see scripts/prepare.mjs);
+// from source we use the repository checkout and its .venv.
+function runtime(resourcesPath) {
+  if (resourcesPath) {
+    const python = process.platform === 'win32'
+      ? path.join(resourcesPath, 'python', 'python.exe')
+      : path.join(resourcesPath, 'python', 'bin', 'python3');
+    return { python, cwd: path.join(resourcesPath, 'py'), pythonPath: path.join(resourcesPath, 'py') };
+  }
   const venv = process.platform === 'win32'
     ? path.join(REPO, '.venv', 'Scripts', 'python.exe')
     : path.join(REPO, '.venv', 'bin', 'python');
-  if (fs.existsSync(venv)) return venv;
-  return process.platform === 'win32' ? 'python' : 'python3';
+  const python = fs.existsSync(venv) ? venv : (process.platform === 'win32' ? 'python' : 'python3');
+  return { python, cwd: REPO, pythonPath: null };
 }
 
 // Optional <userData>/desktop.json: {"python": "...", "args": ["--ga-root", "..."], "cwd": "...", "env": {}}
-function loadSettings(userData) {
+function loadSettings(userData, rt) {
   const file = path.join(userData, 'desktop.json');
   let data = {};
   try {
@@ -34,17 +43,19 @@ function loadSettings(userData) {
   }
   return {
     file,
-    python: process.env.GAH_DESKTOP_PYTHON || data.python || defaultPython(),
+    python: process.env.GAH_DESKTOP_PYTHON || data.python || rt.python,
     args: Array.isArray(data.args) ? data.args.map(String) : [],
-    cwd: data.cwd || REPO,
+    cwd: data.cwd || rt.cwd,
+    pythonPath: rt.pythonPath,
     env: data.env && typeof data.env === 'object' ? data.env : {},
   };
 }
 
 class Backend {
-  constructor(userData) {
+  // resourcesPath: process.resourcesPath when packaged, otherwise null (run from source).
+  constructor(userData, resourcesPath = null) {
     this.userData = userData;
-    this.settings = loadSettings(userData);
+    this.settings = loadSettings(userData, runtime(resourcesPath));
     this.token = crypto.randomBytes(32).toString('hex');
     this.readyFile = path.join(userData, 'run', `backend-${process.pid}.json`);
     this.logFile = path.join(userData, 'logs', 'backend.log');
@@ -64,12 +75,17 @@ class Backend {
       ...this.settings.env,
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
+      PYTHONNOUSERSITE: '1',
       GAH_WEB_PORT: '0',
       GAH_WEB_OPEN_BROWSER: '0',
       GAH_WEB_TOKEN: this.token,
       GAH_WEB_READY_FILE: this.readyFile,
       GAH_WEB_EXIT_ON_STDIN_EOF: '1',
     };
+    if (this.settings.pythonPath) {
+      // launcher.maybe_reexec keeps REPO on PYTHONPATH when it hops to GA's interpreter.
+      env.PYTHONPATH = [this.settings.pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+    }
     const args = ['-m', 'ga_harness.cli', 'run', '--ui', 'web', ...this.settings.args];
     this.child = spawn(this.settings.python, args, {
       cwd: this.settings.cwd,

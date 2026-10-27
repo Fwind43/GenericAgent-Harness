@@ -3,12 +3,71 @@
   "private": true,
   "version": "0.0.1",
   "description": "GenericAgent-Harness desktop shell: Electron window around the ui-web backend",
+  "author": "Fwind43",
+  "homepage": "https://github.com/Fwind43/GenericAgent-Harness",
+  "license": "UNLICENSED",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/backend.js && node --check src/preload.js"
+    "check": "node --check src/main.js && node --check src/backend.js && node --check src/preload.js && node --check scripts/prepare.mjs",
+    "prepare:resources": "node scripts/prepare.mjs",
+    "dist": "node scripts/prepare.mjs && electron-builder --publish never"
   },
   "devDependencies": {
-    "electron": "^38.0.0"
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "io.github.fwind43.ga-harness",
+    "productName": "GenericAgent-Harness",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "src/**",
+      "resources/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "stage/python",
+        "to": "python"
+      },
+      {
+        "from": "stage/py",
+        "to": "py"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "resources/icon.png",
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "icon": "resources/icon.png",
+      "category": "Development"
+    }
   }
 }

@@ -57,7 +57,7 @@ function createWindow(url) {
     minWidth: 720,
     minHeight: 480,
     title: 'GenericAgent-Harness',
-    icon: path.join(__dirname, '..', '..', 'ga_harness', 'plugins', 'ui-web', 'ga-logo.png'),
+    icon: path.join(__dirname, '..', 'resources', 'icon.png'),
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -88,7 +88,7 @@ function createWindow(url) {
 
 async function boot() {
   try {
-    backend = new Backend(app.getPath('userData'));
+    backend = new Backend(app.getPath('userData'), app.isPackaged ? process.resourcesPath : null);
     backend.start();
     const url = await backend.waitReady();
     origin = new URL(url).origin;

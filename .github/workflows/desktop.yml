@@ -1,0 +1,114 @@
+name: desktop
+
+# Builds the Electron desktop app for Windows, macOS (arm64 + x64) and Linux.
+# Every run uploads unsigned installers as artifacts; a "desktop-v*" tag also publishes a release.
+on:
+  push:
+    branches: [main, desktop]
+    tags: ["desktop-v*"]
+    paths:
+      - "desktop/**"
+      - "frontend/**"
+      - "ga_harness/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "frontend/**"
+      - "ga_harness/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, runner: windows-latest, target: --win, arch: --x64 }
+          - { name: macos-arm64, runner: macos-14, target: --mac, arch: --arm64 }
+          - { name: macos-x64, runner: macos-15-intel, target: --mac, arch: --x64 }
+          - { name: linux-x64, runner: ubuntu-22.04, target: --linux, arch: --x64 }
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"   # unsigned until signing secrets exist
+      GAH_DESKTOP_PYTHON_VERSION: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build web frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        working-directory: desktop
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#desktop-v}" --no-git-tag-version --allow-same-version
+
+      - name: Check shell sources
+        working-directory: desktop
+        run: npm run check
+
+      - name: Stage Python runtime and backend
+        working-directory: desktop
+        run: node scripts/prepare.mjs
+
+      - name: Package
+        working-directory: desktop
+        run: npx electron-builder ${{ matrix.target }} ${{ matrix.arch }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.zip
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: desktop-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          draft: true
+          generate_release_notes: true
