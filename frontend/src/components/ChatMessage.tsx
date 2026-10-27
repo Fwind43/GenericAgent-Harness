@@ -79,6 +79,19 @@ const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
     {!!turn.tools.length && <span className="cnt">{turn.tools.length}{T(' 个工具', ' tools')}</span>}<Tokens usage={turn.usage} />
   </>}><div className="step-body"><TurnBody turn={turn} /></div></Disclosure>;
 });
+function MessageTime({ message }: { message: Message }) {
+  if (typeof message.created_at !== 'number' || !Number.isFinite(message.created_at)) return null;
+  const date = new Date(message.created_at * 1000);
+  if (!Number.isFinite(date.getTime())) return null;
+  const locale = T('zh-CN', 'en-US');
+  const label = message.role === 'user' ? T('发送时间', 'Sent at') : T('回复开始时间', 'Response started at');
+  const title = label + ': ' + date.toLocaleString(locale, {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'short',
+  });
+  return <time className="message-time" dateTime={date.toISOString()} title={title} aria-label={title}>
+    {date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
+  </time>;
+}
 export const ChatMessage = memo(function ChatMessage({ message: m, last }: { message: Message; last: boolean }) {
   const turns = (m.turns ?? []).filter(Boolean), running = m.status === 'running', fin = turns.at(-1);
   // A terminal question is user-facing output, not a hidden execution step.
@@ -92,8 +105,9 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
     {m.role === 'assistant' && <div className="meta"><span className="dot" /><span className="assistant-name">GenericAgent</span>
       {m.model?.trim() && <span className="model-name" title={T('使用的模型：', 'Model used: ') + m.model}>{m.model}</span>}
       {m.reasoning_effort?.trim() && <span className="reasoning-effort" title={T('本条回复的思考强度：', 'Reasoning effort for this reply: ') + m.reasoning_effort.trim()}>{m.reasoning_effort.trim()}</span>}
+      <MessageTime message={m} />
     </div>}
-    {m.role === 'user' ? <div className="body">{m.text}</div> : turns.length ? <>
+    {m.role === 'user' ? <><div className="body">{m.text}</div><MessageTime message={m} /></> : turns.length ? <>
       {!!steps.length && <Disclosure className={'steps' + (running ? ' running' : '')} initial={running} title={<>
         <span className="process-dot" /><span>{running ? T('执行中 · ', 'Working · ') : T('执行过程 · ', 'Steps · ')}{steps.length}{T(' 步', ' steps')}</span>
       </>}>{steps.map((turn, index) => <Step key={turn.turn} turn={turn} live={running && !finalTurn && index === steps.length - 1} />)}</Disclosure>}

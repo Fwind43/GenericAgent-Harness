@@ -96,11 +96,11 @@ export class HostStore {
     for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
     listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
     listen<unknown>('plugin', data => this.emit('plugin', data));
-    listen<{ task: string; model?: string; reasoning_effort?: string }>('start', data => {
+    listen<{ task: string; model?: string; reasoning_effort?: string; created_at?: number }>('start', data => {
       const state = this.snapshot.state;
       this.setState({ ...state, running: true, messages: [...state.messages,
-        { role: 'user', text: data.task, status: 'done' },
-        { role: 'assistant', text: '', status: 'running', model: data.model, reasoning_effort: data.reasoning_effort },
+        { role: 'user', text: data.task, status: 'done', created_at: data.created_at },
+        { role: 'assistant', text: '', status: 'running', model: data.model, reasoning_effort: data.reasoning_effort, created_at: data.created_at },
       ] });
     });
     listen<{ text: string }>('chunk', data => this.last(m => ({ ...m, text: (m.text ?? '') + data.text }), true));

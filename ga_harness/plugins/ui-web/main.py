@@ -24,6 +24,7 @@ import json
 import queue
 import re
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -414,8 +415,9 @@ class WebFrontend:
                     # Match apply_effort without mutating the client before the task is saved.
                     effort = getattr(agent, "gah_reasoning_effort", None) or getattr(backend, "_gah_effort_default", effort)
                 effort = effort or "default"
-            metadata = {"model": model, "reasoning_effort": effort}
-            messages = self.messages + [{"role": "user", "text": task, "status": "done"},
+            created_at = time.time()
+            metadata = {"model": model, "reasoning_effort": effort, "created_at": created_at}
+            messages = self.messages + [{"role": "user", "text": task, "status": "done", "created_at": created_at},
                                         {"role": "assistant", "text": "", "status": "running", **metadata}]
             if self.sessions:
                 try:

@@ -136,9 +136,11 @@ class Runs:
             scope = self.workspaces.context(sid)
             recipe = self.recipe()
             rid = uuid.uuid4().hex
+            created_at = time.time()
             messages = copy.deepcopy(session["messages"])
-            messages.extend([{"role": "user", "text": task.strip(), "run_id": rid},
-                             {"role": "assistant", "text": "", "status": "running", "turns": [], "run_id": rid}])
+            messages.extend([{"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at},
+                             {"role": "assistant", "text": "", "status": "running", "turns": [],
+                              "run_id": rid, "created_at": created_at}])
             payload = {"session_id": sid, "run_id": rid, "state": copy.deepcopy(session["state"]),
                        "scope": scope, "task": task.strip(), "source": source, "timeout": timeout}
             # Prepare the process before reserving storage; starting it comes only
@@ -149,7 +151,7 @@ class Runs:
             try:
                 with self.sessions._db() as db:
                     db.execute("INSERT INTO runs(id,session_id,source,status,workspace,project_id,created) VALUES(?,?,?,'running',?,?,?)",
-                               (rid, sid, source, scope["workspace"], scope.get("project_id") or "", time.time()))
+                               (rid, sid, source, scope["workspace"], scope.get("project_id") or "", created_at))
                     self.sessions._write(db, session, messages, session["state"])
                     self._append(db, rid, "run.started", {"status": "running"})
             except Exception:

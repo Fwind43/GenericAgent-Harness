@@ -1,7 +1,7 @@
 /* Assistant output: quiet metadata, readable prose, progressive disclosure. */
 #thread{max-width:860px;padding:28px 28px 20px}
 .msg{min-width:0;margin:0 0 32px}
-.msg.user{display:flex;justify-content:flex-end;margin-bottom:26px}
+.msg.user{display:flex;flex-direction:column;align-items:flex-end;margin-bottom:26px}
 .msg.user .body{max-width:85%;padding:10px 16px;background:var(--surface-muted);border:1px solid var(--border);border-radius:18px;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.assistant{padding:0}
 .meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;margin:0 0 12px;line-height:20px}
@@ -10,6 +10,9 @@
 .meta .model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta .model-name::before,.meta .reasoning-effort::before{content:"\00b7";margin-right:7px}
 .meta .reasoning-effort{flex:none;white-space:nowrap}
+.message-time{flex:none;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.meta .message-time{margin-left:auto}
+.msg.user>.message-time{margin-top:5px}
 .msg.assistant .body{min-width:0}
 .usage{display:flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums}
 .message-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:28px}

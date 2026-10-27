@@ -10,6 +10,8 @@ export interface LlmTiming { seconds?: number; ttft?: number | null }
 export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; run_id?: string;
+  /** Unix seconds at message creation; absent for historical messages. */
+  created_at?: number;
 }
 export interface Project { id: string; name: string; workspace: string; rules?: string; memory?: string }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; projects: Project[] }
