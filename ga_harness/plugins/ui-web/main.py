@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from ga_harness import presets
 from ga_harness.sessions import EFFORTS, apply_effort
 
 DIST = Path(__file__).with_name("dist")
@@ -181,6 +182,8 @@ class WebFrontend:
         agent = self.ctx.get("ga.agent")
         if self.sessions and agent is not None:
             data["effort"] = {"current": getattr(agent, "gah_reasoning_effort", None), "options": list(EFFORTS)}
+        if self.sessions and self.runs:
+            data["presets"] = presets.catalog((self.sessions.current()["state"] or {}).get("preset"))
         data = copy.deepcopy(data)
         data["web_plugins"] = self.web.manifest()
         return self.ctx.waterfall("web.snapshot", data)
@@ -263,7 +266,7 @@ class WebFrontend:
         agent = self.ctx.get("ga.agent")
         if not self.sessions or agent is None:
             return 404, {"error": "session-store is not enabled"}
-        value = body.get("effort") or None
+        value = body.get("effort", body.get("value")) or None
         if value is not None and value not in EFFORTS:
             return 400, {"error": "unknown reasoning effort"}
         with self.lock:
@@ -278,6 +281,23 @@ class WebFrontend:
                 return 409, {"error": str(e)}
             except Exception:
                 agent.gah_reasoning_effort = old
+                return 503, {"error": "session could not be saved"}
+            snap = self.snapshot()
+            self._broadcast("snapshot", snap)
+            return 200, snap
+
+    def preset_action(self, body):
+        if not self.sessions or not self.runs:
+            return 404, {"error": "agent presets require session-store and run-store"}
+        value = body.get("preset", body.get("value")) or None
+        if value is not None and presets.get(value) is None:
+            return 400, {"error": "unknown agent preset"}
+        with self.lock:
+            try:
+                self.sessions.remember(preset=value)
+            except RuntimeError as e:
+                return 409, {"error": str(e)}
+            except Exception:
                 return 503, {"error": "session could not be saved"}
             snap = self.snapshot()
             self._broadcast("snapshot", snap)
@@ -708,6 +728,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.plugin_action(body))
         elif path == "/api/effort":
             self._json(*self.frontend.effort_action(body))
+        elif path == "/api/preset":
+            self._json(*self.frontend.preset_action(body))
         elif path == "/api/models/select":
             self._json(*self.frontend.model_action(body))
         elif path == "/api/models/config":

@@ -27,11 +27,13 @@ export interface RunEvent {
 export interface RuntimeModel { id: string; name?: string; model?: string; provider?: string; provider_id?: string }
 export interface RuntimeCatalog { current: string; items: RuntimeModel[] }
 export interface Effort { current: string; options: string[] }
+export interface AgentPreset { id: string; name: string; name_zh?: string; description?: string; description_zh?: string; builtin?: boolean }
+export interface PresetCatalog { current: string | null; items: AgentPreset[]; errors?: string[] }
 export interface WebManifest { name: string; rev: number; script?: string; style?: string; head?: string; order?: number }
 export interface HostState {
   running: boolean; messages: Message[]; session_id?: string; sessions?: Session[];
   web_plugins?: WebManifest[]; scope?: Scope; plugins_enabled?: boolean;
-  models?: RuntimeCatalog; effort?: Effort; parallel_runs?: boolean; run_id?: string | null; runs?: Run[]; [key: string]: unknown;
+  models?: RuntimeCatalog; effort?: Effort; presets?: PresetCatalog; parallel_runs?: boolean; run_id?: string | null; runs?: Run[]; [key: string]: unknown;
 }
 export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string }
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }

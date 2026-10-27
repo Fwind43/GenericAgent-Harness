@@ -7,7 +7,8 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [provider, setProvider] = useState('');
   const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null);
-  const catalog = state.models, effort = state.effort;
+  const catalog = state.models, effort = state.effort, presets = state.presets;
+  const activePreset = presets?.items.find(item => item.id === presets.current);
   const current = catalog?.items.find(item => item.id === catalog.current);
   const groups = new Map<string, { name: string; count: number }>();
   for (const item of catalog?.items || []) {
@@ -39,7 +40,7 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
     <PluginSlot api={api} name="composer"><div className="gah-models">
       <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy} aria-haspopup="dialog" aria-controls="gah-model-picker" aria-expanded={open} onClick={() => { setQuery(''); setProvider(''); setOpen(value => !value); }}>
         <span className="gah-model-name">{current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b', 'Choose model')}</span>
-        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<span className="gah-model-caret" aria-hidden="true">{'\u2303'}</span>
+        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}{activePreset && <span className="gah-model-effort gah-model-preset">{T(activePreset.name_zh || activePreset.name, activePreset.name)}</span>}<span className="gah-model-caret" aria-hidden="true">{'\u2303'}</span>
       </button>
     </div></PluginSlot>
     {open && createPortal(<div ref={popup} popover="auto" role="dialog" aria-label={T('\u6a21\u578b\u4e0e\u601d\u8003\u5f3a\u5ea6', 'Model and reasoning effort')} id="gah-model-picker" className="gah-model-popover" onToggle={event => { if (event.newState === 'closed') setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') close(true); }}>
@@ -48,6 +49,7 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
       </div>
       <div className="gah-picker-models">{items.map(item => <button type="button" className="gah-picker-option" key={item.id} data-model-id={item.id} aria-pressed={item.id === catalog.current} disabled={busy} onClick={() => select('/api/models/select', { id: item.id })}><span className="gah-picker-option-copy"><span>{item.name || item.model}</span><small>{[item.provider || T('\u72ec\u7acb\u914d\u7f6e', 'Standalone'), item.name && item.model !== item.name ? item.model : ''].filter(Boolean).join(' \u00b7 ')}</small></span><span className="gah-picker-check" aria-hidden="true">{item.id === catalog.current ? '\u2713' : ''}</span></button>)}{!items.length && <p className="gah-picker-empty">{T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b', 'No matching models')}</p>}</div>
       {effort && <div className="gah-picker-effort"><div className="gah-picker-label">{T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}<small>{T('\u4ec5\u5f53\u524d\u5bf9\u8bdd', 'This chat only')}</small></div><div className="gah-effort-options" role="group" aria-label={T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}>{['', ...effort.options].map(option => <button key={option} type="button" aria-pressed={option === (effort.current || '')} disabled={busy} onClick={() => select('/api/effort', { value: option })}>{option || 'default'}</button>)}</div></div>}
+      {presets && presets.items.length > 0 && <div className="gah-picker-effort gah-picker-preset"><div className="gah-picker-label">{T('Agent \u9884\u8bbe', 'Agent preset')}<small>{T('\u4ec5\u5f53\u524d\u5bf9\u8bdd', 'This chat only')}</small></div><div className="gah-effort-options" role="group" aria-label={T('Agent \u9884\u8bbe', 'Agent preset')}>{[null, ...presets.items].map(item => <button key={item?.id || ''} type="button" title={item ? T(item.description_zh || item.description || '', item.description || '') : undefined} aria-pressed={(item?.id || null) === (presets.current || null)} disabled={busy} onClick={() => select('/api/preset', { value: item?.id || '' })}>{item ? T(item.name_zh || item.name, item.name) : T('\u9ed8\u8ba4', 'Default')}</button>)}</div></div>}
     </div>, document.body)}
   </>;
 }

@@ -100,3 +100,22 @@ This change is source-reviewed only. Focused regression sources live in
 `tests/test_runs.py`; they have not been executed as part of this delivery. No
 frontend build, service restart, deployment, or live multi-worker validation was
 performed.
+
+## Agent presets
+
+A preset is a named, per-session adjustment applied to each isolated worker run.
+Built-in presets live in `ga_harness/presets/*.toml`; user presets in
+`~/.ga-harness/presets/*.toml` (same id overrides the built-in one). Keys:
+`name`, `name_zh`, `description`, `description_zh`, `prompt` (appended through
+`ga-prompt`) and `disable_tools` (passed to `ga-tools.disable`). Host and
+storage plugins are never touched.
+
+- The choice is stored as `state["preset"]` of the session; `Runs.start` applies
+  it to the recipe before spawning the worker. An unknown preset fails the start.
+- `GET /api/state` includes `presets: {current, items, errors}` when both
+  session-store and run-store are active.
+- `POST /api/preset {"value": "<id>" | ""}` selects or clears the preset for the
+  current session (`preset` is accepted as an alias). `POST /api/effort` now also
+  accepts `value` (the key the React picker sends) besides `effort`.
+- Process isolation is not a sandbox: `disable_tools` only removes tools from the
+  agent; it does not restrict what the worker process may do.

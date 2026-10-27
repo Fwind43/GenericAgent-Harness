@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 
+from . import presets
 from .run_output import apply_event
 from .sessions import settle
 from .worker import run_worker
@@ -169,6 +170,12 @@ class Runs:
                 raise RuntimeError("this session already has an active run")
             scope = self.workspaces.context(sid)
             recipe = self.recipe()
+            preset_id = (session["state"] or {}).get("preset")
+            if preset_id:
+                preset = presets.get(preset_id)
+                if preset is None:
+                    raise ValueError(f"agent preset {preset_id!r} is not available")
+                recipe = presets.apply(recipe, preset)
             rid = uuid.uuid4().hex
             created_at = time.time()
             # A session that never stored a model/effort runs with the selection the
