@@ -50,6 +50,12 @@ host projects worker output into persisted messages; the React host filters by
 session and sequence, and refreshes state when a run finishes. Session switching
 does not cancel a worker. Model/configuration changes retain their busy guards.
 
+Before execution, the worker emits `assistant.metadata` with its actual model
+identifier and effective `reasoning_effort` after restoring the session and applying
+its override. These display fields are saved on that run's assistant message and
+included in live message snapshots. Missing metadata on historical messages is
+not inferred from the host's current model selection.
+
 Terminal states are `done`, `error`, or `aborted`. Cancellation requests cooperative
 abort, then terminates only that run's own spawned process after `cancel_grace`
 (default 5 seconds). Host shutdown requests cancellation. On a later host startup,

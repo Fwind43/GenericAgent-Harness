@@ -14,6 +14,12 @@ def apply_event(messages, name, data):
         message["text"] = message.get("text", "") + str(data)
         return
     data = data if isinstance(data, dict) else {}
+    if name == "assistant.metadata":
+        # Only display fields belong on the response; never copy worker config.
+        for key in ("model", "reasoning_effort"):
+            value = data.get(key)
+            message[key] = value.strip() if isinstance(value, str) else None
+        return
     if name == "usage.total":
         message["usage"] = {k: data.get(k) for k in USAGE_KEYS}
         return

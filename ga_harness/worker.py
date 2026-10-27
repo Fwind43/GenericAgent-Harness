@@ -90,6 +90,15 @@ def run_worker(connection, recipe, payload):
             agent.abort()
 
         threading.Thread(target=control, name="run-control", daemon=True).start()
+        # Snapshot the worker's actual selection after restore/apply_effort, not
+        # the host's currently selected session or its model defaults.
+        backend = getattr(getattr(raw, "llmclient", None), "backend", None)
+        model = getattr(backend, "model", "") or getattr(backend, "name", "") or ""
+        effort = getattr(backend, "reasoning_effort", None)
+        send("event", name="assistant.metadata", data={
+            "model": model if isinstance(model, str) else "",
+            "reasoning_effort": effort if isinstance(effort, str) else None,
+        })
         send("ready")
         result = agent.run(payload["task"], source=payload.get("source", "user"), timeout=payload.get("timeout"))
         send("done", text=str(result or ""), state=capture(raw))
