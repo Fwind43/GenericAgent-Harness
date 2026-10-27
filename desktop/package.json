@@ -5,6 +5,10 @@
   "description": "GenericAgent-Harness desktop shell: Electron window around the ui-web backend",
   "author": "Fwind43",
   "homepage": "https://github.com/Fwind43/GenericAgent-Harness",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fwind43/GenericAgent-Harness.git"
+  },
   "license": "UNLICENSED",
   "main": "src/main.js",
   "scripts": {
@@ -20,6 +24,7 @@
   "build": {
     "appId": "io.github.fwind43.ga-harness",
     "productName": "GenericAgent-Harness",
+    "executableName": "ga-harness-desktop",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
@@ -67,7 +72,18 @@
         "tar.gz"
       ],
       "icon": "resources/icon.png",
-      "category": "Development"
-    }
-  }
+      "category": "Development",
+      "executableName": "ga-harness-desktop",
+      "syncDesktopName": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Fwind43",
+        "repo": "GenericAgent-Harness",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "desktopName": "ga-harness-desktop.desktop"
 }
