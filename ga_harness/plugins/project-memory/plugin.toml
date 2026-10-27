@@ -1,0 +1,19 @@
+name = "project-memory"
+category = "extension"
+entry = "main:apply"
+description = "Admin-style layered project memory (L0 policy, L1 index, L2 facts, L3 topic files) injected for the active GA project."
+description_zh = "与 Admin 一致的分层项目记忆（L0 规范 / L1 索引 / L2 事实 / L3 专题文件），在激活 GA 项目时注入。"
+inject = ["ga.hooks"]
+provides = ["project.memory"]
+
+[settings.facts_limit]
+type = "integer"
+label = "Characters of project_mem.txt (L2) injected per call"
+label_zh = "每次注入的 project_mem.txt（L2）字符数"
+default = 10000
+
+[settings.legacy_limit]
+type = "integer"
+label = "Characters of the official project_memory.md injected per call"
+label_zh = "每次注入的官方 project_memory.md 字符数"
+default = 6000
