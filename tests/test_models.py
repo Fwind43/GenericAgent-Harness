@@ -7,7 +7,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from ga_harness import llmconfig
-from ga_harness.models import Models
+from ga_harness.models import Models, _mykey_source
 
 
 class ModelAgent:
@@ -195,24 +195,35 @@ class StubFallback(llmconfig.Fallback):
         self.committed.append(finder)
 
 
+class MykeyTestSource:
+    """Reload only the synthetic mykey fixture, like GA's native loader."""
+    def __init__(self, path):
+        self.path = path
+
+    def load(self):
+        data = llmconfig.read_mykey_py(self.path)
+        data.pop("_skipped", None)
+        return llmconfig._expand(llmconfig.resolve_providers(data))
+
+
 def make_fallback(tmp_path):
     mykey = tmp_path / "mykey.py"
     mykey.write_text('native_oai_config_x = {"name": "X", "model": "m-x", "apibase": "https://example.invalid/v1", '
                      '"apikey": "test-secret-x"}\nproxy = "http://127.0.0.1:1"\n', encoding="utf-8")
-    agent = ModelAgent(llmconfig.Source(inline=llmconfig.read_mykey_py(mykey)))
+    agent = ModelAgent(MykeyTestSource(mykey))
     fb = StubFallback(tmp_path / "gah" / "llm.toml", mykey, agent)
     return Models(agent, None, fb), fb, mykey
 
 
-def test_readonly_ga_mykey_explains_and_converts(tmp_path):
+def test_editable_ga_mykey_and_explicit_conversion(tmp_path):
     store, fb, mykey = make_fallback(tmp_path)
     before = mykey.read_bytes()
     cfg = store.config()
-    assert cfg["writable"] is False and cfg["reason_code"] == "ga_mykey"
-    assert cfg["convert"] == {"target": str(fb.target), "blocked": False}
+    assert cfg["writable"] is True and cfg["format"] == "mykey"
+    assert "convert" not in cfg and "test-secret" not in json.dumps(cfg)
     store.agent.llmclient.backend.history = [{"role": "user", "content": "kept"}]
     out = store.change({"action": "convert"})
-    assert out["writable"] is True and "convert" not in out
+    assert out["writable"] is True and out["format"] == "harness" and "convert" not in out
     assert [e["key"] for e in out["entries"]] == ["native_oai_config_x"]
     assert [p["id"] for p in out["providers"]] == ["example"]
     assert out["entries"][0]["provider"] == "example"
@@ -232,7 +243,7 @@ def test_convert_refuses_existing_target_and_rolls_back(tmp_path):
     store, fb, _ = make_fallback(tmp_path)
     fb.target.parent.mkdir()
     fb.target.write_text("# user file\n", encoding="utf-8")
-    assert store.config()["convert"]["blocked"] is True
+    assert store.config()["writable"] is True and store.config()["format"] == "mykey"
     with pytest.raises(ValueError):
         store.convert()
     assert fb.target.read_text(encoding="utf-8") == "# user file\n"
@@ -243,7 +254,7 @@ def test_convert_refuses_existing_target_and_rolls_back(tmp_path):
         store.convert()
     assert not fb.target.exists() and fb.undone == ["finder"] and not fb.committed
     assert store.agent.llmclients is clients and store.source is None
-    assert store.config()["reason_code"] == "ga_mykey"
+    assert store.config()["writable"] is True and store.config()["format"] == "mykey"
 
 
 def test_real_fallback_switches_mykey_module(tmp_path):
@@ -262,3 +273,99 @@ def test_real_fallback_switches_mykey_module(tmp_path):
         sys.modules.pop("mykey", None)
         if saved is not None:
             sys.modules["mykey"] = saved
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_mykey_crud_preserves_helpers_secrets_and_history(tmp_path, newline):
+    store, fb, mykey = make_fallback(tmp_path)
+    header = "# preserved comment\nimport math\ndef helper():\n    return math.pi\n\n".replace("\n", newline)
+    tail = mykey.read_text(encoding="utf-8").replace("\n", newline)
+    untouched = "# untouched model" + newline + "native_claude_config_keep = " + repr({
+        "model": "keep", "apibase": "https://example.invalid/v1", "apikey": "test-secret-keep"}) + newline
+    mykey.write_bytes((header + tail + untouched).encode("utf-8"))
+    store.agent.load_llm_sessions()
+    store.agent.llmclient.backend.history = [{"role": "user", "content": "kept"}]
+    out = change(store, key="native_oai_config_x", values={"model": "updated", "apikey": "", "provider": ""})
+    data = llmconfig.read_mykey_py(mykey)
+    assert data["native_oai_config_x"]["model"] == "updated"
+    assert data["native_oai_config_x"]["apikey"] == "test-secret-x"
+    assert data["proxy"] == "http://127.0.0.1:1"
+    assert "test-secret" not in json.dumps(out)
+    text = mykey.read_bytes().decode("utf-8")
+    assert text.startswith(header) and untouched in text
+    if newline == "\r\n":
+        assert "\n" not in text.replace("\r\n", "")
+    change(store, key="native_oai_config_new", values={"name": "New", "model": "new",
+           "apibase": "https://example.invalid/v1", "apikey": "test-secret-new"})
+    assert len(store.catalog()["items"]) == 3
+    assert store.agent.llmclient.backend.history == [{"role": "user", "content": "kept"}]
+    cold = Models(ModelAgent(MykeyTestSource(mykey)), None, fb)
+    assert len(cold.catalog()["items"]) == 3
+    change(store, "delete", key="native_oai_config_new")
+    assert "native_oai_config_new" not in llmconfig.read_mykey_py(mykey)
+    assert not fb.target.exists() and store.source is None
+    assert mykey.read_bytes().startswith(header.encode("utf-8"))
+    assert untouched.encode("utf-8") in mykey.read_bytes()
+
+
+def test_mykey_busy_revision_and_reload_failure_restore_bytes(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    original = mykey.read_bytes()
+    clients, active = store.agent.llmclients, store.agent.llmclient
+    revision = store.config()["revision"]
+    store.agent.is_running = True
+    with pytest.raises(RuntimeError, match="running"):
+        change(store, key="native_oai_config_x", values={"model": "blocked"})
+    store.agent.is_running = False
+    assert mykey.read_bytes() == original
+    store.agent.fail_reload = True
+    with pytest.raises(RuntimeError, match="restored"):
+        change(store, key="native_oai_config_x", values={"model": "not-saved"})
+    assert mykey.read_bytes() == original
+    assert store.agent.llmclients is clients and store.agent.llmclient is active
+    mykey.write_bytes(original + b"# externally edited\n")
+    with pytest.raises(RuntimeError, match="changed"):
+        store.change({"action": "save", "key": "native_oai_config_x", "revision": revision,
+                      "values": {"model": "not-saved"}})
+    assert mykey.read_bytes() == original + b"# externally edited\n"
+
+
+@pytest.mark.parametrize("action,values", [
+    ("provider_save", {}), ("provider_delete", {}), ("save", {"provider": "shared"}),
+])
+def test_mykey_rejects_provider_mutations_without_writing(tmp_path, action, values):
+    store, fb, mykey = make_fallback(tmp_path)
+    original = mykey.read_bytes()
+    with pytest.raises(ValueError, match="providers need a harness config"):
+        change(store, action, key="native_oai_config_x", values=values)
+    assert mykey.read_bytes() == original and not fb.target.exists()
+
+
+@pytest.mark.parametrize("source", [
+    "cfg = {'model': 'old'}\ncfg = {'model': 'old'}\n",
+    "cfg = alias = {'model': 'old'}\n",
+    "cfg = {'model': 'old'}; side_effect = 1\n",
+    "if True:\n    cfg = {'model': 'old'}\n",
+    "cfg = dict(model='old')\n",
+])
+def test_mykey_source_rejects_ambiguous_or_dynamic_definitions(source):
+    before = {"cfg": {"model": "old"}}
+    after = {"cfg": {"model": "new"}}
+    with pytest.raises(ValueError):
+        _mykey_source(source.encode(), before, after, "synthetic-mykey.py")
+
+
+def test_mykey_source_invalid_or_changed_dependencies_are_rejected():
+    with pytest.raises(ValueError, match="syntax error"):
+        _mykey_source(b"cfg = {", {"cfg": {}}, {"cfg": {"model": "new"}}, "synthetic-mykey.py")
+    source = b"cfg = {'model': 'old'}\ncfg.update(model='dynamic')\n"
+    with pytest.raises(ValueError, match="dynamically"):
+        _mykey_source(source, {"cfg": {"model": "dynamic"}}, {"cfg": {"model": "new"}}, "synthetic-mykey.py")
+
+
+def test_mykey_source_preserves_bom_and_trailing_comment():
+    source = "\ufeff# non-ASCII \u4fdd\u7559\ncfg = {'model': 'old'}  # retain this note\n"
+    out = _mykey_source(source.encode("utf-8"), {"cfg": {"model": "old"}},
+                        {"cfg": {"model": "new"}}, "synthetic-mykey.py")
+    assert out.startswith("\ufeff# non-ASCII \u4fdd\u7559\n".encode("utf-8"))
+    assert b"# retain this note" in out

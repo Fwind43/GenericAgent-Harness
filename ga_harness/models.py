@@ -86,7 +86,8 @@ def _mykey_source(original, before, after, filename):
     original text.  Anything not expressible as one plain assignment is refused
     rather than guessed at.
     """
-    text = original.decode("utf-8")
+    bom = b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b""
+    text = original.decode("utf-8-sig")
     nl = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
     try:
@@ -105,16 +106,26 @@ def _mykey_source(original, before, after, filename):
         if before.get(key) == after.get(key):
             continue
         nodes = spans.get(key, [])
+        if key in before and not nodes:
+            raise ValueError(f"{key} is not assigned directly in mykey.py; edit it locally")
         if len(nodes) > 1 or (nodes and (len(getattr(nodes[0], "targets", [0])) != 1 or nodes[0].col_offset)):
             raise ValueError(f"{key} is defined in a complex way in mykey.py; edit it locally")
+        tail = ""
         if nodes:
             n = nodes[0]
+            try:
+                value = ast.literal_eval(n.value)
+            except (ValueError, TypeError, SyntaxError):
+                raise ValueError(f"{key} is computed dynamically in mykey.py; edit it locally") from None
+            if not isinstance(value, dict):
+                raise ValueError(f"{key} is not a literal model dictionary; edit it locally")
             tail = lines[n.end_lineno - 1].encode("utf-8")[n.end_col_offset:].decode("utf-8", "replace").strip()
             if tail and not tail.startswith("#"):
                 raise ValueError(f"{key} shares a line with other code in mykey.py; edit it locally")
         new = None
         if key in after:
-            new = f"{key} = {pprint.pformat(after[key], sort_dicts=False, width=100)}".replace("\n", nl) + nl
+            new = f"{key} = {pprint.pformat(after[key], sort_dicts=False, width=100)}".replace("\n", nl)
+            new += ("  " + tail if tail else "") + nl
         if nodes:
             edits.append((nodes[0].lineno - 1, nodes[0].end_lineno, new or ""))
         elif new:
@@ -138,7 +149,7 @@ def _mykey_source(original, before, after, filename):
             continue
         if ns.get(key) != after.get(key):
             raise ValueError("mykey.py computes configurations dynamically; edit it locally") from None
-    return out.encode("utf-8")
+    return bom + out.encode("utf-8")
 
 
 class Models:
