@@ -15,7 +15,7 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
       if (action === "update" && !p) return;
       setError("");
       setDismissed(true);
-      setEditing({ action, id: action === "update" ? p == null ? void 0 : p.id : void 0, name: action === "update" ? (p == null ? void 0 : p.name) ?? "" : "", workspace: scope.workspace ?? "", rules: action === "update" ? (p == null ? void 0 : p.rules) ?? "" : "", memory: action === "update" ? (p == null ? void 0 : p.memory) ?? "" : "" });
+      setEditing({ action, id: action === "update" ? p == null ? void 0 : p.id : void 0, name: action === "update" ? (p == null ? void 0 : p.name) ?? "" : "", workspace: scope.workspace ?? "" });
     };
     async function change(body, inDialog = false) {
       return run(async () => {
@@ -108,7 +108,7 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
       ] }, `${item.label}:${index}`)) }) }) }),
       editing && /* @__PURE__ */ jsxRuntime.jsx(sdk.Modal, { className: "gah-ws-dialog", label: sdk.T("工作区与项目设置", "Workspace and project settings"), busy: working, onClose: () => setEditing(null), children: /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: submit, children: [
         /* @__PURE__ */ jsxRuntime.jsx("h2", { children: editing.action === "workspace" ? sdk.T("切换工作目录", "Switch directory") : editing.action === "create" ? sdk.T("新建项目", "New project") : sdk.T("项目设置", "Project settings") }),
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-ws-help", children: editing.action === "workspace" ? sdk.T("使用服务器已存在的目录。空对话原地切换，有历史时新开对话。工作区不是权限沙箱。", "Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.") : sdk.T("项目共享目录、规则和笔记，对话历史独立。规则与笔记每次请求注入，笔记需手动维护。", "Projects share a directory, rules and notes; chat histories stay separate. Rules and notes are injected into each request; notes are maintained manually.") }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-ws-help", children: editing.action === "workspace" ? sdk.T("使用服务器已存在的目录。空对话原地切换，有历史时新开对话。工作区不是权限沙箱。", "Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.") : sdk.T("项目共享工作目录，对话历史独立。项目记忆由 GA 官方项目模式维护（temp/projects/<名称>/）。", "Projects share a working directory; chat histories stay separate. Project memory is maintained by GA's official project mode (temp/projects/<name>/).") }),
         /* @__PURE__ */ jsxRuntime.jsxs("fieldset", { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
           editing.action !== "workspace" && /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-ws-field", children: [
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("名称", "Name") }),
@@ -121,11 +121,7 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-ws-field", children: [
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("服务器上的绝对目录", "Absolute directory on the server") }),
             /* @__PURE__ */ jsxRuntime.jsx("input", { name: "workspace", required: true, autoFocus: editing.action === "workspace", readOnly: editing.action === "update", value: editing.workspace, onChange: (event) => field("workspace", event.target.value) })
-          ] }),
-          editing.action !== "workspace" && /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: ["rules", "memory"].map((key) => /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-ws-field", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: key === "rules" ? sdk.T("项目规则", "Project rules") : sdk.T("项目笔记", "Project notes") }),
-            /* @__PURE__ */ jsxRuntime.jsx("textarea", { name: key, rows: 5, value: editing[key], onChange: (event) => field(key, event.target.value) })
-          ] }, key)) })
+          ] })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-ws-error", role: "alert", children: error }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-ws-actions", children: [
