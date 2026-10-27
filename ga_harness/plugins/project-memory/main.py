@@ -7,7 +7,7 @@ host and in isolated run workers).  For that project this plugin
 * seeds ``<GA>/temp/projects/<name>/memory/`` with L0 ``memory_management_sop.md``,
   L1 ``project_mem_insight.txt`` and L2 ``project_mem.txt`` (create-only, never
   overwriting existing knowledge), and
-* appends an ``[Admin project memory]`` block to the system message on every LLM
+* appends a ``[project memory]`` block to the system message on every LLM
   call: identity, layer rules, L1 in full, an L2 excerpt and an excerpt of the
   official ``project_memory.md`` as a read-only legacy source.
 
@@ -21,8 +21,8 @@ import os
 import re
 from pathlib import Path
 
-BEGIN = "[Admin project memory]"
-END = "[/Admin project memory]"
+BEGIN = "[project memory]"
+END = "[/project memory]"
 _BLOCK = re.compile(r"\n*" + re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", re.S)
 
 POLICY = (
