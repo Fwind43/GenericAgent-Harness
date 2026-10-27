@@ -10,7 +10,7 @@ GenericAgent（GA）的 **Everything is a Plugin** 外壳，思路参考 DeepSee
 
 ## 快速开始
 
-需要 Python ≥ 3.11、[uv](https://docs.astral.sh/uv/)，以及一份本地 GenericAgent 代码。
+需要 Python ≥ 3.11、[uv](https://docs.astral.sh/uv/)，以及一份本地 GenericAgent 代码；使用 Web 界面还需要 Node.js 与 npm 来构建前端。
 
 ```bat
 git clone https://github.com/Fwind43/GenericAgent-Harness
@@ -19,8 +19,19 @@ uv sync --extra dev
 
 gah.cmd run "介绍一下你自己" --ga-root D:\path\to\GenericAgent
 gah.cmd run --ui tui --ga-root D:\path\to\GenericAgent
+```
+
+Web 首次启动前，在 `frontend/` 构建 React 宿主与插件资源，再回到仓库根目录启动：
+
+```bat
+cd frontend
+npm.cmd ci
+npm.cmd run build
+cd ..
 gah.cmd run --ui web --ga-root D:\path\to\GenericAgent
 ```
+
+默认访问 `http://127.0.0.1:8765/`。前端源码更新后需重新构建；缺少构建产物时，Web 首页会返回 503 并提示构建，不会回退到旧版界面。前端开发与插件 SDK 说明见 [frontend/MIGRATION.md](frontend/MIGRATION.md)。
 
 GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harness/config.toml` 中的 `ga_root`。
 如果 GA 有自己的虚拟环境，`gah` 会自动切换到该环境运行，不用手动设置 `PYTHONPATH`。
@@ -44,21 +55,30 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `ga-prompt` | 把系统提示词变成可前置、追加、替换的 waterfall |
 | `ga-tools` | 不改 GA 即可新增、替换或禁用工具 |
 | `llm-config` | 从 `~/.ga-harness/llm.toml`（或 `$GAH_LLM_CONFIG`、内联配置）提供模型配置，替代 `mykey.py` |
+| `ga-events` / `ga-usage` | 提供结构化执行事件，以及每步、每次任务的 token 用量 |
 | `ga-timing` | 通过 GA 钩子统计每次工具调用耗时（只记录，不改变 GA 行为） |
 | `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
+| `workspace-store` | 会话绑定的工作目录、项目规则与共享笔记 |
 | `model-store` | 独立的运行时模型目录、切换和文件配置管理；接口不返回 API 密钥 |
+| `run-store` | Web 模式的持久化任务记录与独立 worker 进程；同一会话只允许一个活动任务，不同会话可并行 |
 | `plugin-manager` | 独立的插件目录、依赖检查与配置持久化；网页保存的修改在下次启动生效 |
+| `web-sessions` / `web-models` | Web 会话列表、模型与推理强度选择，以及模型设置面板 |
+| `web-plugins` / `web-channels` | 统一设置中的插件、通道管理面板；通道面板需启用对应后端能力 |
+| `web-workspaces` / `web-theme` | 工作区与项目命令、编辑弹窗，以及浅色/深色/暖色主题 |
+| `worldline` | 消息编辑、重新生成、分支切换与在新对话中分支 |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
-| `ui-web` | 本地浏览器前端（仅标准库，HTTP + SSE）：多轮对话、流式输出、停止按钮，浅色/深色/暖色主题；默认 `http://127.0.0.1:8765/`，只接受同源请求，同一时间只运行一个任务 |
+| `ui-web` | React + TypeScript 浏览器界面，Python 标准库提供 HTTP + SSE；默认 `http://127.0.0.1:8765/`，只接受同源请求 |
 
 ## 会话与模型管理（Web）
 
-使用 `gah.cmd run --ui web` 启动。默认 profile 在 `ga-core` 后挂载 `session-store` 和 `model-store`；能力在独立插件中，Web 只负责交互。
+完成前端构建后，使用 `gah.cmd run --ui web` 启动。会话、模型、工作区与任务执行能力由独立插件提供，Web 负责交互；默认 profile 的 Web 模式会自动挂载 `run-store`。
 
+- **侧边栏**：桌面端支持展开、收起与拖动边缘调宽，双击拖动手柄恢复默认宽度；宽度和收起状态按浏览器保存。窄屏使用抽屉式侧边栏。
+- **统一设置**：侧边栏底部的“设置”集中显示模型、通道和插件面板，具体栏目随启用的插件而定，不再分别打开独立管理弹窗。
 - **会话**：新建、切换、重命名和删除；对话及 GA 上下文保存到 `~/.ga-harness/sessions.sqlite3`，刷新或重启后可恢复。可通过 `$GAH_SESSION_DB` 或 `session-store` 的 `file` 配置更换位置。删除为逻辑删除，不代表安全擦除磁盘数据。
-- **模型切换**：输入框右下角合并模型与推理强度选择；平铺列表支持按模型名、ID 或服务商搜索，也可用下拉筛选服务商。后续任务使用新模型并保留当前上下文；推理强度仅对当前会话有效，运行任务时禁止切换和改配置。
-- **模型配置**：设计以“模型直达、服务商可选筛选”为主：默认展示全部模型，搜索栏与服务商下拉筛选置顶，桌面端列表/详情双栏联动，手机端上下排列。打开“模型配置”新增、编辑或删除 OpenAI/Claude 配置，支持名称、模型 ID、Base URL、API Key 和上下文窗口；至少保留一个模型。保存后原子替换配置文件并重载，加载失败时回滚；过期编辑会被拒绝，重新打开弹窗后再试。
+- **模型切换**：输入框下方合并模型与推理强度选择；平铺列表支持按模型名、ID 或服务商搜索，也可用下拉筛选服务商。后续任务使用新模型并保留当前上下文；推理强度按会话设置，运行中的会话不可切换模型。
+- **模型配置**：通过“设置 → 模型”新增、编辑或删除 OpenAI/Claude 配置，支持名称、模型 ID、Base URL、API Key 和上下文窗口；至少保留一个模型。默认展示全部模型，可搜索或按服务商筛选；桌面端列表/详情双栏，手机端上下排列。保存后原子替换配置文件并重载，加载失败时回滚；过期编辑会被拒绝，重新加载面板后再试。
 - **密钥**：接口不返回已有 API Key；密码框留空保留原值，也支持 `${ENV_NAME}`。文件仍按原有 TOML/JSON 方式保存配置；需要避免明文密钥时请使用环境变量引用。含账号、密码、查询参数或片段的 URL 不允许保存。
 - **编辑边界**：仅编辑 `llm-config` 使用的 harness TOML/JSON 文件；GA 的 `mykey.py` 和带内联覆盖的配置只读。不改写 GA 源码或 `mykey.py`，复杂 mixin 依赖需在本地文件维护。模型选择目前属于运行时状态，不承诺跨进程重启保留。
 
@@ -66,22 +86,40 @@ Web 服务只适用于可信的本机环境，不应直接暴露到公网。
 
 ### 助手输出
 
-- 参考 Admin Chat 的内容层级：最终回复单独展示，执行过程、步骤和工具明细逐层折叠；流式更新保留手动展开/收起状态。
-- 正文支持 Markdown 标题、列表、表格、引用和代码块；可复制回复原文或单个代码块。浅色、深色、暖色及窄屏共用主题变量。
+- 最终回复单独展示，执行过程、步骤和工具明细逐层折叠；流式更新保留手动展开/收起状态。助手消息头显示模型、推理强度与本地日期时间。
+- 正文支持 Markdown 标题、列表、表格、引用和代码块。回复底部实时更新耗时、首 token 延迟、输入/输出 token、缓存读写、生成速率和缓存命中率；指标按已有数据展示，旧消息缺少计时数据时不补造数值。缓存命中率为 `cache_read / input`，其中输入量已包含缓存，不重复加总。
+- 回复底部和输入框下方的会话统计栏均为单行，超出宽度时横向滚动。回复完成后，统计栏末尾提供复制图标；启用 `worldline` 时，其后提供“在新对话中分支”。代码块也可单独复制。
 - Marked 与 DOMPurify 随包提供，不依赖 CDN。原始 HTML 作为文本展示，生成的 HTML 经过白名单净化；依赖加载失败时退回纯文本。Markdown 中的远程图片仍可能发起网络请求。
-- 保持原生 JS 和现有 `GAH` 前端插件接口，不引入 React 或前端构建步骤。
+- React 宿主与插件共用主题和前端运行时，保留 `GAH.define` 兼容接口；新插件可使用 `@gah/sdk` 的类型化 API、插槽和设置面板，见 [前端迁移与 SDK 文档](frontend/MIGRATION.md)。
+
+### 隔离执行
+
+Web 模式通过 `run-store` 为每次任务创建独立 worker 进程，使用启动时的会话、模型和工作区快照；宿主统一持久化会话。同一会话不能同时运行多个任务，不同会话可在 `run-store.max_parallel` 上限内并行。
+
+CLI/TUI 仍使用原有单 Agent 路径。进程隔离不等于安全沙箱，也不提供跨宿主协调、任务自动重试或崩溃后自动续跑；服务与 Web API 契约见 [RUNS.md](RUNS.md)。
 
 ## 工作区与项目
 
-两者都由独立插件提供，不依赖 Admin 的项目模式或分层记忆：`workspace-store` 管状态与执行上下文，`web-workspaces` 提供侧边栏选择器和设置弹窗。
+两者都由独立插件提供，不依赖 Admin 的项目模式或分层记忆：`workspace-store` 管状态与执行上下文，`web-workspaces` 提供输入框斜杠命令、补全和编辑弹窗。输入框上方不再展示常驻工作区配置条。
 
 - **工作区**：服务器上已存在的绝对目录。切换目录会新建会话，不会把旧对话改挂到新目录；相对文件路径及默认代码执行目录使用当前工作区。
 - **项目**：名称、固定工作目录、项目规则和共享笔记。项目间会话隔离，新建会话继承当前项目；切回项目恢复其最近会话。规则和笔记每次请求都会注入，笔记由用户编辑，不是自动学习或 Admin 分层记忆。
 - **持久化**：项目和会话共用 `session-store` 的 SQLite 文件；刷新或重启后保留。项目目录创建后不可修改，需要换目录时新建项目。
-- **保护**：运行中禁止切换范围、修改项目；请求超时但 GA 尚未停止时仍保持锁定。多标签页过期编辑会被拒绝；指定的启动范围无法激活时拒绝运行，不会静默使用别的目录。
+- **保护**：范围切换、项目修改受运行状态与版本校验保护；多标签页过期编辑会被拒绝。指定的启动范围无法激活时拒绝运行，不会静默使用别的目录。
 - **边界**：工作区是默认执行目录，**不是沙箱**；工具仍可使用绝对路径访问其他位置。项目规则和笔记是模型上下文，不是访问控制。
 
-Web 中在侧边栏新建或选择项目，点击目录可切换普通工作区，点击项目设置编辑规则和笔记。CLI/TUI/Web 也支持启动参数（两者互斥）：
+Web 中在输入框输入以下命令，支持补全；命令由插件处理，不发送给模型：
+
+| 命令 | 作用 |
+| --- | --- |
+| `/workspace` | 打开工作区弹窗；当前在项目中时打开项目设置 |
+| `/workspace C:\work\demo` | 进入指定的普通工作区 |
+| `/project` | 创建项目；已在项目中时打开项目设置 |
+| `/project new` | 创建新项目 |
+| `/project <项目ID或名称>` | 切换项目；也支持唯一的名称前缀 |
+| `/project off` / `/workspace off` | 退出项目或自定义工作区，回到默认范围 |
+
+CLI/TUI/Web 也支持启动参数（两者互斥）：
 
 ```bat
 gah.cmd run --ui web --workspace "C:\work\demo"
@@ -92,11 +130,11 @@ gah.cmd run --ui tui --project <项目ID>
 
 ## 插件管理（Web）
 
-默认 profile 提供 `plugin-manager`。点击网页顶部“插件管理”，可查看已发现插件的运行状态、依赖与待生效设置，启用/禁用非保护插件，编辑公开字段，或恢复启动配置。
+默认 profile 提供 `plugin-manager`。打开“设置 → 插件”，可按分类、状态或关键字查找插件，在卡片详情中查看运行状态、依赖与待生效设置，启用/禁用非保护插件，编辑公开字段，或恢复启动配置。
 
 - **下次启动生效**：保存不会热卸载插件，也不会中断当前会话。任务运行时禁止修改；保存后需自行重新启动 harness。
 - **配置位置**：默认 `~/.ga-harness/plugins.json`，可用 `$GAH_PLUGIN_CONFIG` 指定；按 profile 隔离，启动时叠加到 profile 和 patch 之后。`gah tree` 展示叠加结果。
-- **安全边界**：仅编辑清单声明的公开字段；密钥类字段不开放。GA 核心、模型配置入口、前端及管理服务受保护；模型配置仍走专用弹窗。不会修改 GA 源码或 `mykey.py`。
+- **安全边界**：仅编辑清单声明的公开字段；密钥类字段不开放。GA 核心、模型配置入口、前端及管理服务受保护；模型配置通过“设置 → 模型”管理。不会修改 GA 源码或 `mykey.py`。
 - **依赖与并发**：缺少必要依赖、能力冲突、过期编辑或其他写入占锁时拒绝保存；重新加载后再试。损坏配置不会被自动覆盖，需先在本地修复。
 - **范围**：只管理本机已发现的插件，不提供下载安装或远程执行入口。恢复启动配置会清除此插件的网页覆盖，不改原 profile/patch。
 
@@ -104,7 +142,7 @@ gah.cmd run --ui tui --project <项目ID>
 
 ## Profile 与 Patch
 
-profile 定义基础插件树，按顺序挂载。默认的 `ga_harness/profiles/ga-compat.toml`：
+profile 定义基础插件树，按顺序挂载。下面摘录默认 profile 的 GA 桥接部分；完整配置（含会话、模型、工作区及 Web 插件）见 [`ga_harness/profiles/ga-compat.toml`](ga_harness/profiles/ga-compat.toml)：
 
 ```toml
 [[plugins]]
@@ -233,6 +271,8 @@ ga_harness/
 ├── launcher.py  # 切换到 GA 虚拟环境
 └── llmconfig.py # 模型配置加载
 examples/patches/  # patch 示例
+frontend/          # React + TypeScript 宿主、SDK 与插件构建
+RUNS.md            # 隔离执行服务与 Web API 契约
 tests/             # pytest
 ```
 
