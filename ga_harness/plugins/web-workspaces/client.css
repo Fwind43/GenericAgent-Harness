@@ -1,15 +1,5 @@
 .gah-scope-bar{position:relative;min-width:0}
-.gah-scope{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--muted);padding:0 0 2px}
-.gah-scope[hidden]{display:none}
-.gah-scope-kind{flex:none;padding:1px 7px;border-radius:999px;border:1px solid var(--border)}
-.gah-scope.in-project .gah-scope-kind{background:var(--text);color:var(--bg);border-color:var(--text)}
-.gah-scope-name{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}
-.gah-scope button{font:inherit;font-size:12px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;padding:2px 6px}
-.gah-scope button:hover:not(:disabled){background:var(--bg);color:var(--text)}
-.gah-scope .gah-ws-path{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}
-.gah-scope-btn{flex:none}
-.gah-scope :disabled{opacity:.45;cursor:default}
-.gah-scope :focus-visible,.gah-ws-dialog :focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+.gah-ws-dialog :focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 .gah-slash{position:absolute;left:-6px;right:-6px;bottom:calc(100% + 16px);z-index:20;max-height:260px;overflow-y:auto;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 8px 30px #0002}
 .gah-slash[hidden]{display:none}
 .gah-slash-item{display:flex;gap:10px;align-items:baseline;padding:7px 10px;border-radius:8px;cursor:pointer;font-size:13px;min-width:0}

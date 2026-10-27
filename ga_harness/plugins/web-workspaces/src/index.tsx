@@ -81,12 +81,6 @@ export function Workspaces({ api }: { api: PluginAPI }) {
   const field = (key: 'name' | 'workspace' | 'rules' | 'memory', value: string) => setEditing(old => old ? { ...old, [key]: value } : null);
   return <><PluginSlot api={api} name="composer-top"><div className="gah-scope-bar">
     {!!suggestions.length && <div className="gah-slash" role="listbox" aria-label={T('\u547d\u4ee4', 'Command')}>{suggestions.map((item, index) => <div key={`${item.label}:${index}`} className={`gah-slash-item${index === selected ? ' active' : ''}`} role="option" aria-selected={index === selected} onMouseDown={event => { event.preventDefault(); pick(index); }}><span>{item.label}</span><small>{item.hint}</small></div>)}</div>}
-    {scope && <div className={`gah-scope${scope.project ? ' in-project' : ''}`}>
-      <span className="gah-scope-kind">{scope.project ? T('\u9879\u76ee', 'Project') : T('\u5de5\u4f5c\u533a', 'Workspace')}</span>
-      {scope.project && <span className="gah-scope-name">{scope.project.name}</span>}
-      <button type="button" className="gah-ws-path" disabled={busy} title={scope.workspace} onClick={() => open('workspace')}>{scope.workspace}</button>
-      {scope.project && <><button type="button" className="gah-scope-btn" disabled={busy} onClick={() => open('update')}>{T('\u8bbe\u7f6e', 'Settings')}</button><button type="button" className="gah-scope-btn" disabled={busy} onClick={() => enter()}>{T('\u9000\u51fa', 'Leave')}</button></>}
-    </div>}
   </div></PluginSlot>
   {editing && <Modal className="gah-ws-dialog" label={T('\u5de5\u4f5c\u533a\u4e0e\u9879\u76ee\u8bbe\u7f6e', 'Workspace and project settings')} busy={working} onClose={() => setEditing(null)}>
     <form onSubmit={submit}><h2>{editing.action === 'workspace' ? T('\u5207\u6362\u5de5\u4f5c\u76ee\u5f55', 'Switch directory') : editing.action === 'create' ? T('\u65b0\u5efa\u9879\u76ee', 'New project') : T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}</h2>
