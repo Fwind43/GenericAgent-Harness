@@ -16,6 +16,9 @@
 .usage{display:flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums}
 .message-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:28px}
 .message-actions .usage{flex:1;min-width:0}
+.message-actions .usage.stats{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--border) transparent;white-space:nowrap;padding-bottom:2px}
+.message-actions .usage.stats::-webkit-scrollbar{height:4px}.message-actions .usage.stats::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}.message-actions .usage.stats::-webkit-scrollbar-track{background:transparent}
+.message-actions .usage.stats>*{flex:none}
 .usage.stats{gap:4px 14px}
 .stats .stat-head{font-weight:600;color:var(--text)}
 .stats .stat{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
@@ -154,8 +157,8 @@ details[open]>summary>.chev{transform:none}
   .tool>summary{padding:6px 0;gap:6px}
   .tool .tname{max-width:48%}
   .tool-body{padding:6px 0 8px 12px}
-  .message-actions{align-items:flex-start;gap:5px}
-  .message-actions .usage{font-size:10px;line-height:18px;padding-top:4px}
+  .message-actions{gap:5px}
+  .message-actions .usage{font-size:10px;line-height:18px}
   .md-code pre{font-size:12px;padding:10px 12px}
 }
 @media(prefers-reduced-motion:reduce){.cursor::after,.steps.running .process-dot,.tool .tst.run::before{animation:none}}
