@@ -30,7 +30,11 @@ def apply_event(messages, name, data):
         turn = {"turn": number, "summary": "", "reply": "", "thinking": "",
                 "status": "running", "tools": []}
         turns.append(turn)
-    if name == "assistant.text":
+    if name == "assistant.delta":
+        part, text = data.get("part"), data.get("text")
+        if part in ("summary", "reply", "thinking") and isinstance(text, str) and text:
+            turn[part] = (turn.get(part) or "") + text
+    elif name == "assistant.text":
         turn.update({k: data.get(k) or "" for k in ("summary", "reply", "thinking")})
         # The completion text is authoritative; chunks are retained as fallback.
     elif name == "tool.call":

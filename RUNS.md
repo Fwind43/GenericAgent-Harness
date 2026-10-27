@@ -56,6 +56,12 @@ its override. These display fields are saved on that run's assistant message and
 included in live message snapshots. Missing metadata on historical messages is
 not inferred from the host's current model selection.
 
+Workers forward `assistant.delta` events with `turn`, `part`, and `text`. The host
+appends each delta to that turn's `summary`, `thinking`, or `reply` and includes
+the updated assistant message in `run.event` snapshots. Final `assistant.text`
+fields replace the accumulated deltas rather than appending duplicate text.
+Raw `agent.chunk` output is kept separately, not parsed into the structured reply.
+
 Terminal states are `done`, `error`, or `aborted`. Cancellation requests cooperative
 abort, then terminates only that run's own spawned process after `cancel_grace`
 (default 5 seconds). Host shutdown requests cancellation. On a later host startup,

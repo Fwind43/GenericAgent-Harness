@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-EVENTS = ("assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
+EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.timed")
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
 # plugins require explicit run-store.worker_plugins configuration.
