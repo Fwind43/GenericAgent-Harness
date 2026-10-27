@@ -1,0 +1,6 @@
+name = "web-channels"
+category = "ui"
+entry = "main:apply"
+description = "Channel management dialog for ui-web: create, configure, start/stop channels and view their logs."
+description_zh = "ui-web 的通道管理界面：创建、配置、启停通道并查看日志。"
+inject = ["web.host", "channel_manager"]

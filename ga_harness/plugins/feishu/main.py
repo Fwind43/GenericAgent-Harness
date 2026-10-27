@@ -1,21 +1,23 @@
-"""Feishu/Lark adapter for the channels hub (long-connection bot).
+"""Feishu/Lark channel provider.
 
-Credentials: plugin settings app_id / app_secret; env GAH_FEISHU_APP_ID /
-GAH_FEISHU_APP_SECRET are a fallback when a setting is empty.
-``lark-oapi`` is imported lazily so the plugin loads without it.
+This plugin only provides the ``feishu`` provider; channels are created,
+started and stopped by the channel manager (channels plugin). Each running
+channel receives messages through its own ``ws_worker.py`` child process and
+replies through the REST API. ``lark-oapi`` is imported lazily.
 """
-import asyncio
 import json
 import os
 import re
+import subprocess
+import sys
 import threading
 from collections import OrderedDict
+from pathlib import Path
 
+from ga_harness.channel_manager import Provider
 from ga_harness.channels import Adapter
 
-
-def _cred(config, key, env):
-    return ((config or {}).get(key) or os.environ.get(env) or "").strip()
+WORKER = Path(__file__).with_name("ws_worker.py")
 
 
 def _allowed(config):
@@ -41,14 +43,17 @@ def message_text(msg_type, content):
 
 
 class FeishuAdapter(Adapter):
-    name = "feishu"
     max_len = 4000
 
-    def __init__(self, app_id, app_secret, allowed=()):
+    def __init__(self, name, app_id, app_secret, allowed=(), log=None, on_dead=None):
+        self.name = name
         self.app_id, self.app_secret = app_id, app_secret
         self.allowed = set(allowed)
+        self.log = log or (lambda level, text: None)
+        self.on_dead = on_dead
         self.seen, self.lock = OrderedDict(), threading.Lock()
-        self.client = self.thread = None
+        self.client = self.proc = self.reader = None
+        self.stopping = False
 
     def claim(self, message_id):
         """True the first time a message id is seen (Feishu redelivers)."""
@@ -60,35 +65,60 @@ class FeishuAdapter(Adapter):
                 self.seen.popitem(last=False)
             return True
 
-    def handle(self, data):
-        msg, sender = data.event.message, data.event.sender
-        if not self.claim(getattr(msg, "message_id", "")):
+    def handle(self, ev):
+        """Process one message event (dict) emitted by ws_worker."""
+        if not self.claim(ev.get("message_id", "")):
             return
-        user = getattr(sender.sender_id, "open_id", "") or ""
+        user = ev.get("user") or ""
         if self.allowed and user not in self.allowed:
+            self.log("info", f"ignored message from {user} (not allowed)")
             return
-        text = re.sub(r"@_user_\d+\s*", "", message_text(msg.message_type, msg.content)).strip()
+        text = re.sub(r"@_user_\d+\s*", "",
+                      message_text(ev.get("msg_type"), ev.get("content"))).strip()
         if text:
-            self.hub.receive(self.name, msg.chat_id, text, user=user)
+            self.log("info", f"message from {user} in {ev.get('chat_id')}")
+            self.hub.receive(self.name, ev.get("chat_id"), text, user=user)
 
     def start(self, hub):
         super().start(hub)
         import lark_oapi as lark
         self.client = lark.Client.builder().app_id(self.app_id) \
             .app_secret(self.app_secret).build()
-        handler = lark.EventDispatcherHandler.builder("", "") \
-            .register_p2_im_message_receive_v1(self.handle).build()
-        self.thread = threading.Thread(target=self._listen, args=(lark, handler),
-                                       name="gah-feishu-ws", daemon=True)
-        self.thread.start()
+        env = dict(os.environ, GAH_FEISHU_APP_ID=self.app_id,
+                   GAH_FEISHU_APP_SECRET=self.app_secret, PYTHONIOENCODING="utf-8")
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        self.proc = subprocess.Popen(
+            [sys.executable, "-u", str(WORKER)], env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=flags)
+        self.reader = threading.Thread(target=self._read, name=f"gah-{self.name}",
+                                       daemon=True)
+        self.reader.start()
 
-    def _listen(self, lark, handler):
-        # lark's ws client keeps a module-level loop; give this thread its own.
-        import lark_oapi.ws.client as wsc
-        wsc.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(wsc.loop)
-        lark.ws.Client(self.app_id, self.app_secret, event_handler=handler,
-                       log_level=lark.LogLevel.WARNING).start()
+    def _read(self):
+        for raw in self.proc.stdout:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                self.log("info", line[:500])  # lark's own log output
+                continue
+            kind = ev.get("type")
+            if kind == "message":
+                try:
+                    self.handle(ev)
+                except Exception as e:
+                    self.log("error", f"handle failed: {e}")
+            elif kind == "fatal":
+                self.log("error", ev.get("text", "worker failed"))
+            else:
+                self.log(ev.get("level", "info"), ev.get("text", ""))
+        code = self.proc.wait()
+        if not self.stopping:
+            self.log("error", f"receiver exited (code {code})")
+            if self.on_dead:
+                self.on_dead(f"receiver exited (code {code})")
 
     def send(self, chat_id, text):
         from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
@@ -101,18 +131,41 @@ class FeishuAdapter(Adapter):
             raise RuntimeError(f"feishu send failed: {resp.code} {resp.msg}")
 
     def stop(self):
-        # lark's ws client has no public stop; the daemon thread ends with the process.
+        self.stopping = True
+        proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         self.client = None
+        self.log("info", "stopped")
+
+
+FIELDS = [
+    {"key": "app_id", "label": "App ID", "label_zh": "App ID", "required": True},
+    {"key": "app_secret", "label": "App Secret", "label_zh": "App Secret",
+     "required": True, "secret": True},
+    {"key": "allowed_users", "label": "Allowed open_ids, comma separated (empty = everyone)",
+     "label_zh": "允许的 open_id，逗号分隔（留空为所有人）"},
+]
 
 
 def apply(ctx, config):
-    app_id = _cred(config, "app_id", "GAH_FEISHU_APP_ID")
-    app_secret = _cred(config, "app_secret", "GAH_FEISHU_APP_SECRET")
-    if not (app_id and app_secret):
-        raise RuntimeError("feishu: set App ID / App Secret in the plugin settings")
-    try:
-        import lark_oapi  # noqa: F401
-    except ImportError as e:
-        raise RuntimeError("feishu: pip install lark-oapi") from e
-    adapter = FeishuAdapter(app_id, app_secret, _allowed(config))
-    return ctx.get("channels").register(adapter)
+    manager = ctx.get("channel_manager")
+
+    def factory(cid, cfg, log):
+        app_id = (cfg.get("app_id") or "").strip()
+        app_secret = (cfg.get("app_secret") or "").strip()
+        if not (app_id and app_secret):
+            raise RuntimeError("App ID / App Secret are required")
+        try:
+            import lark_oapi  # noqa: F401
+        except ImportError as e:
+            raise RuntimeError("pip install lark-oapi") from e
+        return FeishuAdapter(cid, app_id, app_secret, _allowed(cfg), log=log,
+                             on_dead=lambda err: manager.fail(cid, err))
+
+    return manager.register_provider(Provider(
+        "feishu", factory, label="Feishu / Lark", label_zh="飞书", fields=FIELDS))

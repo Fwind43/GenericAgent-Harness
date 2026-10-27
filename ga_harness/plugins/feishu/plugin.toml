@@ -1,25 +1,7 @@
 name = "feishu"
 category = "service"
 entry = "main:apply"
-description = "Feishu/Lark adapter for the channels hub (long-connection bot). Requires lark-oapi."
-description_zh = "飞书适配器：通过长连接机器人接入 channels。需要安装 lark-oapi。"
-inject = ["channels"]
+description = "Feishu/Lark channel provider (long-connection bot). Channels are created, started and stopped in Channel management. Requires lark-oapi."
+description_zh = "飞书通道提供方（长连接机器人）。通道在“通道管理”中创建、启停。需要安装 lark-oapi。"
+inject = ["channel_manager"]
 packages = ["lark-oapi"]
-
-[settings.app_id]
-type = "string"
-label = "App ID"
-label_zh = "App ID"
-default = ""
-
-[settings.app_secret]
-type = "string"
-label = "App Secret (stored as plain text in settings)"
-label_zh = "App Secret（明文保存在设置中）"
-default = ""
-
-[settings.allowed_users]
-type = "string"
-label = "Allowed open_ids, comma separated (empty = everyone)"
-label_zh = "允许的 open_id，逗号分隔（留空为所有人）"
-default = ""

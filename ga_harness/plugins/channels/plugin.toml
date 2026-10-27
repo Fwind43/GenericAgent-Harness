@@ -4,7 +4,7 @@ entry = "main:apply"
 description = "Chat-platform bridge: bind external chats to sessions and route messages through runs. Adapters plug in via the channels service."
 description_zh = "聊天平台桥接：把外部聊天绑定到会话，并通过 runs 收发消息。各平台适配器通过 channels 服务接入。"
 inject = ["runs", "sessions"]
-provides = ["channels"]
+provides = ["channels", "channel_manager"]
 
 [settings.workspace]
 type = "string"
