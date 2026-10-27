@@ -222,7 +222,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   function Models({ api }) {
     var _a;
     const { state } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
-    const [open, setOpen] = react.useState(false), [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
+    const [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
     const [edit, setEdit] = react.useState({ kind: "model", serial: 0 });
     const groups = config ? sections(config) : [], group = groups.find((item) => item.id === section);
@@ -239,8 +239,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       choose("model", (_b = items.find((item) => sdk.matches(query, item.key, item.values.name, item.values.model, item.values.apibase))) == null ? void 0 : _b.key);
     };
     async function load() {
-      if (busy) return;
-      setOpen(true);
       setConfig(null);
       setError("");
       setQuery("");
@@ -250,7 +248,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         const next = await api.host.get("/api/models/config");
         setConfig(next);
         choose("model", (_a2 = next.entries[0]) == null ? void 0 : _a2.key);
-      }, setError);
+      }, setError, true);
     }
     const change = (action, id, values) => {
       if (!(config == null ? void 0 : config.writable) || busy) return;
@@ -284,14 +282,10 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const locked = busy || !(config == null ? void 0 : config.writable);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModelPicker, { api }),
-      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar-foot", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item", disabled: busy, onClick: () => void load(), children: [
-        /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "cpu" }),
-        sdk.T("模型配置", "Models")
-      ] }) }),
-      open && /* @__PURE__ */ jsxRuntime.jsxs(sdk.Modal, { className: "gah-model-dialog", label: sdk.T("模型配置", "Models"), busy: working, onClose: () => setOpen(false), children: [
+      state.models && /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-head", children: [
           /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("模型配置", "Models") }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working, onClick: () => setOpen(false), children: sdk.T("关闭", "Close") })
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working, onClick: () => void load(), children: sdk.T("刷新", "Refresh") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
           error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),

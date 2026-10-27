@@ -29,9 +29,6 @@
       if (value !== null && value.trim()) await act(api, "fork", { session_id: sid, index, text: value });
     }, busy));
     box.append(button("↻", sdk.T("重新生成", "Regenerate"), () => act(api, "fork", { session_id: sid, index }), busy));
-    const branch = button("", sdk.T("从此处新建会话", "New session from here"), () => act(api, "branch", { session_id: sid, index }), busy);
-    branch.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-12 3-12 8"/></svg>';
-    box.append(branch);
     if (info && info.branches.length) {
       const ids = info.branches;
       const nav = document.createElement("span");
@@ -44,6 +41,15 @@
       box.append(nav);
     }
     return box;
+  }
+  const BRANCH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-12 3-12 8"/></svg>';
+  function branchButton(api, sid, index, busy) {
+    const label = sdk.T("在新对话中分支", "Branch in new chat");
+    const b = button("", label, () => act(api, "branch", { session_id: sid, index }), busy);
+    b.className = "output-copy gah-wl-branch";
+    b.setAttribute("aria-label", label);
+    b.innerHTML = BRANCH_SVG;
+    return b;
   }
   function textOf(message) {
     const m = message;
@@ -59,15 +65,23 @@
       const variants = state.worldline || {};
       const paint = () => {
         observer.disconnect();
+        let lastUser = -1;
         Array.from(thread.children).forEach((node, index) => {
-          var _a;
+          var _a, _b;
           (_a = node.querySelector(":scope > .gah-wl-bar")) == null ? void 0 : _a.remove();
+          (_b = node.querySelector(".gah-wl-branch")) == null ? void 0 : _b.remove();
           const message = state.messages[index];
+          if ((message == null ? void 0 : message.role) === "assistant" && lastUser >= 0 && !state.running) {
+            const actions = node.querySelector(".message-actions");
+            if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
+            return;
+          }
           if (!node.classList.contains("user") || (message == null ? void 0 : message.role) !== "user") return;
+          lastUser = index;
           node.classList.add(MARK);
           node.append(bar(api, sid, index, textOf(message), variants[String(index)], state.running));
         });
-        observer.observe(thread, { childList: true });
+        observer.observe(thread, { childList: true, subtree: !state.running });
       };
       const observer = new MutationObserver(paint);
       paint();
