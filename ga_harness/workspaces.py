@@ -15,8 +15,10 @@ import uuid
 
 
 class Workspaces:
-    def __init__(self, sessions, default_workspace):
+    def __init__(self, sessions, default_workspace, projects_root=None):
         self.sessions = sessions
+        # Directory holding per-project memory folders (GA's temp/projects); None = unmanaged.
+        self.projects_root = Path(projects_root) if projects_root else None
         self.default_workspace = self.directory(str(Path(default_workspace).expanduser().resolve()))
         self.active = None
         with sessions.lock:
@@ -57,6 +59,26 @@ class Workspaces:
         project = (context or {}).get("project")
         if agent is not None:
             agent._ga_project_mode_name = project["name"] if project else None
+
+    def project_workspace(self, project):
+        """A project's own workspace is optional; blank means the global default."""
+        return self.directory(project["workspace"]) if project and project["workspace"] else self.default_workspace
+
+    def _unique_name(self, db, name, pid):
+        # Names map to memory folders; Windows folders are case-insensitive.
+        if db.execute("SELECT 1 FROM projects WHERE lower(name)=lower(?) AND id<>?", (name, pid)).fetchone():
+            raise ValueError("a project with this name already exists")
+
+    def _move_memory(self, old, new):
+        """Rename the project's memory folder with the project, never merging into another one."""
+        if self.projects_root is None or old == new:
+            return
+        src, dst = self.projects_root / old, self.projects_root / new
+        if not src.is_dir():
+            return
+        if dst.exists() and not (old.lower() == new.lower()):
+            raise ValueError("memory folder for this name already exists: " + str(dst))
+        src.rename(dst)
 
     def projects(self):
         with self.sessions.lock, self.sessions._db() as db:
@@ -103,17 +125,18 @@ class Workspaces:
                 # Rules/notes columns are kept for old databases but no longer used:
                 # project memory lives in GA's temp/projects/<name>/project_memory.md.
                 # A project is a durable identity (name -> memory directory); its workspace
-                # is only the default directory for new chats. Blank = current workspace.
+                # is an optional default for new chats. Blank = the global default workspace.
+                # Creating a name whose memory folder already exists attaches to that memory.
                 name = self.project_name(body.get("name"))
                 pid = body.get("id") if action == "update" else uuid.uuid4().hex
                 given = body.get("workspace")
-                workspace = self.directory(given) if isinstance(given, str) and given.strip() else None
+                workspace = self.directory(given) if isinstance(given, str) and given.strip() else ""
                 with store._db() as db:
+                    self._unique_name(db, name, pid)
                     if action == "create":
-                        workspace = workspace or self.current()["workspace"]
                         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
                                    (pid, name, workspace, "", "", time.time()))
-                        self._enter(db, workspace, pid)
+                        self._enter(db, workspace or self.default_workspace, pid)
                     else:
                         old = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
                         if old is None:
@@ -121,8 +144,10 @@ class Workspaces:
                         if body.get("updated") != old["updated"]:
                             raise RuntimeError("project changed in another tab; reopen before saving")
                         # Existing chats keep their own workspace; only new chats use the new default.
+                        # Renaming moves the memory folder (validated before the row changes).
+                        self._move_memory(old["name"], name)
                         db.execute("UPDATE projects SET name=?, workspace=?, updated=? WHERE id=?",
-                                   (name, workspace or old["workspace"], time.time(), pid))
+                                   (name, workspace, time.time(), pid))
                 if action == "create":
                     from .sessions import restore
                     restore(store.agent, {})
@@ -139,7 +164,7 @@ class Workspaces:
                     project = next((p for p in self.projects() if p["id"] == pid), None)
                     if project is None:
                         raise ValueError("project not found")
-                    directory = self.directory(project["workspace"])
+                    directory = self.project_workspace(project)
                 elif body.get("workspace"):
                     directory = self.directory(body.get("workspace"))
                 else:
@@ -182,7 +207,7 @@ class Workspaces:
                 if target:
                     store.change("select", target["id"])
                 else:
-                    store.change("new", workspace=project["workspace"] if project else self.default_workspace,
+                    store.change("new", workspace=self.project_workspace(project),
                                  project_id=pid)
             else:
                 raise ValueError("unknown workspace action")

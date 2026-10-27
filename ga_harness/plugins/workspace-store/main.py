@@ -3,8 +3,20 @@ from pathlib import Path
 from ga_harness.workspaces import Workspaces
 
 
+def ga_temp(hooks):
+    """GA's own working directory (<GA>/temp), the official default cwd."""
+    try:
+        root = Path(hooks.__file__).resolve().parents[1]
+    except Exception:
+        return None
+    temp = root / "temp"
+    return temp if temp.is_dir() else None
+
+
 def apply(ctx, config):
-    store = Workspaces(ctx.get("sessions"), config.get("workspace") or Path.cwd())
+    temp = ga_temp(ctx.get("ga.hooks"))
+    store = Workspaces(ctx.get("sessions"), config.get("workspace") or temp or Path.cwd(),
+                       projects_root=temp / "projects" if temp else None)
     if config.get("start_workspace"):
         store.change({"action": "workspace", "workspace": config["start_workspace"]})
     elif config.get("start_project"):
