@@ -1,11 +1,13 @@
 """Local model management, independent of any frontend. Never return API keys."""
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
 import os
 from pathlib import Path
+import pprint
 import re
 import sys
 import tempfile
@@ -77,6 +79,68 @@ def _replace(path, payload):
             os.unlink(name)
 
 
+def _mykey_source(original, before, after, filename):
+    """Rewrite only changed top-level ``NAME = {...}`` assignments in GA's mykey.py.
+
+    Comments, imports, helper code and untouched configurations keep their
+    original text.  Anything not expressible as one plain assignment is refused
+    rather than guessed at.
+    """
+    text = original.decode("utf-8")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    try:
+        tree = ast.parse(text, filename)
+    except SyntaxError:
+        raise ValueError("GA mykey.py has a syntax error; fix it locally before editing") from None
+    spans = {}
+    for node in tree.body:
+        targets = (node.targets if isinstance(node, ast.Assign)
+                   else [node.target] if isinstance(node, ast.AnnAssign) else [])
+        for t in targets:
+            if isinstance(t, ast.Name):
+                spans.setdefault(t.id, []).append(node)
+    edits, appended = [], []
+    for key in sorted(set(before) | set(after)):
+        if before.get(key) == after.get(key):
+            continue
+        nodes = spans.get(key, [])
+        if len(nodes) > 1 or (nodes and (len(getattr(nodes[0], "targets", [0])) != 1 or nodes[0].col_offset)):
+            raise ValueError(f"{key} is defined in a complex way in mykey.py; edit it locally")
+        if nodes:
+            n = nodes[0]
+            tail = lines[n.end_lineno - 1].encode("utf-8")[n.end_col_offset:].decode("utf-8", "replace").strip()
+            if tail and not tail.startswith("#"):
+                raise ValueError(f"{key} shares a line with other code in mykey.py; edit it locally")
+        new = None
+        if key in after:
+            new = f"{key} = {pprint.pformat(after[key], sort_dicts=False, width=100)}".replace("\n", nl) + nl
+        if nodes:
+            edits.append((nodes[0].lineno - 1, nodes[0].end_lineno, new or ""))
+        elif new:
+            appended.append(new)
+        elif key in before:
+            raise ValueError(f"{key} is not assigned directly in mykey.py; edit it locally")
+    for start, end, new in sorted(edits, reverse=True):
+        lines[start:end] = [new] if new else []
+    out = "".join(lines)
+    if appended:
+        if out and not out.endswith(("\n", "\r")):
+            out += nl
+        out += "".join(nl + a for a in appended)
+    try:
+        ns = {"__name__": "mykey", "__file__": filename}
+        exec(compile(out, filename, "exec"), ns)
+    except Exception:
+        raise ValueError("the edited mykey.py would not load; nothing was changed") from None
+    for key in set(before) | set(after):
+        if before.get(key) == after.get(key):
+            continue
+        if ns.get(key) != after.get(key):
+            raise ValueError("mykey.py computes configurations dynamically; edit it locally") from None
+    return out.encode("utf-8")
+
+
 class Models:
     def __init__(self, agent, source=None, fallback=None):
         self.agent = agent
@@ -98,16 +162,25 @@ class Models:
             return self.catalog()
 
     def _file(self):
-        if self.source is None or self.source.file is None or self.source.inline:
-            raise ValueError("web editing requires a harness TOML/JSON file without inline overrides; GA mykey.py is read-only")
+        if self.source is None:
+            mykey = self.fallback.mykey_path() if self.fallback is not None else None
+            if mykey is None or mykey.suffix.lower() != ".py" or not mykey.is_file():
+                raise ValueError("GA mykey.py was not found")
+            return mykey
+        if self.source.file is None or self.source.inline:
+            raise ValueError("web editing requires a harness TOML/JSON file without inline overrides")
         return self.source.file
 
     def _read(self):
         path = self._file()
         payload = path.read_bytes() if path.exists() else b""
         try:
-            data = (json.loads(payload) if path.suffix.lower() == ".json"
-                    else llmconfig.tomllib.loads(payload.decode("utf-8"))) if payload else {}
+            if path.suffix.lower() == ".py":
+                data = llmconfig.read_mykey_py(path)
+                data.pop("_skipped", None)
+            else:
+                data = (json.loads(payload) if path.suffix.lower() == ".json"
+                        else llmconfig.tomllib.loads(payload.decode("utf-8"))) if payload else {}
             if not isinstance(data, dict):
                 raise ValueError()
         except Exception:
@@ -214,7 +287,8 @@ class Models:
                     values["apibase"] = url
                 plist.append({"id": pid, "values": values, "has_key": bool(pv.get("apikey")),
                               "url_hidden": hidden, "models": count.get(pid, 0)})
-            return {"writable": True, "revision": revision, "entries": entries, "providers": plist}
+            return {"writable": True, "revision": revision, "entries": entries, "providers": plist,
+                    "format": "mykey" if self.source is None else "harness"}
 
     def _provider_change(self, data, action, body):
         providers = self._providers(data)
@@ -303,6 +377,11 @@ class Models:
             if body.get("revision") != revision:
                 raise RuntimeError("model file changed; reload settings before saving")
             action = body.get("action")
+            mykey = path.suffix.lower() == ".py"
+            before = copy.deepcopy(data)
+            if mykey and (action in ("provider_save", "provider_delete")
+                          or (isinstance(body.get("values"), dict) and body["values"].get("provider"))):
+                raise ValueError("GA mykey.py stores the base URL and key in each model; providers need a harness config file")
             expanded = None
             if action in ("provider_save", "provider_delete"):
                 affects_models = self._provider_change(data, action, body)
@@ -323,15 +402,20 @@ class Models:
                     raise ValueError("unknown model action")
                 if not any(_supported(k, v) for k, v in data.items()):
                     raise ValueError("keep at least one model configuration")
-            try:
-                payload = (json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-                           if path.suffix.lower() == ".json" else llmconfig.to_toml(data)).encode("utf-8")
-            except Exception:
-                raise ValueError("model configuration cannot be serialized") from None
+            if mykey:
+                payload = _mykey_source(original, before, data, str(path))
+            else:
+                try:
+                    payload = (json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+                               if path.suffix.lower() == ".json" else llmconfig.to_toml(data)).encode("utf-8")
+                except Exception:
+                    raise ValueError("model configuration cannot be serialized") from None
             agent = self.agent
             old = agent.llmclients, agent.llmclient, getattr(agent, "llm_no", 0)
             try:
                 _replace(path, payload)
+                if mykey:
+                    llmconfig.Fallback._refresh()
                 if affects_models:
                     agent.load_llm_sessions()
                     if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
@@ -342,6 +426,8 @@ class Models:
                             raise RuntimeError()
             except Exception:
                 _replace(path, original)
+                if mykey:
+                    llmconfig.Fallback._refresh()
                 try:
                     agent.load_llm_sessions()  # also restore GA's configuration cache
                 finally:
