@@ -23,6 +23,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 MODULE = "mykey"
+MYKEY_MODEL_PROVIDERS = "_gah_model_providers"
 DEFAULT_FILE = "~/.ga-harness/llm.toml"
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 _SECRET = re.compile(r"key|token|secret|cookie|passw|auth", re.I)
@@ -108,7 +109,7 @@ def resolve_providers(data: dict) -> dict:
         raise ConfigError(f"{PROVIDERS} must be a table of tables")
     out = {}
     for k, v in data.items():
-        if k == PROVIDERS:
+        if k in (PROVIDERS, MYKEY_MODEL_PROVIDERS):
             continue
         if isinstance(v, dict) and "provider" in v:
             pid = v["provider"]
@@ -324,6 +325,10 @@ def read_mykey_py(path: str | os.PathLike) -> dict:
     skipped = []
     data = {}
     for k, v in ns.items():
+        if k == MYKEY_MODEL_PROVIDERS:
+            # Keep malformed ownership visible so an edit cannot silently drop it.
+            data[k] = v
+            continue
         if k.startswith("_"):
             continue
         try:

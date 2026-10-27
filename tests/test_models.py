@@ -330,15 +330,128 @@ def test_mykey_busy_revision_and_reload_failure_restore_bytes(tmp_path):
     assert mykey.read_bytes() == original + b"# externally edited\n"
 
 
-@pytest.mark.parametrize("action,values", [
-    ("provider_save", {}), ("provider_delete", {}), ("save", {"provider": "shared"}),
-])
-def test_mykey_rejects_provider_mutations_without_writing(tmp_path, action, values):
+def _native_provider_change(store, action="provider_save", pid="shared", values=None):
+    return store.change({"action": action, "id": pid, "values": values or {},
+                         "revision": store.config()["revision"]})
+
+
+def test_mykey_provider_crud_syncs_native_models_and_cold_reload(tmp_path):
     store, fb, mykey = make_fallback(tmp_path)
+    untouched = ("# preserve unrelated credentials and helpers\n"
+                 "def helper():\n    return 42\n"
+                 "native_claude_config_keep = " + repr({
+                     "model": "keep", "apibase": "https://shared.invalid/v1",
+                     "apikey": "test-shared-secret", "temperature": 0.7}) + "\n")
+    mykey.write_bytes(mykey.read_bytes() + untouched.encode("utf-8"))
+    store.agent.load_llm_sessions()
+    history = [{"role": "user", "content": "kept"}]
+    store.agent.llmclient.backend.history = history
+    public = _native_provider_change(store, values={
+        "name": "Shared", "protocol": "oai", "apibase": "https://shared.invalid/v1",
+        "apikey": "test-shared-secret"})
+    assert public["format"] == "mykey"
+    assert public["providers"][0]["id"] == "shared"
+    assert "test-shared-secret" not in json.dumps(public)
+    change(store, key="native_oai_config_x", values={"provider": "shared"})
+    change(store, key="native_claude_config_new", values={
+        "provider": "shared", "model": "claude-new", "context_win": 32768})
+    data = llmconfig.read_mykey_py(mykey)
+    assert data[llmconfig.MYKEY_MODEL_PROVIDERS] == {
+        "native_oai_config_x": "shared", "native_claude_config_new": "shared"}
+    for key in ("native_oai_config_x", "native_claude_config_new"):
+        assert "provider" not in data[key]
+        assert "protocol" not in data[key]
+        assert data[key]["apibase"] == "https://shared.invalid/v1"
+        assert data[key]["apikey"] == "test-shared-secret"
+    assert llmconfig.MYKEY_MODEL_PROVIDERS not in llmconfig.resolve_providers(data)
+    assert store.agent.llmclient.backend.history == history
+    cold = Models(ModelAgent(MykeyTestSource(mykey)), None, fb)
+    entries = {item["key"]: item for item in cold.config()["entries"]}
+    assert entries["native_oai_config_x"]["provider"] == "shared"
+    assert entries["native_claude_config_new"]["provider"] == "shared"
+    assert entries["native_claude_config_new"]["protocol"] == "claude"
+    assert entries["native_claude_config_keep"]["provider"] is None
+    _native_provider_change(store, values={
+        "name": "Renamed", "protocol": "claude", "apibase": "https://changed.invalid/v1",
+        "apikey": ""})
+    data = llmconfig.read_mykey_py(mykey)
+    for key in ("native_oai_config_x", "native_claude_config_new"):
+        assert data[key]["apibase"] == "https://changed.invalid/v1"
+        assert data[key]["apikey"] == "test-shared-secret"
+        assert "provider" not in data[key] and "protocol" not in data[key]
+    assert data["native_claude_config_new"]["context_win"] == 32768
+    assert data["native_claude_config_keep"]["apibase"] == "https://shared.invalid/v1"
+    assert untouched.encode("utf-8") in mykey.read_bytes()
     original = mykey.read_bytes()
-    with pytest.raises(ValueError, match="providers need a harness config"):
-        change(store, action, key="native_oai_config_x", values=values)
-    assert mykey.read_bytes() == original and not fb.target.exists()
+    with pytest.raises(ValueError, match="remove or move"):
+        _native_provider_change(store, "provider_delete")
+    assert mykey.read_bytes() == original
+    change(store, key="native_oai_config_x", values={"provider": ""})
+    data = llmconfig.read_mykey_py(mykey)
+    assert data["native_oai_config_x"]["apikey"] == "test-shared-secret"
+    assert data[llmconfig.MYKEY_MODEL_PROVIDERS] == {"native_claude_config_new": "shared"}
+    change(store, "delete", key="native_claude_config_new")
+    _native_provider_change(store, "provider_delete")
+    data = llmconfig.read_mykey_py(mykey)
+    assert llmconfig.PROVIDERS not in data and llmconfig.MYKEY_MODEL_PROVIDERS not in data
+    assert not fb.target.exists() and store.source is None
+    assert untouched.encode("utf-8") in mykey.read_bytes()
+
+
+def test_mykey_provider_move_updates_native_credentials(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    for pid in ("first", "second"):
+        _native_provider_change(store, pid=pid, values={
+            "apibase": f"https://{pid}.invalid/v1", "apikey": f"test-{pid}-secret"})
+    change(store, key="native_oai_config_x", values={"provider": "first"})
+    change(store, key="native_oai_config_x", values={"provider": "second"})
+    data = llmconfig.read_mykey_py(mykey)
+    assert data[llmconfig.MYKEY_MODEL_PROVIDERS] == {"native_oai_config_x": "second"}
+    assert data["native_oai_config_x"]["apibase"] == "https://second.invalid/v1"
+    assert data["native_oai_config_x"]["apikey"] == "test-second-secret"
+    _native_provider_change(store, "provider_delete", pid="first")
+
+
+def test_mykey_provider_reload_failure_restores_file_and_active_model(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    _native_provider_change(store, values={
+        "apibase": "https://shared.invalid/v1", "apikey": "test-shared-secret"})
+    change(store, key="native_oai_config_x", values={"provider": "shared"})
+    original = mykey.read_bytes()
+    clients, active = store.agent.llmclients, store.agent.llmclient
+    store.agent.fail_reload = True
+    with pytest.raises(RuntimeError, match="restored"):
+        _native_provider_change(store, values={"apibase": "https://not-saved.invalid/v1"})
+    assert mykey.read_bytes() == original
+    assert store.agent.llmclients is clients and store.agent.llmclient is active
+
+
+@pytest.mark.parametrize("mapping", [
+    [], {"native_oai_config_x": "missing"}, {"native_oai_config_missing": "shared"},
+    {"native_oai_config_x": []},
+])
+def test_mykey_invalid_provider_mapping_refuses_edits(tmp_path, mapping):
+    store, _, mykey = make_fallback(tmp_path)
+    _native_provider_change(store, values={
+        "apibase": "https://shared.invalid/v1", "apikey": "test-shared-secret"})
+    mykey.write_bytes(mykey.read_bytes() + (
+        llmconfig.MYKEY_MODEL_PROVIDERS + " = " + repr(mapping) + "\n").encode("utf-8"))
+    original = mykey.read_bytes()
+    with pytest.raises(ValueError, match="mapping is invalid"):
+        store.change({"action": "save", "key": "native_oai_config_x",
+                      "values": {"model": "not-saved"}, "revision": store._read(logical=False)[3]})
+    assert mykey.read_bytes() == original
+
+
+def test_mykey_dynamic_provider_metadata_is_not_rewritten(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    mykey.write_bytes(mykey.read_bytes() + (
+        "providers = dict(shared={'apibase': 'https://shared.invalid/v1', "
+        "'apikey': 'test-shared-secret'})\n").encode("utf-8"))
+    original = mykey.read_bytes()
+    with pytest.raises(ValueError, match="computed dynamically"):
+        _native_provider_change(store, values={"name": "Not saved"})
+    assert mykey.read_bytes() == original
 
 
 @pytest.mark.parametrize("source", [

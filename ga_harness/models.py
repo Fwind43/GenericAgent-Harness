@@ -182,7 +182,7 @@ class Models:
             raise ValueError("web editing requires a harness TOML/JSON file without inline overrides")
         return self.source.file
 
-    def _read(self):
+    def _read(self, *, logical=True):
         path = self._file()
         payload = path.read_bytes() if path.exists() else b""
         try:
@@ -196,7 +196,39 @@ class Models:
                 raise ValueError()
         except Exception:
             raise ValueError("model file is invalid; fix it locally before editing") from None
+        if logical and path.suffix.lower() == ".py":
+            data = self._mykey_view(data)
         return path, payload, data, hashlib.sha256(payload).hexdigest()
+
+    def _mykey_view(self, data):
+        """Expose native ownership without mutating GA's imported model dictionaries."""
+        out = dict(data)
+        owners = out.pop(llmconfig.MYKEY_MODEL_PROVIDERS, {})
+        providers = self._providers(out)
+        if not isinstance(owners, dict):
+            raise ValueError("mykey provider mapping is invalid; fix it locally before editing")
+        for key, pid in owners.items():
+            if (not isinstance(key, str) or not _supported(key, out.get(key))
+                    or not isinstance(pid, str) or pid not in providers
+                    or out[key].get("provider", pid) != pid):
+                raise ValueError("mykey provider mapping is invalid; fix it locally before editing")
+            out[key] = dict(out[key], provider=pid)
+        return out
+
+    def _mykey_data(self, data):
+        """Persist standalone-GA dictionaries; ownership lives outside model kwargs."""
+        out, owners = dict(data), {}
+        providers = self._providers(data)
+        for key, value in data.items():
+            if _supported(key, value) and "provider" in value:
+                owners[key] = value["provider"]
+                try:
+                    out[key] = llmconfig.resolve_providers({llmconfig.PROVIDERS: providers, key: value})[key]
+                except llmconfig.ConfigError as e:
+                    raise ValueError(str(e)) from None
+        if owners:
+            out[llmconfig.MYKEY_MODEL_PROVIDERS] = owners
+        return out
 
     def _providers(self, data):
         p = data.get(llmconfig.PROVIDERS, {})
@@ -211,7 +243,8 @@ class Models:
         Explicit provider IDs remain authoritative, even with duplicate names.
         """
         try:
-            data = llmconfig.read_file(self.source.file) if self.source else vars(sys.modules.get("mykey"))
+            data = (llmconfig.read_file(self.source.file) if self.source
+                    else self._mykey_view(vars(sys.modules.get("mykey"))))
             providers = self._providers(data)
             legacy = llmconfig.group_providers({k: v for k, v in data.items()
                                                if _supported(k, v) and "provider" not in v})
@@ -301,7 +334,7 @@ class Models:
             return {"writable": True, "revision": revision, "entries": entries, "providers": plist,
                     "format": "mykey" if self.source is None else "harness"}
 
-    def _provider_change(self, data, action, body):
+    def _provider_change(self, data, action, body, *, native=False):
         providers = self._providers(data)
         pid = body.get("id")
         if not isinstance(pid, str) or not _PID.fullmatch(pid):
@@ -331,6 +364,11 @@ class Models:
                 raise ValueError("base URL and API key are required")
             _check_url(cfg["apibase"])
             providers[pid] = cfg
+            if native:
+                # Native models carry concrete connection settings, not provider kwargs.
+                # Only share credentials: each model keeps its own protocol and options.
+                for key in used:
+                    data[key] = dict(data[key], apibase=cfg["apibase"], apikey=cfg["apikey"])
         if providers:
             data[llmconfig.PROVIDERS] = providers
         else:
@@ -384,18 +422,17 @@ class Models:
             self._idle()
             if body.get("action") == "convert":
                 return self.convert()
-            path, original, data, revision = self._read()
+            path, original, data, revision = self._read(logical=False)
             if body.get("revision") != revision:
                 raise RuntimeError("model file changed; reload settings before saving")
             action = body.get("action")
             mykey = path.suffix.lower() == ".py"
             before = copy.deepcopy(data)
-            if mykey and (action in ("provider_save", "provider_delete")
-                          or (isinstance(body.get("values"), dict) and body["values"].get("provider"))):
-                raise ValueError("GA mykey.py stores the base URL and key in each model; providers need a harness config file")
+            if mykey:
+                data = self._mykey_view(data)
             expanded = None
             if action in ("provider_save", "provider_delete"):
-                affects_models = self._provider_change(data, action, body)
+                affects_models = self._provider_change(data, action, body, native=mykey)
             else:
                 affects_models = True
                 key = body.get("key")
@@ -414,7 +451,7 @@ class Models:
                 if not any(_supported(k, v) for k, v in data.items()):
                     raise ValueError("keep at least one model configuration")
             if mykey:
-                payload = _mykey_source(original, before, data, str(path))
+                payload = _mykey_source(original, before, self._mykey_data(data), str(path))
             else:
                 try:
                     payload = (json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
