@@ -13,8 +13,8 @@ GenericAgent（GA）的 **Everything is a Plugin** 外壳，思路参考 DeepSee
 需要 Python ≥ 3.11、[uv](https://docs.astral.sh/uv/)，以及一份本地 GenericAgent 代码。
 
 ```bat
-git clone https://github.com/Fwind43/ga-harness
-cd ga-harness
+git clone https://github.com/Fwind43/GenericAgent-Harness
+cd GenericAgent-Harness
 uv sync --extra dev
 
 gah.cmd run "介绍一下你自己" --ga-root D:\path\to\GenericAgent
