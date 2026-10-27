@@ -3,6 +3,7 @@ import { T } from '../i18n';
 import { host } from '../store';
 import type { Message, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
+import { duration } from './SessionStats';
 
 // DOM and class names intentionally mirror the legacy ui-web renderer so output.css applies unchanged.
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
@@ -12,6 +13,20 @@ function usageText(u: Usage) {
   let s = T('输入 ', 'In ') + num(u.input);
   if (u.cache_read || u.cache_write) s += T('（缓存命中 ', ' (cache hit ') + num(u.cache_read) + (u.cache_write ? T(' / 写入 ', ' / write ') + num(u.cache_write) : '') + T('）', ')');
   return s + T(' · 输出 ', ' · Out ') + num(u.output);
+}
+function timing(turns: Turn[]) {
+  let llm = 0, tools = 0, out = 0, gen = 0;
+  for (const t of turns) {
+    for (const tool of t.tools ?? []) tools += tool.seconds || 0;
+    const sec = t.llm?.seconds || 0, first = t.llm?.ttft;
+    llm += sec;
+    const g = sec - (typeof first === 'number' ? first : 0);
+    if (t.usage?.output && g > 0) { out += t.usage.output; gen += g; }
+  }
+  const parts: string[] = [];
+  if (llm + tools > 0) parts.push(T('耗时 ', 'Time ') + duration(llm + tools));
+  if (gen > 0) parts.push(`${(out / gen).toFixed(1)} tok/s`);
+  return parts.length ? ' · ' + parts.join(' · ') : '';
 }
 export function Tokens({ usage }: { usage?: Usage }) {
   if (!usage) return null;
@@ -124,7 +139,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
     </> : <Markdown text={m.text || ''} className={'body' + (running ? ' cursor' : '')} />}
     {m.role === 'assistant' && ((reply && !running) || !!m.usage?.calls) && <div className="message-actions">
       {reply && !running && <CopyButton text={reply} label={T('复制回复', 'Copy reply')} />}
-      {!!m.usage?.calls && <div className="usage">{m.usage.calls}{T(' 次调用 · ', ' calls · ')}{usageText(m.usage)}</div>}
+      {!!m.usage?.calls && <div className="usage">{m.usage.calls}{T(' 次调用 · ', ' calls · ')}{usageText(m.usage)}{timing(turns)}</div>}
     </div>}
     {(m.status === 'aborted' || m.status === 'error') && <div className={'status ' + m.status}>{STATUS[m.status]()}{m.error ? T('：', ': ') + m.error : ''}</div>}
   </div>;
