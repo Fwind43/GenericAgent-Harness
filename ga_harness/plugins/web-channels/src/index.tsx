@@ -242,7 +242,7 @@ export function ChannelManager({ api }: { api: PluginAPI }) {
                 : T('\u5728\u63d2\u4ef6\u7ba1\u7406\u4e2d\u542f\u7528\u98de\u4e66\u7b49\u63a5\u5165\u63d2\u4ef6\uff0c\u7136\u540e\u56de\u5230\u8fd9\u91cc\u521b\u5efa\u901a\u9053\u3002', 'Enable a provider such as Feishu in Plugins, then return here to create a channel.')}</p>
               {providers.length > 0 && <>
                 <button type="button" className="btn primary" disabled={busy} onClick={create}><Icon name="plus" />{T('\u65b0\u5efa\u901a\u9053', 'New channel')}</button>
-                <small>{T('\u53ef\u7528\u63a5\u5165', 'Available providers')}\uff1a{providers.map(label).join(' / ')}</small>
+                <small>{T('\u53ef\u7528\u63a5\u5165\uff1a', 'Available providers: ')}{providers.map(label).join(' / ')}</small>
               </>}
             </div>}
         </section>
