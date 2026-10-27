@@ -40,7 +40,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 /* layout: left sidebar + main column; sidebar becomes a drawer on narrow screens */
 .app{flex:1;display:flex;min-height:0}
 .main-col{flex:1;min-width:0;display:flex;flex-direction:column}
-.sidebar{width:260px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-muted);border-right:1px solid var(--border);font-size:13px;--hover:color-mix(in srgb,var(--text) 5%,transparent);--active:color-mix(in srgb,var(--text) 8%,transparent)}
+.sidebar{width:var(--side-w,260px);position:relative;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface-muted);border-right:1px solid var(--border);font-size:13px;--hover:color-mix(in srgb,var(--text) 5%,transparent);--active:color-mix(in srgb,var(--text) 8%,transparent)}
 .side-head{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 18px}
 .side-logo{display:block;width:28px;height:28px;flex:none;object-fit:contain}
 .side-head h1{font-size:14px;font-weight:600;margin:0;flex:1;letter-spacing:.01em;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -55,6 +55,17 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 .icon-btn:hover:not(:disabled){background:var(--border);color:var(--text)}
 .side-close{width:28px;height:28px;padding:0;align-items:center;justify-content:center;border-radius:6px}
 #sideOpen,.side-close{display:none}
+/* desktop: collapsible (side-collapsed on body) and drag-resizable via .side-resize; narrow screens keep the drawer */
+.side-resize{position:absolute;top:0;right:-4px;bottom:0;width:8px;z-index:5;cursor:col-resize;touch-action:none;outline:none}
+.side-resize::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;background:transparent;transition:background .15s}
+.side-resize:hover::after,.side-resize:focus-visible::after,body.side-resizing .side-resize::after{background:color-mix(in srgb,var(--text) 28%,transparent)}
+body.side-resizing{cursor:col-resize;user-select:none}
+body.side-resizing iframe{pointer-events:none}
+@media (min-width:761px){
+  .side-close{display:inline-flex}
+  body.side-collapsed .sidebar{display:none}
+  body.side-collapsed #sideOpen{display:inline-flex}
+}
 .scrim{display:none}
 /* generic sidebar entries for plugins: .side-item buttons (16px .gah-ico + label, one shared left edge) */
 .side-item{display:flex;align-items:center;gap:10px;width:100%;height:32px;text-align:left;background:transparent;color:var(--text);border:0;border-radius:6px;padding:0 10px;font:inherit;font-size:13px;white-space:nowrap;overflow:hidden}
@@ -78,6 +89,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
   .app.side-open .sidebar{transform:none;box-shadow:0 0 24px rgba(0,0,0,.18)}
   .app.side-open .scrim{display:block;position:fixed;inset:0;z-index:29;background:rgba(0,0,0,.28)}
   #sideOpen,.side-close{display:inline-flex}
+  .side-resize{display:none}
 }
 .toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 20px;border-bottom:1px solid var(--border)}
 .toolbar[hidden],#notice[hidden]{display:none}

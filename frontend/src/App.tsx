@@ -1,6 +1,6 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { request } from './api';
-import { language, save, T } from './i18n';
+import { language, save, saved, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
@@ -12,10 +12,17 @@ import type { SlotName } from './sdk';
 const Slot = memo(function Slot({ name }: { name: SlotName }) {
   return <div className="gah-slot" data-slot={name} />;
 });
+// Desktop sidebar: collapsible and resizable, both remembered locally. Narrow screens keep the drawer.
+const SIDE_MIN = 200, SIDE_MAX = 480, SIDE_DEFAULT = 260, SIDE_SNAP = 140;
+const narrow = () => window.matchMedia('(max-width:760px)').matches;
+const clampSide = (value: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(value)));
+const savedSide = () => { const value = Number(saved('gah-side-width')); return value ? clampSide(value) : SIDE_DEFAULT; };
 export function App() {
   const { state, connected, changing, notice } = useHost();
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false), [sidebar, setSidebar] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => saved('gah-side-collapsed') === '1');
+  const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
   const stick = useRef(true), submitting = useRef(false);
   const busy = state.running || changing || sending;
@@ -48,6 +55,12 @@ export function App() {
     document.body.classList.toggle('side-open', sidebar);
     return () => document.body.classList.remove('side-open');
   }, [sidebar]);
+  useEffect(() => {
+    document.body.classList.toggle('side-collapsed', collapsed);
+    save('gah-side-collapsed', collapsed ? '1' : '0');
+  }, [collapsed]);
+  useEffect(() => { document.body.classList.toggle('side-resizing', resizing); }, [resizing]);
+  useEffect(() => { if (!resizing) save('gah-side-width', String(sideWidth)); }, [sideWidth, resizing]);
   useLayoutEffect(() => {
     const node = input.current;
     if (node) { node.style.height = 'auto'; node.style.height = `${node.scrollHeight}px`; }
@@ -56,6 +69,30 @@ export function App() {
     const node = scroll.current;
     if (node && stick.current) node.scrollTop = node.scrollHeight;
   }, [state.messages, state.session_id]);
+  function toggleSide(open: boolean) { if (narrow()) setSidebar(open); else setCollapsed(!open); }
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget, left = handle.parentElement?.getBoundingClientRect().left ?? 0;
+    handle.setPointerCapture(event.pointerId); setResizing(true);
+    let raw = sideWidth;
+    const move = (e: PointerEvent) => { raw = e.clientX - left; setSideWidth(clampSide(raw)); };
+    const end = () => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
+      setResizing(false);
+      if (raw < SIDE_SNAP) setCollapsed(true);
+    };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  }
+  function resizeKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 40 : 10;
+    if (event.key === 'ArrowLeft') setSideWidth(w => clampSide(w - step));
+    else if (event.key === 'ArrowRight') setSideWidth(w => clampSide(w + step));
+    else if (event.key === 'Home') setSideWidth(SIDE_MIN);
+    else if (event.key === 'End') setSideWidth(SIDE_MAX);
+    else return;
+    event.preventDefault();
+  }
   async function send(event: FormEvent) {
     event.preventDefault();
     const task = draft.trim();
@@ -73,14 +110,15 @@ export function App() {
     finally { setStopping(false); }
   }
   return <>
-    <aside className="sidebar" id="sidebar">
-      <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>GenericAgent-Harness</h1><button type="button" className="icon-btn side-close" data-gah-close aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
+    <aside className="sidebar" id="sidebar" style={{ '--side-w': `${sideWidth}px` } as CSSProperties}>
+      <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>GenericAgent-Harness</h1><button type="button" className="icon-btn side-close" data-gah-close onClick={() => { if (!narrow()) setCollapsed(true); }} title={T('收起侧边栏', 'Collapse sidebar')} aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
       <div className="side-body"><Slot name="sidebar" /></div>
+      <div className="side-resize" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin={SIDE_MIN} aria-valuemax={SIDE_MAX} aria-valuenow={sideWidth} aria-label={T('拖动调整侧边栏宽度', 'Resize sidebar')} title={T('拖动调整宽度，双击恢复默认', 'Drag to resize, double-click to reset')} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => setSideWidth(SIDE_DEFAULT)} />
       <div className="side-foot"><Slot name="sidebar-foot" /><Settings><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>
     <div className="scrim" data-gah-close />
     <div className="main-col">
-      <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} onClick={() => setSidebar(true)}>☰</button>
+      <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         <span className="spacer" /><Slot name="header" />
         <button type="button" className="icon-btn lang-btn" id="langBtn" title={T('Switch to English', '切换到中文')} onClick={() => { save('gah-lang', language === 'zh' ? 'en' : 'zh'); location.reload(); }}>{T('EN', '中')}</button>
       </header>
