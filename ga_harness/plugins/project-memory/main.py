@@ -1,4 +1,4 @@
-"""project-memory: GenericAgent-Admin's layered project memory as a harness plugin.
+"""project-memory: layered project memory (L0 policy / L1 index / L2 facts / L3 topics).
 
 Activation follows GA's official ``plugins/project_mode``: the active project is
 ``agent._ga_project_mode_name`` (set per request by workspace-store, both in the

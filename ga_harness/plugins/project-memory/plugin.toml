@@ -1,8 +1,8 @@
 name = "project-memory"
 category = "extension"
 entry = "main:apply"
-description = "Admin-style layered project memory (L0 policy, L1 index, L2 facts, L3 topic files) injected for the active GA project."
-description_zh = "与 Admin 一致的分层项目记忆（L0 规范 / L1 索引 / L2 事实 / L3 专题文件），在激活 GA 项目时注入。"
+description = "Layered project memory: a per-project memory/ directory (L0 policy, L1 index, L2 facts, L3 topics) whose index and facts are injected into the system prompt on every LLM call. Official project_mode only points the model at a single project_memory.md, which is kept here as a read-only source."
+description_zh = "分层项目记忆：每个项目一个 memory/ 目录（L0 规范 / L1 索引 / L2 事实 / L3 专题），每次调用模型时把索引和事实注入系统提示。官方 project_mode 只提示模型去读单个 project_memory.md，本插件将其保留为只读来源。"
 inject = ["ga.hooks"]
 provides = ["project.memory"]
 

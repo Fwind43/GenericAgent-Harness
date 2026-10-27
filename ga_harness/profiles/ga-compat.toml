@@ -44,7 +44,7 @@ name = "session-store"
 [[plugins]]
 name = "workspace-store"
 
-# Admin-style layered project memory (L0-L3) for the active GA project
+# Layered project memory (L0-L3 memory/ dir) injected into the system prompt for the active GA project
 [[plugins]]
 name = "project-memory"
 

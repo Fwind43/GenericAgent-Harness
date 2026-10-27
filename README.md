@@ -59,7 +59,7 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `ga-timing` | 通过 GA 钩子统计每次工具调用耗时（只记录，不改变 GA 行为） |
 | `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
 | `workspace-store` | 会话绑定的工作目录与项目（项目记忆复用 GA 官方 project_mode） |
-| `project-memory` | Admin 同款分层项目记忆（L0 规范 / L1 索引 / L2 事实 / L3 专题），在项目激活时注入系统提示 |
+| `project-memory` | 分层项目记忆（L0 规范 / L1 索引 / L2 事实 / L3 专题）：每次调用模型时把索引和事实注入系统提示；官方 project_mode 只指向单个 `project_memory.md`，这里保留为只读来源 |
 | `model-store` | 独立的运行时模型目录、切换和文件配置管理；接口不返回 API 密钥 |
 | `run-store` | Web 模式的持久化任务记录与独立 worker 进程；同一会话只允许一个活动任务，不同会话可并行 |
 | `plugin-manager` | 独立的插件目录、依赖检查与配置持久化；网页保存的修改在下次启动生效 |
