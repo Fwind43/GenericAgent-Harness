@@ -1,36 +1,132 @@
-/* Channel manager: list on the left, status/form/logs on the right; stacked on narrow screens. */
-.gah-dialog.channel-dialog{width:min(980px,calc(100vw - 24px))}
-.channel-dialog .channel-error{margin:0 0 10px;padding:8px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);font-size:13px;overflow-wrap:anywhere}
-.channel-dialog .channel-body{display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px;min-height:360px}
-.channel-dialog .channel-list{display:flex;flex-direction:column;gap:4px;min-width:0;border-right:1px solid var(--border);padding-right:12px}
-.channel-dialog .channel-new{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px}
-.channel-dialog .channel-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:8px;background:none;color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.channel-dialog .channel-item[aria-pressed="true"]{border-color:var(--border);background:var(--surface-muted)}
-.channel-dialog .channel-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.channel-dialog .channel-item-kind{font-size:11px;color:var(--muted)}
-.channel-dialog .channel-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
-.channel-dialog .channel-empty{padding:16px 6px;color:var(--muted);font-size:13px}
-.channel-dialog [data-state="running"]{--st:#2e9d5b}
-.channel-dialog [data-state="starting"]{--st:#d29a22}
-.channel-dialog [data-state="error"],.channel-dialog [data-state="unavailable"]{--st:var(--danger)}
-.channel-dialog .channel-dot[data-state]{background:var(--st,var(--muted))}
-.channel-dialog .channel-detail{display:flex;flex-direction:column;gap:12px;min-width:0}
-.channel-dialog .channel-head{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;justify-content:space-between}
-.channel-dialog .channel-head h3{margin:0 0 4px;font-size:16px}
-.channel-dialog .channel-badge{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid var(--st,var(--border));color:var(--st,var(--muted));font-size:12px}
-.channel-dialog .channel-since{margin-left:8px;font-size:12px;color:var(--muted)}
-.channel-dialog .channel-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
-.channel-dialog .channel-form{display:flex;flex-direction:column;gap:10px;max-width:520px}
-.channel-dialog .channel-field{display:flex;flex-direction:column;gap:4px;font-size:13px}
-.channel-dialog .channel-field>span{color:var(--muted)}
-.channel-dialog .channel-field input,.channel-dialog .channel-field select{border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
-.channel-dialog .channel-field input:focus-visible,.channel-dialog .channel-field select:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
-.channel-dialog .channel-logs{flex:1;min-height:200px;max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted);padding:8px 10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
-.channel-dialog .channel-log{display:flex;gap:8px}
-.channel-dialog .channel-log-time{flex:none;color:var(--muted)}
+/* Channel manager: quiet split-pane workspace, themed by the host palette. */
+.gah-dialog.channel-dialog{width:min(1000px,calc(100vw - 32px));max-width:none;height:min(680px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);overflow:hidden;border-radius:16px}
+.gah-dialog.channel-dialog[open]{display:flex;flex-direction:column}
+.channel-dialog .channel-dialog-head{flex:none;align-items:center;padding:22px 28px;gap:16px}
+.channel-dialog .channel-heading{min-width:0}
+.channel-dialog .channel-heading h2{font-size:19px;line-height:1.4;letter-spacing:-.3px}
+.channel-dialog .channel-heading p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.channel-dialog .channel-header-actions{display:flex;align-items:center;gap:12px;flex:none}
+.channel-dialog .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;line-height:1.4;white-space:nowrap}
+.channel-dialog .btn:hover:not(:disabled){background:var(--surface-muted);border-color:var(--muted)}
+.channel-dialog .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.channel-dialog .btn.primary:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 88%,var(--text))}
+.channel-dialog .gah-ico{flex:none;width:16px;height:16px}
+.channel-dialog .channel-header-actions .icon-btn{width:32px;height:32px;border-radius:8px}
+.channel-dialog .channel-body{display:grid;grid-template-columns:240px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+.channel-dialog .channel-body[data-has-channels="false"]{grid-template-columns:minmax(0,1fr)}
+.channel-dialog .channel-list{display:flex;flex-direction:column;gap:14px;min-width:0;min-height:0;padding:22px 14px 18px;background:var(--surface-muted);border-right:1px solid var(--border)}
+.channel-dialog .channel-list-heading{display:flex;justify-content:space-between;align-items:center;padding:0 10px;color:var(--muted);font-size:11px;font-weight:600}
+.channel-dialog .channel-list-heading>span:last-child{font-variant-numeric:tabular-nums}
+.channel-dialog .channel-items{display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;scrollbar-width:thin;padding:2px}
+.channel-dialog .channel-item{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;flex:none;width:100%;min-width:0;padding:12px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--text);text-align:left;font:inherit;font-size:13px}
+.channel-dialog .channel-item:hover:not(:disabled){background:color-mix(in srgb,var(--text) 4%,transparent)}
+.channel-dialog .channel-item[aria-pressed="true"]{border-color:var(--border);background:var(--surface)}
+.channel-dialog .channel-item[aria-pressed="true"]::before{content:"";position:absolute;inset:13px auto 13px -1px;width:3px;border-radius:2px;background:var(--accent)}
+.channel-dialog .channel-item-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;line-height:1.5}
+.channel-dialog .channel-item-provider{font-size:11px;color:var(--muted)}
+.channel-dialog .channel-new{width:100%;margin-top:auto;flex:none;background:transparent}
+.channel-dialog .channel-detail{display:flex;flex-direction:column;gap:24px;min-width:0;min-height:0;padding:28px 32px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.channel-dialog .channel-body[data-has-channels="false"] .channel-detail{padding:28px clamp(20px,8vw,84px)}
+
+/* Status and channel details. */
+.channel-dialog .channel-state{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.channel-dialog .channel-state i{width:6px;height:6px;flex:none;border-radius:50%;background:currentColor}
+.channel-dialog .channel-state[data-state="running"]{color:light-dark(#227147,#80c89c)}
+.channel-dialog .channel-state[data-state="starting"]{color:light-dark(#946400,#e3bd66)}
+.channel-dialog .channel-state[data-state="error"]{color:var(--danger)}
+.channel-dialog .channel-item .channel-state{margin-top:6px}
+.channel-dialog .channel-profile{display:flex;flex-direction:column;gap:20px}
+.channel-dialog .channel-profile-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.channel-dialog .channel-profile-heading>div{min-width:0}
+.channel-dialog .channel-eyebrow{margin:0 0 5px;color:var(--muted);font-size:12px}
+.channel-dialog h3{margin:0;font-size:21px;font-weight:600;line-height:1.4;letter-spacing:-.3px;overflow-wrap:anywhere}
+.channel-dialog .channel-profile-heading>.channel-state{flex:none;margin-top:6px}
+.channel-dialog .channel-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.channel-dialog .channel-since{flex:1 1 100%;margin-top:2px;color:var(--muted);font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums}
+.channel-dialog .channel-error,.channel-dialog .channel-notice{flex:none;margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.channel-dialog .channel-error{border-color:color-mix(in srgb,var(--danger) 35%,var(--border));background:color-mix(in srgb,var(--danger) 5%,var(--surface));color:var(--danger)}
+.channel-dialog .channel-notice{background:var(--surface-muted);color:var(--muted)}
+.channel-dialog .channel-page-error{margin:12px 28px 0;max-height:100px;overflow:auto}
+.channel-dialog .channel-config{border-top:1px solid var(--border);padding-top:20px}
+.channel-dialog .channel-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.channel-dialog h4{margin:0;font-size:13px;font-weight:600}
+.channel-dialog .channel-edit{min-height:30px;padding:5px 10px;background:transparent}
+.channel-dialog .channel-config-rows{margin:0;font-size:13px}
+.channel-dialog .channel-config-rows>div{display:grid;grid-template-columns:minmax(100px,35%) minmax(0,1fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--border)}
+.channel-dialog .channel-config-rows dt{color:var(--muted);overflow-wrap:anywhere}
+.channel-dialog .channel-config-rows dd{margin:0;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+.channel-dialog .channel-config-rows code{font-size:12px}
+.channel-dialog .channel-secret,.channel-dialog .channel-value-empty{color:var(--muted);font-size:12px}
+.channel-dialog .channel-detail-footer{margin-top:auto;padding-top:4px}
+.channel-dialog .channel-delete{display:inline-flex;align-items:center;gap:7px;padding:6px 0;background:transparent;color:var(--muted);font-size:12px;border-radius:4px}
+.channel-dialog .channel-delete:hover:not(:disabled){color:var(--danger)}
+
+/* Forms keep optional configuration out of the primary flow. */
+.channel-dialog .channel-form{display:flex;flex-direction:column;gap:22px;width:100%;max-width:600px;min-width:0;margin-inline:auto;flex:none}
+.channel-dialog .channel-section-heading p{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.7}
+.channel-dialog .channel-provider-picker{margin:0;padding:0;border:0;min-width:0}
+.channel-dialog .channel-provider-picker legend{margin-bottom:10px;padding:0;font-size:13px;font-weight:600}
+.channel-dialog .channel-provider-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px}
+.channel-dialog .channel-provider-option{display:flex;align-items:flex-start;gap:10px;min-width:0;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.channel-dialog .channel-provider-option[data-selected="true"]{border-color:var(--accent);background:var(--surface-muted)}
+.channel-dialog .channel-provider-option input{flex:none;width:14px;height:14px;margin:3px 0 0;accent-color:var(--accent)}
+.channel-dialog .channel-provider-option span{min-width:0;overflow-wrap:anywhere}
+.channel-dialog .channel-provider-option strong{display:block;font-size:13px;font-weight:600;line-height:1.5}
+.channel-dialog .channel-provider-option small{display:block;margin-top:3px;color:var(--muted);font-size:11px}
+.channel-dialog .channel-provider-picker:disabled .channel-provider-option{cursor:default;opacity:.6}
+.channel-dialog .channel-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.channel-dialog .channel-field{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:13px}
+.channel-dialog .channel-field>span{line-height:1.5;font-weight:500}
+.channel-dialog .channel-field em{margin-left:4px;color:var(--danger);font-size:12px;font-style:normal}
+.channel-dialog .channel-field input{width:100%;min-width:0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;line-height:1.5}
+.channel-dialog .channel-field input::placeholder{color:var(--muted);opacity:.75}
+.channel-dialog .channel-field input:disabled{opacity:.6}
+.channel-dialog .channel-field small{color:var(--muted);font-size:11px;font-weight:400;line-height:1.6;overflow-wrap:anywhere}
+.channel-dialog .channel-advanced{border-top:1px solid var(--border);padding-top:16px}
+.channel-dialog .channel-advanced summary{width:fit-content;color:var(--muted);font-size:12px;cursor:pointer}
+.channel-dialog .channel-advanced[open] summary{margin-bottom:16px}
+.channel-dialog .channel-form-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:20px}
+.channel-dialog :is(button,input,summary):focus-visible{outline:2px solid var(--muted);outline-offset:3px}
+
+/* Logs stay secondary until requested. */
+.channel-dialog .channel-log-panel{min-width:0;border:1px solid var(--border);border-radius:8px}
+.channel-dialog .channel-log-panel>summary{display:flex;align-items:center;gap:12px;padding:13px 14px;list-style:none;cursor:pointer;font-size:12px;font-weight:500}
+.channel-dialog .channel-log-panel>summary::-webkit-details-marker{display:none}
+.channel-dialog .channel-log-panel>summary::after{content:"";width:6px;height:6px;flex:none;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}
+.channel-dialog .channel-log-panel[open]>summary::after{transform:rotate(45deg)}
+.channel-dialog .channel-log-hint{margin-left:auto;color:var(--muted);font-size:11px;font-weight:400}
+.channel-dialog .channel-logs{min-height:90px;max-height:240px;overflow:auto;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface-muted);border-radius:0 0 8px 8px;font:11px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;scrollbar-width:thin}
+.channel-dialog .channel-log{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:12px;padding:2px 0}
+.channel-dialog .channel-log-time{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .channel-dialog .channel-log-text{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .channel-dialog .channel-log[data-level="error"] .channel-log-text{color:var(--danger)}
-@media (max-width:720px){
-  .channel-dialog .channel-body{grid-template-columns:1fr}
-  .channel-dialog .channel-list{border-right:0;border-bottom:1px solid var(--border);padding:0 0 10px}
+.channel-dialog .channel-log-empty{padding:18px 0;text-align:center;color:var(--muted);font-family:inherit}
+.channel-dialog .channel-empty{display:flex;flex:1 0 auto;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-width:0;padding:32px 0;text-align:center}
+.channel-dialog .channel-empty-icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border:1px solid var(--border);border-radius:12px;color:var(--muted)}
+.channel-dialog .channel-empty-icon .gah-ico{width:24px;height:24px}
+.channel-dialog .channel-empty h3{font-size:22px}
+.channel-dialog .channel-empty p{max-width:370px;margin:0;color:var(--muted);font-size:13px;line-height:1.8;overflow-wrap:anywhere}
+.channel-dialog .channel-empty small{max-width:100%;color:var(--muted);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+
+@media(max-width:720px){
+  .gah-dialog.channel-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);border-radius:12px}
+  .channel-dialog .channel-dialog-head{padding:16px 18px;gap:10px}
+  .channel-dialog .channel-heading h2{font-size:17px}
+  .channel-dialog .channel-header-actions{gap:6px}
+  .channel-dialog .channel-refresh{padding:6px 9px;min-height:32px;font-size:12px}
+  .channel-dialog .channel-body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .channel-dialog .channel-body[data-has-channels="false"]{grid-template-rows:minmax(0,1fr)}
+  .channel-dialog .channel-list{flex-direction:row;align-items:center;gap:10px;padding:10px 14px;border-right:0;border-bottom:1px solid var(--border)}
+  .channel-dialog .channel-list-heading{display:none}
+  .channel-dialog .channel-items{flex:1;flex-direction:row;overflow-x:auto;min-width:0}
+  .channel-dialog .channel-item{width:156px;padding:9px 10px;gap:1px}
+  .channel-dialog .channel-item-provider{overflow-wrap:anywhere}
+  .channel-dialog .channel-item .channel-state{margin-top:3px}
+  .channel-dialog .channel-new{width:auto;margin:0;padding:8px 10px;font-size:12px}
+  .channel-dialog .channel-detail,.channel-dialog .channel-body[data-has-channels="false"] .channel-detail{padding:22px 18px;gap:22px}
+  .channel-dialog .channel-page-error{margin:10px 18px 0}
+  .channel-dialog .channel-profile-heading{flex-wrap:wrap;gap:8px}
+  .channel-dialog .channel-profile-heading>.channel-state{margin-top:0}
+  .channel-dialog .channel-config-rows>div{grid-template-columns:minmax(80px,32%) minmax(0,1fr);gap:12px}
+  .channel-dialog .channel-empty h3{font-size:20px}
 }
