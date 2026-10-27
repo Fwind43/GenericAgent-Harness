@@ -17,6 +17,8 @@ const SIDE_MIN = 200, SIDE_MAX = 480, SIDE_DEFAULT = 260, SIDE_SNAP = 140;
 const narrow = () => window.matchMedia('(max-width:760px)').matches;
 const clampSide = (value: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(value)));
 const savedSide = () => { const value = Number(saved('gah-side-width')); return value ? clampSide(value) : SIDE_DEFAULT; };
+// The backend stores this default chat title untranslated; it is localized only for display.
+const NEW_TITLE = '\u65b0\u4f1a\u8bdd';
 export function App() {
   const { state, connected, changing, notice } = useHost();
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false);
@@ -27,6 +29,8 @@ export function App() {
   const stick = useRef(true), submitting = useRef(false);
   const busy = state.running || changing || sending;
   const stats = sessionStats(state.messages ?? []);
+  const currentSession = state.sessions?.find((session) => session.id === state.session_id);
+  const sessionTitle = !currentSession ? '' : !currentSession.title || currentSession.title === NEW_TITLE ? T(NEW_TITLE, 'New chat') : currentSession.title;
   useEffect(() => host.connect(), []);
   useEffect(() => {
     plugins.sync(state.web_plugins ?? []);
@@ -119,7 +123,7 @@ export function App() {
     <div className="scrim" data-gah-close />
     <div className="main-col">
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
-        <span className="spacer" /><Slot name="header" />
+        {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}<span className="spacer" /><Slot name="header" />
         <button type="button" className="icon-btn lang-btn" id="langBtn" title={T('Switch to English', '切换到中文')} onClick={() => { save('gah-lang', language === 'zh' ? 'en' : 'zh'); location.reload(); }}>{T('EN', '中')}</button>
       </header>
       <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
