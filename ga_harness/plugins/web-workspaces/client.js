@@ -5,17 +5,18 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
     const [draft, setDraft] = react.useState(""), [focused, setFocused] = react.useState(false), [active, setActive] = react.useState(0);
     const [dismissed, setDismissed] = react.useState(false);
-    const open = (action) => {
+    const open = (action, id) => {
       if (busy || !scope) return;
-      const p = scope.project;
-      if (action === "workspace" && p) {
+      const p = id ? scope.projects.find((item) => item.id === id) : scope.project;
+      if (action === "workspace" && p && !id) {
         open("update");
         return;
       }
       if (action === "update" && !p) return;
       setError("");
       setDismissed(true);
-      setEditing({ action, id: action === "update" ? p == null ? void 0 : p.id : void 0, name: action === "update" ? (p == null ? void 0 : p.name) ?? "" : "", workspace: scope.workspace ?? "" });
+      if (action === "update" && p) setEditing({ action, id: p.id, name: p.name, workspace: p.workspace, updated: p.updated });
+      else setEditing({ action, name: "", workspace: action === "workspace" ? scope.workspace ?? "" : "" });
     };
     async function change(body, inDialog = false) {
       return run(async () => {
@@ -29,9 +30,8 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
     };
     const exits = ["off", "exit", "none", sdk.T("退出", "Leave").toLowerCase()];
     react.useEffect(() => api.listen(window, "gah:workspace-dialog", (event) => {
-      var _a;
-      const action = (_a = event.detail) == null ? void 0 : _a.action;
-      open(action === "update" || action === "workspace" ? action : "create");
+      const detail = event.detail;
+      open((detail == null ? void 0 : detail.action) === "update" || (detail == null ? void 0 : detail.action) === "workspace" ? detail.action : "create", detail == null ? void 0 : detail.id);
     }), [api, busy, scope]);
     react.useEffect(() => api.onHost("composer-draft", (value) => {
       setDraft(value);
@@ -108,7 +108,7 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
       ] }, `${item.label}:${index}`)) }) }) }),
       editing && /* @__PURE__ */ jsxRuntime.jsx(sdk.Modal, { className: "gah-ws-dialog", label: sdk.T("工作区与项目设置", "Workspace and project settings"), busy: working, onClose: () => setEditing(null), children: /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: submit, children: [
         /* @__PURE__ */ jsxRuntime.jsx("h2", { children: editing.action === "workspace" ? sdk.T("切换工作目录", "Switch directory") : editing.action === "create" ? sdk.T("新建项目", "New project") : sdk.T("项目设置", "Project settings") }),
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-ws-help", children: editing.action === "workspace" ? sdk.T("使用服务器已存在的目录。空对话原地切换，有历史时新开对话。工作区不是权限沙箱。", "Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.") : sdk.T("项目共享工作目录，对话历史独立。项目记忆由 GA 官方项目模式维护（temp/projects/<名称>/）。", "Projects share a working directory; chat histories stay separate. Project memory is maintained by GA's official project mode (temp/projects/<name>/).") }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-ws-help", children: editing.action === "workspace" ? sdk.T("使用服务器已存在的目录。空对话原地切换，有历史时新开对话。工作区不是权限沙箱。", "Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.") : sdk.T("项目是长期身份，记忆按名称保存在 GA 的 temp/projects/<名称>/。目录只是新会话的默认工作区，修改后已有会话不变。", "A project is a durable identity; its memory lives in GA's temp/projects/<name>/. The directory is only the default for new chats; changing it leaves existing chats untouched.") }),
         /* @__PURE__ */ jsxRuntime.jsxs("fieldset", { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 }, children: [
           editing.action !== "workspace" && /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-ws-field", children: [
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("名称", "Name") }),
@@ -119,8 +119,8 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("input", { name: "project_id", readOnly: true, value: editing.id })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-ws-field", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("服务器上的绝对目录", "Absolute directory on the server") }),
-            /* @__PURE__ */ jsxRuntime.jsx("input", { name: "workspace", required: true, autoFocus: editing.action === "workspace", readOnly: editing.action === "update", value: editing.workspace, onChange: (event) => field("workspace", event.target.value) })
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: editing.action === "workspace" ? sdk.T("服务器上的绝对目录", "Absolute directory on the server") : sdk.T("默认工作目录（可选）", "Default directory (optional)") }),
+            /* @__PURE__ */ jsxRuntime.jsx("input", { name: "workspace", required: editing.action === "workspace", autoFocus: editing.action === "workspace", placeholder: editing.action === "workspace" ? "" : `${sdk.T("可留空，使用全局默认工作区", "Optional; uses the global default workspace")}${(scope == null ? void 0 : scope.default_workspace) ? ": " + scope.default_workspace : ""}`, value: editing.workspace, onChange: (event) => field("workspace", event.target.value) })
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-ws-error", role: "alert", children: error }),
