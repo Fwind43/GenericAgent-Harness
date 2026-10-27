@@ -33,7 +33,7 @@ from urllib.parse import parse_qs, urlsplit
 from ga_harness.sessions import EFFORTS, apply_effort
 
 DIST = Path(__file__).with_name("dist")
-UNBUILT = ("<!doctype html><meta charset=\"utf-8\"><title>GA Harness</title>"
+UNBUILT = ("<!doctype html><meta charset=\"utf-8\"><title>GenericAgent-Harness</title>"
            "<p>Web UI is not built. Run <code>npm install</code> and <code>npm run build</code> in <code>frontend/</code>.</p>")
 MAX_BODY = 1 << 20
 MAX_TOOL_DATA = 20000
@@ -527,7 +527,7 @@ class WebFrontend:
         offs = self._subscribe()
         try:
             url = self.start()
-            self.log(f"[ga-harness web] {url}  (Ctrl+C to stop)")
+            self.log(f"[GenericAgent-Harness web] {url}  (Ctrl+C to stop)")
             if task:
                 self.submit(task)
             if self.open_browser:

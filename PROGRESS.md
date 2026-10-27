@@ -1,4 +1,4 @@
-# ga-harness progress
+# GenericAgent-Harness progress
 
 Design: E:/Work/GenericAgent/temp/dsh_study_20261023/HANDOFF.md (plan A: drop-in compatible with GA).
 

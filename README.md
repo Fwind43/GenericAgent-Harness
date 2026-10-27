@@ -1,4 +1,4 @@
-# ga-harness
+# GenericAgent-Harness
 
 GenericAgent（GA）的 **Everything is a Plugin** 外壳，思路参考 DeepSeek Harness / Cordis。
 

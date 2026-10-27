@@ -38,7 +38,7 @@ class TuiFrontend:
             signal.signal(signal.SIGBREAK, signal.default_int_handler)
         off = self.view.attach()
         try:
-            self._w("[ga-harness tui] " + HELP + "\n")
+            self._w("[GenericAgent-Harness tui] " + HELP + "\n")
             pending = task
             while True:
                 if pending is None:
