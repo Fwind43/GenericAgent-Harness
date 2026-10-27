@@ -16,6 +16,14 @@
 .usage{display:flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11px;line-height:20px;font-variant-numeric:tabular-nums}
 .message-actions{display:flex;align-items:center;gap:10px;margin-top:12px;min-height:28px}
 .message-actions .usage{flex:1;min-width:0}
+.usage.stats{gap:4px 14px}
+.stats .stat-head{font-weight:600;color:var(--text)}
+.stats .stat{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.stats .stat svg{width:13px;height:13px;flex:none;opacity:.8}
+.stats .stat-v{color:var(--text)}
+.stats.live .stat-head::after{content:"";display:inline-block;width:6px;height:6px;margin-left:6px;border-radius:50%;background:var(--accent);vertical-align:middle;animation:gah-stat-pulse 1.2s ease-in-out infinite}
+@keyframes gah-stat-pulse{50%{opacity:.3}}
+.message-actions .output-copy{margin-left:auto}
 .output-copy{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;padding:3px 7px;color:var(--muted);background:transparent;border:0;border-radius:5px;font:inherit;font-size:11px;cursor:pointer;flex:none}
 .output-copy svg{width:14px;height:14px;flex:none}
 .output-copy:hover{color:var(--text);background:var(--surface-muted)}

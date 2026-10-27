@@ -3,31 +3,12 @@ import { T } from '../i18n';
 import { host } from '../store';
 import type { Message, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
-import { duration } from './SessionStats';
+import { MessageStats } from './MessageStats';
 
 // DOM and class names intentionally mirror the legacy ui-web renderer so output.css applies unchanged.
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
 const num = (n = 0) => Number(n || 0).toLocaleString('en-US');
 const STATUS: Record<string, () => string> = { aborted: () => T('已停止', 'Stopped'), error: () => T('出错', 'Error') };
-function usageText(u: Usage) {
-  let s = T('输入 ', 'In ') + num(u.input);
-  if (u.cache_read || u.cache_write) s += T('（缓存命中 ', ' (cache hit ') + num(u.cache_read) + (u.input && u.cache_read ? ` ${Math.round((u.cache_read / u.input) * 100)}%` : '') + (u.cache_write ? T(' / 写入 ', ' / write ') + num(u.cache_write) : '') + T('）', ')');
-  return s + T(' · 输出 ', ' · Out ') + num(u.output);
-}
-function timing(turns: Turn[]) {
-  let llm = 0, tools = 0, out = 0, gen = 0;
-  for (const t of turns) {
-    for (const tool of t.tools ?? []) tools += tool.seconds || 0;
-    const sec = t.llm?.seconds || 0, first = t.llm?.ttft;
-    llm += sec;
-    const g = sec - (typeof first === 'number' ? first : 0);
-    if (t.usage?.output && g > 0) { out += t.usage.output; gen += g; }
-  }
-  const parts: string[] = [];
-  if (llm + tools > 0) parts.push(T('耗时 ', 'Time ') + duration(llm + tools));
-  if (gen > 0) parts.push(`${(out / gen).toFixed(1)} tok/s`);
-  return parts.length ? ' · ' + parts.join(' · ') : '';
-}
 const svg = (d: string) => <svg viewBox="0 0 16 16" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 // Input/output = up/down arrows; cache hit = lightning (served from cache); cache write = arrow into tray (stored to cache).
 const TOKEN_ICON = { input: svg('M8 13.5V2.5M4 6.5l4-4 4 4'), output: svg('M8 2.5v11M4 9.5l4 4 4-4'), cache_read: svg('M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z'), cache_write: svg('M8 2v7.5M4.8 6.5 8 9.7l3.2-3.2M2.5 10.5v2.5h11v-2.5') };
@@ -140,9 +121,9 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
       </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={fin.summary} /><Markdown text={fin.reply} /></> : null}
     </> : <Markdown text={m.text || ''} className={'body' + (running ? ' cursor' : '')} />}
-    {m.role === 'assistant' && ((reply && !running) || !!m.usage?.calls) && <div className="message-actions">
+    {m.role === 'assistant' && <div className="message-actions">
+      <MessageStats m={m} turns={turns} />
       {reply && !running && <CopyButton text={reply} label={T('复制回复', 'Copy reply')} />}
-      {!!m.usage?.calls && <div className="usage">{m.usage.calls}{T(' 次调用 · ', ' calls · ')}{usageText(m.usage)}{timing(turns)}</div>}
     </div>}
     {(m.status === 'aborted' || m.status === 'error') && <div className={'status ' + m.status}>{STATUS[m.status]()}{m.error ? T('：', ': ') + m.error : ''}</div>}
   </div>;
