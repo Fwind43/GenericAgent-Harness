@@ -18,5 +18,5 @@ export function sections(config: ModelConfig) {
   return [...groups.values()];
 }
 export function readonlyText(config: ModelConfig) {
-  return (config.reason || T('\u5f53\u524d\u914d\u7f6e\u53ea\u8bfb', 'This configuration is read-only')) + (config.convert?.blocked ? '\n' + config.convert.target + T(' \u5df2\u5b58\u5728\uff0c\u4e0d\u4f1a\u8986\u76d6\u3002', ' already exists and will not be overwritten.') : '');
+  return config.reason || T('\u5f53\u524d\u914d\u7f6e\u53ea\u8bfb', 'This configuration is read-only');
 }

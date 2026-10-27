@@ -4,7 +4,6 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
-import json
 import os
 from pathlib import Path
 import pprint
@@ -153,10 +152,8 @@ def _mykey_source(original, before, after, filename):
 
 
 class Models:
-    def __init__(self, agent, source=None, fallback=None):
+    def __init__(self, agent):
         self.agent = agent
-        self.source = source
-        self.fallback = fallback if source is None else None
         self.lock = threading.RLock()
 
     def _idle(self):
@@ -173,30 +170,20 @@ class Models:
             return self.catalog()
 
     def _file(self):
-        if self.source is None:
-            mykey = self.fallback.mykey_path() if self.fallback is not None else None
-            if mykey is None or mykey.suffix.lower() != ".py" or not mykey.is_file():
-                raise ValueError("GA mykey.py was not found")
-            return mykey
-        if self.source.file is None or self.source.inline:
-            raise ValueError("web editing requires a harness TOML/JSON file without inline overrides")
-        return self.source.file
+        mykey = llmconfig.mykey_path()
+        if mykey is None or mykey.suffix.lower() != ".py" or not mykey.is_file():
+            raise ValueError("GA mykey.py was not found")
+        return mykey
 
     def _read(self, *, logical=True):
         path = self._file()
         payload = path.read_bytes() if path.exists() else b""
         try:
-            if path.suffix.lower() == ".py":
-                data = llmconfig.read_mykey_py(path)
-                data.pop("_skipped", None)
-            else:
-                data = (json.loads(payload) if path.suffix.lower() == ".json"
-                        else llmconfig.tomllib.loads(payload.decode("utf-8"))) if payload else {}
-            if not isinstance(data, dict):
-                raise ValueError()
+            data = llmconfig.read_mykey_py(path)
+            data.pop("_skipped", None)
         except Exception:
-            raise ValueError("model file is invalid; fix it locally before editing") from None
-        if logical and path.suffix.lower() == ".py":
+            raise ValueError("mykey.py is invalid; fix it locally before editing") from None
+        if logical:
             data = self._mykey_view(data)
         return path, payload, data, hashlib.sha256(payload).hexdigest()
 
@@ -239,12 +226,11 @@ class Models:
     def _group_of(self):
         """Runtime identity -> ordered provider labels, never credentials.
 
-        Flat/mykey entries use the same base URL + key grouping as migration.
+        Ungrouped entries use the same base URL + key grouping as migration.
         Explicit provider IDs remain authoritative, even with duplicate names.
         """
         try:
-            data = (llmconfig.read_file(self.source.file) if self.source
-                    else self._mykey_view(vars(sys.modules.get("mykey"))))
+            data = self._mykey_view(vars(sys.modules.get("mykey")))
             providers = self._providers(data)
             legacy = llmconfig.group_providers({k: v for k, v in data.items()
                                                if _supported(k, v) and "provider" not in v})
@@ -294,17 +280,7 @@ class Models:
                 _, _, data, revision = self._read()
                 providers = self._providers(data)
             except ValueError as e:
-                out = {"writable": False, "reason": str(e), "entries": [], "providers": []}
-                if self.source is None:
-                    out["reason_code"] = "ga_mykey"
-                    if self.fallback is not None:
-                        out["convert"] = {"target": str(self.fallback.target),
-                                          "blocked": self.fallback.target.exists()}
-                elif self.source.inline:
-                    out["reason_code"] = "inline"
-                else:
-                    out["reason_code"] = "invalid"
-                return out
+                return {"writable": False, "reason": str(e), "entries": [], "providers": []}
             entries = []
             count = {}
             for key, value in data.items():
@@ -332,9 +308,9 @@ class Models:
                 plist.append({"id": pid, "values": values, "has_key": bool(pv.get("apikey")),
                               "url_hidden": hidden, "models": count.get(pid, 0)})
             return {"writable": True, "revision": revision, "entries": entries, "providers": plist,
-                    "format": "mykey" if self.source is None else "harness"}
+                    "format": "mykey"}
 
-    def _provider_change(self, data, action, body, *, native=False):
+    def _provider_change(self, data, action, body):
         providers = self._providers(data)
         pid = body.get("id")
         if not isinstance(pid, str) or not _PID.fullmatch(pid):
@@ -364,60 +340,17 @@ class Models:
                 raise ValueError("base URL and API key are required")
             _check_url(cfg["apibase"])
             providers[pid] = cfg
-            if native:
-                # Native models carry concrete connection settings, not provider kwargs.
-                # Only share credentials: each model keeps its own protocol and options.
-                for key in used:
-                    data[key] = dict(data[key], apibase=cfg["apibase"], apikey=cfg["apikey"])
+            # Native models carry concrete connection settings, not provider kwargs.
+            # Only share credentials: each model keeps its own protocol and options.
+            for key in used:
+                data[key] = dict(data[key], apibase=cfg["apibase"], apikey=cfg["apikey"])
         if providers:
             data[llmconfig.PROVIDERS] = providers
         else:
             data.pop(llmconfig.PROVIDERS, None)
         return bool(used)
 
-    def convert(self):
-        """Copy GA's mykey.py into the harness file and switch to it; mykey.py is left untouched."""
-        with self.lock:
-            self._idle()
-            fb = self.fallback
-            if self.source is not None or fb is None:
-                raise ValueError("model configuration is already editable")
-            target = fb.target
-            if target.exists():
-                raise ValueError(f"{target} already exists; restart gah to use it")
-            mykey = fb.mykey_path()
-            if mykey is None or not mykey.is_file():
-                raise ValueError("GA mykey.py was not found")
-            try:
-                data = llmconfig.read_mykey_py(mykey)
-                data.pop("_skipped", None)
-                payload = llmconfig.to_toml(llmconfig.group_providers(data)).encode("utf-8")
-                llmconfig.tomllib.loads(payload.decode("utf-8"))
-            except Exception:
-                raise ValueError("GA mykey.py could not be converted; run 'gah llm migrate' locally") from None
-            agent = self.agent
-            old = agent.llmclients, agent.llmclient, getattr(agent, "llm_no", 0)
-            finder = None
-            _replace(target, payload)
-            try:
-                src, finder = fb.adopt()
-                agent.load_llm_sessions()
-                if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
-                    raise RuntimeError()
-            except Exception:
-                if finder is not None:
-                    fb.undo(finder)
-                target.unlink(missing_ok=True)
-                try:
-                    agent.load_llm_sessions()
-                finally:
-                    agent.llmclients, agent.llmclient, agent.llm_no = old
-                raise RuntimeError("conversion failed; GA mykey.py is still in use") from None
-            fb.commit(finder)
-            self.source, self.fallback = src, None
-            return self.config()
-
-    def _provider_group(self, data, *, native=False):
+    def _provider_group(self, data):
         """Lift ungrouped models sharing an identical base URL + key into providers.
 
         Only literal-equal apibase/apikey pairs are grouped (protocol stays per model);
@@ -458,11 +391,7 @@ class Models:
                 names.add(name)
                 providers[pid] = {"name": name, "protocol": _protocol(keys[0]), "apibase": base, "apikey": key}
             for k in keys:
-                cfg = dict(data[k], provider=pid)
-                if not native:  # harness files inherit; native mykey keeps concrete values
-                    cfg.pop("apibase", None)
-                    cfg.pop("apikey", None)
-                data[k] = cfg
+                data[k] = dict(data[k], provider=pid)  # native mykey keeps concrete values
         try:
             after = llmconfig.resolve_providers(data)
         except llmconfig.ConfigError:
@@ -474,21 +403,17 @@ class Models:
     def change(self, body):
         with self.lock:
             self._idle()
-            if body.get("action") == "convert":
-                return self.convert()
             path, original, data, revision = self._read(logical=False)
             if body.get("revision") != revision:
                 raise RuntimeError("model file changed; reload settings before saving")
             action = body.get("action")
-            mykey = path.suffix.lower() == ".py"
             before = copy.deepcopy(data)
-            if mykey:
-                data = self._mykey_view(data)
+            data = self._mykey_view(data)
             expanded = None
             if action in ("provider_save", "provider_delete"):
-                affects_models = self._provider_change(data, action, body, native=mykey)
+                affects_models = self._provider_change(data, action, body)
             elif action == "provider_group":
-                affects_models = self._provider_group(data, native=mykey)
+                affects_models = self._provider_group(data)
             else:
                 affects_models = True
                 key = body.get("key")
@@ -506,20 +431,12 @@ class Models:
                     raise ValueError("unknown model action")
                 if not any(_supported(k, v) for k, v in data.items()):
                     raise ValueError("keep at least one model configuration")
-            if mykey:
-                payload = _mykey_source(original, before, self._mykey_data(data), str(path))
-            else:
-                try:
-                    payload = (json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-                               if path.suffix.lower() == ".json" else llmconfig.to_toml(data)).encode("utf-8")
-                except Exception:
-                    raise ValueError("model configuration cannot be serialized") from None
+            payload = _mykey_source(original, before, self._mykey_data(data), str(path))
             agent = self.agent
             old = agent.llmclients, agent.llmclient, getattr(agent, "llm_no", 0)
             try:
                 _replace(path, payload)
-                if mykey:
-                    llmconfig.Fallback._refresh()
+                llmconfig.refresh_mykey()
                 if affects_models:
                     agent.load_llm_sessions()
                     if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
@@ -530,8 +447,7 @@ class Models:
                             raise RuntimeError()
             except Exception:
                 _replace(path, original)
-                if mykey:
-                    llmconfig.Fallback._refresh()
+                llmconfig.refresh_mykey()
                 try:
                     agent.load_llm_sessions()  # also restore GA's configuration cache
                 finally:

@@ -48,14 +48,67 @@ class ModelAgent:
         self.llmclient.last_tools = ""
 
 
-def make_models(tmp_path, suffix=".toml"):
+class MykeyTestSource:
+    """Reload only the synthetic mykey fixture, like GA's native loader."""
+    def __init__(self, path):
+        self.path = self.file = path
+
+    def load(self):
+        data = llmconfig.read_mykey_py(self.path)
+        data.pop("_skipped", None)
+        return llmconfig._expand(llmconfig.resolve_providers(data))
+
+
+class MykeyModels(Models):
+    """Models bound to a synthetic mykey.py instead of GA's imported module."""
+    def __init__(self, agent):
+        super().__init__(agent)
+        self.source = agent.source
+
+    def _file(self):
+        return self.source.file
+
+    def _group_of(self):
+        # GA groups from the imported mykey module; expose the fixture as that module.
+        import sys
+        import types
+        saved = sys.modules.get("mykey")
+        mod = types.ModuleType("mykey")
+        vars(mod).update(read_cfg(self.source.file))
+        sys.modules["mykey"] = mod
+        try:
+            return super()._group_of()
+        finally:
+            if saved is None:
+                sys.modules.pop("mykey", None)
+            else:
+                sys.modules["mykey"] = saved
+
+
+def read_cfg(path):
+    data = llmconfig.read_mykey_py(path)
+    data.pop("_skipped", None)
+    return data
+
+
+def write_mykey(path, data):
+    path.write_text("".join(f"{k} = {v!r}\n" for k, v in data.items()), encoding="utf-8")
+
+
+def make_models(tmp_path):
     data = {"native_oai_config_one": {"name": "One", "model": "test-one",
             "apibase": "https://example.invalid/v1", "apikey": "test-secret-one",
             "context_win": 8192, "temperature": 0.3}, "unrelated": {"keep": True}}
-    path = tmp_path / ("models" + suffix)
-    path.write_text(json.dumps(data) if suffix == ".json" else llmconfig.to_toml(data), encoding="utf-8")
-    source = llmconfig.Source(path)
-    return Models(ModelAgent(source), source)
+    path = tmp_path / "mykey.py"
+    write_mykey(path, data)
+    return MykeyModels(ModelAgent(MykeyTestSource(path)))
+
+
+def make_fallback(tmp_path):
+    mykey = tmp_path / "mykey.py"
+    mykey.write_text('native_oai_config_x = {"name": "X", "model": "m-x", "apibase": "https://example.invalid/v1", '
+                     '"apikey": "test-secret-x"}\nproxy = "http://127.0.0.1:1"\n', encoding="utf-8")
+    return MykeyModels(ModelAgent(MykeyTestSource(mykey))), None, mykey
 
 
 def change(store, action="save", key="native_oai_config_one", values=None):
@@ -63,15 +116,14 @@ def change(store, action="save", key="native_oai_config_one", values=None):
                          "revision": store.config()["revision"]})
 
 
-@pytest.mark.parametrize("suffix", [".toml", ".json"])
-def test_crud_preserves_secrets_fields_history_and_cold_reload(tmp_path, suffix):
-    store = make_models(tmp_path, suffix)
+def test_crud_preserves_secrets_fields_history_and_cold_reload(tmp_path):
+    store = make_models(tmp_path)
     store.agent.llmclient.backend.history = [{"role": "user", "content": "kept"}]
     public = store.config()
     assert "test-secret" not in json.dumps(public)
     assert public["entries"][0]["has_key"]
     change(store, values={"name": "Renamed", "apikey": ""})
-    data = llmconfig.read_file(store.source.file)
+    data = read_cfg(store.source.file)
     assert data["native_oai_config_one"]["apikey"] == "test-secret-one"
     assert data["native_oai_config_one"]["temperature"] == 0.3
     assert data["unrelated"] == {"keep": True}
@@ -82,7 +134,7 @@ def test_crud_preserves_secrets_fields_history_and_cold_reload(tmp_path, suffix)
     assert store.select(1)["current"] == 1
     assert store.agent.llmclient.backend.history == [{"role": "user", "content": "kept"}]
     change(store, action="delete")
-    cold = Models(ModelAgent(store.source), store.source)
+    cold = MykeyModels(ModelAgent(store.source))
     assert cold.catalog()["items"][0]["name"] == "Two"
     with pytest.raises(ValueError, match="at least one"):
         change(store, action="delete", key="native_claude_config_two")
@@ -127,17 +179,11 @@ def test_env_reference_readonly_and_sensitive_url(tmp_path, monkeypatch):
     monkeypatch.setenv("GAH_TEST_ONLY_KEY", "synthetic-env-secret")
     change(store, values={"apikey": "${GAH_TEST_ONLY_KEY}"})
     change(store, values={"apikey": "", "name": "ENV"})
-    assert llmconfig.read_file(store.source.file)["native_oai_config_one"]["apikey"] == "${GAH_TEST_ONLY_KEY}"
+    assert read_cfg(store.source.file)["native_oai_config_one"]["apikey"] == "${GAH_TEST_ONLY_KEY}"
     assert "synthetic-env-secret" not in json.dumps(store.config())
-    store.source.inline = {"extra": True}
-    assert not store.config()["writable"]
-    with pytest.raises(ValueError, match="inline"):
-        store.change({"action": "save", "key": "native_oai_config_one", "values": {}})
-    assert not Models(store.agent).config()["writable"]
-    store.source.inline = {}
-    data = llmconfig.read_file(store.source.file)
+    data = read_cfg(store.source.file)
     data["native_oai_config_one"]["apibase"] = "https://user:secret@example.invalid/v1"
-    store.source.file.write_text(llmconfig.to_toml(data), encoding="utf-8")
+    write_mykey(store.source.file, data)
     assert store.config()["entries"][0]["url_hidden"]
     assert "secret" not in json.dumps(store.config())
 
@@ -154,9 +200,9 @@ def test_env_reference_readonly_and_sensitive_url(tmp_path, monkeypatch):
 ])
 def test_url_templates_never_bypass_redaction(tmp_path, url, hidden):
     store = make_models(tmp_path)
-    data = llmconfig.read_file(store.source.file)
+    data = read_cfg(store.source.file)
     data["native_oai_config_one"]["apibase"] = url
-    store.source.file.write_text(llmconfig.to_toml(data), encoding="utf-8")
+    write_mykey(store.source.file, data)
     result = store.config()
     entry = result["entries"][0]
     assert entry["url_hidden"] is hidden
@@ -174,110 +220,9 @@ def test_invalid_selection(tmp_path, index):
     assert store.catalog()["current"] == 0
 
 
-class StubFallback(llmconfig.Fallback):
-    def __init__(self, target, mykey, agent):
-        super().__init__(target)
-        self.mykey, self.agent, self.committed, self.undone = mykey, agent, [], []
-
-    def mykey_path(self):
-        return self.mykey
-
-    def adopt(self):
-        src = llmconfig.Source(self.target)
-        self.prev, self.agent.source = self.agent.source, src
-        return src, "finder"
-
-    def undo(self, finder):
-        self.agent.source = self.prev
-        self.undone.append(finder)
-
-    def commit(self, finder):
-        self.committed.append(finder)
-
-
-class MykeyTestSource:
-    """Reload only the synthetic mykey fixture, like GA's native loader."""
-    def __init__(self, path):
-        self.path = path
-
-    def load(self):
-        data = llmconfig.read_mykey_py(self.path)
-        data.pop("_skipped", None)
-        return llmconfig._expand(llmconfig.resolve_providers(data))
-
-
-def make_fallback(tmp_path):
-    mykey = tmp_path / "mykey.py"
-    mykey.write_text('native_oai_config_x = {"name": "X", "model": "m-x", "apibase": "https://example.invalid/v1", '
-                     '"apikey": "test-secret-x"}\nproxy = "http://127.0.0.1:1"\n', encoding="utf-8")
-    agent = ModelAgent(MykeyTestSource(mykey))
-    fb = StubFallback(tmp_path / "gah" / "llm.toml", mykey, agent)
-    return Models(agent, None, fb), fb, mykey
-
-
-def test_editable_ga_mykey_and_explicit_conversion(tmp_path):
-    store, fb, mykey = make_fallback(tmp_path)
-    before = mykey.read_bytes()
-    cfg = store.config()
-    assert cfg["writable"] is True and cfg["format"] == "mykey"
-    assert "convert" not in cfg and "test-secret" not in json.dumps(cfg)
-    store.agent.llmclient.backend.history = [{"role": "user", "content": "kept"}]
-    out = store.change({"action": "convert"})
-    assert out["writable"] is True and out["format"] == "harness" and "convert" not in out
-    assert [e["key"] for e in out["entries"]] == ["native_oai_config_x"]
-    assert [p["id"] for p in out["providers"]] == ["example"]
-    assert out["entries"][0]["provider"] == "example"
-    assert llmconfig.Source(fb.target).load()["native_oai_config_x"]["apikey"] == "test-secret-x"
-    assert "test-secret-x" not in json.dumps(out)
-    assert llmconfig.Source(fb.target).load()["proxy"] == "http://127.0.0.1:1"
-    assert mykey.read_bytes() == before and fb.committed == ["finder"]
-    assert store.agent.llmclient.backend.history == [{"role": "user", "content": "kept"}]
-    with pytest.raises(ValueError):
-        store.convert()
-    change(store, values={"name": "Y", "model": "m-y", "apibase": "https://example.invalid/v1", "apikey": "k"},
-           key="native_oai_config_y")
-    assert "native_oai_config_y" in llmconfig.Source(fb.target).load()
-
-
-def test_convert_refuses_existing_target_and_rolls_back(tmp_path):
-    store, fb, _ = make_fallback(tmp_path)
-    fb.target.parent.mkdir()
-    fb.target.write_text("# user file\n", encoding="utf-8")
-    assert store.config()["writable"] is True and store.config()["format"] == "mykey"
-    with pytest.raises(ValueError):
-        store.convert()
-    assert fb.target.read_text(encoding="utf-8") == "# user file\n"
-    fb.target.unlink()
-    store.agent.fail_reload = True
-    clients = store.agent.llmclients
-    with pytest.raises(RuntimeError):
-        store.convert()
-    assert not fb.target.exists() and fb.undone == ["finder"] and not fb.committed
-    assert store.agent.llmclients is clients and store.source is None
-    assert store.config()["writable"] is True and store.config()["format"] == "mykey"
-
-
-def test_real_fallback_switches_mykey_module(tmp_path):
-    import sys
-    target = tmp_path / "llm.toml"
-    target.write_text(llmconfig.to_toml({"native_oai_config_z": {"model": "z"}}), encoding="utf-8")
-    fb = llmconfig.Fallback(target)
-    saved = sys.modules.pop("mykey", None)
-    try:
-        src, finder = fb.adopt()
-        import mykey
-        assert mykey.native_oai_config_z == {"model": "z"} and mykey.__file__ == str(target)
-        fb.undo(finder)
-        assert finder not in sys.meta_path and "mykey" not in sys.modules
-    finally:
-        sys.modules.pop("mykey", None)
-        if saved is not None:
-            sys.modules["mykey"] = saved
-
-
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_mykey_crud_preserves_helpers_secrets_and_history(tmp_path, newline):
-    store, fb, mykey = make_fallback(tmp_path)
+    store, _, mykey = make_fallback(tmp_path)
     header = "# preserved comment\nimport math\ndef helper():\n    return math.pi\n\n".replace("\n", newline)
     tail = mykey.read_text(encoding="utf-8").replace("\n", newline)
     untouched = "# untouched model" + newline + "native_claude_config_keep = " + repr({
@@ -299,11 +244,10 @@ def test_mykey_crud_preserves_helpers_secrets_and_history(tmp_path, newline):
            "apibase": "https://example.invalid/v1", "apikey": "test-secret-new"})
     assert len(store.catalog()["items"]) == 3
     assert store.agent.llmclient.backend.history == [{"role": "user", "content": "kept"}]
-    cold = Models(ModelAgent(MykeyTestSource(mykey)), None, fb)
+    cold = MykeyModels(ModelAgent(MykeyTestSource(mykey)))
     assert len(cold.catalog()["items"]) == 3
     change(store, "delete", key="native_oai_config_new")
     assert "native_oai_config_new" not in llmconfig.read_mykey_py(mykey)
-    assert not fb.target.exists() and store.source is None
     assert mykey.read_bytes().startswith(header.encode("utf-8"))
     assert untouched.encode("utf-8") in mykey.read_bytes()
 
@@ -336,7 +280,7 @@ def _native_provider_change(store, action="provider_save", pid="shared", values=
 
 
 def test_mykey_provider_crud_syncs_native_models_and_cold_reload(tmp_path):
-    store, fb, mykey = make_fallback(tmp_path)
+    store, _, mykey = make_fallback(tmp_path)
     untouched = ("# preserve unrelated credentials and helpers\n"
                  "def helper():\n    return 42\n"
                  "native_claude_config_keep = " + repr({
@@ -365,7 +309,7 @@ def test_mykey_provider_crud_syncs_native_models_and_cold_reload(tmp_path):
         assert data[key]["apikey"] == "test-shared-secret"
     assert llmconfig.MYKEY_MODEL_PROVIDERS not in llmconfig.resolve_providers(data)
     assert store.agent.llmclient.backend.history == history
-    cold = Models(ModelAgent(MykeyTestSource(mykey)), None, fb)
+    cold = MykeyModels(ModelAgent(MykeyTestSource(mykey)))
     entries = {item["key"]: item for item in cold.config()["entries"]}
     assert entries["native_oai_config_x"]["provider"] == "shared"
     assert entries["native_claude_config_new"]["provider"] == "shared"
@@ -394,7 +338,6 @@ def test_mykey_provider_crud_syncs_native_models_and_cold_reload(tmp_path):
     _native_provider_change(store, "provider_delete")
     data = llmconfig.read_mykey_py(mykey)
     assert llmconfig.PROVIDERS not in data and llmconfig.MYKEY_MODEL_PROVIDERS not in data
-    assert not fb.target.exists() and store.source is None
     assert untouched.encode("utf-8") in mykey.read_bytes()
 
 

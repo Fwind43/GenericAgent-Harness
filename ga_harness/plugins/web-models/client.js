@@ -137,8 +137,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     return [...groups.values()];
   }
   function readonlyText(config) {
-    var _a;
-    return (config.reason || sdk.T("当前配置只读", "This configuration is read-only")) + (((_a = config.convert) == null ? void 0 : _a.blocked) ? "\n" + config.convert.target + sdk.T(" 已存在，不会覆盖。", " already exists and will not be overwritten.") : "");
+    return config.reason || sdk.T("当前配置只读", "This configuration is read-only");
   }
   function Field({ label, wide, children }) {
     return /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field" + (wide ? " wide" : ""), children: [
@@ -442,20 +441,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         api.notice(sdk.T("配置已保存并生效", "Configuration saved and applied"));
       }, setError);
     };
-    const convert = () => {
-      if (!(config == null ? void 0 : config.convert) || config.convert.blocked) return;
-      setError("");
-      void run(async () => {
-        var _a2;
-        const next = await api.host.post("/api/models/config", { action: "convert" });
-        setConfig(next.config);
-        api.setState(next.state);
-        setQuery("");
-        setSection("");
-        select("model", (_a2 = next.config.entries[0]) == null ? void 0 : _a2.key, false);
-        api.notice(sdk.T("已转换为可编辑配置", "Converted to an editable configuration"));
-      }, setError);
-    };
     const ungrouped = (config == null ? void 0 : config.entries.filter((item) => !item.provider).length) ?? 0;
     const autoGroup = async () => {
       if (!(config == null ? void 0 : config.writable) || busy || !ungrouped) return;
@@ -498,10 +483,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),
         !config && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", role: "status", children: working ? sdk.T("加载中...", "Loading...") : sdk.T("加载失败，请重试刷新。", "Unable to load configuration. Try refreshing.") }),
         config && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-          !config.writable && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-readonly", role: "status", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: readonlyText(config) }),
-            config.convert && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: busy || config.convert.blocked, onClick: convert, children: sdk.T("转为可编辑配置", "Convert to editable config") })
-          ] }),
+          !config.writable && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-readonly", role: "status", children: /* @__PURE__ */ jsxRuntime.jsx("span", { children: readonlyText(config) }) }),
           state.running && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help model-running", children: sdk.T("任务运行中，可查看配置，结束后可编辑。", "A run is active. You can browse; editing is available when it finishes.") }),
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-layout" + (detail ? " is-detail" : ""), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("aside", { className: "model-list-pane", children: [

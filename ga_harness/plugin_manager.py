@@ -17,7 +17,7 @@ from pathlib import Path
 from .packages import install as install_packages, missing as missing_packages
 
 HOST_CAPABILITIES = {"plugin.catalog"}
-PROTECTED = {"plugin-manager", "ga-core", "llm-config"}
+PROTECTED = {"plugin-manager", "ga-core"}
 SENSITIVE = re.compile(r"key|secret|password|token|credential|authorization", re.I)
 MAX_FILE = 1 << 20
 

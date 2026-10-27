@@ -92,11 +92,6 @@ export function Models({ api }: { api: PluginAPI }) {
       api.notice(T('\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u751f\u6548', 'Configuration saved and applied'));
     }, setError);
   };
-  const convert = () => { if (!config?.convert || config.convert.blocked) return; setError(''); void run(async () => {
-    const next = await api.host.post<ModelResult>('/api/models/config', { action: 'convert' });
-    setConfig(next.config); api.setState(next.state); setQuery(''); setSection(''); select('model', next.config.entries[0]?.key, false);
-    api.notice(T('\u5df2\u8f6c\u6362\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e', 'Converted to an editable configuration'));
-  }, setError); };
   const ungrouped = config?.entries.filter(item => !item.provider).length ?? 0;
   const autoGroup = async () => { if (!config?.writable || busy || !ungrouped) return;
     if (!await confirmDialog({ title: T('\u6309\u5730\u5740\u548c\u5bc6\u94a5\u81ea\u52a8\u5f52\u7ec4\uff1f', 'Group models by URL and key?'), message: T('\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\u7684\u672a\u5f52\u7ec4\u6a21\u578b\u5c06\u5408\u5e76\u4e3a\u670d\u52a1\u5546\uff0c\u6a21\u578b\u5b9e\u9645\u8fde\u63a5\u4e0d\u53d8\u3002', 'Ungrouped models with an identical URL and key become providers. Model connections stay the same.'), confirm: T('\u5f52\u7ec4', 'Group') })) return;
@@ -123,7 +118,7 @@ export function Models({ api }: { api: PluginAPI }) {
         {error && <p className="model-error" role="alert">{error}</p>}
         {!config && <p className="model-empty" role="status">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : T('\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u5237\u65b0\u3002', 'Unable to load configuration. Try refreshing.')}</p>}
         {config && <>
-          {!config.writable && <div className="model-readonly" role="status"><span>{readonlyText(config)}</span>{config.convert && <button type="button" className="secondary" disabled={busy || config.convert.blocked} onClick={convert}>{T('\u8f6c\u4e3a\u53ef\u7f16\u8f91\u914d\u7f6e', 'Convert to editable config')}</button>}</div>}
+          {!config.writable && <div className="model-readonly" role="status"><span>{readonlyText(config)}</span></div>}
           {state.running && <p className="model-help model-running">{T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u53ef\u67e5\u770b\u914d\u7f6e\uff0c\u7ed3\u675f\u540e\u53ef\u7f16\u8f91\u3002', 'A run is active. You can browse; editing is available when it finishes.')}</p>}
           <div className={'model-layout' + (detail ? ' is-detail' : '')}>
             <aside className="model-list-pane">

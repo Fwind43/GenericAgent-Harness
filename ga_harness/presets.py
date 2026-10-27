@@ -22,7 +22,7 @@ from pathlib import Path
 
 BUILTIN_DIR = Path(__file__).with_name("presets")
 USER_DIR = Path.home() / ".ga-harness" / "presets"
-PROTECTED = frozenset(("ga-core", "llm-config", "ga-hooks", "ga-events", "ga-stdout"))
+PROTECTED = frozenset(("ga-core", "ga-hooks", "ga-events", "ga-stdout"))
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 

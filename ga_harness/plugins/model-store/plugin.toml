@@ -1,7 +1,7 @@
 name = "model-store"
 category = "service"
 entry = "main:apply"
-description = "Busy-safe model selection and atomic local model configuration."
+description = "Busy-safe model selection and atomic editing of GA's native mykey.py."
 description_zh = "忙碌安全的模型选择，以及原子写入的本地模型配置。"
-inject = ["ga.agent", "llm.config"]
+inject = ["ga.agent"]
 provides = ["models"]

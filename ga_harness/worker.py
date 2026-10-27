@@ -11,7 +11,7 @@ EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn
           "usage", "usage.total", "llm.timed")
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
 # plugins require explicit run-store.worker_plugins configuration.
-DEFAULT_PLUGINS = frozenset(("llm-config", "ga-hooks", "ga-stdout", "ga-timing",
+DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
                              "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools",
                              "project-memory"))
 

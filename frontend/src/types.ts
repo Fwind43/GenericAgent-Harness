@@ -41,8 +41,7 @@ export interface ModelEntry { key: string; protocol: string; provider?: string; 
 export interface ProviderEntry { id: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
 export interface ModelConfig {
   entries: ModelEntry[]; providers: ProviderEntry[]; revision: string; writable: boolean;
-  reason?: string; reason_code?: string; source?: string; format?: string;
-  convert?: { target: string; blocked?: boolean };
+  reason?: string; source?: string; format?: string;
 }
 export interface ModelResult { config: ModelConfig; state: HostState }
 export interface PluginField {

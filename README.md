@@ -43,7 +43,6 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `gah run [task] [--profile P] [--patch F] [--ui U] [--timeout S]` | 组装插件树并运行 |
 | `gah tree` | 显示当前组装出的插件树 |
 | `gah plugins` | 列出所有可用插件 |
-| `gah llm show` / `gah llm migrate` | 查看模型配置；把 GA 的 `mykey.py` 迁移为 harness 配置 |
 
 ## 内置插件
 
@@ -54,7 +53,6 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `ga-hooks` | 把 GA 的 hooks（agent/turn/llm/tool 前后）桥接为 harness 事件 `ga.<event>` |
 | `ga-prompt` | 把系统提示词变成可前置、追加、替换的 waterfall |
 | `ga-tools` | 不改 GA 即可新增、替换或禁用工具 |
-| `llm-config` | 从 `~/.ga-harness/llm.toml`（或 `$GAH_LLM_CONFIG`、内联配置）提供模型配置，替代 `mykey.py` |
 | `ga-events` / `ga-usage` | 提供结构化执行事件，以及每步、每次任务的 token 用量 |
 | `ga-timing` | 通过 GA 钩子统计每次工具调用耗时（只记录，不改变 GA 行为） |
 | `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
@@ -80,9 +78,9 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 - **会话**：新建、切换、重命名和删除；对话及 GA 上下文保存到 `~/.ga-harness/sessions.sqlite3`，刷新或重启后可恢复。可通过 `$GAH_SESSION_DB` 或 `session-store` 的 `file` 配置更换位置。删除为逻辑删除，不代表安全擦除磁盘数据。
 - **模型切换**：输入框下方合并模型与推理强度选择；平铺列表支持按模型名、ID 或服务商搜索，也可用下拉筛选服务商。后续任务使用新模型并保留当前上下文；推理强度按会话设置，运行中的会话不可切换模型。
 - **模型配置**：通过“设置 → 模型”新增、编辑或删除 OpenAI/Claude 配置，支持名称、模型 ID、Base URL、API Key 和上下文窗口；至少保留一个模型。默认展示全部模型，可搜索或按服务商筛选；桌面端列表/详情双栏，手机端上下排列。保存后原子替换配置文件并重载，加载失败时回滚；过期编辑会被拒绝，重新加载面板后再试。
-- **密钥**：接口不返回已有 API Key；密码框留空保留原值，也支持 `${ENV_NAME}`。配置写回当前使用的 `mykey.py` 或 harness TOML/JSON 文件；需要避免明文密钥时请使用环境变量引用。含账号、密码、查询参数或片段的 URL 不允许保存。
-- **服务商（provider）**：原生 `mykey.py` 模式也保留服务商的新增、编辑、删除及模型归属管理。服务商表和模型归属都保存在同一 `mykey.py` 中；保存时将共享 URL、密钥同步到所属模型的原生字典，不向 GA 模型参数传入 provider 元数据。模型各自保留协议和其他选项，服务商协议只用作新建模型的默认值；删除前需先移走或删除其模型。
-- **编辑边界**：支持 harness TOML/JSON 及 GA 原生 `mykey.py`；不修改 GA 源码，也不要求转换配置。`mykey.py` 仅改写发生变化的顶层字典赋值，保留注释和其他代码；动态计算或歧义赋值拒绝自动改写，复杂 mixin 依赖需在本地文件维护。带内联覆盖的 harness 配置仍只读。模型选择目前属于运行时状态，不承诺跨进程重启保留。
+- **密钥**：接口不返回已有 API Key；密码框留空保留原值，也支持 `${ENV_NAME}`。配置直接写回 GA 原生 `mykey.py`；需要避免明文密钥时请使用环境变量引用。含账号、密码、查询参数或片段的 URL 不允许保存。
+- **服务商（provider）**：支持服务商的新增、编辑、删除及模型归属管理。服务商表和模型归属都保存在同一 `mykey.py` 中；保存时将共享 URL、密钥同步到所属模型的原生字典，不向 GA 模型参数传入 provider 元数据。模型各自保留协议和其他选项，服务商协议只用作新建模型的默认值；删除前需先移走或删除其模型。
+- **编辑边界**：只读写 GA 原生 `mykey.py`（位于 GA 根目录），不修改 GA 源码。`mykey.py` 仅改写发生变化的顶层字典赋值，保留注释和其他代码；动态计算或歧义赋值拒绝自动改写，复杂 mixin 依赖需在本地文件维护。模型选择目前属于运行时状态，不承诺跨进程重启保留。
 
 Web 服务只适用于可信的本机环境，不应直接暴露到公网。
 
@@ -149,9 +147,6 @@ profile 定义基础插件树，按顺序挂载。下面摘录默认 profile 的
 ```toml
 [[plugins]]
 name = "ga-stdout"    # 最先挂载，接管 GA 的 print 输出
-
-[[plugins]]
-name = "llm-config"   # 必须在 ga-core 之前
 
 [[plugins]]
 name = "ga-hooks"

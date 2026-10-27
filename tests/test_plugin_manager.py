@@ -24,7 +24,7 @@ def make_manager(tmp_path):
                   "note": {"type": "string", "multiline": True, "default": ""},
                   "secret": {"type": "string", "secret": True, "default": "DO-NOT-EXPOSE"}})
     ms["needs-tools"] = Manifest("needs-tools", "main:apply", tmp_path, inject=["ga.tools"])
-    tree = [entry(n) for n in ["plugin-manager", "llm-config", "ga-hooks", "ga-core", "ui-web"]]
+    tree = [entry(n) for n in ["plugin-manager", "model-store", "ga-hooks", "ga-core", "ui-web"]]
     tree.insert(-1, entry("demo", {"limit": 10, "secret": "DO-NOT-EXPOSE"}))
     p = PluginPreferences(tmp_path / "plugins.json", "test", ms, tree)
     rt = Runtime()
@@ -84,7 +84,7 @@ def test_persist_cold_reload_reset_and_idempotency(tmp_path):
         rt.dispose()
 
 
-@pytest.mark.parametrize("name", ["plugin-manager", "ga-core", "llm-config", "ui-web", "ui-cli"])
+@pytest.mark.parametrize("name", ["plugin-manager", "ga-core", "ui-web", "ui-cli"])
 def test_protected(tmp_path, name):
     rt, m = make_manager(tmp_path)
     try:
@@ -184,7 +184,7 @@ def test_plugin_categories(tmp_path):
     assert {cats[n] for n in ("ga-hooks", "ga-tools", "ga-prompt", "ga-stdout")} == {"extension"}
     assert {cats[n] for n in ("ga-events", "ga-usage", "ga-timing")} == {"observe"}
     assert all(c == "ui" for n, c in cats.items() if n.startswith(("ui-", "web-")))
-    assert all(c == "service" for n, c in cats.items() if n.endswith("-store") or n in ("llm-config", "plugin-manager"))
+    assert all(c == "service" for n, c in cats.items() if n.endswith("-store") or n == "plugin-manager")
     assert "other" not in cats.values()
     d = tmp_path / "third"
     for name, extra in (("no-cat", ""), ("bad-cat", 'category = "bogus"\n')):

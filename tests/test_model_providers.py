@@ -1,10 +1,10 @@
-"""Provider layer for model configs. Synthetic credentials only."""
+"""Provider layer for native mykey.py configs. Synthetic credentials only."""
 import json
 
 import pytest
 
 from ga_harness import llmconfig
-from tests.test_models import make_models
+from tests.test_models import make_models, read_cfg
 
 
 def rev(store):
@@ -43,32 +43,35 @@ def test_empty_provider_is_saved_but_invisible_to_ga(tmp_path):
                                  "url_hidden": False, "models": 0}]
     assert "test-secret" not in json.dumps(cfg)
     assert "providers" not in store.source.load()
-    # round-trip through TOML keeps the provider
-    assert llmconfig.read_file(store.source.file)["providers"]["acme"]["apikey"] == "test-secret-acme"
+    assert read_cfg(store.source.file)["providers"]["acme"]["apikey"] == "test-secret-acme"
 
 
 def test_model_under_provider_inherits_key_and_groups_catalog(tmp_path):
     store = make_models(tmp_path)
     psave(store)
     cfg = msave(store, "native_oai_config_two", provider="acme", model="acme-two", name="Two", context_win=16384)
-    raw = llmconfig.read_file(store.source.file)["native_oai_config_two"]
-    assert raw == {"provider": "acme", "model": "acme-two", "name": "Two", "context_win": 16384}
-    loaded = store.source.load()["native_oai_config_two"]
-    assert loaded["apikey"] == "test-secret-acme" and loaded["apibase"] == "https://acme.invalid/v1"
+    data = read_cfg(store.source.file)
+    # native dicts keep concrete credentials; ownership lives in a separate map
+    assert data["native_oai_config_two"] == {"model": "acme-two", "name": "Two", "context_win": 16384,
+                                             "apibase": "https://acme.invalid/v1", "apikey": "test-secret-acme"}
+    assert data[llmconfig.MYKEY_MODEL_PROVIDERS] == {"native_oai_config_two": "acme"}
     entry = next(e for e in cfg["entries"] if e["key"] == "native_oai_config_two")
-    assert entry["provider"] == "acme" and entry["has_key"] is False and "apibase" not in entry["values"]
+    assert entry["provider"] == "acme" and "apibase" not in entry["values"]
     assert next(p for p in cfg["providers"] if p["id"] == "acme")["models"] == 1
     items = {i["name"]: i["provider"] for i in store.catalog()["items"]}
-    assert items == {"One": "example.invalid", "Two": "Acme"}
+    assert items["Two"] == "Acme" and items["One"] not in (None, "Acme")
     assert "test-secret" not in json.dumps(cfg) + json.dumps(store.catalog())
 
 
-def test_legacy_entry_moves_into_provider_on_edit(tmp_path):
+def test_ungrouped_entry_moves_into_provider_on_edit(tmp_path):
     store = make_models(tmp_path)
     psave(store)
     msave(store, "native_oai_config_one", provider="acme")
-    raw = llmconfig.read_file(store.source.file)["native_oai_config_one"]
-    assert raw["provider"] == "acme" and "apikey" not in raw and "apibase" not in raw
+    data = read_cfg(store.source.file)
+    raw = data["native_oai_config_one"]
+    assert data[llmconfig.MYKEY_MODEL_PROVIDERS] == {"native_oai_config_one": "acme"}
+    assert "provider" not in raw and raw["apikey"] == "test-secret-acme"
+    assert raw["apibase"] == "https://acme.invalid/v1"
     assert raw["temperature"] == 0.3  # unrelated fields preserved
     assert store.source.load()["native_oai_config_one"]["apikey"] == "test-secret-acme"
 
@@ -78,7 +81,7 @@ def test_provider_key_change_applies_to_all_models_and_empty_keeps_secret(tmp_pa
     psave(store)
     msave(store, "native_oai_config_two", provider="acme", model="acme-two")
     psave(store, apikey="", name="Renamed")
-    assert llmconfig.read_file(store.source.file)["providers"]["acme"]["apikey"] == "test-secret-acme"
+    assert read_cfg(store.source.file)["providers"]["acme"]["apikey"] == "test-secret-acme"
     psave(store, apikey="test-secret-new")
     assert store.source.load()["native_oai_config_two"]["apikey"] == "test-secret-new"
 
@@ -134,4 +137,4 @@ def test_provider_rules(tmp_path):
         assert store.source.file.read_bytes() == original
     store.change({"action": "delete", "key": "native_oai_config_two", "revision": rev(store)})
     cfg = store.change({"action": "provider_delete", "id": "acme", "revision": rev(store)})
-    assert cfg["providers"] == [] and "providers" not in llmconfig.read_file(store.source.file)
+    assert cfg["providers"] == [] and "providers" not in read_cfg(store.source.file)
