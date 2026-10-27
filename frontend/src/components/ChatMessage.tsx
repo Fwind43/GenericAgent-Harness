@@ -88,8 +88,12 @@ function MessageTime({ message }: { message: Message }) {
   const title = label + ': ' + date.toLocaleString(locale, {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'short',
   });
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const display = message.role === 'assistant'
+    ? `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   return <time className="message-time" dateTime={date.toISOString()} title={title} aria-label={title}>
-    {date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
+    {display}
   </time>;
 }
 export const ChatMessage = memo(function ChatMessage({ message: m, last }: { message: Message; last: boolean }) {
