@@ -9,13 +9,13 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     ["other", sdk.T("其他", "Other")]
   ];
   const filters = [["all", sdk.T("全部", "All")], ["active", sdk.T("运行中", "Running")], ["off", sdk.T("未加载", "Not loaded")], ["issue", sdk.T("需处理", "Needs attention")]];
-  const states = { active: sdk.T("运行中", "Running"), pending: sdk.T("等待依赖", "Waiting for dependencies"), disabled: sdk.T("未加载", "Not loaded"), error: sdk.T("加载失败", "Failed to load"), removed: sdk.T("已移除", "Removed") };
+  const states = { active: sdk.T("运行中", "Running"), pending: sdk.T("等待依赖", "Waiting for dependencies"), disabled: sdk.T("未加载", "Not loaded"), error: sdk.T("加载失败", "Failed to load"), removed: sdk.T("已移除", "Removed"), missing_packages: sdk.T("缺少 Python 依赖", "Missing Python packages") };
   const stateLabel = (plugin) => states[plugin.state] || plugin.state;
   const categoryOf = (plugin) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
   const descriptionOf = (item) => sdk.T(item.description_zh || item.description || "", item.description || "");
   const inFilter = (plugin, filter) => {
-    var _a;
-    return filter === "all" || (filter === "active" ? plugin.state === "active" : filter === "off" ? ["disabled", "removed"].includes(plugin.state) : ["error", "pending"].includes(plugin.state) || !!((_a = plugin.missing) == null ? void 0 : _a.length) || !!plugin.error);
+    var _a, _b;
+    return filter === "all" || (filter === "active" ? plugin.state === "active" : filter === "off" ? ["disabled", "removed"].includes(plugin.state) : ["error", "pending", "missing_packages"].includes(plugin.state) || !!((_a = plugin.missing) == null ? void 0 : _a.length) || !!((_b = plugin.missing_packages) == null ? void 0 : _b.length) || !!plugin.error);
   };
   function PluginTags({ plugin }) {
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
@@ -25,13 +25,17 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       !plugin.enabled && plugin.state === "active" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("下次停用", "Off next start") })
     ] });
   }
-  function PluginDetails({ plugin, busy, running, error, onChange }) {
-    var _a;
+  function PluginDetails({ plugin, busy, running, error, onChange, onInstall }) {
+    var _a, _b, _c;
     const [enabled, setEnabled] = react.useState(plugin.enabled);
     const [values, setValues] = react.useState({ ...plugin.config });
     const locked = busy || running || plugin.protected;
     const update = (key, value) => setValues((previous) => ({ ...previous, [key]: value }));
-    const warning = [((_a = plugin.missing) == null ? void 0 : _a.length) ? sdk.T("当前缺少：", "Missing: ") + plugin.missing.join(", ") : "", plugin.error].filter(Boolean).join("; ");
+    const warning = [
+      ((_a = plugin.missing) == null ? void 0 : _a.length) ? sdk.T("当前缺少：", "Missing: ") + plugin.missing.join(", ") : "",
+      ((_b = plugin.missing_packages) == null ? void 0 : _b.length) ? sdk.T("缺少 Python 包：", "Missing Python packages: ") + plugin.missing_packages.join(", ") : "",
+      plugin.error
+    ].filter(Boolean).join("; ");
     const submit = () => {
       if (locked) return;
       const config = {};
@@ -52,7 +56,8 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       /* @__PURE__ */ jsxRuntime.jsx("dl", { className: "plugin-deps", children: [
         ["requires", sdk.T("依赖能力", "Requires")],
         ["provides", sdk.T("提供能力", "Provides")],
-        ["dependents", sdk.T("被插件依赖", "Required by")]
+        ["dependents", sdk.T("被插件依赖", "Required by")],
+        ["packages", sdk.T("Python 依赖", "Python packages")]
       ].map(([key, label]) => {
         var _a2;
         return /* @__PURE__ */ jsxRuntime.jsxs(react.Fragment, { children: [
@@ -61,6 +66,10 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         ] }, key);
       }) }),
       warning && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-warning", children: warning }),
+      !!((_c = plugin.missing_packages) == null ? void 0 : _c.length) && onInstall && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-actions plugin-install", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-install-button", disabled: busy || running, onClick: onInstall, children: sdk.T("安装依赖（pip）", "Install packages (pip)") }),
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("安装到当前 Python 环境，下次启动生效", "Installs into the current Python environment; applies on next start") })
+      ] }),
       /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: (event) => {
         event.preventDefault();
         submit();
@@ -129,6 +138,17 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         api.notice(sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));
       }, setError);
     };
+    const install = () => {
+      var _a;
+      if (!((_a = selected == null ? void 0 : selected.missing_packages) == null ? void 0 : _a.length) || busy) return;
+      setError("");
+      void run(async () => {
+        const result = await api.host.post("/api/plugins", { action: "install", name: selected.name });
+        setConfig(result.catalog);
+        if (result.ok) api.notice(sdk.T("依赖已安装；下次启动时生效", "Packages installed; they apply on next start"));
+        else setError(sdk.T("安装失败：", "Installation failed: ") + (result.output || "").slice(-800));
+      }, setError);
+    };
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar-foot", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-plugins", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item", disabled: working || changing, onClick: () => void load(), children: [
@@ -188,7 +208,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           ] }),
           selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
             /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
-            /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change }, selected.name + ":" + (config == null ? void 0 : config.revision))
+            /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change, onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
           ] })
         ] })
       ] })
