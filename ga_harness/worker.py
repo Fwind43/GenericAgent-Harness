@@ -45,6 +45,7 @@ def run_worker(connection, recipe, payload):
 
     runtime = Runtime()
     send_lock = threading.Lock()
+    started = False
 
     def send(kind, **data):
         with send_lock:
@@ -100,11 +101,21 @@ def run_worker(connection, recipe, payload):
             "reasoning_effort": effort if isinstance(effort, str) else None,
         })
         send("ready")
+        started = True
         result = agent.run(payload["task"], source=payload.get("source", "user"), timeout=payload.get("timeout"))
         send("done", text=str(result or ""), state=capture(raw))
     except Exception as error:
+        # Once the agent has run, its history already contains this partial turn.
+        # Return it so continuing the session matches the visible output. Setup
+        # failures keep the host's prior state rather than an empty runtime.
+        state = None
+        if started:
+            try:
+                state = capture(raw)
+            except Exception:
+                state = None
         # Tracebacks/config values can contain credentials; persist only the class.
-        send("error", error=f"Worker failed ({type(error).__name__})")
+        send("error", error=f"Worker failed ({type(error).__name__})", state=state)
     finally:
         runtime.dispose()
         connection.close()

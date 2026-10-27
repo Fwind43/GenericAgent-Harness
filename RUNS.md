@@ -62,6 +62,20 @@ the updated assistant message in `run.event` snapshots. Final `assistant.text`
 fields replace the accumulated deltas rather than appending duplicate text.
 Raw `agent.chunk` output is kept separately, not parsed into the structured reply.
 
+`assistant.delta` and `agent.chunk` are transient stream events: they are
+broadcast with the next per-run sequence number but are not stored in
+`run_events`, and the in-progress transcript is checkpointed to the session at
+most once per second. Other run events are stored and saved immediately; the
+terminal transcript is always saved in full. After a host crash, the last
+checkpoint may omit up to that interval of streamed text. Run records returned
+while a run is live report its broadcast sequence, so persisted event sequence
+numbers may have gaps.
+
+If the agent fails after it has started running, the worker returns the captured
+continuation state with the error, so a follow-up message continues from the same
+partial history that was shown. Setup failures, and runs force-terminated after
+`cancel_grace`, keep the state the run started with.
+
 Terminal states are `done`, `error`, or `aborted`. Cancellation requests cooperative
 abort, then terminates only that run's own spawned process after `cancel_grace`
 (default 5 seconds). Host shutdown requests cancellation. On a later host startup,

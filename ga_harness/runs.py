@@ -18,6 +18,9 @@ from .worker import run_worker
 
 ACTIVE = ("running", "cancelling")
 TERMINAL = ("done", "error", "aborted", "interrupted")
+# High-frequency fragments; the final assistant.text/turn events are durable.
+STREAM_EVENTS = ("assistant.delta", "agent.chunk")
+STREAM_FLUSH_SECONDS = 1.0
 
 
 class Runs:
@@ -61,12 +64,23 @@ class Runs:
                         settle(current["messages"], "interrupted", error)
                         self.sessions._write(db, current, current["messages"], current["state"])
 
-    @staticmethod
-    def _append(db, rid, kind, data):
-        seq = db.execute("SELECT seq FROM runs WHERE id=?", (rid,)).fetchone()[0] + 1
-        db.execute("UPDATE runs SET seq=? WHERE id=?", (seq, rid))
+    def _append(self, db, rid, kind, data):
+        seq = self._next_seq(db, rid)
         db.execute("INSERT INTO run_events VALUES(?,?,?,?,?)",
                    (rid, seq, kind, json.dumps(data, ensure_ascii=False, allow_nan=False), time.time()))
+        return seq
+
+    def _next_seq(self, db, rid):
+        # Transient stream events advance the live sequence without event rows,
+        # so durable events must continue after the highest sequence broadcast.
+        seq = db.execute("SELECT seq FROM runs WHERE id=?", (rid,)).fetchone()[0]
+        live = self.live.get(rid)
+        if live is not None:
+            seq = max(seq, live["seq"])
+        seq += 1
+        if live is not None:
+            live["seq"] = seq
+        db.execute("UPDATE runs SET seq=? WHERE id=?", (seq, rid))
         return seq
 
     def _notify(self, kind, record, **data):
@@ -86,7 +100,7 @@ class Runs:
             row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
             if row is None:
                 raise ValueError("run not found")
-            return dict(row)
+            return self._row(row)
 
     def listing(self, session_id=None, *, limit=100):
         limit = max(1, min(int(limit), 500))
@@ -97,7 +111,16 @@ class Runs:
                 rows = db.execute("SELECT * FROM runs ORDER BY created DESC LIMIT ?", (limit,))
             else:
                 rows = db.execute("SELECT * FROM runs WHERE session_id=? ORDER BY created DESC LIMIT ?", (session_id, limit))
-            return [dict(row) for row in rows]
+            return [self._row(row) for row in rows]
+
+    def _row(self, row):
+        # Stream fragments advance only the in-memory sequence; report it so a
+        # state refresh does not move a client's cursor behind broadcast events.
+        record = dict(row)
+        live = self.live.get(record["id"])
+        if live is not None:
+            record["seq"] = max(record["seq"], live["seq"])
+        return record
 
     def events(self, run_id, *, after=0, limit=200):
         self.get(run_id)
@@ -153,14 +176,15 @@ class Runs:
                     db.execute("INSERT INTO runs(id,session_id,source,status,workspace,project_id,created) VALUES(?,?,?,'running',?,?,?)",
                                (rid, sid, source, scope["workspace"], scope.get("project_id") or "", created_at))
                     self.sessions._write(db, session, messages, session["state"])
-                    self._append(db, rid, "run.started", {"status": "running"})
+                    started_seq = self._append(db, rid, "run.started", {"status": "running"})
             except Exception:
                 parent.close()
                 child.close()
                 raise
             live = {"process": process, "connection": parent, "messages": messages,
                     "state": copy.deepcopy(session["state"]), "cancel_at": None,
-                    "thread": None, "started": time.monotonic(), "timeout": timeout}
+                    "thread": None, "started": time.monotonic(), "timeout": timeout,
+                    "session_id": sid, "seq": started_seq, "dirty": False, "flushed": time.monotonic()}
             self.live[rid] = live
             self.sessions.active.add(sid)
             start_error = None
@@ -197,18 +221,31 @@ class Runs:
             live = self.live.get(rid)
             if live is None:
                 return
-            record = self.get(rid)
-            if record["status"] not in ACTIVE:
-                return
-            messages = copy.deepcopy(live["messages"])
+            # Output is accumulated in place; only this run's monitor thread mutates it.
+            messages = live["messages"]
             apply_event(messages, name, data)
-            session = self.sessions.get(record["session_id"])
-            with self.sessions._db() as db:
-                self.sessions._write(db, session, messages, live["state"])
-                seq = self._append(db, rid, "run.event", {"name": name, "data": data})
-            live["messages"] = messages
-            record["seq"] = seq
+            now = time.monotonic()
+            if name in STREAM_EVENTS:
+                # Stream fragments are broadcast with a live sequence number but are
+                # not stored as event rows. The transcript is checkpointed at most
+                # once per interval; durable events and completion save it in full.
+                live["seq"] = seq = live["seq"] + 1
+                if now - live["flushed"] >= STREAM_FLUSH_SECONDS:
+                    with self.sessions._db() as db:
+                        self._checkpoint(db, live)
+                else:
+                    live["dirty"] = True
+            else:
+                with self.sessions._db() as db:
+                    seq = self._append(db, rid, "run.event", {"name": name, "data": data})
+                    self._checkpoint(db, live)
+            record = {"id": rid, "session_id": live["session_id"], "seq": seq}
         self._notify("run.event", record, name=name, data=data, message=messages[-1])
+
+    def _checkpoint(self, db, live):
+        session = self.sessions.get(live["session_id"])
+        self.sessions._write(db, session, live["messages"], live["state"])
+        live["dirty"], live["flushed"] = False, time.monotonic()
 
     def _finish(self, rid, status, error=None, *, state=None, text=None):
         with self.lock:
@@ -225,8 +262,9 @@ class Runs:
                 messages[-1]["text"] = text
             settle(messages, status, error)
             session = self.sessions.get(record["session_id"])
+            state = state if isinstance(state, dict) else live["state"]
             with self.sessions._db() as db:
-                self.sessions._write(db, session, messages, state if state is not None else live["state"])
+                self.sessions._write(db, session, messages, state)
                 self._append(db, rid, "run.finished", {"status": status, "error": error})
                 db.execute("UPDATE runs SET status=?,ended=?,error=? WHERE id=?", (status, time.time(), error, rid))
             self.sessions.active.discard(record["session_id"])
@@ -246,7 +284,7 @@ class Runs:
                         self._finish(rid, "done", state=packet.get("state"), text=packet.get("text"))
                         break
                     elif packet.get("kind") == "error":
-                        self._finish(rid, "error", packet.get("error") or "Worker failed")
+                        self._finish(rid, "error", packet.get("error") or "Worker failed", state=packet.get("state"))
                         break
                 with self.lock:
                     cancel_at = live["cancel_at"]
