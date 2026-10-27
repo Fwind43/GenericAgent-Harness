@@ -2,20 +2,23 @@ import { useEffect, useState, type KeyboardEvent, type FormEvent } from 'react';
 import { host, useHost, T, type PluginAPI, type HostState, Modal, PluginSlot, useOperation, defineReact } from '@gah/sdk';
 
 type Action = 'workspace' | 'create' | 'update';
-type Edit = { action: Action; id?: string; workspace: string; name: string };
+type Edit = { action: Action; id?: string; workspace: string; name: string; updated?: number };
 type Suggestion = { label: string; hint: string; fill?: string; run?: () => void };
 export function Workspaces({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, working, run } = useOperation(api, !!state.parallel_runs), scope = state.scope;
   const [editing, setEditing] = useState<Edit | null>(null), [error, setError] = useState('');
   const [draft, setDraft] = useState(''), [focused, setFocused] = useState(false), [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
-  const open = (action: Action) => {
+  // Projects and workspaces are separate: a project's directory is only the default
+  // for its new chats, so it is optional on create and editable afterwards.
+  const open = (action: Action, id?: string) => {
     if (busy || !scope) return;
-    const p = scope.project;
-    if (action === 'workspace' && p) { open('update'); return; }
+    const p = id ? scope.projects.find(item => item.id === id) : scope.project;
+    if (action === 'workspace' && p && !id) { open('update'); return; }
     if (action === 'update' && !p) return;
     setError(''); setDismissed(true);
-    setEditing({ action, id: action === 'update' ? p?.id : undefined, name: action === 'update' ? p?.name ?? '' : '', workspace: scope.workspace ?? '' });
+    if (action === 'update' && p) setEditing({ action, id: p.id, name: p.name, workspace: p.workspace, updated: p.updated });
+    else setEditing({ action, name: '', workspace: action === 'workspace' ? scope.workspace ?? '' : '' });
   };
   async function change(body: object, inDialog = false) {
     return run(async () => {
@@ -26,8 +29,8 @@ export function Workspaces({ api }: { api: PluginAPI }) {
   const enter = (body: object = {}) => { void change({ action: 'enter', ...body }); };
   const exits = ['off', 'exit', 'none', T('\u9000\u51fa', 'Leave').toLowerCase()];
   useEffect(() => api.listen(window, 'gah:workspace-dialog', event => {
-    const action = (event as CustomEvent<{ action?: Action }>).detail?.action;
-    open(action === 'update' || action === 'workspace' ? action : 'create');
+    const detail = (event as CustomEvent<{ action?: Action; id?: string }>).detail;
+    open(detail?.action === 'update' || detail?.action === 'workspace' ? detail.action : 'create', detail?.id);
   }), [api, busy, scope]);
   useEffect(() => api.onHost<string>('composer-draft', value => { setDraft(value); setActive(0); setDismissed(false); }), [api]);
   useEffect(() => api.onHost<boolean>('composer-focus', setFocused), [api]);
@@ -84,11 +87,11 @@ export function Workspaces({ api }: { api: PluginAPI }) {
   </div></PluginSlot>
   {editing && <Modal className="gah-ws-dialog" label={T('\u5de5\u4f5c\u533a\u4e0e\u9879\u76ee\u8bbe\u7f6e', 'Workspace and project settings')} busy={working} onClose={() => setEditing(null)}>
     <form onSubmit={submit}><h2>{editing.action === 'workspace' ? T('\u5207\u6362\u5de5\u4f5c\u76ee\u5f55', 'Switch directory') : editing.action === 'create' ? T('\u65b0\u5efa\u9879\u76ee', 'New project') : T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}</h2>
-      <p className="gah-ws-help">{editing.action === 'workspace' ? T('\u4f7f\u7528\u670d\u52a1\u5668\u5df2\u5b58\u5728\u7684\u76ee\u5f55\u3002\u7a7a\u5bf9\u8bdd\u539f\u5730\u5207\u6362\uff0c\u6709\u5386\u53f2\u65f6\u65b0\u5f00\u5bf9\u8bdd\u3002\u5de5\u4f5c\u533a\u4e0d\u662f\u6743\u9650\u6c99\u7bb1\u3002', 'Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.') : T('\u9879\u76ee\u5171\u4eab\u5de5\u4f5c\u76ee\u5f55\uff0c\u5bf9\u8bdd\u5386\u53f2\u72ec\u7acb\u3002\u9879\u76ee\u8bb0\u5fc6\u7531 GA \u5b98\u65b9\u9879\u76ee\u6a21\u5f0f\u7ef4\u62a4\uff08temp/projects/<\u540d\u79f0>/\uff09\u3002', 'Projects share a working directory; chat histories stay separate. Project memory is maintained by GA\'s official project mode (temp/projects/<name>/).')}</p>
+      <p className="gah-ws-help">{editing.action === 'workspace' ? T('\u4f7f\u7528\u670d\u52a1\u5668\u5df2\u5b58\u5728\u7684\u76ee\u5f55\u3002\u7a7a\u5bf9\u8bdd\u539f\u5730\u5207\u6362\uff0c\u6709\u5386\u53f2\u65f6\u65b0\u5f00\u5bf9\u8bdd\u3002\u5de5\u4f5c\u533a\u4e0d\u662f\u6743\u9650\u6c99\u7bb1\u3002', 'Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.') : T('\u9879\u76ee\u662f\u957f\u671f\u8eab\u4efd\uff0c\u8bb0\u5fc6\u6309\u540d\u79f0\u4fdd\u5b58\u5728 GA \u7684 temp/projects/<\u540d\u79f0>/\u3002\u76ee\u5f55\u53ea\u662f\u65b0\u4f1a\u8bdd\u7684\u9ed8\u8ba4\u5de5\u4f5c\u533a\uff0c\u4fee\u6539\u540e\u5df2\u6709\u4f1a\u8bdd\u4e0d\u53d8\u3002', 'A project is a durable identity; its memory lives in GA\'s temp/projects/<name>/. The directory is only the default for new chats; changing it leaves existing chats untouched.')}</p>
       <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {editing.action !== 'workspace' && <label className="gah-ws-field"><span>{T('\u540d\u79f0', 'Name')}</span><input name="name" required maxLength={120} autoFocus value={editing.name} onChange={event => field('name', event.target.value)} /></label>}
         {editing.id && <label className="gah-ws-field"><span>ID</span><input name="project_id" readOnly value={editing.id} /></label>}
-        <label className="gah-ws-field"><span>{T('\u670d\u52a1\u5668\u4e0a\u7684\u7edd\u5bf9\u76ee\u5f55', 'Absolute directory on the server')}</span><input name="workspace" required autoFocus={editing.action === 'workspace'} readOnly={editing.action === 'update'} value={editing.workspace} onChange={event => field('workspace', event.target.value)} /></label>
+        <label className="gah-ws-field"><span>{editing.action === 'workspace' ? T('\u670d\u52a1\u5668\u4e0a\u7684\u7edd\u5bf9\u76ee\u5f55', 'Absolute directory on the server') : T('\u9ed8\u8ba4\u5de5\u4f5c\u76ee\u5f55\uff08\u53ef\u9009\uff09', 'Default directory (optional)')}</span><input name="workspace" required={editing.action === 'workspace'} autoFocus={editing.action === 'workspace'} placeholder={editing.action === 'workspace' ? '' : `${T('\u53ef\u7559\u7a7a\uff0c\u9ed8\u8ba4\u5f53\u524d\u5de5\u4f5c\u533a', 'Optional; defaults to the current workspace')}${scope?.workspace ? ': ' + scope.workspace : ''}`} value={editing.workspace} onChange={event => field('workspace', event.target.value)} /></label>
       </fieldset>
       <div className="gah-ws-error" role="alert">{error}</div><div className="gah-ws-actions"><button type="button" disabled={working} onClick={() => setEditing(null)}>{T('\u53d6\u6d88', 'Cancel')}</button><button type="submit" className="gah-ws-save" disabled={busy}>{editing.action === 'workspace' ? T('\u8fdb\u5165\u5de5\u4f5c\u533a', 'Enter workspace') : editing.action === 'create' ? T('\u521b\u5efa\u5e76\u8fdb\u5165', 'Create and enter') : T('\u4fdd\u5b58', 'Save')}</button></div>
     </form></Modal>}

@@ -102,11 +102,15 @@ class Workspaces:
             if action in ("create", "update"):
                 # Rules/notes columns are kept for old databases but no longer used:
                 # project memory lives in GA's temp/projects/<name>/project_memory.md.
+                # A project is a durable identity (name -> memory directory); its workspace
+                # is only the default directory for new chats. Blank = current workspace.
                 name = self.project_name(body.get("name"))
                 pid = body.get("id") if action == "update" else uuid.uuid4().hex
-                workspace = self.directory(body.get("workspace")) if action == "create" else None
+                given = body.get("workspace")
+                workspace = self.directory(given) if isinstance(given, str) and given.strip() else None
                 with store._db() as db:
                     if action == "create":
+                        workspace = workspace or self.current()["workspace"]
                         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
                                    (pid, name, workspace, "", "", time.time()))
                         self._enter(db, workspace, pid)
@@ -116,8 +120,9 @@ class Workspaces:
                             raise ValueError("project not found")
                         if body.get("updated") != old["updated"]:
                             raise RuntimeError("project changed in another tab; reopen before saving")
-                        db.execute("UPDATE projects SET name=?, updated=? WHERE id=?",
-                                   (name, time.time(), pid))
+                        # Existing chats keep their own workspace; only new chats use the new default.
+                        db.execute("UPDATE projects SET name=?, workspace=?, updated=? WHERE id=?",
+                                   (name, workspace or old["workspace"], time.time(), pid))
                 if action == "create":
                     from .sessions import restore
                     restore(store.agent, {})
@@ -144,6 +149,28 @@ class Workspaces:
                 from .sessions import restore
                 if not store.current()["messages"]:
                     restore(store.agent, {})
+            elif action == "delete":
+                # Unlink chats (they move to the no-project list); memory files are kept.
+                pid = body.get("id")
+                with store._db() as db:
+                    if db.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone() is None:
+                        raise ValueError("project not found")
+                    db.execute("UPDATE sessions SET project_id='' WHERE project_id=?", (pid,))
+                    db.execute("DELETE FROM projects WHERE id=?", (pid,))
+            elif action == "move":
+                # Re-file one chat under another project (or none); its workspace and
+                # history stay, only future turns use the new project's memory.
+                sid, pid = body.get("session_id"), body.get("project_id", "")
+                if not isinstance(sid, str) or not isinstance(pid, str):
+                    raise ValueError("invalid session or project id")
+                if pid and not any(p["id"] == pid for p in self.projects()):
+                    raise ValueError("project not found")
+                if sid in getattr(store, "active", ()):
+                    raise RuntimeError("wait for this chat's run to finish")
+                with store._db() as db:
+                    if db.execute("UPDATE sessions SET project_id=? WHERE id=? AND deleted=0",
+                                  (pid, sid)).rowcount != 1:
+                        raise ValueError("session not found")
             elif action == "select":
                 pid = body.get("id", "")
                 if not isinstance(pid, str):

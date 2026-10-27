@@ -36,3 +36,13 @@
 .gah-sess-status.cancelling{background:var(--muted);animation:none}
 @keyframes gah-sess-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.gah-sess-status{animation:none}}
+.gah-sess-search{margin:2px 0 4px;height:30px;padding:0 10px;border:1px solid var(--border,rgba(127,127,127,.25));border-radius:6px;background:transparent;color:var(--text);font:inherit;font-size:13px;min-width:0}
+.gah-sess-search:focus{outline:none;border-color:var(--accent,#2f80ed)}
+.gah-group-count{flex:none;font-size:11px;color:var(--muted);font-weight:400}
+.gah-sess-tag{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);padding:0 5px;border-radius:4px;background:var(--hover)}
+.gah-sess-row{flex-wrap:wrap}
+.gah-sess-row.child .gah-sess-open::before{content:"";flex:none;width:8px;height:1px;background:var(--muted);opacity:.5}
+.gah-sess-move{flex-basis:100%;margin:0 6px 6px 10px;height:28px;border-radius:6px;border:1px solid var(--border,rgba(127,127,127,.25));background:var(--bg,transparent);color:var(--text);font:inherit;font-size:12px}
+.gah-sess-more{align-self:flex-start;background:transparent;border:0;color:var(--muted);font:inherit;font-size:12px;padding:3px 10px;border-radius:6px}
+.gah-sess-more:hover{color:var(--text);background:var(--hover)}
+.gah-group.recent .gah-sess-items,.gah-sess-items.flat{padding-left:0}
