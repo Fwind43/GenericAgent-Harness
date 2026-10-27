@@ -11,7 +11,7 @@ const num = (n = 0) => Number(n || 0).toLocaleString('en-US');
 const STATUS: Record<string, () => string> = { aborted: () => T('已停止', 'Stopped'), error: () => T('出错', 'Error') };
 function usageText(u: Usage) {
   let s = T('输入 ', 'In ') + num(u.input);
-  if (u.cache_read || u.cache_write) s += T('（缓存命中 ', ' (cache hit ') + num(u.cache_read) + (u.cache_write ? T(' / 写入 ', ' / write ') + num(u.cache_write) : '') + T('）', ')');
+  if (u.cache_read || u.cache_write) s += T('（缓存命中 ', ' (cache hit ') + num(u.cache_read) + (u.input && u.cache_read ? ` ${Math.round((u.cache_read / u.input) * 100)}%` : '') + (u.cache_write ? T(' / 写入 ', ' / write ') + num(u.cache_write) : '') + T('）', ')');
   return s + T(' · 输出 ', ' · Out ') + num(u.output);
 }
 function timing(turns: Turn[]) {
