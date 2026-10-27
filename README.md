@@ -168,7 +168,10 @@ description = "一句话说明"
 category = "extension"   # 可选：core / extension / observe / service / ui，缺省或未知归 other
 inject = ["ga.hooks"]       # 依赖的能力
 provides = ["my.service"]   # 对外提供的能力
+packages = ["httpx>=0.27"]  # 可选：需要的 Python 包（pip 规格）
 ```
+
+声明了 `packages` 的插件，如果缺包，启动时会跳过加载（不报错），在插件管理里显示"缺少 Python 依赖"。插件详情页有"安装依赖"按钮，会安装到当前 Python 环境（有 uv 用 uv，否则用 pip），下次启动生效。启动时不会自动安装。
 
 ```python
 # main.py

@@ -14,6 +14,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from .packages import install as install_packages, missing as missing_packages
+
 HOST_CAPABILITIES = {"plugin.catalog"}
 PROTECTED = {"plugin-manager", "ga-core", "llm-config"}
 SENSITIVE = re.compile(r"key|secret|password|token|credential|authorization", re.I)
@@ -202,11 +204,16 @@ class PluginManager:
                         values.update(validate_values(m, {key: value}))
                     except ValueError:
                         pass
-                pending = target["disabled"] != current["disabled"] or target["config"] != current["config"]
+                pending = (target["disabled"] != current["disabled"] or target["config"] != current["config"]
+                           or (not current["disabled"] and h is None and name in getattr(
+                               self.ctx.runtime, "unmet_packages", {})))
+                lack = missing_packages(getattr(m, "packages", []))
                 items.append({"name": name, "description": m.description,
                               "description_zh": getattr(m, "description_zh", ""),
                               "category": getattr(m, "category", "other"),
-                              "state": h.state if h else "disabled",
+                              "state": h.state if h else ("missing_packages" if lack and not current["disabled"]
+                                                          else "disabled"),
+                              "packages": list(getattr(m, "packages", [])), "missing_packages": lack,
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,
                               "protected": protected(m), "fields": fields, "config": values,
@@ -219,6 +226,28 @@ class PluginManager:
             return {"items": items, "revision": revision, "profile": p.profile,
                     "restart_required": any(i["restart_required"] for i in items),
                     "issues": p.issues(list(desired.values()))}
+
+    _install_lock = threading.Lock()
+
+    def install(self, body):
+        """Install a plugin's declared ``packages`` (explicit user action).
+
+        Takes effect on the next start, like every other plugin change.
+        """
+        name = body.get("name") if isinstance(body, dict) else None
+        m = self.preferences.manifests.get(name) if isinstance(name, str) else None
+        if m is None:
+            raise ValueError("unknown plugin")
+        lack = missing_packages(getattr(m, "packages", []))
+        if not lack:
+            return {"ok": True, "output": "", "catalog": self.catalog()}
+        if not self._install_lock.acquire(blocking=False):
+            raise RuntimeError("another package installation is running")
+        try:
+            result = install_packages(lack)
+        finally:
+            self._install_lock.release()
+        return {"ok": result["ok"], "output": result["output"], "catalog": self.catalog()}
 
     def change(self, body):
         p = self.preferences

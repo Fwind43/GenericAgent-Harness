@@ -4,6 +4,7 @@ entry = "main:apply"
 description = "Feishu/Lark adapter for the channels hub (long-connection bot). Requires lark-oapi."
 description_zh = "飞书适配器：通过长连接机器人接入 channels。需要安装 lark-oapi。"
 inject = ["channels"]
+packages = ["lark-oapi"]
 
 [settings.app_id]
 type = "string"

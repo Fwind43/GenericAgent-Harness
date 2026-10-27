@@ -30,6 +30,16 @@ export function PluginManager({ api }: { api: PluginAPI }) {
       api.notice(T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Plugin settings saved; they apply on next start'));
     }, setError);
   };
+  const install = () => {
+    if (!selected?.missing_packages?.length || busy) return;
+    setError('');
+    void run(async () => {
+      const result = await api.host.post<{ ok: boolean; output: string; catalog: PluginCatalog }>('/api/plugins', { action: 'install', name: selected.name });
+      setConfig(result.catalog);
+      if (result.ok) api.notice(T('\u4f9d\u8d56\u5df2\u5b89\u88c5\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Packages installed; they apply on next start'));
+      else setError(T('\u5b89\u88c5\u5931\u8d25\uff1a', 'Installation failed: ') + (result.output || '').slice(-800));
+    }, setError);
+  };
   return <>
     {state.plugins_enabled && <PluginSlot api={api} name="sidebar-foot"><div className="gah-plugins"><button type="button" className="side-item" disabled={working || changing} onClick={() => void load()}><Icon name="puzzle" />{T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')}</button>{config?.restart_required && <span className="plugin-note">{T('\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Saved; applies on next start')}</span>}</div></PluginSlot>}
     {open && <Modal className="gah-plugin-dialog" label={T('\u63d2\u4ef6\u7ba1\u7406', 'Plugins')} busy={working} onClose={() => selected ? toGrid() : setOpen(false)}>
@@ -50,7 +60,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
           })}</div>
           {!shown.length && <p className="plugin-empty">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : config?.items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6', 'No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6', 'No manageable plugins found')}</p>}
         </section>
-        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} /></section>}
+        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} onInstall={install} /></section>}
       </div>
     </Modal>}
   </>;

@@ -45,6 +45,7 @@ class Manifest:
     description_zh: str = ""
     category: str = "other"
     settings: dict[str, dict] = field(default_factory=dict)
+    packages: list[str] = field(default_factory=list)  # pip requirement strings
 
     def load_apply(self) -> Callable:
         mod_name, _, attr = self.entry.partition(":")
@@ -76,7 +77,8 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
                          inject=list(data.get("inject", [])), provides=list(data.get("provides", [])),
                          description=data.get("description", ""),
                          description_zh=data.get("description_zh", ""), settings=data.get("settings", {}),
-                         category=data.get("category") if data.get("category") in CATEGORIES else "other")
+                         category=data.get("category") if data.get("category") in CATEGORIES else "other",
+                         packages=[str(x) for x in data.get("packages", []) or []])
             found[m.name] = m  # later dirs override earlier ones
     return found
 
@@ -163,13 +165,25 @@ def build_tree(profile: str, profile_dirs, patch_files=(), cli_patches=()) -> li
 
 
 def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest]) -> list[str]:
-    """Add every enabled entry to the runtime. Returns names that were mounted."""
+    """Add every enabled entry to the runtime. Returns names that were mounted.
+
+    Entries whose declared ``packages`` are not installed are skipped (never
+    installed here) and recorded in ``runtime.unmet_packages``.
+    """
+    from ..packages import missing
     mounted = []
+    unmet = getattr(runtime, "unmet_packages", None)
+    if unmet is None:
+        unmet = runtime.unmet_packages = {}
     for e in tree:
         if e["disabled"]:
             continue
         if e["name"] not in manifests:
             raise KeyError(f"plugin {e['name']!r} has no manifest")
+        lack = missing(manifests[e["name"]].packages)
+        if lack:
+            unmet[e["name"]] = lack
+            continue
         runtime.add(manifests[e["name"]].to_plugin(), e["config"])
         mounted.append(e["name"])
     return mounted

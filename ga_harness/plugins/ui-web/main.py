@@ -221,6 +221,8 @@ class WebFrontend:
     def plugin_action(self, body):
         if not self.plugins:
             return 404, {"error": "plugin-manager is not enabled"}
+        if body.get("action") == "install":
+            return self.plugin_install(body)
         with self.lock:
             if self.running:
                 return 409, {"error": "wait for the running task to finish"}
@@ -232,6 +234,20 @@ class WebFrontend:
                 return 409, {"error": str(e)}
             except Exception:
                 return 503, {"error": "plugin settings could not be saved; reload before retrying"}
+
+    def plugin_install(self, body):
+        # Installing can take minutes; never hold the frontend lock meanwhile.
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+        try:
+            return 200, self.plugins.install(body)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except RuntimeError as e:
+            return 409, {"error": str(e)}
+        except Exception:
+            return 503, {"error": "package installation could not be started"}
 
     def model_config(self):
         if not self.models:

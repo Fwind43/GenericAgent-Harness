@@ -50,6 +50,7 @@ export interface PluginInfo {
   name: string; state: string; category?: string; description?: string; description_zh?: string;
   enabled: boolean; protected?: boolean; overridden?: boolean; restart_required?: boolean;
   requires?: string[]; provides?: string[]; dependents?: string[]; missing?: string[];
+  packages?: string[]; missing_packages?: string[];
   error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;
 }
 export interface PluginCatalog { items: PluginInfo[]; revision: string; profile: string; restart_required: boolean }

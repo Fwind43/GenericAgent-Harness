@@ -3,14 +3,15 @@ import { T, type Json, type PluginInfo } from '@gah/sdk';
 import { descriptionOf, PluginTags, stateLabel } from './helpers';
 
 export type PluginChange = (action: 'save' | 'reset', enabled?: boolean, config?: Record<string, Json>) => void;
-export function PluginDetails({ plugin, busy, running, error, onChange }: {
-  plugin: PluginInfo; busy: boolean; running: boolean; error: string; onChange: PluginChange;
+export function PluginDetails({ plugin, busy, running, error, onChange, onInstall }: {
+  plugin: PluginInfo; busy: boolean; running: boolean; error: string; onChange: PluginChange; onInstall?: () => void;
 }) {
   const [enabled, setEnabled] = useState(plugin.enabled);
   const [values, setValues] = useState<Record<string, Json>>({ ...plugin.config });
   const locked = busy || running || plugin.protected;
   const update = (key: string, value: Json) => setValues(previous => ({ ...previous, [key]: value }));
-  const warning = [plugin.missing?.length ? T('\u5f53\u524d\u7f3a\u5c11\uff1a', 'Missing: ') + plugin.missing.join(', ') : '', plugin.error].filter(Boolean).join('; ');
+  const warning = [plugin.missing?.length ? T('\u5f53\u524d\u7f3a\u5c11\uff1a', 'Missing: ') + plugin.missing.join(', ') : '',
+    plugin.missing_packages?.length ? T('\u7f3a\u5c11 Python \u5305\uff1a', 'Missing Python packages: ') + plugin.missing_packages.join(', ') : '', plugin.error].filter(Boolean).join('; ');
   const submit = () => {
     if (locked) return;
     const config: Record<string, Json> = {};
@@ -26,9 +27,10 @@ export function PluginDetails({ plugin, busy, running, error, onChange }: {
     <div className="plugin-tags"><PluginTags plugin={plugin} /></div>
     <p className="plugin-description">{descriptionOf(plugin) || T('\u6682\u65e0\u8bf4\u660e', 'No description')}</p>
     <dl className="plugin-deps">{([
-      ['requires', T('\u4f9d\u8d56\u80fd\u529b', 'Requires')], ['provides', T('\u63d0\u4f9b\u80fd\u529b', 'Provides')], ['dependents', T('\u88ab\u63d2\u4ef6\u4f9d\u8d56', 'Required by')],
+      ['requires', T('\u4f9d\u8d56\u80fd\u529b', 'Requires')], ['provides', T('\u63d0\u4f9b\u80fd\u529b', 'Provides')], ['dependents', T('\u88ab\u63d2\u4ef6\u4f9d\u8d56', 'Required by')], ['packages', T('Python \u4f9d\u8d56', 'Python packages')],
     ] as const).map(([key, label]) => <Fragment key={key}><dt>{label}</dt><dd>{plugin[key]?.join(T('\u3001', ', ')) || T('\u65e0', 'None')}</dd></Fragment>)}</dl>
     {warning && <p className="plugin-note plugin-warning">{warning}</p>}
+    {!!plugin.missing_packages?.length && onInstall && <div className="plugin-actions plugin-install"><button type="button" className="secondary plugin-install-button" disabled={busy || running} onClick={onInstall}>{T('\u5b89\u88c5\u4f9d\u8d56\uff08pip\uff09', 'Install packages (pip)')}</button><small>{T('\u5b89\u88c5\u5230\u5f53\u524d Python \u73af\u5883\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Installs into the current Python environment; applies on next start')}</small></div>}
     <form onSubmit={event => { event.preventDefault(); submit(); }}>
       <label className="plugin-toggle plugin-enable"><input type="checkbox" role="switch" checked={enabled} disabled={locked} onChange={event => setEnabled(event.target.checked)} /><span>{T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528', 'Enable on next start')}</span></label>
       <div className="model-grid plugin-fields" hidden={!Object.keys(plugin.fields).length}>{Object.entries(plugin.fields).map(([key, spec]) => {
