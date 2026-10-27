@@ -34,8 +34,7 @@ def test_workspace_http_isolation_conflict_busy_and_unload(workspace_app, tmp_pa
     rt, fe, ws, base = workspace_app
     url = base + "api/p/web-workspaces"
     original = _req(base + "api/state")[1]["session_id"]
-    body = {"action": "create", "name": "alpha", "workspace": str(tmp_path),
-            "rules": "alpha-only", "memory": "shared notes"}
+    body = {"action": "create", "name": "alpha", "workspace": str(tmp_path)}
     assert _req(url, body, {"Origin": "https://foreign.invalid"})[0] == 403
     assert ws.projects() == []
     status, state = _req(url, body)
@@ -43,8 +42,8 @@ def test_workspace_http_isolation_conflict_busy_and_unload(workspace_app, tmp_pa
     first = state["session_id"]
     project = state["scope"]["project"]
     assert first == original and state["messages"] == []  # empty conversation is bound in place
-    assert project["rules"] == "alpha-only"
-    edit = {**project, "action": "update", "rules": "edited"}
+    assert project["name"] == "alpha" and "rules" not in project
+    edit = {**project, "action": "update", "name": "edited"}
     assert _req(url, edit)[0] == 200
     assert _req(url, edit)[0] == 409
     assert _req(url, {"action": "workspace", "workspace": "relative"})[0] == 400
@@ -58,7 +57,7 @@ def test_workspace_http_isolation_conflict_busy_and_unload(workspace_app, tmp_pa
     assert state["scope"]["project"] is None and state["messages"] == []
     status, state = _req(url, {"action": "select", "id": project["id"]})
     assert status == 200 and state["session_id"] == first
-    assert state["scope"]["project"]["rules"] == "edited"
+    assert state["scope"]["project"]["name"] == "edited"
     assert state["messages"][0]["text"] == "wait"
     assert _req(base + "api/state")[1]["scope"] == _req(url)[1]
     rt.remove("web-workspaces")

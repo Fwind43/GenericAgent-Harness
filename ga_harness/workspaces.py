@@ -43,9 +43,25 @@ class Workspaces:
             raise ValueError(f"{label} must contain {'1' if required else '0'}-{limit} characters")
         return value.strip() if required else value
 
+    @staticmethod
+    def project_name(value):
+        """Project names double as GA project_mode directories under temp/projects."""
+        name = Workspaces.text(value, "name", 120, True)
+        if re.search(r'[\\/:*?"<>|\x00-\x1f]', name) or name in (".", "..") or name.endswith("."):
+            raise ValueError('name must be a valid folder name (no \\ / : * ? " < > |)')
+        return name
+
+    @staticmethod
+    def ga_project(agent, context):
+        """Activate GA's official plugins/project_mode for this request (None = off)."""
+        project = (context or {}).get("project")
+        if agent is not None:
+            agent._ga_project_mode_name = project["name"] if project else None
+
     def projects(self):
         with self.sessions.lock, self.sessions._db() as db:
-            return [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY updated DESC, id")]
+            return [{k: r[k] for k in ("id", "name", "workspace", "updated")}
+                    for r in db.execute("SELECT * FROM projects ORDER BY updated DESC, id")]
 
     def current(self):
         return self.context(self.sessions.current()["id"])
@@ -84,15 +100,15 @@ class Workspaces:
             store._idle()
             action = body.get("action")
             if action in ("create", "update"):
-                name = self.text(body.get("name"), "name", 120, True)
-                rules = self.text(body.get("rules", ""), "rules", 16000)
-                memory = self.text(body.get("memory", ""), "memory", 16000)
+                # Rules/notes columns are kept for old databases but no longer used:
+                # project memory lives in GA's temp/projects/<name>/project_memory.md.
+                name = self.project_name(body.get("name"))
                 pid = body.get("id") if action == "update" else uuid.uuid4().hex
                 workspace = self.directory(body.get("workspace")) if action == "create" else None
                 with store._db() as db:
                     if action == "create":
                         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
-                                   (pid, name, workspace, rules, memory, time.time()))
+                                   (pid, name, workspace, "", "", time.time()))
                         self._enter(db, workspace, pid)
                     else:
                         old = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
@@ -100,8 +116,8 @@ class Workspaces:
                             raise ValueError("project not found")
                         if body.get("updated") != old["updated"]:
                             raise RuntimeError("project changed in another tab; reopen before saving")
-                        db.execute("UPDATE projects SET name=?, rules=?, memory=?, updated=? WHERE id=?",
-                                   (name, rules, memory, time.time(), pid))
+                        db.execute("UPDATE projects SET name=?, updated=? WHERE id=?",
+                                   (name, time.time(), pid))
                 if action == "create":
                     from .sessions import restore
                     restore(store.agent, {})
@@ -157,6 +173,7 @@ class Workspaces:
             context = self.current()
             context["workspace"] = self.directory(context["workspace"])
             self.active = context
+            self.ga_project(store.agent, context)
             store.reserved = True
         try:
             return nxt(request)
@@ -183,6 +200,7 @@ class Workspaces:
             if self.active is None:
                 raise RuntimeError("no reserved workspace for this request")
             handler.cwd = self.active["workspace"]
+            Workspaces.ga_project(handler.parent, self.active)
         return nxt(g)
 
     def inject(self, g, nxt):
@@ -199,14 +217,8 @@ class Workspaces:
                     f"Actual tool working directory (cwd): {context['workspace']}\n"
                     "This overrides any default cwd above. Relative tool paths resolve here. "
                     "This directory is not a security sandbox.\n")
-            if project:
-                text += (f"Project: {project['name']} (id: {project['id']})\n"
-                         "Only this project's shared context applies to this conversation.\n"
-                         f"[Project rules]\n{project['rules']}\n"
-                         f"[Shared project notes]\n{project['memory']}\n"
-                         "Shared notes are user-managed in project settings; do not claim to save them via working memory.\n")
-            else:
-                text += "No project is selected. Do not inherit other projects' rules or notes.\n"
+            if not project:
+                text += "No project is selected. Do not use any project's memory.\n"
             messages = g.get("messages", [])
             system = next((m for m in messages if m.get("role") == "system"), None)
             if system is None:

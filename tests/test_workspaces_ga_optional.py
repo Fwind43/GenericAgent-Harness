@@ -37,7 +37,7 @@ def test_real_ga_tool_cwd(tmp_path):
     for name in ("alpha", "beta"):
         directory = tmp_path / name
         directory.mkdir()
-        project(ws, directory, name=name, rules=name + " rule")
+        project(ws, directory, name=name)
         handler = NS(parent=raw, cwd=original_cwd, code_stop_signal=False,
                      _get_tool_maxlen=lambda default, args: default,
                      _get_anchor_prompt=lambda **k: "", print=lambda *a, **k: None)

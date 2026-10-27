@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent, type FormEvent } from 'react';
 import { host, useHost, T, type PluginAPI, type HostState, Modal, PluginSlot, useOperation, defineReact } from '@gah/sdk';
 
 type Action = 'workspace' | 'create' | 'update';
-type Edit = { action: Action; id?: string; workspace: string; name: string; rules: string; memory: string };
+type Edit = { action: Action; id?: string; workspace: string; name: string };
 type Suggestion = { label: string; hint: string; fill?: string; run?: () => void };
 export function Workspaces({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, working, run } = useOperation(api, !!state.parallel_runs), scope = state.scope;
@@ -15,7 +15,7 @@ export function Workspaces({ api }: { api: PluginAPI }) {
     if (action === 'workspace' && p) { open('update'); return; }
     if (action === 'update' && !p) return;
     setError(''); setDismissed(true);
-    setEditing({ action, id: action === 'update' ? p?.id : undefined, name: action === 'update' ? p?.name ?? '' : '', workspace: scope.workspace ?? '', rules: action === 'update' ? p?.rules ?? '' : '', memory: action === 'update' ? p?.memory ?? '' : '' });
+    setEditing({ action, id: action === 'update' ? p?.id : undefined, name: action === 'update' ? p?.name ?? '' : '', workspace: scope.workspace ?? '' });
   };
   async function change(body: object, inDialog = false) {
     return run(async () => {
@@ -78,18 +78,17 @@ export function Workspaces({ api }: { api: PluginAPI }) {
     const body = editing.action === 'workspace' ? { action: 'enter', workspace: editing.workspace } : editing;
     if (await change(body, true)) setEditing(null);
   }
-  const field = (key: 'name' | 'workspace' | 'rules' | 'memory', value: string) => setEditing(old => old ? { ...old, [key]: value } : null);
+  const field = (key: 'name' | 'workspace', value: string) => setEditing(old => old ? { ...old, [key]: value } : null);
   return <><PluginSlot api={api} name="composer-top"><div className="gah-scope-bar">
     {!!suggestions.length && <div className="gah-slash" role="listbox" aria-label={T('\u547d\u4ee4', 'Command')}>{suggestions.map((item, index) => <div key={`${item.label}:${index}`} className={`gah-slash-item${index === selected ? ' active' : ''}`} role="option" aria-selected={index === selected} onMouseDown={event => { event.preventDefault(); pick(index); }}><span>{item.label}</span><small>{item.hint}</small></div>)}</div>}
   </div></PluginSlot>
   {editing && <Modal className="gah-ws-dialog" label={T('\u5de5\u4f5c\u533a\u4e0e\u9879\u76ee\u8bbe\u7f6e', 'Workspace and project settings')} busy={working} onClose={() => setEditing(null)}>
     <form onSubmit={submit}><h2>{editing.action === 'workspace' ? T('\u5207\u6362\u5de5\u4f5c\u76ee\u5f55', 'Switch directory') : editing.action === 'create' ? T('\u65b0\u5efa\u9879\u76ee', 'New project') : T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}</h2>
-      <p className="gah-ws-help">{editing.action === 'workspace' ? T('\u4f7f\u7528\u670d\u52a1\u5668\u5df2\u5b58\u5728\u7684\u76ee\u5f55\u3002\u7a7a\u5bf9\u8bdd\u539f\u5730\u5207\u6362\uff0c\u6709\u5386\u53f2\u65f6\u65b0\u5f00\u5bf9\u8bdd\u3002\u5de5\u4f5c\u533a\u4e0d\u662f\u6743\u9650\u6c99\u7bb1\u3002', 'Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.') : T('\u9879\u76ee\u5171\u4eab\u76ee\u5f55\u3001\u89c4\u5219\u548c\u7b14\u8bb0\uff0c\u5bf9\u8bdd\u5386\u53f2\u72ec\u7acb\u3002\u89c4\u5219\u4e0e\u7b14\u8bb0\u6bcf\u6b21\u8bf7\u6c42\u6ce8\u5165\uff0c\u7b14\u8bb0\u9700\u624b\u52a8\u7ef4\u62a4\u3002', 'Projects share a directory, rules and notes; chat histories stay separate. Rules and notes are injected into each request; notes are maintained manually.')}</p>
+      <p className="gah-ws-help">{editing.action === 'workspace' ? T('\u4f7f\u7528\u670d\u52a1\u5668\u5df2\u5b58\u5728\u7684\u76ee\u5f55\u3002\u7a7a\u5bf9\u8bdd\u539f\u5730\u5207\u6362\uff0c\u6709\u5386\u53f2\u65f6\u65b0\u5f00\u5bf9\u8bdd\u3002\u5de5\u4f5c\u533a\u4e0d\u662f\u6743\u9650\u6c99\u7bb1\u3002', 'Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.') : T('\u9879\u76ee\u5171\u4eab\u5de5\u4f5c\u76ee\u5f55\uff0c\u5bf9\u8bdd\u5386\u53f2\u72ec\u7acb\u3002\u9879\u76ee\u8bb0\u5fc6\u7531 GA \u5b98\u65b9\u9879\u76ee\u6a21\u5f0f\u7ef4\u62a4\uff08temp/projects/<\u540d\u79f0>/\uff09\u3002', 'Projects share a working directory; chat histories stay separate. Project memory is maintained by GA\'s official project mode (temp/projects/<name>/).')}</p>
       <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {editing.action !== 'workspace' && <label className="gah-ws-field"><span>{T('\u540d\u79f0', 'Name')}</span><input name="name" required maxLength={120} autoFocus value={editing.name} onChange={event => field('name', event.target.value)} /></label>}
         {editing.id && <label className="gah-ws-field"><span>ID</span><input name="project_id" readOnly value={editing.id} /></label>}
         <label className="gah-ws-field"><span>{T('\u670d\u52a1\u5668\u4e0a\u7684\u7edd\u5bf9\u76ee\u5f55', 'Absolute directory on the server')}</span><input name="workspace" required autoFocus={editing.action === 'workspace'} readOnly={editing.action === 'update'} value={editing.workspace} onChange={event => field('workspace', event.target.value)} /></label>
-        {editing.action !== 'workspace' && <>{(['rules', 'memory'] as const).map(key => <label key={key} className="gah-ws-field"><span>{key === 'rules' ? T('\u9879\u76ee\u89c4\u5219', 'Project rules') : T('\u9879\u76ee\u7b14\u8bb0', 'Project notes')}</span><textarea name={key} rows={5} value={editing[key]} onChange={event => field(key, event.target.value)} /></label>)}</>}
       </fieldset>
       <div className="gah-ws-error" role="alert">{error}</div><div className="gah-ws-actions"><button type="button" disabled={working} onClick={() => setEditing(null)}>{T('\u53d6\u6d88', 'Cancel')}</button><button type="submit" className="gah-ws-save" disabled={busy}>{editing.action === 'workspace' ? T('\u8fdb\u5165\u5de5\u4f5c\u533a', 'Enter workspace') : editing.action === 'create' ? T('\u521b\u5efa\u5e76\u8fdb\u5165', 'Create and enter') : T('\u4fdd\u5b58', 'Save')}</button></div>
     </form></Modal>}

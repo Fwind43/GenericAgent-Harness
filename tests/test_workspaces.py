@@ -23,7 +23,7 @@ def test_scope_switch_isolation_and_restart(tmp_path):
     raw, sessions, ws = setup(tmp_path)
     initial = sessions.current()
     assert initial["workspace"] == str(tmp_path.resolve())
-    a = project(ws, tmp_path, rules="alpha rule", memory="shared note")
+    a = project(ws, tmp_path)
     raw.history = ["private alpha"]
     sessions.save([{"role": "user", "text": "alpha conversation"}])
     b = project(ws, tmp_path, name="beta")
@@ -54,20 +54,21 @@ def test_validation_and_optimistic_edit(tmp_path):
         assert sessions.current()["id"] == original
     project(ws, tmp_path)
     p = ws.projects()[0]
-    change = dict(p, action="update", name="edited", rules="new rule")
+    change = dict(p, action="update", name="edited")
     ws.change(change)
     assert ws.projects()[0]["name"] == "edited"
     with pytest.raises(RuntimeError, match="another tab"):
         ws.change(change)
-    assert ws.projects()[0]["rules"] == "new rule"
-    with pytest.raises(ValueError):
-        project(ws, tmp_path, memory="x" * 16001)
+    assert ws.projects()[0]["name"] == "edited"
+    for bad in ["a/b", "x:y", "..", "dot."]:
+        with pytest.raises(ValueError):
+            project(ws, tmp_path, name=bad)
     assert len(ws.projects()) == 1
 
 
 def test_request_scope_bind_inject_and_error_release(tmp_path):
     raw, sessions, ws = setup(tmp_path)
-    project(ws, tmp_path, rules="alpha rule", memory="alpha notes")
+    project(ws, tmp_path)
     cwd = os.getcwd()
     handler = NS(parent=raw, cwd="old")
     messages = [{"role": "system", "content": "original\ncwd = old (./)"}]
@@ -83,17 +84,19 @@ def test_request_scope_bind_inject_and_error_release(tmp_path):
             ws.inject(g, lambda value: value)
         text = messages[0]["content"]
         assert text.count("[Harness execution context]") == 1
-        assert "alpha rule" in text and "alpha notes" in text
+        assert raw._ga_project_mode_name == "alpha"
         assert "cwd = old" not in text
         assert os.getcwd() == cwd
         raise ValueError("failed request")
     with pytest.raises(ValueError, match="failed request"):
         ws.request({}, run)
     assert not sessions.reserved and ws.active is None
-    project(ws, tmp_path, name="beta", rules="beta rule")
+    project(ws, tmp_path, name="beta")
     ws.request({}, lambda _: ws.inject(g, lambda value: value))
-    assert "alpha rule" not in messages[0]["content"]
-    assert "beta rule" in messages[0]["content"]
+    assert raw._ga_project_mode_name == "beta"
+    ws.change({"action": "enter"})
+    ws.request({}, lambda _: None)
+    assert raw._ga_project_mode_name is None
 
 
 def test_timeout_keeps_scope_until_queue_drained(tmp_path):

@@ -13,7 +13,7 @@ export interface Message {
   /** Unix seconds at message creation; absent for historical messages. */
   created_at?: number;
 }
-export interface Project { id: string; name: string; workspace: string; rules?: string; memory?: string }
+export interface Project { id: string; name: string; workspace: string }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; projects: Project[] }
 export interface Session { id: string; title: string; project_id?: string | null; workspace?: string; parent_id?: string | null }
 export interface Run {

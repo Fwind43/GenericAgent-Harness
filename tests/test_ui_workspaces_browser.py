@@ -40,8 +40,6 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         dialog = page.locator(".gah-ws-dialog")
         dialog.locator('[name="name"]').fill("Alpha \u9879\u76ee")
         dialog.locator('[name="workspace"]').fill(str(tmp_path / "not-present"))
-        dialog.locator('[name="rules"]').fill("Only Alpha rules\n\u4e2d\u6587\u89c4\u5219")
-        dialog.locator('[name="memory"]').fill("Shared notes\n\u4e2d\u6587\u7b14\u8bb0")
         dialog.locator('button[type="submit"]').click()
         pw.expect(dialog.locator('[role="alert"]')).not_to_be_empty()
         pw.expect(dialog).to_be_visible()
@@ -54,18 +52,19 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         scope = _req(base + "api/state")[1]["scope"]
         project_id = scope["project_id"]
         assert scope["workspace"] == str(tmp_path.resolve())
-        assert scope["project"]["memory"] == "Shared notes\n\u4e2d\u6587\u7b14\u8bb0"
+        assert scope["project"]["name"] == "Alpha \u9879\u76ee"
+        pw.expect(dialog.locator('[name="rules"], [name="memory"]')).to_have_count(0)
         page.reload()
         pw.expect(box.locator(".gah-group.project.current")).to_have_count(1)
-        edit = chip.get_by_role("button", name="\u9879\u76ee\u89c4\u5219\u4e0e\u7b14\u8bb0", exact=True)
+        edit = chip.get_by_role("button", name="\u9879\u76ee\u8bbe\u7f6e", exact=True)
         edit.click()
         pw.expect(dialog.locator('[name="project_id"]')).to_have_value(project_id)
         pw.expect(dialog.locator('[name="project_id"]')).to_have_attribute("readonly", "")
         pw.expect(dialog.locator('[name="workspace"]')).to_have_attribute("readonly", "")
-        dialog.locator('[name="memory"]').fill("Updated shared notes")
+        dialog.locator('[name="name"]').fill("Alpha renamed")
         dialog.locator('button[type="submit"]').click()
         pw.expect(dialog).not_to_be_visible()
-        assert _req(base + "api/state")[1]["scope"]["project"]["memory"] == "Updated shared notes"
+        assert _req(base + "api/state")[1]["scope"]["project"]["name"] == "Alpha renamed"
         palettes = set()
         for width in (1280, 390):
             page.set_viewport_size({"width": width, "height": 820})
@@ -86,7 +85,7 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
                 assert chip.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
                 edit.click()
                 pw.expect(dialog).to_be_visible()
-                pw.expect(dialog.locator('[name="memory"]')).to_have_value("Updated shared notes")
+                pw.expect(dialog.locator('[name="name"]')).to_have_value("Alpha renamed")
                 geometry = dialog.evaluate("e => {const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,w:innerWidth,h:innerHeight,overflow:e.scrollWidth-e.clientWidth}}")
                 assert geometry["left"] >= 0 and geometry["right"] <= geometry["w"] + 1, geometry
                 assert geometry["top"] >= 0 and geometry["bottom"] <= geometry["h"] + 1, geometry

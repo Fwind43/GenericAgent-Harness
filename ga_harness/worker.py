@@ -76,6 +76,7 @@ def run_worker(connection, recipe, payload):
         # Reuse exactly the same workspace and project prompt hooks as single-agent
         # execution, with an immutable scope and no dependency on host selection.
         binding = SimpleNamespace(sessions=SimpleNamespace(agent=raw), active=payload["scope"])
+        Workspaces.ga_project(raw, payload["scope"])
         runtime.ctx.on("ga.agent_before", lambda g, nxt: Workspaces.bind(binding, g, nxt))
         runtime.ctx.on("ga.llm_before", lambda g, nxt: Workspaces.inject(binding, g, nxt))
         runtime.ctx.on("agent.chunk", lambda text: send("event", name="agent.chunk", data=text))
