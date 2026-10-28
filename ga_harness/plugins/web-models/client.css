@@ -105,3 +105,23 @@
   .gah-model-dialog .model-actions{padding-top:10px}
   .gah-model-dialog .model-actions button{min-height:40px}
 }
+
+/* Fetch models from provider */
+.model-id-row{display:flex;gap:8px;align-items:center}
+.model-id-row input{flex:1;min-width:0}
+.model-id-row button{flex:none;white-space:nowrap}
+.model-error{color:var(--danger);font-size:12px;overflow-wrap:anywhere;margin:6px 0}
+.model-remote{border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:16px;display:flex;flex-direction:column;gap:10px}
+.model-remote-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.model-remote-head strong{font-size:13px}
+.model-remote .model-search{width:100%}
+.model-remote .model-empty{font-size:12px;color:var(--muted);margin:0}
+.model-remote-list{list-style:none;margin:0;padding:0;max-height:280px;overflow:auto;border-top:1px solid var(--border)}
+.model-remote-list li{border-bottom:1px solid var(--border)}
+.model-remote-list label{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13px;cursor:pointer;min-width:0}
+.model-remote-list label.is-added{cursor:default;color:var(--muted)}
+.model-remote-list code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-remote-list span{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.model-remote-list small{margin-left:auto;font-size:11px;color:var(--muted);flex:none}
+.model-remote-actions{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted)}
+.model-remote-actions button:last-child{margin-left:auto}

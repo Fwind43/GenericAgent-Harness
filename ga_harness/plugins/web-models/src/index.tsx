@@ -3,6 +3,7 @@ import { type PluginAPI, type ModelConfig, type ModelResult, useHost, T, Setting
 import { ModelPicker } from './ModelPicker';
 import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
+import type { FetchModels, RemoteModel } from './RemoteModels';
 import { endpoint, sections as modelSections, readonlyText, sectionKey } from './helpers';
 
 type Edit = { kind: 'model' | 'provider'; id?: string; serial: number };
@@ -92,6 +93,19 @@ export function Models({ api }: { api: PluginAPI }) {
       api.notice(T('\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u751f\u6548', 'Configuration saved and applied'));
     }, setError);
   };
+  const fetchModels: FetchModels = async source => (await api.host.post<{ models: RemoteModel[] }>('/api/models/remote', source)).models || [];
+  const addModels = (provider: string, protocol: string, ids: string[]) => {
+    if (!config?.writable || busy || !ids.length) return;
+    setError('');
+    void run(async () => {
+      const stamp = Date.now();
+      const items = ids.map((model, index) => ({ key: 'native_' + protocol + '_config_' + stamp + '_' + index, values: { name: model, model, provider } }));
+      const next = await api.host.post<ModelResult>('/api/models/config', { action: 'save_many', revision: config.revision, items });
+      setConfig(next.config); api.setState(next.state);
+      select('provider', provider, true);
+      api.notice(T('\u5df2\u6dfb\u52a0 ' + ids.length + ' \u4e2a\u6a21\u578b', 'Added ' + ids.length + ' models'));
+    }, setError);
+  };
   const ungrouped = config?.entries.filter(item => !item.provider).length ?? 0;
   const autoGroup = async () => { if (!config?.writable || busy || !ungrouped) return;
     if (!await confirmDialog({ title: T('\u6309\u5730\u5740\u548c\u5bc6\u94a5\u81ea\u52a8\u5f52\u7ec4\uff1f', 'Group models by URL and key?'), message: T('\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\u7684\u672a\u5f52\u7ec4\u6a21\u578b\u5c06\u5408\u5e76\u4e3a\u670d\u52a1\u5546\uff0c\u6a21\u578b\u5b9e\u9645\u8fde\u63a5\u4e0d\u53d8\u3002', 'Ungrouped models with an identical URL and key become providers. Model connections stay the same.'), confirm: T('\u5f52\u7ec4', 'Group') })) return;
@@ -140,8 +154,9 @@ export function Models({ api }: { api: PluginAPI }) {
                 <button type="button" className="secondary model-back" disabled={browsing} onClick={() => { void navigate(() => select(edit.kind, edit.id, false)); }}>{T('\u8fd4\u56de\u5217\u8868', 'Back to list')}</button>
                 <div><span className="model-eyebrow">{isModel ? T('\u6a21\u578b', 'Model') : T('\u670d\u52a1\u5546', 'Provider')}</span><h3 ref={heading} tabIndex={-1}>{title || (isModel ? T('\u65b0\u589e\u6a21\u578b', 'Add model') : T('\u65b0\u589e\u670d\u52a1\u5546', 'Add provider'))}</h3></div>
               </div>
-              {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} />
-                : <ProviderForm key={edit.serial} entry={provider} used={provider ? config.entries.filter(item => item.provider === provider.id).length : 0} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onModels={viewModels} />}
+              {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} />
+                : <ProviderForm key={edit.serial} entry={provider} used={provider ? config.entries.filter(item => item.provider === provider.id).length : 0} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onModels={viewModels}
+                  existing={new Set(config.entries.filter(item => item.provider === provider?.id).map(item => item.values.model || ''))} fetchModels={fetchModels} onAddModels={addModels} />}
             </section>
           </div>
         </>}

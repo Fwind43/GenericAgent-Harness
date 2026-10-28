@@ -10,8 +10,11 @@ import pprint
 import re
 import sys
 import tempfile
+import json
 import threading
-from urllib.parse import urlsplit
+import urllib.error
+import urllib.request
+from urllib.parse import urlencode, urlsplit
 
 from ga_harness import llmconfig
 
@@ -56,6 +59,71 @@ def _check_url(value):
         raise ValueError("a referenced environment variable is not configured") from None
     if not _safe_url(expanded):
         raise ValueError("base URL must be HTTP(S), without credentials, query or fragment")
+
+
+def _models_url(base):
+    """GA endpoint rules (llmcore.auto_make_url) applied to the model list."""
+    b = base.strip()
+    raw = b.endswith("$")
+    b = b.rstrip("$").rstrip("/")
+    b = re.sub(r"/(chat/completions|completions|responses|messages)$", "", b)
+    if b.endswith("/models"):
+        return b
+    return f"{b}/models" if raw or re.search(r"/v\d+(/|$)", b) else f"{b}/v1/models"
+
+
+def _model_ids(payload):
+    items = payload.get("data", payload.get("models")) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        raise ValueError("the provider did not return a model list")
+    out = []
+    for item in items:
+        mid = item.get("id") or item.get("name") if isinstance(item, dict) else item
+        if isinstance(mid, str) and mid.strip():
+            label = item.get("display_name") if isinstance(item, dict) else None
+            out.append({"id": mid.strip(), "name": label if isinstance(label, str) else ""})
+    return out
+
+
+def _fetch_models(base, apikey, protocol, header=None, timeout=20):
+    url = _models_url(base)
+    headers = {"Accept": "application/json", "User-Agent": "ga-harness"}
+    if protocol == "claude":
+        headers["anthropic-version"] = "2023-06-01"
+        if header == "x-api-key" or (header != "bearer" and apikey.startswith("sk-ant-")):
+            headers["x-api-key"] = apikey
+        else:
+            headers["Authorization"] = f"Bearer {apikey}"
+    else:
+        headers["Authorization"] = f"Bearer {apikey}"
+    found, seen, after = [], set(), None
+    for _ in range(20):  # Anthropic paginates; OpenAI-compatible lists return once
+        query = {"limit": 1000, **({"after_id": after} if after else {})} if protocol == "claude" else {}
+        req = urllib.request.Request(url + ("?" + urlencode(query) if query else ""), headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                payload = json.loads(r.read(8 << 20) or b"null")
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read(2000).decode("utf-8", "replace")
+            except Exception:
+                pass
+            detail = re.sub(r"\s+", " ", detail.replace(apikey, "***")).strip()[:200]
+            raise ValueError(f"provider returned HTTP {e.code}" + (f": {detail}" if detail else "")) from None
+        except (urllib.error.URLError, OSError) as e:
+            reason = str(getattr(e, "reason", e)).replace(apikey, "***")[:200]
+            raise ValueError(f"could not reach the provider: {reason}") from None
+        except ValueError:
+            raise ValueError("the provider returned invalid JSON") from None
+        for item in _model_ids(payload):
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                found.append(item)
+        if not (isinstance(payload, dict) and payload.get("has_more") and payload.get("last_id")):
+            break
+        after = payload["last_id"]
+    return sorted(found, key=lambda x: x["id"].lower())
 
 
 def _replace(path, payload):
@@ -274,6 +342,49 @@ class Models:
                 current = i
         return {"items": rows, "current": current}
 
+    def remote(self, body):
+        """List model IDs offered by a provider. Stored keys are used server-side only.
+
+        Source: an existing provider (`provider`) or model (`key`); unsaved form
+        values `apibase` / `apikey` / `protocol` override it (empty key keeps the stored one).
+        """
+        with self.lock:
+            _, _, data, _ = self._read()
+            providers = self._providers(data)
+            pid, key, src = body.get("provider"), body.get("key"), {}
+            if pid:
+                if not isinstance(pid, str) or pid not in providers:
+                    raise ValueError("unknown provider")
+                src = dict(providers[pid])
+            elif key:
+                if not isinstance(key, str) or not _supported(key, data.get(key)):
+                    raise ValueError("unknown model configuration")
+                try:
+                    src = llmconfig.resolve_providers({llmconfig.PROVIDERS: providers, key: data[key]})[key]
+                except llmconfig.ConfigError as e:
+                    raise ValueError(str(e)) from None
+        protocol = body.get("protocol") or src.get("protocol") or (_protocol(key) if isinstance(key, str) and key else "oai")
+        if protocol not in _PROTOCOLS:
+            raise ValueError("protocol must be oai or claude")
+        base, apikey = src.get("apibase"), src.get("apikey")
+        for k in ("apibase", "apikey"):
+            v = body.get(k)
+            if isinstance(v, str) and v.strip():
+                if k == "apibase":
+                    base = v.strip()
+                else:
+                    apikey = v.strip()
+        if not isinstance(base, str) or not base.strip() or not isinstance(apikey, str) or not apikey.strip():
+            raise ValueError("base URL and API key are required")
+        try:
+            base, apikey = llmconfig._expand(base), llmconfig._expand(apikey)
+        except Exception:
+            raise ValueError("a referenced environment variable is not configured") from None
+        if not _safe_url(base.rstrip("$")):
+            raise ValueError("base URL must be HTTP(S), without credentials, query or fragment")
+        header = src.get("api_key_header")
+        return {"models": _fetch_models(base, apikey, protocol, header if isinstance(header, str) else None)}
+
     def config(self):
         with self.lock:
             try:
@@ -414,6 +525,18 @@ class Models:
                 affects_models = self._provider_change(data, action, body)
             elif action == "provider_group":
                 affects_models = self._provider_group(data)
+            elif action == "save_many":
+                affects_models, expanded = True, []
+                items = body.get("items")
+                if not isinstance(items, list) or not 0 < len(items) <= 200:
+                    raise ValueError("add between 1 and 200 models at once")
+                for item in items:
+                    key = item.get("key") if isinstance(item, dict) else None
+                    if not isinstance(key, str) or not _KEY.fullmatch(key):
+                        raise ValueError("invalid configuration identifier")
+                    if key in data:
+                        raise ValueError("configuration identifier already exists")
+                    expanded.append(self._model_save(data, key, item))
             else:
                 affects_models = True
                 key = body.get("key")
@@ -441,9 +564,9 @@ class Models:
                     agent.load_llm_sessions()
                     if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
                         raise RuntimeError()
-                    if expanded is not None:
-                        wanted = expanded.get("name") or expanded["model"]
-                        if not any(c.backend.name == wanted and c.backend.model == expanded["model"] for c in agent.llmclients):
+                    for item in ([] if expanded is None else expanded if isinstance(expanded, list) else [expanded]):
+                        wanted = item.get("name") or item["model"]
+                        if not any(c.backend.name == wanted and c.backend.model == item["model"] for c in agent.llmclients):
                             raise RuntimeError()
             except Exception:
                 _replace(path, original)

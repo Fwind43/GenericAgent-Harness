@@ -321,6 +321,17 @@ class WebFrontend:
             self._broadcast("snapshot", snap)
             return 200, snap
 
+    def model_remote(self, body):
+        """Fetch a provider's model list; network-bound, so the frontend lock is not held."""
+        if not self.models:
+            return 404, {"error": "model-store is not enabled"}
+        try:
+            return 200, self.models.remote(body)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except Exception:
+            return 500, {"error": "could not list provider models"}
+
     def model_action(self, body, configure=False):
         if not self.models:
             return 404, {"error": "model-store is not enabled"}
@@ -816,6 +827,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.model_action(body))
         elif path == "/api/models/config":
             self._json(*self.frontend.model_action(body, configure=True))
+        elif path == "/api/models/remote":
+            self._json(*self.frontend.model_remote(body))
         elif path == "/api/abort":
             self._json(*self.frontend.abort(body))
         else:

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { T, confirmDialog, type ProviderEntry } from '@gah/sdk';
 import { Credentials, Field, FormActions, Protocol, useDraft, type SaveModel } from './ModelForm';
+import { RemoteModels, type FetchModels } from './RemoteModels';
 
-export function ProviderForm({ entry, used, disabled, onSave, onDirtyChange, onReset, onModels }: {
-  entry?: ProviderEntry; used: number; disabled: boolean; onSave: SaveModel;
+export function ProviderForm({ entry, used, existing, disabled, onSave, onDirtyChange, onReset, onModels, fetchModels, onAddModels }: {
+  entry?: ProviderEntry; used: number; existing: Set<string>; disabled: boolean; onSave: SaveModel;
   onDirtyChange: (dirty: boolean) => void; onReset: () => void; onModels: () => void;
+  fetchModels: FetchModels; onAddModels: (provider: string, protocol: string, ids: string[]) => void;
 }) {
   const [id, setId] = useState(entry?.id || ''), [name, setName] = useState(entry?.values.name || '');
   const [protocol, setProtocol] = useState(entry?.values.protocol || 'oai');
@@ -23,6 +25,8 @@ export function ProviderForm({ entry, used, disabled, onSave, onDirtyChange, onR
         <button type="button" className="secondary" disabled={disabled} onClick={onModels}>{T('\u67e5\u770b\u6a21\u578b', 'View models')} ({used})</button>
         {used > 0 && <small>{T('\u6709\u6a21\u578b\u5f15\u7528\u65f6\u4e0d\u80fd\u5220\u9664\u670d\u52a1\u5546', 'Providers in use cannot be deleted')}</small>}
       </div>}
+      {entry && <RemoteModels source={{ provider: entry.id, protocol, apibase: base.trim(), apikey: secret }} existing={existing} disabled={disabled}
+        fetchModels={fetchModels} onAdd={ids => onAddModels(entry.id, protocol, ids)} />}
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} canDelete={used === 0} onReset={onReset} onDelete={async () => {
       if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u670d\u52a1\u5546\uff1f', 'Delete this provider?'), message: entry?.values.name || id, danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('provider_delete', id);

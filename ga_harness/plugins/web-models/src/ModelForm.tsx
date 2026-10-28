@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { T, confirmDialog, type ModelConfig, type ModelEntry, type ModelValues } from '@gah/sdk';
 import { endpoint } from './helpers';
+import { useModelOptions, type FetchModels } from './RemoteModels';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;
@@ -48,10 +49,11 @@ export function FormActions({ dirty, existing, disabled, canDelete = true, onRes
     <button type="submit" disabled={disabled || (existing && !dirty)}>{T('\u4fdd\u5b58\u5e76\u751f\u6548', 'Save and apply')}</button>
   </div>;
 }
-export function ModelForm({ entry, config, initialProvider = '', disabled, onSave, onDirtyChange, onReset, onProvider }: {
+export function ModelForm({ entry, config, initialProvider = '', disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels }: {
   entry?: ModelEntry; config: ModelConfig; initialProvider?: string; disabled: boolean; onSave: SaveModel;
-  onDirtyChange: (dirty: boolean) => void; onReset: () => void; onProvider: (id: string) => void;
+  onDirtyChange: (dirty: boolean) => void; onReset: () => void; onProvider: (id: string) => void; fetchModels: FetchModels;
 }) {
+  const options = useModelOptions(fetchModels), listId = useId();
   const defaultProtocol = config.providers.find(item => item.id === initialProvider)?.values.protocol || 'oai';
   const [protocol, setProtocol] = useState(entry?.protocol || defaultProtocol);
   const [id, setId] = useState(entry?.key || 'native_' + protocol + '_config_' + Date.now());
@@ -71,7 +73,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
   }}>
     <div className="model-form-content">
       <div className="model-grid">
-        <Field label={T('\u6a21\u578b ID', 'Model ID')}><input required value={model} disabled={disabled} autoFocus={!entry} placeholder="gpt-4.1 / claude-sonnet-4" spellCheck={false} onChange={event => setModel(event.target.value)} /></Field>
+        <Field label={T('\u6a21\u578b ID', 'Model ID')}><div className="model-id-row"><input required list={listId} value={model} disabled={disabled} autoFocus={!entry} placeholder="gpt-4.1 / claude-sonnet-4" spellCheck={false} onChange={event => setModel(event.target.value)} /><button type="button" className="secondary" disabled={disabled || options.loading} title={T('\u4ece\u670d\u52a1\u5546\u83b7\u53d6\u53ef\u7528\u6a21\u578b', 'Fetch available models from the provider')} onClick={() => { void options.load(provider ? { provider } : { key: entry?.key, apibase: base.trim(), apikey: secret, protocol }); }}>{options.loading ? T('\u83b7\u53d6\u4e2d...', 'Fetching...') : T('\u83b7\u53d6\u5217\u8868', 'Fetch list')}</button></div><datalist id={listId}>{options.items.map(item => <option key={item.id} value={item.id}>{item.name && item.name !== item.id ? item.name : undefined}</option>)}</datalist>{options.error ? <small className="model-error">{options.error}</small> : options.items.length ? <small>{T('\u5df2\u83b7\u53d6 ' + options.items.length + ' \u4e2a\u6a21\u578b\uff0c\u8f93\u5165\u53ef\u7b5b\u9009', options.items.length + ' models fetched; type to filter')}</small> : null}</Field>
         <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input value={name} disabled={disabled} maxLength={120} placeholder={T('\u53ef\u9009\uff0c\u9ed8\u8ba4\u4f7f\u7528\u6a21\u578b ID', 'Optional; defaults to model ID')} onChange={event => setName(event.target.value)} /></Field>
         <Field label={T('\u670d\u52a1\u5546', 'Provider')}><select value={provider} disabled={disabled} onChange={event => {
           const value = event.target.value; setProvider(value);
