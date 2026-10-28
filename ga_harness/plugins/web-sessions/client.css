@@ -48,3 +48,7 @@
 .gah-sess-more{align-self:flex-start;background:transparent;border:0;color:var(--muted);font:inherit;font-size:12px;padding:3px 10px;border-radius:6px}
 .gah-sess-more:hover{color:var(--text);background:var(--hover)}
 .gah-group.recent .gah-sess-items,.gah-sess-items.flat{padding-left:0}
+/* relative age on each chat row; hides while the row's action buttons are showing */
+.gah-sess-age{flex:none;margin-left:auto;padding:0 6px 0 4px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gah-sess-row:hover .gah-sess-age,.gah-sess-row:focus-within .gah-sess-age{display:none}
+@media (hover:none){.gah-sess-row.current .gah-sess-age{display:none}}
