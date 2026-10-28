@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { T } from '../i18n';
 import { host } from '../store';
-import type { Message, ToolCall, Turn, Usage } from '../types';
+import type { Message, MessageNote, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
 import { MessageStats } from './MessageStats';
 
@@ -95,6 +95,10 @@ function MessageTime({ message }: { message: Message }) {
     {display}
   </time>;
 }
+function Note({ note }: { note: MessageNote }) {
+  const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind;
+  return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
+}
 export const ChatMessage = memo(function ChatMessage({ message: m, last }: { message: Message; last: boolean }) {
   const turns = (m.turns ?? []).filter(Boolean), running = m.status === 'running', fin = turns.at(-1);
   // A terminal question is user-facing output, not a hidden execution step.
@@ -104,6 +108,8 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
   const steps = finalTurn ? turns.slice(0, -1) : turns;
   const reply = (fin ? fin.reply : m.text) || '';
   const awaiting = last && finalQuestion;
+  // Kept outside the collapsible steps so a steered message stays visible after the run.
+  const notes = (m.notes ?? []).map((note, i) => <Note key={i} note={note} />);
   return <div className={'msg ' + m.role}>
     {m.role === 'assistant' && <div className="meta"><span className="dot" /><span className="assistant-name">GenericAgent</span>
       {m.model?.trim() && <span className="model-name" title={T('使用的模型：', 'Model used: ') + m.model}>{m.model}</span>}
@@ -114,6 +120,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       {!!steps.length && <Disclosure className={'steps' + (running ? ' running' : '')} initial={running} title={<>
         <span className="process-dot" /><span>{running ? T('执行中 · ', 'Working · ') : T('执行过程 · ', 'Steps · ')}{steps.length}{T(' 步', ' steps')}</span>
       </>}>{steps.map((turn, index) => <Step key={turn.turn} turn={turn} live={running && !finalTurn && index === steps.length - 1} />)}</Disclosure>}
+      {notes}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
         {finalTurn.summary && <span className="ttl">{finalTurn.summary}</span>}<Tokens usage={finalTurn.usage} /></div>
         <Thinking text={finalTurn.thinking} /><Summary text={finalTurn.summary} />

@@ -191,3 +191,7 @@ footer .hint{padding-bottom:2px}
 .composer-row .gah-models select{height:34px;border:1px solid rgba(0,0,0,.11);border-radius:999px;background-color:transparent;font-weight:600;padding:0 28px 0 12px}
 .composer-row .gah-models select:hover:not(:disabled){background-color:var(--surface-muted)}
 .composer-row #send,.composer-row #stop{height:30px;border-radius:9px}
+/* Plugin transcript notes (e.g. steered user messages delivered mid-run). */
+.msg-note{display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin:8px 0}
+.msg-note .note-kind{color:var(--muted);font-size:11px}
+.msg-note .note-body{max-width:85%;padding:8px 14px;background:var(--surface-muted);border:1px dashed var(--border);border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere}

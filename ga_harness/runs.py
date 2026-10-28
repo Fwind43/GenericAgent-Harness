@@ -346,13 +346,16 @@ class Runs:
         if not isinstance(name, str):
             return
         if name.startswith(PLUGIN_EVENT_PREFIX):
-            # Durable and broadcast, but never folded into the visible transcript.
+            # Durable and broadcast. Only explicit ``notes`` reach the transcript.
             with self.lock:
                 live = self.live.get(rid)
                 if live is None:
                     return
+                noted = self._fold_notes(live["messages"], data)
                 with self.sessions._db() as db:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
+                    if noted:
+                        self._checkpoint(db, live)
                 record = {"id": rid, "session_id": live["session_id"], "seq": seq}
                 message = live["messages"][-1]
             self._notify("run.event", record, name=name, data=data, message=message)
@@ -381,6 +384,28 @@ class Runs:
                     self._checkpoint(db, live)
             record = {"id": rid, "session_id": live["session_id"], "seq": seq}
         self._notify("run.event", record, name=name, data=data, message=messages[-1])
+
+    @staticmethod
+    def _fold_notes(messages, data):
+        """Attach plugin ``notes`` ([{kind, text}]) to the running assistant message.
+
+        Each note records the last started turn so the UI can place it between
+        steps (for example a steered user message delivered at a turn boundary).
+        """
+        notes = data.get("notes") if isinstance(data, dict) else None
+        if not isinstance(notes, list) or not messages or messages[-1].get("status") != "running":
+            return False
+        message = messages[-1]
+        turns = [t for t in message.get("turns") or [] if isinstance(t, dict)]
+        turn = max((t.get("turn") or 0 for t in turns), default=0) or len(turns)
+        added = False
+        for note in notes:
+            if isinstance(note, dict) and isinstance(note.get("text"), str) and note["text"].strip():
+                kind = note.get("kind") if isinstance(note.get("kind"), str) else "note"
+                message.setdefault("notes", []).append(
+                    {"kind": kind, "text": note["text"], "turn": turn, "created_at": time.time()})
+                added = True
+        return added
 
     def _checkpoint(self, db, live):
         session = self.sessions.get(live["session_id"])

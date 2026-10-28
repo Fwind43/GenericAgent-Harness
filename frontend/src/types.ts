@@ -12,7 +12,10 @@ export interface Message {
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; run_id?: string;
   /** Unix seconds at message creation; absent for historical messages. */
   created_at?: number;
+  /** Plugin-provided transcript notes, e.g. steered user messages, placed after ``turn``. */
+  notes?: MessageNote[];
 }
+export interface MessageNote { kind: string; text: string; turn: number; created_at?: number }
 export interface Project { id: string; name: string; workspace: string; updated?: number }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; default_workspace?: string; projects: Project[] }
 export interface Session { id: string; title: string; project_id?: string | null; workspace?: string; parent_id?: string | null; updated?: number; running?: boolean }

@@ -57,9 +57,11 @@ def apply(ctx, config):
 
     def _applied():
         ids = [item["id"] for item in state["items"]]
+        notes = [{"kind": "steer", "text": item["text"]} for item in state["items"]]
         state["items"] = []
         if ids:
-            emit("steer.applied", {"ids": ids})
+            # ``notes`` asks the host to show the delivered text in the transcript.
+            emit("steer.applied", {"ids": ids, "notes": notes})
 
     def on_steer(data):
         data = data or {}
