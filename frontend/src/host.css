@@ -18,7 +18,7 @@ header h1{font-size:15px;font-weight:600;margin:0}
 select{font:inherit;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px 8px}
 main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 #thread{max-width:820px;margin:0 auto;padding:24px 20px 12px}
-.empty{color:var(--muted);text-align:center;margin-top:18vh}
+.empty{color:var(--muted);text-align:center;margin-top:22vh;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:14px}
 .empty b{display:block;color:var(--text);font-size:20px;font-weight:600;margin-bottom:6px}
 @keyframes blink{50%{opacity:0}}
 footer{padding:8px 20px 18px;background:var(--bg)}
@@ -204,3 +204,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-view-area[hidden],main[hidden]{display:none}
 .gah-view-area .gah-view{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-view[hidden]{display:none}
+
+/* destructive actions: outlined in the danger colour so they never read as the primary action */
+button.danger:not(.gah-ask-actions button){background:none!important;color:var(--danger)!important;border:1px solid color-mix(in srgb,var(--danger) 45%,transparent)!important;box-shadow:none!important}
+button.danger:not(.gah-ask-actions button):hover:not(:disabled){background:color-mix(in srgb,var(--danger) 12%,transparent)!important}
+button.danger:disabled{opacity:.45}
+/* stronger modal backdrop so the chat behind settings/pickers stops competing */
+dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+.gah-starters{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:18px;max-width:560px}
+.gah-starter{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s}
+.gah-starter:hover{background:var(--surface-muted);border-color:color-mix(in srgb,var(--text) 30%,var(--border))}
+@media (max-width:760px){.empty{margin-top:12vh;padding:0 16px}}

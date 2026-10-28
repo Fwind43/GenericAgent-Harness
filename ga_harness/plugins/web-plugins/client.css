@@ -31,7 +31,7 @@
 .gah-plugin-dialog .plugin-badge[data-state="active"]{color:#1a7f37;background:color-mix(in srgb,#1a7f37 10%,transparent)}
 .gah-plugin-dialog .plugin-badge[data-state="pending"]{color:#9a6700;background:color-mix(in srgb,#d4a72c 14%,transparent)}
 .gah-plugin-dialog .plugin-badge[data-state="error"]{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
-.gah-plugin-dialog .plugin-card-desc{flex:1;font-size:12px;line-height:1.5;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.gah-plugin-dialog .plugin-card-desc{flex:none;max-height:3em;margin-bottom:auto;font-size:12px;line-height:1.5;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .gah-plugin-dialog .plugin-card-foot,.gah-plugin-dialog .plugin-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:20px}
 .gah-plugin-dialog .plugin-tag{font-size:11px;line-height:18px;padding:0 7px;border-radius:6px;border:1px solid var(--border);color:var(--muted)}
 .gah-plugin-dialog .plugin-tag[data-tag="pending"]{color:#9a6700;border-color:color-mix(in srgb,#d4a72c 45%,var(--border))}

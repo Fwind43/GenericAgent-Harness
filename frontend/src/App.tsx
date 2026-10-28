@@ -160,7 +160,7 @@ export function App() {
       <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
       <main id="scroll" ref={scroll} hidden={view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
-        <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <div className="empty">{T('开始一个新任务', 'Start a new task')}</div>}</div>
+        <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <EmptyState />}</div>
       </main>
       <div className="gah-view-area" hidden={view === CHAT_VIEW}><Slot name="view" /></div>
       <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" onSubmit={send}>
@@ -177,4 +177,20 @@ export function App() {
       </form>{stats.length ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />
   </>;
+}
+
+// Empty-chat landing: a clear heading plus a few starter prompts. Chips only fill
+// the composer (via the shared 'draft' event) and never send on their own.
+const STARTERS = (): [string, string][] => [
+  [T('整理文件', 'Tidy files'), T('帮我整理当前目录，按类型归档并列出改动', 'Tidy the current directory by type and list what changed')],
+  [T('排查问题', 'Debug'), T('帮我排查这个报错，先定位原因再给修复方案：', 'Help me debug this error, find the cause first, then propose a fix: ')],
+  [T('查资料', 'Research'), T('帮我搜索并总结关于这个主题的最新资料：', 'Search and summarise the latest information on: ')],
+  [T('写脚本', 'Write a script'), T('帮我写一个脚本，实现：', 'Write a script that: ')],
+];
+function EmptyState() {
+  return <div className="empty"><b>{T('今天想让 GenericAgent 做什么？', 'What should GenericAgent do today?')}</b>
+    <span>{T('描述目标即可，它会自己规划步骤、调用工具并汇报结果。', 'Describe the goal; it plans the steps, uses tools and reports back.')}</span>
+    <div className="gah-starters">{STARTERS().map(([label, prompt]) => <button key={label} type="button" className="gah-starter"
+      title={T('填入输入框，不会自动发送', 'Fill the composer without sending')} onClick={() => host.emit('draft', prompt)}>{label}</button>)}</div>
+  </div>;
 }
