@@ -30,6 +30,8 @@
 .gah-sess-items[hidden]{display:none}
 .gah-sess-empty{font-size:12px;color:var(--muted);padding:4px 10px 6px}
 @media (hover:none){.gah-group-add{opacity:1}}
+/* Hidden row actions must not reserve space: the count stays flush right and the actions take its place on hover. */
+@media (hover:hover){.gah-group-head:not(:hover):not(:focus-within) .gah-group-add{display:none}.gah-group-head:hover .gah-group-count,.gah-group-head:focus-within .gah-group-count{display:none}}
 .gah-sess-open{display:flex;align-items:center;gap:8px}
 .gah-sess-title{flex:1;min-width:0}
 .gah-sess-status{flex:none;width:7px;height:7px;border-radius:50%;background:var(--accent,#2f80ed);animation:gah-sess-pulse 1.4s ease-in-out infinite}
