@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { request } from './api';
 import { save, saved, T } from './i18n';
 import { host, useHost } from './store';
@@ -70,10 +70,32 @@ export function App() {
   }, [collapsed]);
   useEffect(() => { document.body.classList.toggle('side-resizing', resizing); }, [resizing]);
   useEffect(() => { if (!resizing) save('gah-side-width', String(sideWidth)); }, [sideWidth, resizing]);
-  useLayoutEffect(() => {
+  // Elastic composer: grow with content up to the CSS max-height, then scroll inside.
+  const fitInput = useCallback(() => {
     const node = input.current;
-    if (node) { node.style.height = 'auto'; node.style.height = `${node.scrollHeight}px`; }
-  }, [draft]);
+    if (!node || !node.isConnected) return;
+    const style = getComputedStyle(node);
+    const max = parseFloat(style.maxHeight) || Infinity, min = parseFloat(style.minHeight) || 0;
+    node.style.height = 'auto';
+    const full = node.scrollHeight;
+    if (!full) { node.style.removeProperty('height'); return; } // hidden: measure again when visible
+    node.style.height = `${Math.max(min, Math.min(full, max))}px`;
+    node.style.overflowY = full > max + 1 ? 'auto' : 'hidden';
+  }, []);
+  useLayoutEffect(fitInput, [draft, fitInput]);
+  useEffect(() => {
+    const node = input.current;
+    if (!node) return;
+    // Re-measure when wrapping width or the viewport (vh-based max) changes.
+    let width = node.clientWidth, frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth === width) return;
+      width = node.clientWidth; cancelAnimationFrame(frame); frame = requestAnimationFrame(fitInput);
+    });
+    const viewport = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fitInput); };
+    observer.observe(node); window.addEventListener('resize', viewport);
+    return () => { observer.disconnect(); window.removeEventListener('resize', viewport); cancelAnimationFrame(frame); };
+  }, [fitInput]);
   useLayoutEffect(() => {
     const node = scroll.current;
     if (node && stick.current) node.scrollTop = node.scrollHeight;
