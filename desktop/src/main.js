@@ -2,7 +2,7 @@
 // Python backend; plugins, sessions and settings all stay in the backend (same as the browser).
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell } = require('electron');
 const path = require('node:path');
 const { Backend, isGaRoot } = require('./backend');
 
@@ -10,15 +10,15 @@ let backend = null;
 let win = null;
 let origin = null;
 let quitting = false;
+let tray = null;
+const ICON = path.join(__dirname, '..', 'resources', 'icon.png');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  });
+  app.on('second-instance', () => showWindow());
+  // macOS: clicking the Dock icon brings the hidden window back.
+  app.on('activate', () => showWindow());
   app.whenReady().then(boot);
 }
 
@@ -47,6 +47,39 @@ function registerBridge() {
     if (!fromBackend(event) || !/^https?:\/\//i.test(String(url))) throw new Error('forbidden');
     await shell.openExternal(String(url));
     return true;
+  });
+}
+
+function showWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+// Closing the window keeps the backend (and any running task) alive in the tray; only the
+// tray menu "Quit" (or app quit on macOS: Cmd+Q / Dock menu) really stops it.
+function createTray() {
+  try {
+    let img = nativeImage.createFromPath(ICON);
+    img = img.resize({ width: process.platform === 'darwin' ? 18 : 16, height: process.platform === 'darwin' ? 18 : 16 });
+    tray = new Tray(img);
+  } catch (err) {
+    // No tray available (e.g. some Linux desktops): fall back to quit-on-close.
+    console.error('tray unavailable:', err);
+    tray = null;
+    return;
+  }
+  tray.setToolTip('GenericAgent-Harness');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show GenericAgent-Harness', click: () => showWindow() },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
+  ]));
+  // Windows/Linux: left click toggles the window (macOS opens the menu on click by itself).
+  tray.on('click', () => {
+    if (!win) return;
+    if (win.isVisible() && win.isFocused()) win.hide(); else showWindow();
   });
 }
 
@@ -81,6 +114,11 @@ function createWindow(url) {
       event.preventDefault();
       if (/^https?:\/\//i.test(target)) shell.openExternal(target);
     }
+  });
+  win.on('close', (event) => {
+    if (quitting || !tray) return;   // real quit, or no tray to come back from
+    event.preventDefault();
+    win.hide();
   });
   win.on('closed', () => { win = null; });
   win.loadURL(`${url}?gah_token=${backend.token}`);
@@ -139,6 +177,7 @@ async function boot() {
     const url = await backend.waitReady();
     origin = new URL(url).origin;
     registerBridge();
+    createTray();
     createWindow(url);
     backend.exited.then((code) => {
       if (quitting) return;
@@ -167,11 +206,16 @@ async function boot() {
   }
 }
 
-app.on('window-all-closed', () => app.quit());
+// Windows logoff/shutdown: let the hidden window close instead of blocking the session end.
+app.on('session-end', () => { quitting = true; });
+
+// With a tray the window is only hidden, so this fires only without one (or during quit).
+app.on('window-all-closed', () => { if (!tray) app.quit(); });
 
 app.on('before-quit', (event) => {
   if (quitting || !backend) return;
   quitting = true;
   event.preventDefault();
+  if (tray) { tray.destroy(); tray = null; }
   backend.stop().finally(() => app.exit(0));
 });

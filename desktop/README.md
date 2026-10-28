@@ -44,6 +44,11 @@ The shell sets these for `ui-web` (documented in its module docstring):
 | `GAH_WEB_READY_FILE` | `{"url","pid"}` written atomically once listening (no token inside) |
 | `GAH_WEB_EXIT_ON_STDIN_EOF=1` | backend aborts the run and stops if the shell dies |
 
+Closing the window only hides it to the system tray; the backend and running tasks keep going.
+Left-click the tray icon (or launch the app again / click the Dock icon on macOS) to bring it back;
+the tray menu **Quit** (or Cmd+Q on macOS) really exits. Without a tray (some Linux desktops) closing
+the window quits as before.
+
 Quit: stdin is closed first (graceful stop), then the process tree is killed after 5 s
 (`taskkill /T` on Windows, process group on macOS/Linux). One instance per user (single-instance lock).
 
