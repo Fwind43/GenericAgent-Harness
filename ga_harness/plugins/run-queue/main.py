@@ -4,20 +4,65 @@ Queued items can be edited or cancelled. "Steer" hands an item to the running
 worker (via the ``ga-steer`` worker plugin), which injects it at the next turn
 boundary instead of interrupting the task. When a run finishes, the next queued
 item of that session is submitted as an ordinary user message.
+
+The queue lives on the server and is written through to ``run-queue.db`` beside
+the session database, so it survives page reloads and server restarts. Items that
+were being steered when the server stopped come back as plain queued items.
 """
+import logging
+import sqlite3
 import threading
+import time
 import uuid
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+log = logging.getLogger(__name__)
 MAX_TEXT = 100_000
+
+
+class Store:
+    """Persistent copy of every session's queue (order kept by ``pos``)."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.lock = threading.RLock()
+        with self._db() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS queue(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, "
+                       "pos INTEGER NOT NULL, text TEXT NOT NULL, created REAL NOT NULL)")
+
+    def _db(self):
+        return sqlite3.connect(self.path, timeout=10)
+
+    def load(self):
+        queues = {}
+        with self.lock, self._db() as db:
+            for item_id, sid, text, created in db.execute(
+                    "SELECT id, session_id, text, created FROM queue ORDER BY session_id, pos"):
+                queues.setdefault(sid, []).append(
+                    {"id": item_id, "text": text, "state": "queued", "created": created})
+        return queues
+
+    def save(self, queues):
+        rows = [(i["id"], sid, pos, i["text"], i.get("created") or time.time())
+                for sid, items in queues.items() for pos, i in enumerate(items)]
+        with self.lock, self._db() as db:  # one transaction: replace the whole (small) table
+            db.execute("DELETE FROM queue")
+            db.executemany("INSERT INTO queue(id, session_id, pos, text, created) VALUES(?,?,?,?,?)", rows)
+
+
+def _store_path(sessions):
+    base = getattr(sessions, "path", None) or getattr(sessions, "db_path", None)
+    return Path(base).with_name("run-queue.db") if base else HERE / "run-queue.db"
 
 
 def apply(ctx, config):
     host, runs, sessions = ctx.get("web.host"), ctx.get("runs"), ctx.get("sessions")
     frontend = host.frontend
     lock = threading.RLock()
-    queues = {}  # session_id -> [{"id", "text", "state": "queued" | "steering", "run_id"?}]
+    store = Store(_store_path(sessions))
+    # session_id -> [{"id", "text", "created", "state": "queued" | "steering", "run_id"?}]
+    queues = store.load()
 
     def _items(sid):
         return queues.setdefault(sid, [])
@@ -32,7 +77,18 @@ def apply(ctx, config):
         with lock:
             return [{"id": i["id"], "text": i["text"], "state": i["state"]} for i in queues.get(sid, [])]
 
+    def _persist():
+        with lock:
+            snapshot_ = {sid: [dict(i) for i in items] for sid, items in queues.items() if items}
+            for sid in [sid for sid, items in queues.items() if not items]:
+                del queues[sid]
+        try:
+            store.save(snapshot_)
+        except Exception as error:  # keep serving from memory; report instead of failing the request
+            log.warning("run-queue: could not save queue: %s", error)
+
     def _publish():
+        _persist()
         try:
             frontend.broadcast("snapshot", frontend.snapshot())
         except Exception:
@@ -81,7 +137,7 @@ def apply(ctx, config):
             if code >= 400:
                 raise RuntimeError(reply.get("error") or "run could not be started")
             return {"sent": True}
-        item = {"id": uuid.uuid4().hex[:12], "text": text, "state": "queued"}
+        item = {"id": uuid.uuid4().hex[:12], "text": text, "state": "queued", "created": time.time()}
         with lock:
             _items(sid).append(item)
         return {"item": {"id": item["id"]}}

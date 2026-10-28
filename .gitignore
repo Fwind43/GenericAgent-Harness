@@ -9,3 +9,4 @@ frontend/.vite/
 ga_harness/plugins/ui-web/dist/
 desktop/stage/
 desktop/dist/
+ga_harness/plugins/*/*.db
