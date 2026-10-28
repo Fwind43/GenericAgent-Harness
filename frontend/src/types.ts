@@ -40,7 +40,8 @@ export interface HostState {
 }
 export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string }
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }
-export interface ModelEntry { key: string; protocol: string; provider?: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
+export interface ModelEntry { key: string; protocol: string; provider?: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean;
+  options?: Record<string, string | number | boolean>; options_hidden?: string[] }
 export interface ProviderEntry { id: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
 export interface ModelConfig {
   entries: ModelEntry[]; providers: ProviderEntry[]; revision: string; writable: boolean;

@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { T, confirmDialog, matches, type ModelConfig, type ModelEntry, type ModelValues } from '@gah/sdk';
 import { endpoint, providerNames } from './helpers';
 import { useModelOptions, type FetchModels } from './RemoteModels';
+import { AdvancedOptions, useOptions, type OptionValue } from './AdvancedOptions';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;
@@ -41,7 +42,7 @@ export function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase,
 export function Protocol({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
   return <Field label={T('\u63a5\u53e3\u534f\u8bae', 'Protocol')}><select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}><option value="oai">OpenAI compatible</option><option value="claude">Anthropic Claude</option></select></Field>;
 }
-export type SaveModel = (action: string, id: string, values?: ModelValues & { provider?: string }) => void;
+export type SaveModel = (action: string, id: string, values?: ModelValues & { provider?: string; options?: Record<string, OptionValue | null> }) => void;
 export function FormActions({ dirty, existing, disabled, canDelete = true, onReset, onDelete }: {
   dirty: boolean; existing: boolean; disabled: boolean; canDelete?: boolean; onReset: () => void; onDelete: () => void;
 }) {
@@ -65,8 +66,9 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
   const [base, setBase] = useState(entry?.values.apibase || ''), [secret, setSecret] = useState('');
   const [context, setContext] = useState(String(entry?.values.context_win ?? ''));
   const [suggest, setSuggest] = useState(false);
+  const opts = useOptions(entry?.options);
   const shared = config.providers.find(item => item.id === provider);
-  const dirty = useDraft([protocol, id, provider, name, model, base, secret, context], onDirtyChange);
+  const dirty = useDraft([protocol, id, provider, name, model, base, secret, context, opts.draft], onDirtyChange);
   const changeProtocol = (value: string) => { setProtocol(value); setId('native_' + value + '_config_' + Date.now()); };
   const canFetch = !!provider || !!base.trim() || !!entry;
   const fetchList = () => { setSuggest(true); void options.load(provider ? { provider } : { key: entry?.key, apibase: base.trim(), apikey: secret, protocol }); };
@@ -74,9 +76,10 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
   const visible = options.items.filter(item => !model || exact || matches(model, item.id, item.name)).slice(0, 50);
   return <form className="model-form" onInvalidCapture={event => (event.target as HTMLElement).closest('details')?.setAttribute('open', '')} onSubmit={event => {
     event.preventDefault(); if (disabled) return;
-    const values: ModelValues & { provider?: string } = provider ? { name: name.trim(), model: model.trim(), provider }
+    const values: Parameters<SaveModel>[2] & {} = provider ? { name: name.trim(), model: model.trim(), provider }
       : { name: name.trim(), model: model.trim(), provider: '', apibase: base.trim(), apikey: secret };
     if (context) values.context_win = Number(context);
+    const changed = opts.diff(); if (Object.keys(changed).length) values.options = changed;
     onSave('save', id.trim(), values);
   }}>
     <div className="model-form-content">
@@ -118,6 +121,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
         <div className="model-grid">
           <Field label={T('\u914d\u7f6e\u6807\u8bc6', 'Config key')} wide><input required value={id} readOnly={!!entry} disabled={disabled} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{T('mykey.py \u4e2d\u7684\u53d8\u91cf\u540d\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Variable name in mykey.py; fixed after creation.')}</small></Field>
         </div>
+        <AdvancedOptions protocol={protocol} draft={opts.draft} hidden={entry?.options_hidden} disabled={disabled} onChange={opts.set} />
       </details>
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} onReset={onReset} onDelete={async () => {

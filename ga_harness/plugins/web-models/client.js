@@ -223,6 +223,107 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     };
     return { items, loading, error, load };
   }
+  const GROUPS = [
+    { zh: "生成", en: "Generation", items: [
+      { key: "max_tokens", kind: "int", zh: "最大输出 token", en: "Max output tokens", min: 1, ph: "Claude 8192" },
+      { key: "temperature", kind: "float", zh: "温度", en: "Temperature", min: 0, max: 2, ph: "1" },
+      { key: "reasoning_effort", kind: "enum", zh: "推理强度", en: "Reasoning effort", choices: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+      { key: "service_tier", kind: "enum", zh: "服务等级", en: "Service tier", choices: ["auto", "default", "priority", "flex"] },
+      { key: "thinking_type", kind: "enum", zh: "思考模式", en: "Thinking mode", choices: ["adaptive", "enabled", "disabled"] },
+      { key: "thinking_budget_tokens", kind: "int", zh: "思考预算 token", en: "Thinking budget tokens", min: 0 },
+      { key: "stream", kind: "bool", zh: "流式输出", en: "Streaming", hint: ["默认开启", "On by default"] },
+      { key: "omit_thinking", kind: "bool", zh: "历史中省略思考", en: "Omit thinking from history", hint: ["默认关闭", "Off by default"] }
+    ] },
+    { zh: "请求", en: "Request", items: [
+      { key: "api_mode", kind: "enum", zh: "API 模式", en: "API mode", choices: ["chat_completions", "responses"], only: "oai" },
+      { key: "api_key_header", kind: "enum", zh: "密钥请求头", en: "API key header", choices: ["auto", "x-api-key", "bearer"], only: "claude" },
+      { key: "user_agent", kind: "str", zh: "User-Agent", en: "User-Agent", only: "claude", ph: "claude-cli/…" },
+      { key: "fake_cc_system_prompt", kind: "bool", zh: "模拟 Claude Code 系统提示", en: "Claude Code system prompt", only: "claude" },
+      { key: "proxy", kind: "str", zh: "代理", en: "Proxy", ph: "http://127.0.0.1:7890", hint: ["支持 http(s):// 与 socks5://", "http(s):// or socks5://"] },
+      { key: "verify", kind: "verify", zh: "TLS 校验", en: "TLS verify", ph: "true", hint: ["true / false，或 CA 证书路径", "true / false, or a CA bundle path"] }
+    ] },
+    { zh: "超时与重试", en: "Timeouts & retries", items: [
+      { key: "timeout", kind: "int", zh: "连接超时（秒）", en: "Connect timeout (s)", min: 1 },
+      { key: "read_timeout", kind: "int", zh: "读取超时（秒）", en: "Read timeout (s)", min: 5 },
+      { key: "max_retries", kind: "int", zh: "最大重试次数", en: "Max retries", min: 0, max: 100, ph: "4" },
+      { key: "max_retry_after", kind: "float", zh: "最长重试等待（秒）", en: "Max retry wait (s)", min: 0, ph: "60" }
+    ] },
+    { zh: "上下文与提示词", en: "Context & prompt", items: [
+      { key: "trim_keep_prefix", kind: "int", zh: "裁剪时保留前缀消息数", en: "Messages kept when trimming", min: 0, ph: "0" },
+      { key: "extra_sys_prompt_file", kind: "str", zh: "附加系统提示文件", en: "Extra system prompt file", hint: ["相对路径基于 GA 目录", "Relative to the GA directory"] },
+      { key: "extra_sys_prompt", kind: "text", zh: "附加系统提示", en: "Extra system prompt" }
+    ] }
+  ];
+  GROUPS.flatMap((group) => group.items.map((item) => item.key));
+  const toText = (value) => value === void 0 ? "" : String(value);
+  function useOptions(initial = {}) {
+    const [draft, setDraft] = react.useState(() => Object.fromEntries(Object.entries(initial).map(([k, v]) => [k, toText(v)])));
+    const set = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
+    const diff = () => {
+      const out = {};
+      for (const group of GROUPS) for (const spec of group.items) {
+        const now = (draft[spec.key] ?? "").trim(), was = toText(initial[spec.key]);
+        if (now === was && (draft[spec.key] ?? "") === was) continue;
+        if (now === "") {
+          if (spec.key in initial) out[spec.key] = null;
+          continue;
+        }
+        if (spec.kind === "int" || spec.kind === "float") out[spec.key] = Number(now);
+        else if (spec.kind === "bool") out[spec.key] = now === "true";
+        else if (spec.kind === "verify") out[spec.key] = now === "true" ? true : now === "false" ? false : now;
+        else out[spec.key] = spec.kind === "text" ? draft[spec.key] : now;
+      }
+      return out;
+    };
+    return { draft, set, diff };
+  }
+  function AdvancedOptions({ protocol, draft, hidden = [], disabled, onChange }) {
+    const defaultText = sdk.T("默认", "Default");
+    const input = (spec) => {
+      const value = draft[spec.key] ?? "", change = (v) => onChange(spec.key, v);
+      if (hidden.includes(spec.key)) return /* @__PURE__ */ jsxRuntime.jsx("input", { value: sdk.T("已在 mykey.py 中设置（此处不显示）", "Set in mykey.py (not shown here)"), disabled: true, readOnly: true });
+      if (spec.kind === "enum" || spec.kind === "bool") {
+        const choices = spec.kind === "bool" ? [["true", sdk.T("开启", "On")], ["false", sdk.T("关闭", "Off")]] : spec.choices.map((c) => [c, c]);
+        return /* @__PURE__ */ jsxRuntime.jsxs("select", { value, disabled, onChange: (event) => change(event.target.value), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: defaultText }),
+          choices.map(([v, label]) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: v, children: label }, v))
+        ] });
+      }
+      if (spec.kind === "text") return /* @__PURE__ */ jsxRuntime.jsx("textarea", { rows: 4, value, disabled, maxLength: 5e4, placeholder: defaultText, onChange: (event) => change(event.target.value) });
+      const numeric = spec.kind === "int" || spec.kind === "float";
+      return /* @__PURE__ */ jsxRuntime.jsx(
+        "input",
+        {
+          type: numeric ? "number" : "text",
+          step: spec.kind === "float" ? "any" : numeric ? 1 : void 0,
+          min: spec.min,
+          max: spec.max,
+          value,
+          disabled,
+          spellCheck: false,
+          autoComplete: "off",
+          placeholder: spec.ph ? defaultText + " " + spec.ph : defaultText,
+          onChange: (event) => change(event.target.value)
+        }
+      );
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      GROUPS.map((group) => {
+        const items = group.items.filter((spec) => !spec.only || spec.only === protocol);
+        return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-advanced-group", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("h4", { children: sdk.T(group.zh, group.en) }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: items.map((spec) => /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T(spec.zh, spec.en), wide: spec.kind === "text", children: [
+            input(spec),
+            /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+              /* @__PURE__ */ jsxRuntime.jsx("code", { children: spec.key }),
+              spec.hint ? " · " + sdk.T(spec.hint[0], spec.hint[1]) : ""
+            ] })
+          ] }, spec.key)) })
+        ] }, group.en);
+      }),
+      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-advanced-note", children: sdk.T("留空表示使用 GA 默认值；清空已有的值会从 mykey.py 删除该项。", "Leave empty to use the GA default; clearing a value removes it from mykey.py.") })
+    ] });
+  }
   function Field({ label, wide, children }) {
     return /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field" + (wide ? " wide" : ""), children: [
       label,
@@ -304,8 +405,9 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
     const [context, setContext] = react.useState(String((entry == null ? void 0 : entry.values.context_win) ?? ""));
     const [suggest, setSuggest] = react.useState(false);
+    const opts = useOptions(entry == null ? void 0 : entry.options);
     const shared = config.providers.find((item) => item.id === provider);
-    const dirty = useDraft([protocol, id, provider, name, model, base, secret, context], onDirtyChange);
+    const dirty = useDraft([protocol, id, provider, name, model, base, secret, context, opts.draft], onDirtyChange);
     const changeProtocol = (value) => {
       setProtocol(value);
       setId("native_" + value + "_config_" + Date.now());
@@ -325,6 +427,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       if (disabled) return;
       const values = provider ? { name: name.trim(), model: model.trim(), provider } : { name: name.trim(), model: model.trim(), provider: "", apibase: base.trim(), apikey: secret };
       if (context) values.context_win = Number(context);
+      const changed = opts.diff();
+      if (Object.keys(changed).length) values.options = changed;
       onSave("save", id.trim(), values);
     }, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
@@ -403,7 +507,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Config key"), wide: true, children: [
             /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, readOnly: !!entry, disabled, spellCheck: false, onChange: (event) => setId(event.target.value) }),
             /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("mykey.py 中的变量名，创建后不可修改。", "Variable name in mykey.py; fixed after creation.") })
-          ] }) })
+          ] }) }),
+          /* @__PURE__ */ jsxRuntime.jsx(AdvancedOptions, { protocol, draft: opts.draft, hidden: entry == null ? void 0 : entry.options_hidden, disabled, onChange: opts.set })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, onReset, onDelete: async () => {
@@ -574,9 +679,16 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const change = (action, id, values) => {
       if (!(config == null ? void 0 : config.writable) || busy) return;
       setError("");
+      const { options, ...fields } = values || {};
       void run(async () => {
         var _a2, _b2;
-        const next = await api.host.post("/api/models/config", { action, revision: config.revision, [action.startsWith("provider_") ? "id" : "key"]: id, ...values ? { values } : {} });
+        const next = await api.host.post("/api/models/config", {
+          action,
+          revision: config.revision,
+          [action.startsWith("provider_") ? "id" : "key"]: id,
+          ...values ? { values: fields } : {},
+          ...options ? { options } : {}
+        });
         setConfig(next.config);
         api.setState(next.state);
         setQuery("");

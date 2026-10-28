@@ -19,6 +19,78 @@ from urllib.parse import urlencode, urlsplit
 from ga_harness import llmconfig
 
 _FIELDS = ("name", "model", "apibase", "context_win")
+# Per-model GA llmcore options (BaseSession / NativeClaudeSession). None or "" deletes the key so GA
+# falls back to its own default. Mixin-only keys (llm_nos/base_delay/spring_back) are not editable here.
+_ADVANCED = {
+    "max_tokens": ("int", 1, None), "temperature": ("float", 0, 2), "stream": ("bool",),
+    "reasoning_effort": ("enum", ("none", "minimal", "low", "medium", "high", "xhigh", "max")),
+    "thinking_type": ("enum", ("adaptive", "enabled", "disabled")),
+    "thinking_budget_tokens": ("int", 0, None), "omit_thinking": ("bool",),
+    "service_tier": ("enum", ("auto", "default", "priority", "flex")),
+    "api_mode": ("enum", ("chat_completions", "responses")),
+    "api_key_header": ("enum", ("auto", "x-api-key", "bearer")),
+    "user_agent": ("str", 300), "fake_cc_system_prompt": ("bool",),
+    "proxy": ("proxy",), "timeout": ("int", 1, None), "read_timeout": ("int", 5, None), "verify": ("verify", 500),
+    "max_retries": ("int", 0, 100), "max_retry_after": ("float", 0, None),
+    "trim_keep_prefix": ("int", 0, None),
+    "extra_sys_prompt": ("text", 50000), "extra_sys_prompt_file": ("str", 500),
+}
+
+
+def _advanced_value(key, value):
+    spec = _ADVANCED[key]
+    kind = spec[0]
+    if kind == "verify":  # requests: bool, or a CA bundle path
+        if type(value) is bool:
+            return value
+        kind = "str"
+    if kind == "bool":
+        if type(value) is not bool:
+            raise ValueError(f"{key} must be true or false")
+        return value
+    if kind in ("int", "float"):
+        if type(value) is bool or not isinstance(value, (int, float)) or (kind == "int" and type(value) is not int):
+            raise ValueError(f"{key} must be {'an integer' if kind == 'int' else 'a number'}")
+        lo, hi = spec[1], spec[2]
+        if value != value or (lo is not None and value < lo) or (hi is not None and value > hi):
+            raise ValueError(f"{key} must be between {lo} and {hi}" if hi is not None else f"{key} must be at least {lo}")
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be text")
+    if kind == "text":
+        if len(value) > spec[1]:
+            raise ValueError(f"{key} must contain at most {spec[1]} characters")
+        return value
+    value = value.strip()
+    if kind == "enum":
+        value = value.lower()
+        if value not in spec[1]:
+            raise ValueError(f"{key} must be one of: {', '.join(spec[1])}")
+        return value
+    if kind == "proxy":
+        u = urlsplit(value)
+        if u.scheme not in ("http", "https", "socks5", "socks5h") or not u.hostname or len(value) > 500:
+            raise ValueError("proxy must be an http(s):// or socks5:// URL")
+        return value
+    if len(value) > spec[1] or any(c in value for c in "\r\n\0"):
+        raise ValueError(f"{key} must be a single line of at most {spec[1]} characters")
+    return value
+
+
+def _advanced_public(value):
+    out, hidden = {}, []
+    for k in _ADVANCED:
+        if k not in value:
+            continue
+        v = value[k]
+        if k == "proxy" and isinstance(v, str) and "@" in urlsplit(v).netloc:
+            hidden.append(k)  # proxy credentials are never sent to the browser
+            continue
+        if isinstance(v, (str, int, float, bool)):
+            out[k] = v
+        else:
+            hidden.append(k)
+    return out, hidden
 _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,99}$")
 _PID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 _PFIELDS = ("name", "protocol", "apibase")
@@ -408,8 +480,10 @@ class Models:
                 else:
                     public.pop("apibase", None)
                     count[pid] = count.get(pid, 0) + 1
+                options, opt_hidden = _advanced_public(value)
                 entries.append({"key": key, "values": public, "provider": pid, "protocol": _protocol(key),
-                                "has_key": bool(value.get("apikey")), "url_hidden": hidden})
+                                "has_key": bool(value.get("apikey")), "url_hidden": hidden,
+                                "options": options, "options_hidden": opt_hidden})
             plist = []
             for pid, pv in providers.items():
                 url, hidden = _public_url(pv.get("apibase", ""))
@@ -584,8 +658,16 @@ class Models:
         providers = self._providers(data)
         cfg = copy.deepcopy(data.get(key, {}))
         values = body.get("values")
+        options = body.get("options") or {}
         if not isinstance(values, dict) or set(values) - set(_FIELDS) - {"apikey", "provider"}:
             raise ValueError("invalid model fields")
+        if not isinstance(options, dict) or set(options) - set(_ADVANCED):
+            raise ValueError("invalid model options")
+        for k, v in options.items():
+            if v is None or (isinstance(v, str) and not v.strip()):
+                cfg.pop(k, None)
+            else:
+                cfg[k] = _advanced_value(k, v)
         pid = values.get("provider", cfg.get("provider"))
         for k, v in values.items():
             if k == "apikey" and not v:

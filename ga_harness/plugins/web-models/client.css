@@ -152,3 +152,7 @@
 .gah-model-dialog .model-suggest small{margin-left:auto;flex:none;max-width:45%;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gah-model-dialog .model-suggest p{margin:0;padding:8px 10px;color:var(--muted);font-size:12px}
 @media(max-width:700px){.gah-model-dialog .model-grid{grid-template-columns:minmax(0,1fr)}}
+
+.model-advanced-group { margin-top: 14px; }
+.model-advanced-group > h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted, #888); text-transform: none; }
+.model-advanced-note { margin: 4px 0 0; font-size: 12px; color: var(--muted, #888); }

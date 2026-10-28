@@ -77,8 +77,10 @@ export function Models({ api }: { api: PluginAPI }) {
   const change: SaveModel = (action, id, values) => {
     if (!config?.writable || busy) return;
     setError('');
+    const { options, ...fields } = values || {};
     void run(async () => {
-      const next = await api.host.post<ModelResult>('/api/models/config', { action, revision: config.revision, [action.startsWith('provider_') ? 'id' : 'key']: id, ...(values ? { values } : {}) });
+      const next = await api.host.post<ModelResult>('/api/models/config', { action, revision: config.revision, [action.startsWith('provider_') ? 'id' : 'key']: id,
+        ...(values ? { values: fields } : {}), ...(options ? { options } : {}) });
       setConfig(next.config); api.setState(next.state); setQuery('');
       if (action.startsWith('provider_')) {
         setSection('');
