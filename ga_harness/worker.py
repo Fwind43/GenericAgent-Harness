@@ -10,7 +10,8 @@ from types import SimpleNamespace
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.timed")
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
-# plugins require explicit run-store.worker_plugins configuration.
+# plugins come from run-store.worker_plugins or Runs.register_worker_plugin; they
+# are taken from the plugin catalog and need not be active in the host.
 DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
                              "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools",
                              "project-memory"))
@@ -20,21 +21,34 @@ def recipe_for(ctx, extra=()):
     catalog = ctx.get("plugin.catalog")
     if catalog is None:
         raise RuntimeError("run-store requires the plugin catalog")
+    manifests = catalog["preferences"].manifests
     wanted = DEFAULT_PLUGINS | set(extra)
     recipe = []
+
+    def add(manifest, config):
+        if (set(manifest.provides) & {"frontend", "web.host", "sessions", "runs", "workspaces", "models"}
+                or "web.host" in {key.rstrip("?") for key in manifest.inject}):
+            raise ValueError(f"host plugin {manifest.name!r} cannot run in a worker")
+        recipe.append((manifest, config))
+
     for name, handle in ctx.runtime.handles.items():
         if name not in wanted or handle.state != "active":
             continue
-        manifest = catalog["preferences"].manifests[name]
-        if (set(manifest.provides) & {"frontend", "web.host", "sessions", "runs", "workspaces", "models"}
-                or "web.host" in {key.rstrip("?") for key in manifest.inject}):
-            raise ValueError(f"host plugin {name!r} cannot run in a worker")
-        recipe.append((manifest, copy.deepcopy(handle.config)))
+        add(manifests[name], copy.deepcopy(handle.config))
     if not any(manifest.name == "ga-core" for manifest, _ in recipe):
         raise RuntimeError("ga-core must be active before run-store")
-    missing = set(extra) - {manifest.name for manifest, _ in recipe}
+    # Worker-only plugins requested by a host plugin (run-store.worker_plugins or
+    # Runs.register_worker_plugin) need not be active in the host: they only make
+    # sense inside a run. Mount them from the catalog with their default config.
+    present = {manifest.name for manifest, _ in recipe}
+    missing = []
+    for name in sorted(set(extra) - present):
+        if name in manifests:
+            add(manifests[name], {})
+        else:
+            missing.append(name)
     if missing:
-        raise ValueError("worker plugins are not active: " + ", ".join(sorted(missing)))
+        raise ValueError("worker plugins are not installed: " + ", ".join(missing))
     return recipe
 
 

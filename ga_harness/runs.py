@@ -90,10 +90,12 @@ class Runs:
         return dispose
 
     def register_worker_plugin(self, name):
-        """Mount an active execution plugin in every subsequently started worker.
+        """Mount an execution plugin in every subsequently started worker.
 
         Equivalent to listing it in ``run-store.worker_plugins``, but owned by the
-        calling plugin. Host/UI/storage plugins are still refused. Returns a disposer.
+        calling plugin. The plugin must be installed but need not be active in the
+        host (worker-only plugins). Host/UI/storage plugins are still refused.
+        Returns a disposer.
         """
         if not isinstance(name, str) or not name.strip():
             raise ValueError("plugin name is required")
