@@ -171,7 +171,7 @@ function Trace() {
     {visibleRuns.map(run => <section className="gah-trace-run" key={run.run}>
       <header className="gah-trace-sep">
         <b>{T('任务 ', 'Run ') + run.run}</b>
-        <span className="gah-trace-sep-input">{line(run.input, 80) || T('（无输入）', '(no input)')}</span>
+        <span className="gah-trace-sep-input" title={run.input || undefined}>{line(run.input, 80) || T('（无输入）', '(no input)')}</span>
         <span className="gah-trace-sep-meta">{[statusLabel(run.status), run.model, secs(run.seconds)].filter(Boolean).join(' · ')}</span>
       </header>
       <ol className="gah-trace-list">
