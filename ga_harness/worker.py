@@ -50,13 +50,114 @@ PLUGIN_TOOL = {"type": "function", "function": {
 }}
 
 
-def _register_plugin_tool(tools, send, pending, timeout=60.0):
-    """Expose host plugin control to the agent over the run pipe (request/reply)."""
+class RpcError(RuntimeError):
+    """A host RPC failed, was refused, timed out or the run was cancelled."""
+
+
+class WorkerHost:
+    """The ``run.host`` capability: a worker plugin's channel to the host process.
+
+    ``call(service, body, timeout)`` blocks until the host's registered RPC
+    handler answers (see ``Runs.register_rpc``); ``emit(name, data)`` sends a
+    durable ``plugin.*`` run event to host subscribers; ``on_push(topic, fn)``
+    receives ``Runs.push`` messages. Push listeners run on one dispatch thread.
+    """
+
+    def __init__(self, send, run_id, session_id):
+        import queue
+        self._send, self.run_id, self.session_id = send, run_id, session_id
+        self.cancelled = threading.Event()
+        self._pending, self._listeners, self._lock = {}, {}, threading.Lock()
+        self._queue = queue.Queue()
+        threading.Thread(target=self._dispatch, name="run-host-push", daemon=True).start()
+
+    def call(self, service, body=None, timeout=60.0):
+        import uuid
+        if not isinstance(service, str) or not service:
+            raise ValueError("rpc service name is required")
+        if self.cancelled.is_set():
+            raise RpcError("run was cancelled")
+        rid = uuid.uuid4().hex
+        slot = {"event": threading.Event(), "reply": None}
+        with self._lock:
+            self._pending[rid] = slot
+        try:
+            self._send("rpc", id=rid, service=service, body=body)
+            if not slot["event"].wait(timeout):
+                raise RpcError(f"host did not answer {service!r} within {timeout}s")
+        except (OSError, ValueError, EOFError) as exc:
+            raise RpcError(f"host unreachable ({type(exc).__name__})") from None
+        finally:
+            with self._lock:
+                self._pending.pop(rid, None)
+        reply = slot["reply"]
+        if reply is None:
+            raise RpcError("run was cancelled")
+        if reply.get("error"):
+            raise RpcError(reply["error"])
+        return reply.get("result")
+
+    def emit(self, name, data=None):
+        if not isinstance(name, str) or not name:
+            raise ValueError("event name is required")
+        if not name.startswith("plugin."):
+            name = "plugin." + name
+        self._send("event", name=name, data=data)
+
+    def on_push(self, topic, listener):
+        if not callable(listener):
+            raise TypeError("push listener must be callable")
+        with self._lock:
+            self._listeners.setdefault(topic, []).append(listener)
+
+        def dispose():
+            with self._lock:
+                items = self._listeners.get(topic, [])
+                if listener in items:
+                    items.remove(listener)
+        return dispose
+
+    # -- called by the worker control thread -------------------------------------
+    def _resolve(self, packet):
+        with self._lock:
+            slot = self._pending.get(packet.get("id"))
+        if slot is not None:
+            slot["reply"] = packet
+            slot["event"].set()
+
+    def _push(self, packet):
+        self._queue.put((packet.get("topic"), packet.get("data")))
+
+    def _dispatch(self):
+        while True:
+            topic, data = self._queue.get()
+            if topic is None:
+                return
+            with self._lock:
+                # Topic listeners get ``(data)``; ``"*"`` listeners get ``(topic, data)``.
+                calls = [(fn, (data,)) for fn in self._listeners.get(topic, ())]
+                calls += [(fn, (topic, data)) for fn in self._listeners.get("*", ())]
+            for listener, args in calls:
+                try:
+                    listener(*args)
+                except Exception:
+                    pass
+
+    def _close(self):
+        self.cancelled.set()
+        with self._lock:
+            slots = list(self._pending.values())
+        for slot in slots:
+            slot["event"].set()
+        self._queue.put((None, None))
+
+
+def _register_plugin_tool(tools, host, timeout=60.0):
+    """Expose host plugin control to the agent through the ``plugin_control`` RPC."""
     if tools is None or not hasattr(tools, "register"):
         return None
     import importlib
     import json
-    import uuid
 
     def plugin_control(handler, args, response):
         StepOutcome = importlib.import_module("agent_loop").StepOutcome
@@ -64,20 +165,10 @@ def _register_plugin_tool(tools, send, pending, timeout=60.0):
         body = {"action": args.get("action", "list")}
         if args.get("name"):
             body["name"] = args["name"]
-        rid = uuid.uuid4().hex
-        slot = pending[rid] = {"event": threading.Event(), "reply": None}
         try:
-            send("plugin", id=rid, body=body)
-            slot["event"].wait(timeout)
-        except (OSError, ValueError, EOFError) as exc:
-            slot["reply"] = {"error": f"host unreachable ({type(exc).__name__})"}
-        finally:
-            pending.pop(rid, None)
-        reply = slot["reply"] or {"error": "host did not answer (run cancelled or timed out)"}
-        if reply.get("error"):
-            msg = f"[Error] plugin_control: {reply['error']}"
-        else:
-            msg = json.dumps(reply.get("result"), ensure_ascii=False, indent=1)
+            msg = json.dumps(host.call("plugin_control", body, timeout), ensure_ascii=False, indent=1)
+        except RpcError as exc:
+            msg = f"[Error] plugin_control: {exc}"
         return StepOutcome(msg, next_prompt=msg + "\n")
 
     return tools.register(PLUGIN_TOOL, plugin_control)
@@ -103,6 +194,9 @@ def run_worker(connection, recipe, payload):
             raise ValueError("workspace is no longer available")
         os.chdir(workspace)
         runtime.ctx.provide("run.context", {key: payload[key] for key in ("session_id", "run_id")})
+        # Provided before any plugin mounts so worker plugins can inject it.
+        host = WorkerHost(send, payload["run_id"], payload["session_id"])
+        runtime.ctx.provide("run.host", host)
         for manifest, config in recipe:
             runtime.add(manifest.to_plugin(), config)
         failed = [name for name, status in runtime.status().items() if status["state"] != "active"]
@@ -129,8 +223,6 @@ def run_worker(connection, recipe, payload):
         for name in EVENTS:
             runtime.ctx.on(name, lambda data, event=name: send("event", name=event, data=data))
 
-        pending = {}
-
         def control():
             try:
                 while True:
@@ -138,19 +230,17 @@ def run_worker(connection, recipe, payload):
                     kind = packet.get("kind")
                     if kind == "cancel":
                         break
-                    if kind == "plugin_result":
-                        slot = pending.get(packet.get("id"))
-                        if slot is not None:
-                            slot["reply"] = packet
-                            slot["event"].set()
+                    if kind in ("rpc_result", "plugin_result"):
+                        host._resolve(packet)
+                    elif kind == "push":
+                        host._push(packet)
             except (EOFError, OSError):
                 pass
-            for slot in list(pending.values()):
-                slot["event"].set()
+            host._close()
             agent.abort()
 
         threading.Thread(target=control, name="run-control", daemon=True).start()
-        _register_plugin_tool(runtime.ctx.get("ga.tools"), send, pending)
+        _register_plugin_tool(runtime.ctx.get("ga.tools"), host)
         # Snapshot the worker's actual selection after restore/apply_effort, not
         # the host's currently selected session or its model defaults.
         backend = getattr(getattr(raw, "llmclient", None), "backend", None)

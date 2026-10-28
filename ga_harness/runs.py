@@ -22,6 +22,25 @@ TERMINAL = ("done", "error", "aborted", "interrupted")
 # High-frequency fragments; the final assistant.text/turn events are durable.
 STREAM_EVENTS = ("assistant.delta", "agent.chunk")
 STREAM_FLUSH_SECONDS = 1.0
+# Worker-plugin events: broadcast and logged, never folded into the transcript.
+PLUGIN_EVENT_PREFIX = "plugin."
+
+
+class SessionBusy(RuntimeError):
+    """The session already has an active run."""
+
+
+class RunLimitReached(RuntimeError):
+    """The host's parallel run limit is reached."""
+
+
+class RpcCall:
+    """One in-flight worker -> host request, handed to a registered RPC handler."""
+
+    def __init__(self, service, run_id, session_id, body):
+        self.service, self.run_id, self.session_id, self.body = service, run_id, session_id, body
+        # Set when the calling run finishes or is cancelled; long handlers should poll it.
+        self.cancelled = threading.Event()
 
 
 class Runs:
@@ -31,6 +50,8 @@ class Runs:
         self.sessions, self.workspaces, self.recipe = sessions, workspaces, recipe
         # Host-side handler for plugin requests raised by a worker's agent tool.
         self.plugin_handler = plugin_handler
+        self.rpc = {}
+        self.worker_plugins = {}
         self.lock = sessions.lock
         self.emit = emit or (lambda name, data: None)
         self.max_parallel = max(1, int(max_parallel))
@@ -39,7 +60,87 @@ class Runs:
         self.worker = worker
         self.live = {}
         self.closed = False
+        if plugin_handler is not None:
+            self.register_rpc("plugin_control", lambda body, call: plugin_handler(body))
         self._init()
+
+    # -- extension points for plugins ------------------------------------------------
+
+    def register_rpc(self, service, handler):
+        """Serve ``host.call(service, body)`` from worker plugins.
+
+        ``handler(body, call)`` runs on its own thread, so it may block (start and
+        wait for other runs, ask the UI, ...). ``call`` is an :class:`RpcCall`. Its
+        return value must be picklable; exceptions are reported to the caller.
+        Returns a disposer.
+        """
+        if not isinstance(service, str) or not service.strip():
+            raise ValueError("rpc service name is required")
+        if not callable(handler):
+            raise TypeError("rpc handler must be callable")
+        with self.lock:
+            if service in self.rpc:
+                raise ValueError(f"rpc service {service!r} is already registered")
+            self.rpc[service] = handler
+
+        def dispose():
+            with self.lock:
+                if self.rpc.get(service) is handler:
+                    del self.rpc[service]
+        return dispose
+
+    def register_worker_plugin(self, name):
+        """Mount an active execution plugin in every subsequently started worker.
+
+        Equivalent to listing it in ``run-store.worker_plugins``, but owned by the
+        calling plugin. Host/UI/storage plugins are still refused. Returns a disposer.
+        """
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("plugin name is required")
+        with self.lock:
+            self.worker_plugins[name] = self.worker_plugins.get(name, 0) + 1
+
+        def dispose():
+            with self.lock:
+                count = self.worker_plugins.get(name, 0) - 1
+                if count > 0:
+                    self.worker_plugins[name] = count
+                else:
+                    self.worker_plugins.pop(name, None)
+        return dispose
+
+    def extra_worker_plugins(self):
+        with self.lock:
+            return set(self.worker_plugins)
+
+    def push(self, run_id, topic, data=None):
+        """Deliver ``(topic, data)`` to the run's worker (``host.on_push`` listeners).
+
+        Returns False when the run is no longer live in this host.
+        """
+        if not isinstance(topic, str) or not topic:
+            raise ValueError("push topic is required")
+        with self.lock:
+            live = self.live.get(run_id)
+        if live is None:
+            return False
+        return self._send(live, {"kind": "push", "topic": topic, "data": data})
+
+    def wait(self, run_id, timeout=None):
+        """Block until the run is terminal (or ``timeout`` elapses); return its record."""
+        with self.lock:
+            live = self.live.get(run_id)
+        if live is not None:
+            live["finished"].wait(timeout)
+        return self.get(run_id)
+
+    def _send(self, live, packet):
+        try:
+            with live["send_lock"]:
+                live["connection"].send(packet)
+            return True
+        except (BrokenPipeError, EOFError, OSError, ValueError):
+            return False
 
     def _init(self):
         with self.lock:
@@ -166,11 +267,11 @@ class Runs:
             if self.closed:
                 raise RuntimeError("run service is stopping")
             if len(self.live) >= self.max_parallel:
-                raise RuntimeError("parallel run limit reached")
+                raise RunLimitReached("parallel run limit reached")
             session = self.sessions.get(session_id) if session_id is not None else self.sessions.current()
             sid = session["id"]
             if self.active_for(sid):
-                raise RuntimeError("this session already has an active run")
+                raise SessionBusy("this session already has an active run")
             scope = self.workspaces.context(sid)
             recipe = self.recipe()
             preset_id = (session["state"] or {}).get("preset")
@@ -208,7 +309,8 @@ class Runs:
             live = {"process": process, "connection": parent, "messages": messages,
                     "state": copy.deepcopy(session["state"]), "cancel_at": None,
                     "thread": None, "started": time.monotonic(), "timeout": timeout,
-                    "session_id": sid, "seq": started_seq, "dirty": False, "flushed": time.monotonic()}
+                    "session_id": sid, "seq": started_seq, "dirty": False, "flushed": time.monotonic(),
+                    "send_lock": threading.Lock(), "calls": {}, "finished": threading.Event()}
             self.live[rid] = live
             self.sessions.active.add(sid)
             start_error = None
@@ -241,14 +343,26 @@ class Runs:
         name, data = packet.get("name"), packet.get("data")
         if not isinstance(name, str):
             return
+        if name.startswith(PLUGIN_EVENT_PREFIX):
+            # Durable and broadcast, but never folded into the visible transcript.
+            with self.lock:
+                live = self.live.get(rid)
+                if live is None:
+                    return
+                with self.sessions._db() as db:
+                    seq = self._append(db, rid, "run.event", {"name": name, "data": data})
+                record = {"id": rid, "session_id": live["session_id"], "seq": seq}
+                message = live["messages"][-1]
+            self._notify("run.event", record, name=name, data=data, message=message)
+            return
         with self.lock:
             live = self.live.get(rid)
             if live is None:
                 return
             # Output is accumulated in place; only this run's monitor thread mutates it.
             messages = live["messages"]
-            apply_event(messages, name, data)
             now = time.monotonic()
+            apply_event(messages, name, data)
             if name in STREAM_EVENTS:
                 # Stream fragments are broadcast with a live sequence number but are
                 # not stored as event rows. The transcript is checkpointed at most
@@ -293,21 +407,42 @@ class Runs:
                 db.execute("UPDATE runs SET status=?,ended=?,error=? WHERE id=?", (status, time.time(), error, rid))
             self.sessions.active.discard(record["session_id"])
             del self.live[rid]
+            for call in list(live["calls"].values()):
+                call.cancelled.set()
+            live["finished"].set()
             record = self.get(rid)
         self._notify("run.finished", record, run=record, message=messages[-1])
 
-    def _plugin_request(self, connection, packet):
-        reply = {"kind": "plugin_result", "id": packet.get("id")}
-        try:
-            if self.plugin_handler is None:
-                raise RuntimeError("plugin control is not available in this host")
-            reply["result"] = self.plugin_handler(packet.get("body") or {})
-        except Exception as exc:  # reported back to the agent, never fatal to the run
-            reply["error"] = f"{type(exc).__name__}: {exc}"
-        try:
-            connection.send(reply)
-        except (OSError, ValueError, EOFError):
-            pass
+    def _rpc_request(self, rid, live, packet):
+        # Legacy ``plugin`` packets are plugin_control requests.
+        legacy = packet.get("kind") == "plugin"
+        service = "plugin_control" if legacy else packet.get("service")
+        call_id = packet.get("id")
+        call = RpcCall(service, rid, live["session_id"], packet.get("body"))
+        with self.lock:
+            handler = self.rpc.get(service) if isinstance(service, str) else None
+            live["calls"][call_id] = call
+        if live["cancel_at"] is not None:
+            call.cancelled.set()
+
+        def serve():
+            reply = {"kind": "plugin_result" if legacy else "rpc_result", "id": call_id}
+            try:
+                if handler is None:
+                    raise LookupError(f"rpc service {service!r} is not available in this host")
+                reply["result"] = handler(call.body, call)
+            except Exception as exc:  # reported back to the caller, never fatal to the run
+                reply["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                with self.lock:
+                    live["calls"].pop(call_id, None)
+            if not self._send(live, reply) and "result" in reply:
+                # Unpicklable results must still answer the caller.
+                self._send(live, {"kind": reply["kind"], "id": call_id,
+                                  "error": "TypeError: rpc result could not be sent"})
+
+        # Handlers may block; the monitor must keep draining events and cancels.
+        threading.Thread(target=serve, name=f"run-rpc-{rid[:8]}", daemon=True).start()
 
     def _monitor(self, rid, live):
         connection, process = live["connection"], live["process"]
@@ -317,8 +452,8 @@ class Runs:
                     packet = connection.recv()
                     if packet.get("kind") == "event":
                         self._event(rid, packet)
-                    elif packet.get("kind") == "plugin":
-                        self._plugin_request(connection, packet)
+                    elif packet.get("kind") in ("rpc", "plugin"):
+                        self._rpc_request(rid, live, packet)
                     elif packet.get("kind") == "done":
                         self._finish(rid, "done", state=packet.get("state"), text=packet.get("text"))
                         break
@@ -367,10 +502,9 @@ class Runs:
                 self._append(db, run_id, "run.cancelling", {"status": "cancelling"})
                 db.execute("UPDATE runs SET status='cancelling' WHERE id=?", (run_id,))
             live["cancel_at"] = time.monotonic()
-            try:
-                live["connection"].send({"kind": "cancel"})
-            except (BrokenPipeError, EOFError, OSError):
-                pass
+            for call in list(live["calls"].values()):
+                call.cancelled.set()
+            self._send(live, {"kind": "cancel"})
             record = self.get(run_id)
         self._notify("run.cancelling", record, run=record)
         return record

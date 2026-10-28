@@ -122,3 +122,45 @@ storage plugins are never touched.
   accepts `value` (the key the React picker sends) besides `effort`.
 - Process isolation is not a sandbox: `disable_tools` only removes tools from the
   agent; it does not restrict what the worker process may do.
+
+## Plugin extension points
+
+These hooks let a third-party plugin build multi-run features (for example an
+agent team: a lead run that starts, messages and waits for member runs) without
+patching run-store. The `runs` capability is the `Runs` service.
+
+Host side (any plugin that injects `runs`):
+
+- `runs.register_rpc(service, handler)` -> disposer. Serves `host.call(service, body)`
+  from workers. `handler(body, call)` runs on its own thread per request, so it may
+  block (start other runs, `runs.wait`, ask the UI). `call` is an `RpcCall` with
+  `service`, `run_id`, `session_id`, `body` and `cancelled` (an Event set when the
+  calling run finishes or is cancelled). The return value must be picklable;
+  exceptions are returned to the worker as errors. A service name can be registered
+  once; the built-in `plugin_control` service is registered this way.
+- `runs.register_worker_plugin(name)` -> disposer. Mounts an execution plugin in
+  every worker started afterwards (reference counted), in addition to
+  `run-store.worker_plugins`. Host/UI/storage plugins are still refused.
+- `runs.push(run_id, topic, data)` delivers a message to a live worker's
+  `host.on_push` listeners; returns False if the run is not live in this host.
+- `runs.wait(run_id, timeout=None)` blocks until the run is terminal or the timeout
+  elapses and returns its record.
+- `runs.start` raises `SessionBusy` when the session already has an active run and
+  `RunLimitReached` at the parallel limit (both are `RuntimeError` subclasses, so
+  existing callers are unaffected).
+
+Worker side (an execution plugin mounted in the worker):
+
+- `run.context` -> `{"session_id", "run_id"}`.
+- `run.host` -> `WorkerHost`: `call(service, body=None, timeout=60.0)` blocks for the
+  host reply and raises `RpcError` on refusal, timeout, cancellation or a broken pipe;
+  `emit(name, data)` sends a `plugin.*` run event (the prefix is added when missing);
+  `on_push(topic, fn)` -> disposer (topic listeners get `fn(data)`, `"*"` listeners get `fn(topic, data)`; all run on one
+  dispatch thread); `cancelled` is set when the host cancels the run.
+
+`plugin.*` run events are persisted in `run_events` and broadcast as `run.event`
+like other events, but are never folded into the session transcript. Workers using
+the previous `plugin` request packet still receive a `plugin_result` reply.
+
+Status: source-reviewed and byte-compiled only; `tests/test_run_host.py` covers the
+worker-side `WorkerHost` and has not been executed in this delivery.
