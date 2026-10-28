@@ -211,7 +211,8 @@ async function ensureGaRoot() {
   if (isGaRoot(value)) return true;
   const reason = value
     ? `The configured GenericAgent folder is not usable:\n${value}\n(from ${source}; agentmain.py not found)`
-    : 'No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root).';
+    : `No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root)${
+      backend.bundledGaError ? `, and the bundled copy could not be prepared:\n${backend.bundledGaError}` : '.'}`;
   return pickGaRoot(reason, value);
 }
 

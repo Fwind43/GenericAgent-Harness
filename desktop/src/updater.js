@@ -2,7 +2,8 @@
 //
 // Every "v*" release carries:
 //   update.json                      {"version", "min_shell", "app": {"file", "sha256", "size"}}
-//   ga-harness-app-<version>.zip     the ga_harness package only (plugins, ui-web dist, ...)
+//   ga-harness-app-<version>.zip     the ga_harness package (plugins, ui-web dist, ...) plus
+//                                    genericagent/, the GA source pinned in desktop/GA_REF
 //   installers + latest.yml / latest-linux.yml + *.blockmap (electron-updater, generic feed)
 //
 // Most releases only change code: when this shell is new enough (min_shell <= shell version)

@@ -1,6 +1,7 @@
 // Stages what electron-builder ships as extraResources:
 //   stage/python  standalone CPython (python-build-standalone via `uv python install`)
-//   stage/py      the ga_harness package, including the built ui-web dist and plugin bundles
+//   stage/py      the ga_harness package, including the built ui-web dist and plugin bundles,
+//                 plus stage/py/genericagent: the GA source pinned in desktop/GA_REF
 // Requires uv on PATH and a prior `npm run build` in ../frontend.
 // GAH_DESKTOP_PYTHON_VERSION picks the CPython minor (default 3.12).
 import { spawnSync } from 'node:child_process';
@@ -52,10 +53,18 @@ const lib = process.platform === 'win32' ? path.join(pyDir, 'Lib') : path.join(p
 for (const name of ['test', 'idlelib', 'turtledemo']) fs.rmSync(path.join(lib, name), { recursive: true, force: true });
 // uv marks managed interpreters EXTERNALLY-MANAGED; plugins install into their own venvs anyway.
 
-// 3. Smoke: the staged interpreter imports the staged package.
+// 3. Bundled GenericAgent source + its core dependencies in the bundled interpreter, so a
+//    fresh install runs without the user downloading GA or creating a venv.
 const exe = process.platform === 'win32' ? path.join(pyDir, 'python.exe') : path.join(pyDir, 'bin', 'python3');
 if (!fs.existsSync(exe)) die(`interpreter not found at ${exe}`);
-run(exe, ['-c', 'import sys, ga_harness.cli, ga_harness.launcher; print("[prepare] ok", sys.version.split()[0], ga_harness.__file__)'], {
+const req = path.join(stage, 'ga-requirements.txt');
+run(exe, [path.join(here, 'fetch_ga.py'), path.join(stage, 'py'), '--requirements', req]);
+run('uv', ['pip', 'install', '--python', exe, '--break-system-packages', '--no-cache', '-r', req]);
+fs.rmSync(req, { force: true });
+
+// 4. Smoke: the staged interpreter imports the staged package and GA's dependencies.
+if (!fs.existsSync(path.join(stage, 'py', 'genericagent', 'agentmain.py'))) die('bundled GenericAgent source missing');
+run(exe, ['-c', 'import sys, ga_harness.cli, ga_harness.launcher, requests, bs4, bottle, aiohttp; print("[prepare] ok", sys.version.split()[0], ga_harness.__file__)'], {
   env: { ...process.env, PYTHONPATH: path.join(stage, 'py'), PYTHONNOUSERSITE: '1' },
   cwd: path.join(stage, 'py'),
 });

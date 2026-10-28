@@ -1,0 +1,4 @@
+# GenericAgent source bundled with the desktop app (and with every code package).
+# Bump `ref` to a tested upstream commit; desktop/scripts/fetch_ga.py reads this file.
+repo = lsdefine/GenericAgent
+ref = e4d956f0207a2d268704634473196353946481bc

@@ -133,6 +133,60 @@ function isGaRoot(dir) {
   return typeof dir === 'string' && dir !== '' && fs.existsSync(path.join(dir, 'agentmain.py'));
 }
 
+// ---- Bundled GenericAgent ---------------------------------------------------------------
+// Packaged builds (and code packages) carry GA's source at <code>/genericagent, pinned by
+// desktop/GA_REF. GA writes its state next to its code (mykey.py, memory/, temp/), so the
+// shell runs a copy in <userData>/GenericAgent rather than the read-only install dir. The
+// copy is refreshed whenever the shipped commit changes: code files are overwritten, user
+// state is kept — mykey.py is never touched, existing memory/ files are not replaced, and
+// files that only exist in the copy (temp/, sessions, user additions) are never deleted.
+
+const GA_REF_FILE = '.gah-ga-ref';
+const EMPTY_MYKEY = `# GenericAgent model configuration.
+# Add models in GenericAgent-Harness: Settings > Models (they are written to this file).
+`;
+
+function readGaRef(dir) {
+  try { return fs.readFileSync(path.join(dir, GA_REF_FILE), 'utf8').trim() || null; } catch { return null; }
+}
+
+function bundledGaDir(userData) { return path.join(userData, 'GenericAgent'); }
+
+function copyGaTree(src, dest, rel = '') {
+  for (const ent of fs.readdirSync(path.join(src, rel), { withFileTypes: true })) {
+    const r = rel ? path.join(rel, ent.name) : ent.name;
+    if (ent.isDirectory()) {
+      fs.mkdirSync(path.join(dest, r), { recursive: true });
+      copyGaTree(src, dest, r);
+      continue;
+    }
+    if (!ent.isFile() || r === GA_REF_FILE) continue;
+    const top = r.split(path.sep)[0];
+    const out = path.join(dest, r);
+    if (r === 'mykey.py' || top === 'temp') continue;
+    if (top === 'memory' && fs.existsSync(out)) continue;
+    fs.copyFileSync(path.join(src, r), out);
+  }
+}
+
+// Ensures <userData>/GenericAgent matches the GA shipped with the running code and returns
+// it; null when this code carries no GA (running from source, or an older code package).
+function syncBundledGa(codeDir, userData) {
+  const src = path.join(codeDir, 'genericagent');
+  if (!isGaRoot(src)) return null;
+  const dest = bundledGaDir(userData);
+  const ref = readGaRef(src);
+  if (!(ref && readGaRef(dest) === ref && isGaRoot(dest))) {
+    fs.mkdirSync(dest, { recursive: true });
+    copyGaTree(src, dest);
+    // Written last: an interrupted copy is retried on the next start.
+    fs.writeFileSync(path.join(dest, GA_REF_FILE), `${ref || 'unknown'}\n`, 'utf8');
+  }
+  const mykey = path.join(dest, 'mykey.py');
+  if (!fs.existsSync(mykey)) fs.writeFileSync(mykey, EMPTY_MYKEY, 'utf8');
+  return dest;
+}
+
 function harnessConfigPath() {
   return path.join(process.env.GAH_HOME || path.join(os.homedir(), '.ga-harness'), 'config.toml');
 }
@@ -204,7 +258,20 @@ class Backend {
     this.tail = [];          // last output lines for error dialogs
   }
 
-  gaRoot() { return configuredGaRoot(this.settings); }
+  // The configured checkout wins; otherwise the bundled copy (synced on first use).
+  gaRoot() {
+    const configured = configuredGaRoot(this.settings);
+    if (configured.value) return configured;
+    if (this.bundledGa === undefined) {
+      try {
+        this.bundledGa = syncBundledGa(this.code.dir, this.userData);
+      } catch (err) {
+        this.bundledGa = null;
+        this.bundledGaError = err.message;
+      }
+    }
+    return this.bundledGa ? { value: this.bundledGa, source: 'bundled' } : configured;
+  }
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
 
@@ -246,6 +313,10 @@ class Backend {
     // desktop.json ga_root wins over $GA_ROOT / config.toml; an explicit --ga-root arg wins over both.
     const hasArg = this.settings.args.some((a) => a === '--ga-root' || a.startsWith('--ga-root='));
     if (this.settings.gaRoot && !hasArg) args.push('--ga-root', path.resolve(expandHome(this.settings.gaRoot)));
+    else if (!hasArg) {
+      const ga = this.gaRoot();
+      if (ga.source === 'bundled') args.push('--ga-root', ga.value);
+    }
     this.child = spawn(this.settings.python, args, {
       cwd: this.settings.cwd,
       env,
@@ -311,6 +382,6 @@ class Backend {
 }
 
 module.exports = {
-  Backend, isGaRoot, editSettingsFile, readSettingsFile,
+  Backend, isGaRoot, editSettingsFile, readSettingsFile, syncBundledGa, bundledGaDir,
   compareVersions, parseVersion, readCodeVersion, appDir, readAppState, writeAppState,
 };
