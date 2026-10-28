@@ -4,7 +4,7 @@ import { ModelPicker } from './ModelPicker';
 import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
 import type { FetchModels, RemoteModel } from './RemoteModels';
-import { endpoint, sections as modelSections, readonlyText, sectionKey } from './helpers';
+import { endpoint, sections as modelSections, readonlyText, sectionKey, providerNames } from './helpers';
 
 type Edit = { kind: 'model' | 'provider'; id?: string; serial: number };
 export function Models({ api }: { api: PluginAPI }) {
@@ -116,6 +116,7 @@ export function Models({ api }: { api: PluginAPI }) {
     api.notice(T('\u5df2\u5f52\u7ec4\u4e3a ', 'Grouped into ') + next.config.providers.length + T(' \u4e2a\u670d\u52a1\u5546', ' providers'));
   }, setError); };
   const locked = busy || !config?.writable, browsing = working || changing;
+  const names = config ? providerNames(config) : new Map<string, string>();
   const isModel = edit.kind === 'model';
   const title = isModel ? entry?.values.name || entry?.values.model || entry?.key : provider?.values.name || provider?.id;
   return <>
@@ -143,16 +144,16 @@ export function Models({ api }: { api: PluginAPI }) {
                 <button type="button" className="model-add" disabled={locked} onClick={() => choose(edit.kind)}>{isModel ? T('+ \u65b0\u589e\u6a21\u578b', '+ Add model') : T('+ \u65b0\u589e\u670d\u52a1\u5546', '+ Add provider')}</button>
               </div>
               <div className="model-list" aria-label={isModel ? T('\u6a21\u578b\u5217\u8868', 'Model list') : T('\u670d\u52a1\u5546\u5217\u8868', 'Provider list')}>
-                {isModel ? entries.map(item => <button key={item.key} type="button" className="model-list-item" disabled={browsing} aria-pressed={edit.id === item.key} onClick={() => { if (edit.id !== item.key || !detail) choose('model', item.key); }}><strong>{item.values.name || item.values.model || item.key}</strong><small>{item.values.model || item.key}</small><small>{groups.find(candidate => candidate.id === sectionKey(item))?.title}</small></button>)
-                  : providers.map(item => <button key={item.id} type="button" className="model-list-item" disabled={browsing} aria-pressed={edit.id === item.id} onClick={() => { if (edit.id !== item.id || !detail) choose('provider', item.id); }}><strong>{item.values.name || item.id}</strong><small>{endpoint(item.values.apibase)}</small><small>{config.entries.filter(model => model.provider === item.id).length} {T('\u4e2a\u6a21\u578b', 'models')}</small></button>)}
+                {isModel ? entries.map(item => <button key={item.key} type="button" className="model-list-item" disabled={browsing} aria-pressed={edit.id === item.key} onClick={() => { if (edit.id !== item.key || !detail) choose('model', item.key); }}><strong>{item.values.name || item.values.model || item.key}</strong>{item.values.name && item.values.model && item.values.name !== item.values.model && <small className="model-list-id">{item.values.model}</small>}<small>{groups.find(candidate => candidate.id === sectionKey(item))?.title}</small></button>)
+                  : providers.map(item => <button key={item.id} type="button" className="model-list-item" disabled={browsing} aria-pressed={edit.id === item.id} onClick={() => { if (edit.id !== item.id || !detail) choose('provider', item.id); }}><strong>{names.get(item.id)}</strong><small>{endpoint(item.values.apibase)}</small><small>{config.entries.filter(model => model.provider === item.id).length} {T('\u4e2a\u6a21\u578b', 'models')}</small></button>)}
                 {!(isModel ? entries.length : providers.length) && <p className="model-empty">{query ? T('\u6ca1\u6709\u5339\u914d\u9879\uff0c\u8bd5\u8bd5\u5176\u4ed6\u5173\u952e\u8bcd\u3002', 'No matches. Try another search.') : isModel ? T('\u8fd8\u6ca1\u6709\u6a21\u578b\uff0c\u70b9\u51fb\u4e0a\u65b9\u65b0\u589e\u3002', 'No models yet. Add one above.') : T('\u8fd8\u6ca1\u6709\u670d\u52a1\u5546\u3002\u65b0\u589e\u540e\u53ef\u5728\u591a\u4e2a\u6a21\u578b\u95f4\u5171\u7528\u5730\u5740\u548c\u5bc6\u94a5\u3002', 'No providers yet. Add one to share a URL and key across models.')}</p>}
               </div>
-              <details className="model-source"><summary>{T('\u914d\u7f6e\u6765\u6e90', 'Configuration source')}{config.format ? ' \u00b7 ' + config.format : ''}</summary><p>{config.source || T('\u5f53\u524d\u8fd0\u884c\u914d\u7f6e', 'Current runtime configuration')}</p></details>
+              <details className="model-source"><summary>{T('\u914d\u7f6e\u6587\u4ef6', 'Config file')}{config.format ? ' \u00b7 ' + config.format : ''}</summary><p>{T('\u6a21\u578b\u548c\u670d\u52a1\u5546\u76f4\u63a5\u4fdd\u5b58\u5728 GA \u7684 mykey.py\uff0c\u4fdd\u5b58\u540e\u7acb\u5373\u751f\u6548\u3002', 'Models and providers are saved directly to GA mykey.py and apply immediately.')}</p><code>{config.source || T('\u5f53\u524d\u8fd0\u884c\u914d\u7f6e', 'Current runtime configuration')}</code></details>
             </aside>
             <section className="model-editor" aria-label={isModel ? T('\u6a21\u578b\u7f16\u8f91\u5668', 'Model editor') : T('\u670d\u52a1\u5546\u7f16\u8f91\u5668', 'Provider editor')} aria-busy={working}>
               <div className="model-editor-head">
                 <button type="button" className="secondary model-back" disabled={browsing} onClick={() => { void navigate(() => select(edit.kind, edit.id, false)); }}>{T('\u8fd4\u56de\u5217\u8868', 'Back to list')}</button>
-                <div><span className="model-eyebrow">{isModel ? T('\u6a21\u578b', 'Model') : T('\u670d\u52a1\u5546', 'Provider')}</span><h3 ref={heading} tabIndex={-1}>{title || (isModel ? T('\u65b0\u589e\u6a21\u578b', 'Add model') : T('\u65b0\u589e\u670d\u52a1\u5546', 'Add provider'))}</h3></div>
+                <div><span className="model-eyebrow">{isModel ? (entry ? T('\u7f16\u8f91\u6a21\u578b', 'Edit model') : T('\u65b0\u6a21\u578b', 'New model')) : (provider ? T('\u7f16\u8f91\u670d\u52a1\u5546', 'Edit provider') : T('\u65b0\u670d\u52a1\u5546', 'New provider'))}</span><h3 ref={heading} tabIndex={-1}>{title || (isModel ? T('\u65b0\u589e\u6a21\u578b', 'Add model') : T('\u65b0\u589e\u670d\u52a1\u5546', 'Add provider'))}</h3></div>
               </div>
               {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} />
                 : <ProviderForm key={edit.serial} entry={provider} used={provider ? config.entries.filter(item => item.provider === provider.id).length : 0} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onModels={viewModels}

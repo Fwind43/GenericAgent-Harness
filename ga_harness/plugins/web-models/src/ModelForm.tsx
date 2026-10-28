@@ -1,10 +1,13 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { T, confirmDialog, type ModelConfig, type ModelEntry, type ModelValues } from '@gah/sdk';
-import { endpoint } from './helpers';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { T, confirmDialog, matches, type ModelConfig, type ModelEntry, type ModelValues } from '@gah/sdk';
+import { endpoint, providerNames } from './helpers';
 import { useModelOptions, type FetchModels } from './RemoteModels';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;
+}
+export function Section({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
+  return <section className="model-section"><header><h4>{title}</h4>{hint && <p>{hint}</p>}</header><div className="model-grid">{children}</div></section>;
 }
 export function useDraft(value: unknown, onDirtyChange: (dirty: boolean) => void) {
   const initial = useRef(JSON.stringify(value));
@@ -53,7 +56,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
   entry?: ModelEntry; config: ModelConfig; initialProvider?: string; disabled: boolean; onSave: SaveModel;
   onDirtyChange: (dirty: boolean) => void; onReset: () => void; onProvider: (id: string) => void; fetchModels: FetchModels;
 }) {
-  const options = useModelOptions(fetchModels), listId = useId();
+  const options = useModelOptions(fetchModels), names = providerNames(config);
   const defaultProtocol = config.providers.find(item => item.id === initialProvider)?.values.protocol || 'oai';
   const [protocol, setProtocol] = useState(entry?.protocol || defaultProtocol);
   const [id, setId] = useState(entry?.key || 'native_' + protocol + '_config_' + Date.now());
@@ -61,9 +64,14 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
   const [name, setName] = useState(entry?.values.name || ''), [model, setModel] = useState(entry?.values.model || '');
   const [base, setBase] = useState(entry?.values.apibase || ''), [secret, setSecret] = useState('');
   const [context, setContext] = useState(String(entry?.values.context_win ?? ''));
+  const [suggest, setSuggest] = useState(false);
   const shared = config.providers.find(item => item.id === provider);
   const dirty = useDraft([protocol, id, provider, name, model, base, secret, context], onDirtyChange);
   const changeProtocol = (value: string) => { setProtocol(value); setId('native_' + value + '_config_' + Date.now()); };
+  const canFetch = !!provider || !!base.trim() || !!entry;
+  const fetchList = () => { setSuggest(true); void options.load(provider ? { provider } : { key: entry?.key, apibase: base.trim(), apikey: secret, protocol }); };
+  const exact = options.items.some(item => item.id === model);
+  const visible = options.items.filter(item => !model || exact || matches(model, item.id, item.name)).slice(0, 50);
   return <form className="model-form" onInvalidCapture={event => (event.target as HTMLElement).closest('details')?.setAttribute('open', '')} onSubmit={event => {
     event.preventDefault(); if (disabled) return;
     const values: ModelValues & { provider?: string } = provider ? { name: name.trim(), model: model.trim(), provider }
@@ -72,26 +80,43 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
     onSave('save', id.trim(), values);
   }}>
     <div className="model-form-content">
-      <div className="model-grid">
-        <Field label={T('\u6a21\u578b ID', 'Model ID')}><div className="model-id-row"><input required list={listId} value={model} disabled={disabled} autoFocus={!entry} placeholder="gpt-4.1 / claude-sonnet-4" spellCheck={false} onChange={event => setModel(event.target.value)} /><button type="button" className="secondary" disabled={disabled || options.loading} title={T('\u4ece\u670d\u52a1\u5546\u83b7\u53d6\u53ef\u7528\u6a21\u578b', 'Fetch available models from the provider')} onClick={() => { void options.load(provider ? { provider } : { key: entry?.key, apibase: base.trim(), apikey: secret, protocol }); }}>{options.loading ? T('\u83b7\u53d6\u4e2d...', 'Fetching...') : T('\u83b7\u53d6\u5217\u8868', 'Fetch list')}</button></div><datalist id={listId}>{options.items.map(item => <option key={item.id} value={item.id}>{item.name && item.name !== item.id ? item.name : undefined}</option>)}</datalist>{options.error ? <small className="model-error">{options.error}</small> : options.items.length ? <small>{T('\u5df2\u83b7\u53d6 ' + options.items.length + ' \u4e2a\u6a21\u578b\uff0c\u8f93\u5165\u53ef\u7b5b\u9009', options.items.length + ' models fetched; type to filter')}</small> : null}</Field>
-        <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input value={name} disabled={disabled} maxLength={120} placeholder={T('\u53ef\u9009\uff0c\u9ed8\u8ba4\u4f7f\u7528\u6a21\u578b ID', 'Optional; defaults to model ID')} onChange={event => setName(event.target.value)} /></Field>
+      <Section title={T('\u8fde\u63a5', 'Connection')} hint={T('\u6a21\u578b\u4ece\u54ea\u91cc\u8c03\u7528\u3002\u9009\u62e9\u670d\u52a1\u5546\u53ef\u5171\u7528\u5730\u5740\u548c\u5bc6\u94a5\u3002', 'Where this model is called. Pick a provider to share its URL and key.')}>
         <Field label={T('\u670d\u52a1\u5546', 'Provider')}><select value={provider} disabled={disabled} onChange={event => {
           const value = event.target.value; setProvider(value);
           if (!entry && value) changeProtocol(config.providers.find(item => item.id === value)?.values.protocol || 'oai');
-        }}><option value="">{T('\u72ec\u7acb\u914d\u7f6e', 'Independent configuration')}</option>{config.providers.map(item => <option key={item.id} value={item.id}>{item.values.name || item.id}</option>)}</select></Field>
+        }}><option value="">{T('\u4e0d\u4f7f\u7528\u670d\u52a1\u5546\uff08\u5355\u72ec\u586b\u5199\uff09', 'None (enter URL and key)')}</option>{config.providers.map(item => <option key={item.id} value={item.id}>{names.get(item.id)}</option>)}</select></Field>
         <Protocol value={protocol} disabled={disabled || !!entry} onChange={changeProtocol} />
         {shared ? <div className="model-connection wide">
-          <div><strong>{shared.values.name || shared.id}</strong><span>{endpoint(shared.values.apibase) || T('\u5730\u5740\u5df2\u9690\u85cf', 'URL hidden')}{' \u00b7 '}{shared.has_key ? T('\u5bc6\u94a5\u5df2\u914d\u7f6e', 'Key configured') : T('\u672a\u914d\u7f6e\u5bc6\u94a5', 'No key')}</span></div>
+          <div><strong>{names.get(shared.id)}</strong><span>{endpoint(shared.values.apibase)}{' \u00b7 '}{shared.has_key ? T('\u5bc6\u94a5\u5df2\u914d\u7f6e', 'Key configured') : T('\u672a\u914d\u7f6e\u5bc6\u94a5', 'No key')}</span></div>
           <button type="button" className="secondary" disabled={disabled} onClick={() => onProvider(shared.id)}>{T('\u7f16\u8f91\u670d\u52a1\u5546', 'Edit provider')}</button>
-          <small>{T('\u5730\u5740\u548c\u5bc6\u94a5\u7531\u670d\u52a1\u5546\u7edf\u4e00\u7ba1\u7406\uff0c\u534f\u8bae\u4ecd\u5c5e\u4e8e\u6b64\u6a21\u578b\u3002', 'The provider manages the URL and key; this model keeps its own protocol.')}</small>
         </div> : <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} />}
-      </div>
-      {!shared && <p className="model-help">{T('\u591a\u4e2a\u6a21\u578b\u5171\u7528\u5730\u5740\u548c\u5bc6\u94a5\uff1f', 'Sharing a URL and key across models?')} <button type="button" className="model-text-button" disabled={disabled} onClick={() => onProvider('')}>{T('\u53bb\u7ba1\u7406\u670d\u52a1\u5546', 'Manage providers')}</button></p>}
+      </Section>
+      <Section title={T('\u6a21\u578b', 'Model')}>
+        <div className="model-field wide">
+          <label htmlFor="model-id-input">{T('\u6a21\u578b ID', 'Model ID')}</label>
+          <div className="model-id-row">
+            <input id="model-id-input" required value={model} disabled={disabled} autoFocus={!entry} autoComplete="off" placeholder="gpt-4.1 / claude-sonnet-4" spellCheck={false}
+              onFocus={() => setSuggest(true)} onChange={event => { setModel(event.target.value); setSuggest(true); }} />
+            <button type="button" className="secondary" disabled={disabled || options.loading || !canFetch} title={canFetch ? '' : T('\u5148\u9009\u62e9\u670d\u52a1\u5546\u6216\u586b\u5199 API \u5730\u5740', 'Choose a provider or enter an API URL first')} onClick={fetchList}>
+              {options.loading ? T('\u83b7\u53d6\u4e2d\u2026', 'Fetching\u2026') : options.items.length ? T('\u91cd\u65b0\u83b7\u53d6', 'Refresh') : T('\u4ece\u670d\u52a1\u5546\u83b7\u53d6', 'Fetch from provider')}
+            </button>
+          </div>
+          {options.error ? <small className="model-error">{options.error}</small>
+            : options.items.length ? <small>{T('\u670d\u52a1\u5546\u8fd4\u56de ' + options.items.length + ' \u4e2a\u6a21\u578b\uff0c\u8f93\u5165\u53ef\u7b5b\u9009\uff0c\u70b9\u51fb\u9009\u7528', options.items.length + ' models available; type to filter, click to use')}</small>
+            : <small>{T('\u4f20\u7ed9\u63a5\u53e3\u7684 model \u53c2\u6570\uff0c\u53ef\u624b\u52a8\u586b\u5199\u6216\u4ece\u670d\u52a1\u5546\u83b7\u53d6\u3002', 'The model parameter sent to the API. Type it or fetch from the provider.')}</small>}
+          {suggest && options.items.length > 0 && <div className="model-suggest" role="listbox" aria-label={T('\u53ef\u7528\u6a21\u578b', 'Available models')}>
+            {visible.length ? visible.map(item => <button type="button" role="option" key={item.id} aria-selected={item.id === model} disabled={disabled}
+              onClick={() => { setModel(item.id); setSuggest(false); }}><span>{item.id}</span>{item.name && item.name !== item.id && <small>{item.name}</small>}</button>)
+              : <p>{T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b\uff0c\u5c06\u4f7f\u7528\u8f93\u5165\u7684 ID', 'No match; the typed ID will be used')}</p>}
+          </div>}
+        </div>
+        <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input value={name} disabled={disabled} maxLength={120} placeholder={model || T('\u9ed8\u8ba4\u4f7f\u7528\u6a21\u578b ID', 'Defaults to model ID')} onChange={event => setName(event.target.value)} /></Field>
+        <Field label={T('\u4e0a\u4e0b\u6587\u7a97\u53e3', 'Context window')}><input type="number" min={1024} step={1} value={context} disabled={disabled} placeholder={T('\u9ed8\u8ba4', 'Default')} onChange={event => setContext(event.target.value)} /></Field>
+      </Section>
       <details className="model-advanced">
-        <summary>{T('\u9ad8\u7ea7\u8bbe\u7f6e', 'Advanced settings')}</summary>
+        <summary>{T('\u9ad8\u7ea7', 'Advanced')}</summary>
         <div className="model-grid">
-          <Field label={T('\u4e0a\u4e0b\u6587\u7a97\u53e3', 'Context window')}><input type="number" min={1024} step={1} value={context} disabled={disabled} placeholder={T('\u9ed8\u8ba4', 'Default')} onChange={event => setContext(event.target.value)} /><small>{T('\u7559\u7a7a\u6cbf\u7528\u73b0\u6709\u503c\u6216\u9ed8\u8ba4\u503c\u3002', 'Leave empty to keep the existing value or default.')}</small></Field>
-          <Field label={T('\u914d\u7f6e\u6807\u8bc6', 'Config key')}><input required value={id} readOnly={!!entry} disabled={disabled} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{T('\u5185\u90e8\u6807\u8bc6\uff0c\u901a\u5e38\u65e0\u9700\u4fee\u6539\u3002', 'Internal identifier; usually no changes are needed.')}</small></Field>
+          <Field label={T('\u914d\u7f6e\u6807\u8bc6', 'Config key')} wide><input required value={id} readOnly={!!entry} disabled={disabled} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{T('mykey.py \u4e2d\u7684\u53d8\u91cf\u540d\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Variable name in mykey.py; fixed after creation.')}</small></Field>
         </div>
       </details>
     </div>

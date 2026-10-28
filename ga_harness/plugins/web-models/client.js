@@ -112,17 +112,29 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       return value || sdk.T("未设置 API 地址", "No API URL set");
     }
   }
+  const protocolLabel = (value) => value === "claude" ? "Claude" : "OpenAI";
+  function providerNames(config) {
+    const counts = /* @__PURE__ */ new Map(), names = /* @__PURE__ */ new Map();
+    const base = (item) => item.values.name || item.id;
+    for (const item of config.providers || []) counts.set(base(item), (counts.get(base(item)) || 0) + 1);
+    for (const item of config.providers || []) {
+      const name = base(item), host = endpoint(item.values.apibase).split("/")[0];
+      names.set(item.id, (counts.get(name) || 0) > 1 ? name + " · " + (host || item.id) : name);
+    }
+    return names;
+  }
   function sections(config) {
+    const names = providerNames(config);
     const groups = /* @__PURE__ */ new Map();
     for (const provider of config.providers || []) groups.set("provider:" + provider.id, {
       id: "provider:" + provider.id,
-      title: provider.values.name || provider.id,
+      title: names.get(provider.id) || provider.id,
       provider,
       entries: []
     });
     for (const entry of config.entries) {
       const id = sectionKey(entry);
-      if (!groups.has(id)) groups.set(id, { id, title: endpoint(entry.values.apibase) + " / " + entry.protocol, entries: [] });
+      if (!groups.has(id)) groups.set(id, { id, title: endpoint(entry.values.apibase) + " · " + protocolLabel(entry.protocol), entries: [] });
       groups.get(id).entries.push(entry);
     }
     return [...groups.values()];
@@ -217,6 +229,15 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       children
     ] });
   }
+  function Section({ title, hint, children }) {
+    return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "model-section", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("header", { children: [
+        /* @__PURE__ */ jsxRuntime.jsx("h4", { children: title }),
+        hint && /* @__PURE__ */ jsxRuntime.jsx("p", { children: hint })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children })
+    ] });
+  }
   function useDraft(value, onDirtyChange) {
     const initial = react.useRef(JSON.stringify(value));
     const dirty = initial.current !== JSON.stringify(value);
@@ -274,7 +295,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   }
   function ModelForm({ entry, config, initialProvider = "", disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels }) {
     var _a;
-    const options = useModelOptions(fetchModels), listId = react.useId();
+    const options = useModelOptions(fetchModels), names = providerNames(config);
     const defaultProtocol = ((_a = config.providers.find((item) => item.id === initialProvider)) == null ? void 0 : _a.values.protocol) || "oai";
     const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.protocol) || defaultProtocol);
     const [id, setId] = react.useState((entry == null ? void 0 : entry.key) || "native_" + protocol + "_config_" + Date.now());
@@ -282,12 +303,20 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || ""), [model, setModel] = react.useState((entry == null ? void 0 : entry.values.model) || "");
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
     const [context, setContext] = react.useState(String((entry == null ? void 0 : entry.values.context_win) ?? ""));
+    const [suggest, setSuggest] = react.useState(false);
     const shared = config.providers.find((item) => item.id === provider);
     const dirty = useDraft([protocol, id, provider, name, model, base, secret, context], onDirtyChange);
     const changeProtocol = (value) => {
       setProtocol(value);
       setId("native_" + value + "_config_" + Date.now());
     };
+    const canFetch = !!provider || !!base.trim() || !!entry;
+    const fetchList = () => {
+      setSuggest(true);
+      void options.load(provider ? { provider } : { key: entry == null ? void 0 : entry.key, apibase: base.trim(), apikey: secret, protocol });
+    };
+    const exact = options.items.some((item) => item.id === model);
+    const visible = options.items.filter((item) => !model || exact || sdk.matches(model, item.id, item.name)).slice(0, 50);
     return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-form", onInvalidCapture: (event) => {
       var _a2;
       return (_a2 = event.target.closest("details")) == null ? void 0 : _a2.setAttribute("open", "");
@@ -299,58 +328,82 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       onSave("save", id.trim(), values);
     }, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("模型 ID", "Model ID"), children: [
-            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-id-row", children: [
-              /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, list: listId, value: model, disabled, autoFocus: !entry, placeholder: "gpt-4.1 / claude-sonnet-4", spellCheck: false, onChange: (event) => setModel(event.target.value) }),
-              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || options.loading, title: sdk.T("从服务商获取可用模型", "Fetch available models from the provider"), onClick: () => {
-                void options.load(provider ? { provider } : { key: entry == null ? void 0 : entry.key, apibase: base.trim(), apikey: secret, protocol });
-              }, children: options.loading ? sdk.T("获取中...", "Fetching...") : sdk.T("获取列表", "Fetch list") })
-            ] }),
-            /* @__PURE__ */ jsxRuntime.jsx("datalist", { id: listId, children: options.items.map((item) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: item.id, children: item.name && item.name !== item.id ? item.name : void 0 }, item.id)) }),
-            options.error ? /* @__PURE__ */ jsxRuntime.jsx("small", { className: "model-error", children: options.error }) : options.items.length ? /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("已获取 " + options.items.length + " 个模型，输入可筛选", options.items.length + " models fetched; type to filter") }) : null
-          ] }),
-          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { value: name, disabled, maxLength: 120, placeholder: sdk.T("可选，默认使用模型 ID", "Optional; defaults to model ID"), onChange: (event) => setName(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("连接", "Connection"), hint: sdk.T("模型从哪里调用。选择服务商可共用地址和密钥。", "Where this model is called. Pick a provider to share its URL and key."), children: [
           /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("服务商", "Provider"), children: /* @__PURE__ */ jsxRuntime.jsxs("select", { value: provider, disabled, onChange: (event) => {
             var _a2;
             const value = event.target.value;
             setProvider(value);
             if (!entry && value) changeProtocol(((_a2 = config.providers.find((item) => item.id === value)) == null ? void 0 : _a2.values.protocol) || "oai");
           }, children: [
-            /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("独立配置", "Independent configuration") }),
-            config.providers.map((item) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: item.id, children: item.values.name || item.id }, item.id))
+            /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("不使用服务商（单独填写）", "None (enter URL and key)") }),
+            config.providers.map((item) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: item.id, children: names.get(item.id) }, item.id))
           ] }) }),
           /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled: disabled || !!entry, onChange: changeProtocol }),
           shared ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-connection wide", children: [
             /* @__PURE__ */ jsxRuntime.jsxs("div", { children: [
-              /* @__PURE__ */ jsxRuntime.jsx("strong", { children: shared.values.name || shared.id }),
+              /* @__PURE__ */ jsxRuntime.jsx("strong", { children: names.get(shared.id) }),
               /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-                endpoint(shared.values.apibase) || sdk.T("地址已隐藏", "URL hidden"),
+                endpoint(shared.values.apibase),
                 " · ",
                 shared.has_key ? sdk.T("密钥已配置", "Key configured") : sdk.T("未配置密钥", "No key")
               ] })
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => onProvider(shared.id), children: sdk.T("编辑服务商", "Edit provider") }),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("地址和密钥由服务商统一管理，协议仍属于此模型。", "The provider manages the URL and key; this model keeps its own protocol.") })
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => onProvider(shared.id), children: sdk.T("编辑服务商", "Edit provider") })
           ] }) : /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
         ] }),
-        !shared && /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "model-help", children: [
-          sdk.T("多个模型共用地址和密钥？", "Sharing a URL and key across models?"),
-          " ",
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-text-button", disabled, onClick: () => onProvider(""), children: sdk.T("去管理服务商", "Manage providers") })
+        /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Model"), children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-field wide", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("label", { htmlFor: "model-id-input", children: sdk.T("模型 ID", "Model ID") }),
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-id-row", children: [
+              /* @__PURE__ */ jsxRuntime.jsx(
+                "input",
+                {
+                  id: "model-id-input",
+                  required: true,
+                  value: model,
+                  disabled,
+                  autoFocus: !entry,
+                  autoComplete: "off",
+                  placeholder: "gpt-4.1 / claude-sonnet-4",
+                  spellCheck: false,
+                  onFocus: () => setSuggest(true),
+                  onChange: (event) => {
+                    setModel(event.target.value);
+                    setSuggest(true);
+                  }
+                }
+              ),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || options.loading || !canFetch, title: canFetch ? "" : sdk.T("先选择服务商或填写 API 地址", "Choose a provider or enter an API URL first"), onClick: fetchList, children: options.loading ? sdk.T("获取中…", "Fetching…") : options.items.length ? sdk.T("重新获取", "Refresh") : sdk.T("从服务商获取", "Fetch from provider") })
+            ] }),
+            options.error ? /* @__PURE__ */ jsxRuntime.jsx("small", { className: "model-error", children: options.error }) : options.items.length ? /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("服务商返回 " + options.items.length + " 个模型，输入可筛选，点击选用", options.items.length + " models available; type to filter, click to use") }) : /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("传给接口的 model 参数，可手动填写或从服务商获取。", "The model parameter sent to the API. Type it or fetch from the provider.") }),
+            suggest && options.items.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-suggest", role: "listbox", "aria-label": sdk.T("可用模型", "Available models"), children: visible.length ? visible.map((item) => /* @__PURE__ */ jsxRuntime.jsxs(
+              "button",
+              {
+                type: "button",
+                role: "option",
+                "aria-selected": item.id === model,
+                disabled,
+                onClick: () => {
+                  setModel(item.id);
+                  setSuggest(false);
+                },
+                children: [
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.id }),
+                  item.name && item.name !== item.id && /* @__PURE__ */ jsxRuntime.jsx("small", { children: item.name })
+                ]
+              },
+              item.id
+            )) : /* @__PURE__ */ jsxRuntime.jsx("p", { children: sdk.T("没有匹配的模型，将使用输入的 ID", "No match; the typed ID will be used") }) })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { value: name, disabled, maxLength: 120, placeholder: model || sdk.T("默认使用模型 ID", "Defaults to model ID"), onChange: (event) => setName(event.target.value) }) }),
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("上下文窗口", "Context window"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) }) })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级设置", "Advanced settings") }),
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
-            /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("上下文窗口", "Context window"), children: [
-              /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) }),
-              /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("留空沿用现有值或默认值。", "Leave empty to keep the existing value or default.") })
-            ] }),
-            /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Config key"), children: [
-              /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, readOnly: !!entry, disabled, spellCheck: false, onChange: (event) => setId(event.target.value) }),
-              /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("内部标识，通常无需修改。", "Internal identifier; usually no changes are needed.") })
-            ] })
-          ] })
+          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Config key"), wide: true, children: [
+            /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, readOnly: !!entry, disabled, spellCheck: false, onChange: (event) => setId(event.target.value) }),
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("mykey.py 中的变量名，创建后不可修改。", "Variable name in mykey.py; fixed after creation.") })
+          ] }) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, onReset, onDelete: async () => {
@@ -363,37 +416,44 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.values.protocol) || "oai");
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
     const dirty = useDraft([id, name, protocol, base, secret], onDirtyChange);
-    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-provider-form", onSubmit: (event) => {
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-provider-form", onInvalidCapture: (event) => {
+      var _a;
+      return (_a = event.target.closest("details")) == null ? void 0 : _a.setAttribute("open", "");
+    }, onSubmit: (event) => {
       event.preventDefault();
       if (!disabled) onSave("provider_save", id.trim(), { name: name.trim(), protocol, apibase: base.trim(), apikey: secret });
     }, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("服务商", "Provider"), hint: sdk.T("地址和密钥会同步到使用此服务商的所有模型。", "URL and key are synced to every model that uses this provider."), children: [
           /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { disabled, value: name, maxLength: 120, placeholder: sdk.T("例如 OpenAI", "For example, OpenAI"), onChange: (event) => setName(event.target.value), autoFocus: !entry }) }),
-          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("服务商标识", "Provider ID"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[a-z0-9_-]+", disabled: disabled || !!entry, value: id, placeholder: "openai", spellCheck: false, onChange: (event) => setId(event.target.value) }) }),
           /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled, onChange: setProtocol }),
           /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("地址和密钥会同步到引用此服务商的模型；默认协议只用于新模型。", "URL and key updates apply to models using this provider; the default protocol is only for new models.") }),
-        entry && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-provider-usage", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "secondary", disabled, onClick: onModels, children: [
-            sdk.T("查看模型", "View models"),
+        entry && /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Models"), hint: used ? sdk.T("此服务商下有 " + used + " 个模型，有模型时不能删除。", used + " models use this provider; it cannot be deleted while in use.") : sdk.T("还没有模型使用此服务商。", "No models use this provider yet."), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-provider-usage wide", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "secondary", disabled: disabled || !used, onClick: onModels, children: [
+            sdk.T("查看已有模型", "Show its models"),
             " (",
             used,
             ")"
-          ] }),
-          used > 0 && /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("有模型引用时不能删除服务商", "Providers in use cannot be deleted") })
+          ] }) }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "wide", children: /* @__PURE__ */ jsxRuntime.jsx(
+            RemoteModels,
+            {
+              source: { provider: entry.id, protocol, apibase: base.trim(), apikey: secret },
+              existing,
+              disabled,
+              fetchModels,
+              onAdd: (ids) => onAddModels(entry.id, protocol, ids)
+            }
+          ) })
         ] }),
-        entry && /* @__PURE__ */ jsxRuntime.jsx(
-          RemoteModels,
-          {
-            source: { provider: entry.id, protocol, apibase: base.trim(), apikey: secret },
-            existing,
-            disabled,
-            fetchModels,
-            onAdd: (ids) => onAddModels(entry.id, protocol, ids)
-          }
-        )
+        /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("服务商标识", "Provider ID"), wide: true, children: [
+            /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[a-z0-9_-]+", disabled: disabled || !!entry, value: id, placeholder: "openai", spellCheck: false, onChange: (event) => setId(event.target.value) }),
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("小写字母、数字、_ 或 -，创建后不可修改。", "Lowercase letters, digits, _ or -; fixed after creation.") })
+          ] }) })
+        ] })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, canDelete: used === 0, onReset, onDelete: async () => {
         if (await sdk.confirmDialog({ title: sdk.T("删除这个服务商？", "Delete this provider?"), message: (entry == null ? void 0 : entry.values.name) || id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("provider_delete", id);
@@ -564,6 +624,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       }, setError);
     };
     const locked = busy || !(config == null ? void 0 : config.writable), browsing = working || changing;
+    const names = config ? providerNames(config) : /* @__PURE__ */ new Map();
     const isModel = edit.kind === "model";
     const title = isModel ? (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || (entry == null ? void 0 : entry.key) : (provider == null ? void 0 : provider.values.name) || (provider == null ? void 0 : provider.id);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
@@ -621,13 +682,13 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                     if (edit.id !== item.key || !detail) choose("model", item.key);
                   }, children: [
                     /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.values.model || item.key }),
-                    /* @__PURE__ */ jsxRuntime.jsx("small", { children: item.values.model || item.key }),
+                    item.values.name && item.values.model && item.values.name !== item.values.model && /* @__PURE__ */ jsxRuntime.jsx("small", { className: "model-list-id", children: item.values.model }),
                     /* @__PURE__ */ jsxRuntime.jsx("small", { children: (_a2 = groups.find((candidate) => candidate.id === sectionKey(item))) == null ? void 0 : _a2.title })
                   ] }, item.key);
                 }) : providers.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: browsing, "aria-pressed": edit.id === item.id, onClick: () => {
                   if (edit.id !== item.id || !detail) choose("provider", item.id);
                 }, children: [
-                  /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.id }),
+                  /* @__PURE__ */ jsxRuntime.jsx("strong", { children: names.get(item.id) }),
                   /* @__PURE__ */ jsxRuntime.jsx("small", { children: endpoint(item.values.apibase) }),
                   /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
                     config.entries.filter((model) => model.provider === item.id).length,
@@ -639,10 +700,11 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               ] }),
               /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-source", children: [
                 /* @__PURE__ */ jsxRuntime.jsxs("summary", { children: [
-                  sdk.T("配置来源", "Configuration source"),
+                  sdk.T("配置文件", "Config file"),
                   config.format ? " · " + config.format : ""
                 ] }),
-                /* @__PURE__ */ jsxRuntime.jsx("p", { children: config.source || sdk.T("当前运行配置", "Current runtime configuration") })
+                /* @__PURE__ */ jsxRuntime.jsx("p", { children: sdk.T("模型和服务商直接保存在 GA 的 mykey.py，保存后立即生效。", "Models and providers are saved directly to GA mykey.py and apply immediately.") }),
+                /* @__PURE__ */ jsxRuntime.jsx("code", { children: config.source || sdk.T("当前运行配置", "Current runtime configuration") })
               ] })
             ] }),
             /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "model-editor", "aria-label": isModel ? sdk.T("模型编辑器", "Model editor") : sdk.T("服务商编辑器", "Provider editor"), "aria-busy": working, children: [
@@ -651,7 +713,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                   void navigate(() => select(edit.kind, edit.id, false));
                 }, children: sdk.T("返回列表", "Back to list") }),
                 /* @__PURE__ */ jsxRuntime.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-eyebrow", children: isModel ? sdk.T("模型", "Model") : sdk.T("服务商", "Provider") }),
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-eyebrow", children: isModel ? entry ? sdk.T("编辑模型", "Edit model") : sdk.T("新模型", "New model") : provider ? sdk.T("编辑服务商", "Edit provider") : sdk.T("新服务商", "New provider") }),
                   /* @__PURE__ */ jsxRuntime.jsx("h3", { ref: heading, tabIndex: -1, children: title || (isModel ? sdk.T("新增模型", "Add model") : sdk.T("新增服务商", "Add provider")) })
                 ] })
               ] }),
