@@ -156,3 +156,7 @@
 .model-advanced-group { margin-top: 14px; }
 .model-advanced-group > h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted, #888); text-transform: none; }
 .model-advanced-note { margin: 4px 0 0; font-size: 12px; color: var(--muted, #888); }
+/* selected model row: accent bar + tinted background so the current choice reads at a glance */
+.gah-picker-option[aria-pressed="true"]{position:relative;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text);font-weight:600}
+.gah-picker-option[aria-pressed="true"]::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:2px;background:var(--accent)}
+.gah-picker-option[aria-pressed="true"]:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 18%,transparent)}

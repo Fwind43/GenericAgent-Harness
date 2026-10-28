@@ -3,6 +3,17 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
   const RECENT = 5, NEW = "新会话";
   const base = (path = "") => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
   const label = (s) => !s.title || s.title === NEW ? sdk.T(NEW, "New chat") : s.title;
+  const ago = (ts) => {
+    if (!ts) return "";
+    const secs = Math.max(0, Date.now() / 1e3 - ts);
+    if (secs < 60) return sdk.T("刚刚", "now");
+    if (secs < 3600) return Math.floor(secs / 60) + sdk.T("分", "m");
+    if (secs < 86400) return Math.floor(secs / 3600) + sdk.T("小时", "h");
+    if (secs < 86400 * 7) return Math.floor(secs / 86400) + sdk.T("天", "d");
+    const d = new Date(ts * 1e3);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+  const stamp = (ts) => ts ? new Date(ts * 1e3).toLocaleString() : "";
   const loadToggles = () => {
     try {
       const value = JSON.parse(sdk.saved("gah.sessions.groups") ?? "{}");
@@ -66,10 +77,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const row = (session, depth, home) => {
       const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : "";
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${depth ? " child" : ""}`, style: depth ? { paddingLeft: depth * 14 } : void 0, role: "listitem", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: session.workspace ? `${label(session)}
-${session.workspace}` : label(session), children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: label(session) }),
           tag && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-tag", children: tag }),
+          !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
           status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [

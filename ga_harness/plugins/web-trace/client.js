@@ -217,7 +217,7 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
       visibleRuns.map((run) => /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "gah-trace-run", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("header", { className: "gah-trace-sep", children: [
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("任务 ", "Run ") + run.run }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-trace-sep-input", children: line(run.input, 80) || sdk.T("（无输入）", "(no input)") }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-trace-sep-input", title: run.input || void 0, children: line(run.input, 80) || sdk.T("（无输入）", "(no input)") }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-trace-sep-meta", children: [statusLabel(run.status), run.model, secs(run.seconds)].filter(Boolean).join(" · ") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "gah-trace-list", children: shown.filter((event) => event.run === run.run).map((event) => /* @__PURE__ */ jsxRuntime.jsx(Row, { event, open: open.has(event.key), focus: focus === event.key, onToggle: () => {

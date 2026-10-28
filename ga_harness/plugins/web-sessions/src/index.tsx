@@ -7,6 +7,18 @@ import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, 
 const RECENT = 5, NEW = '\u65b0\u4f1a\u8bdd';
 const base = (path = '') => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
 const label = (s: Session) => !s.title || s.title === NEW ? T(NEW, 'New chat') : s.title;
+// Compact relative age for the row ("3m", "2h", "5d", then a date) so chats with the
+// same title stay distinguishable at a glance; the full timestamp lives in the tooltip.
+const ago = (ts?: number) => {
+  if (!ts) return '';
+  const secs = Math.max(0, Date.now() / 1000 - ts);
+  if (secs < 60) return T('\u521a\u521a', 'now');
+  if (secs < 3600) return Math.floor(secs / 60) + T('\u5206', 'm');
+  if (secs < 86400) return Math.floor(secs / 3600) + T('\u5c0f\u65f6', 'h');
+  if (secs < 86400 * 7) return Math.floor(secs / 86400) + T('\u5929', 'd');
+  const d = new Date(ts * 1000); return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+const stamp = (ts?: number) => ts ? new Date(ts * 1000).toLocaleString() : '';
 const loadToggles = (): Record<string, boolean> => {
   try { const value: unknown = JSON.parse(saved('gah.sessions.groups') ?? '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, boolean> : {}; } catch { return {}; }
 };
@@ -48,8 +60,9 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const row = (session: Session, depth: number, home?: string) => {
     const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : '';
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${depth ? ' child' : ''}`} style={depth ? { paddingLeft: depth * 14 } : undefined} role="listitem">
-      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={session.workspace ? `${label(session)}\n${session.workspace}` : label(session)}>
+      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
         <span className="gah-sess-title">{label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
+        {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
         {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>
       <span className="gah-sess-acts">
         <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u91cd\u547d\u540d', 'Rename')} onClick={async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); }}><Icon name="pencil" /></button>
