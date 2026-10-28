@@ -15,11 +15,12 @@ from types import SimpleNamespace
 def capture(agent):
     handler = getattr(agent, "handler", None)
     working = getattr(handler, "working", {})
+    backend = getattr(getattr(agent, "llmclient", None), "backend", None)   # None before any model exists
     return copy.deepcopy({
         "history": getattr(handler, "history_info", agent.history),
-        "raw": agent.llmclient.backend.history,
+        "raw": getattr(backend, "history", []),
         "working": {k: working[k] for k in ("key_info", "passed_sessions") if k in working},
-        "model": getattr(agent.llmclient.backend, "name", ""),
+        "model": getattr(backend, "name", ""),
         "effort": getattr(agent, "gah_reasoning_effort", None),
     })
 
@@ -40,7 +41,7 @@ def apply_effort(agent):
 def restore(agent, state):
     """GA creates a real handler on the next task; only its working memory survives."""
     state = copy.deepcopy(state)
-    for client in agent.llmclients:
+    for client in getattr(agent, "llmclients", None) or []:
         if hasattr(client, "backend"):
             client.backend.history = []
         if hasattr(client, "last_tools"):
@@ -49,7 +50,7 @@ def restore(agent, state):
     model = state.get("model")
     if model:
         # Per-conversation model; an unconfigured model keeps the current client.
-        for i, client in enumerate(agent.llmclients):
+        for i, client in enumerate(getattr(agent, "llmclients", None) or []):
             if getattr(getattr(client, "backend", None), "name", None) == model:
                 agent.llmclient = client
                 if hasattr(agent, "llm_no"):
@@ -57,7 +58,9 @@ def restore(agent, state):
                 break
     effort = state.get("effort")
     agent.gah_reasoning_effort = effort if effort in EFFORTS else None
-    agent.llmclient.backend.history = state.get("raw", [])
+    backend = getattr(getattr(agent, "llmclient", None), "backend", None)
+    if backend is not None:
+        backend.history = state.get("raw", [])
     working = state.get("working", {})
     agent.handler = SimpleNamespace(working=working, code_stop_signal=[]) if working else None
     if hasattr(agent, "all_outputs"):

@@ -335,7 +335,7 @@ class WebFrontend:
                     agent = self.ctx.get("ga.agent")
                     if self.sessions and agent is not None:
                         try:
-                            self.sessions.remember(model=getattr(agent.llmclient.backend, "name", ""))
+                            self.sessions.remember(model=getattr(getattr(agent.llmclient, "backend", None), "name", ""))
                         except Exception:
                             # Keep the shown selection identical to what the session will run.
                             if isinstance(previous, int):

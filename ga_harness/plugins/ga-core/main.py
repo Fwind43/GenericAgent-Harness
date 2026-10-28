@@ -22,6 +22,7 @@ import sys
 import threading
 
 _STOP = "__ga_harness_stop__"   # GA's run() exits on any str task
+NO_MODEL = "No model is configured yet. Add one in Settings > Models."
 
 
 class AgentHandle:
@@ -35,6 +36,15 @@ class AgentHandle:
             lambda request: self._run(**request))
 
     def _run(self, query, source, images, timeout):
+        if not getattr(self.raw, "llmclients", None):
+            reload = getattr(self.raw, "load_llm_sessions", None)
+            if callable(reload):
+                try:
+                    reload()   # mykey.py may have been edited since startup
+                except Exception:
+                    pass
+        if not getattr(self.raw, "llmclients", None):
+            raise RuntimeError(NO_MODEL)
         dq = self.raw.put_task(query, source=source, images=images)
         printed = ""
         while True:
@@ -71,7 +81,9 @@ def apply(ctx, config):
     mod = load_module(config.get("ga_root") or os.environ.get("GA_ROOT"), config.get("module", "agentmain"))
     agent = mod.GenericAgent()
     if not getattr(agent, "llmclients", None):
-        raise RuntimeError("GenericAgent has no LLM client (check mykey.py in GA root)")
+        # First run (e.g. the desktop's bundled GA ships an empty mykey.py): start anyway
+        # so Settings > Models can add one; tasks are refused until a model exists.
+        print("[ga-core] no model configured yet; add one in Settings > Models", file=sys.stderr)
     agent.inc_out = bool(config.get("inc_out", True))
     t = threading.Thread(target=agent.run, name="ga-core", daemon=True)
     t.start()
