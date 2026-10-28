@@ -21,6 +21,7 @@ class Workspaces:
         self.projects_root = Path(projects_root) if projects_root else None
         self.default_workspace = self.directory(str(Path(default_workspace).expanduser().resolve()))
         self.active = None
+        sessions.root_scope = self.root_scope
         with sessions.lock:
             sessions.current()
             with sessions._db() as db:
@@ -63,6 +64,13 @@ class Workspaces:
     def project_workspace(self, project):
         """A project's own workspace is optional; blank means the global default."""
         return self.directory(project["workspace"]) if project and project["workspace"] else self.default_workspace
+
+    def root_scope(self, base, project_id=None):
+        """A new root chat keeps the project but never another chat's directory:
+        a project chat starts in the project's directory, an unbound one in the default."""
+        pid = base["project_id"] if project_id is None else project_id
+        project = next((p for p in self.projects() if p["id"] == pid), None) if pid else None
+        return (self.project_workspace(project), pid) if project else (self.default_workspace, "")
 
     def _unique_name(self, db, name, pid):
         # Names map to memory folders; Windows folders are case-insensitive.

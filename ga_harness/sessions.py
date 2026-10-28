@@ -94,6 +94,9 @@ class Sessions:
         self.reserved = False
         self.parallel = False
         self.active = set()
+        # Optional scope resolver for root chats: (base, project_id) -> (workspace, project_id).
+        # Without it a root chat copies the current chat's scope.
+        self.root_scope = None
 
     @contextmanager
     def _db(self):
@@ -231,6 +234,8 @@ class Sessions:
             if parent_id and ((workspace is not None and workspace != base["workspace"]) or
                               (project_id is not None and project_id != base["project_id"])):
                 raise ValueError("a child must inherit its parent's workspace and project")
+            if not parent_id and workspace is None and self.root_scope:
+                workspace, project_id = self.root_scope(base, project_id)
             with self._db() as db:
                 sid = self._new(db, base["workspace"] if workspace is None else workspace,
                                 base["project_id"] if project_id is None else project_id,
@@ -252,6 +257,9 @@ class Sessions:
             if action not in ("select", "rename", "delete"):
                 raise ValueError("unknown session action")
             self.get(sid)
+            fallback = (current["workspace"], current["project_id"])
+            if action == "delete" and self.root_scope:
+                fallback = self.root_scope(current, None)
             if action == "delete" and sid in self.active:
                 raise RuntimeError("cancel the session's run before deleting it")
             with self._db() as db:
@@ -262,7 +270,7 @@ class Sessions:
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
                     if sid == current["id"]:
-                        self._select(db, self._new(db, current["workspace"], current["project_id"]))
+                        self._select(db, self._new(db, *fallback))
                 else:
                     self._select(db, sid)
             selected = self.current()

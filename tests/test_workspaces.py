@@ -39,6 +39,8 @@ def test_scope_switch_isolation_and_restart(tmp_path):
     plain = ws.change({"action": "workspace", "workspace": str(other)})
     assert plain["id"] != inherited["id"] and plain["project_id"] == ""
     assert plain["workspace"] == str(other.resolve()) and raw.history == []
+    fresh = sessions.change("new")
+    assert fresh["project_id"] == "" and fresh["workspace"] == ws.default_workspace
     cold = Workspaces(Sessions(agent(), sessions.path), tmp_path)
     assert cold.sessions.current()["id"] == plain["id"]
     assert len(cold.projects()) == 2
