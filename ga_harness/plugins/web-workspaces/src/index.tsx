@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent, type FormEvent } from 'react';
-import { host, useHost, T, type PluginAPI, type HostState, Modal, PluginSlot, useOperation, defineReact } from '@gah/sdk';
+import { host, useHost, T, type PluginAPI, type HostState, Modal, PluginSlot, Icon, useOperation, defineReact } from '@gah/sdk';
 
 type Action = 'workspace' | 'create' | 'update';
 type Edit = { action: Action; id?: string; workspace: string; name: string; updated?: number };
@@ -83,6 +83,7 @@ export function Workspaces({ api }: { api: PluginAPI }) {
   }
   const field = (key: 'name' | 'workspace', value: string) => setEditing(old => old ? { ...old, [key]: value } : null);
   return <><PluginSlot api={api} name="composer-top"><div className="gah-scope-bar">
+    {scope && !state.messages.length && !state.running && <label className="gah-scope-pick" title={T('\u53d1\u9001\u7b2c\u4e00\u6761\u6d88\u606f\u524d\u53ef\u4ee5\u66f4\u6539', 'Can be changed until the first message is sent')}><Icon name="folder" /><span>{T('\u9879\u76ee', 'Project')}</span><select value={scope.project_id ?? ''} disabled={busy} aria-label={T('\u65b0\u5bf9\u8bdd\u6240\u5c5e\u9879\u76ee', 'Project for this new chat')} onChange={event => enter({ id: event.target.value })}><option value="">{T('\u672a\u7ed1\u5b9a\u9879\u76ee', 'No project')}</option>{scope.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
     {!!suggestions.length && <div className="gah-slash" role="listbox" aria-label={T('\u547d\u4ee4', 'Command')}>{suggestions.map((item, index) => <div key={`${item.label}:${index}`} className={`gah-slash-item${index === selected ? ' active' : ''}`} role="option" aria-selected={index === selected} onMouseDown={event => { event.preventDefault(); pick(index); }}><span>{item.label}</span><small>{item.hint}</small></div>)}</div>}
   </div></PluginSlot>
   {editing && <Modal className="gah-ws-dialog" label={T('\u5de5\u4f5c\u533a\u4e0e\u9879\u76ee\u8bbe\u7f6e', 'Workspace and project settings')} busy={working} onClose={() => setEditing(null)}>

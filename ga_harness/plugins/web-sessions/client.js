@@ -136,7 +136,7 @@ ${session.workspace}` : label(session), children: [
       ] }, key);
     });
     return /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sessions", hidden: !state.sessions, children: [
-      /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item gah-sess-new", disabled: busy, "data-gah-close": "", onClick: () => void act("new"), children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item gah-sess-new", disabled: busy, title: (scope == null ? void 0 : scope.project) ? `${sdk.T("在项目中新建", "New chat in")}: ${scope.project.name}` : sdk.T("新建未绑定项目的对话", "New chat without a project"), "data-gah-close": "", onClick: () => void act("new"), children: [
         /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pen" }),
         sdk.T("新会话", "New chat")
       ] }),

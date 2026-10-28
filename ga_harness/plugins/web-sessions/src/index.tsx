@@ -83,7 +83,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
     </section>;
   });
   return <PluginSlot api={api} name="sidebar"><div className="gah-sessions" hidden={!state.sessions}>
-    <button type="button" className="side-item gah-sess-new" disabled={busy} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button>
+    <button type="button" className="side-item gah-sess-new" disabled={busy} title={scope?.project ? `${T('\u5728\u9879\u76ee\u4e2d\u65b0\u5efa', 'New chat in')}: ${scope.project.name}` : T('\u65b0\u5efa\u672a\u7ed1\u5b9a\u9879\u76ee\u7684\u5bf9\u8bdd', 'New chat without a project')} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button>
     <input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
     <div className="gah-sess-list" aria-label={T('\u4f1a\u8bdd\u5217\u8868', 'Chats')}>
       {scope ? <>

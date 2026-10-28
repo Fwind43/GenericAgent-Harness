@@ -99,13 +99,23 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
     }
     const field = (key, value) => setEditing((old) => old ? { ...old, [key]: value } : null);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-      /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "composer-top", children: /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-scope-bar", children: !!suggestions.length && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-slash", role: "listbox", "aria-label": sdk.T("命令", "Command"), children: suggestions.map((item, index) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-slash-item${index === selected ? " active" : ""}`, role: "option", "aria-selected": index === selected, onMouseDown: (event) => {
-        event.preventDefault();
-        pick(index);
-      }, children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.label }),
-        /* @__PURE__ */ jsxRuntime.jsx("small", { children: item.hint })
-      ] }, `${item.label}:${index}`)) }) }) }),
+      /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "composer-top", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-scope-bar", children: [
+        scope && !state.messages.length && !state.running && /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-scope-pick", title: sdk.T("发送第一条消息前可以更改", "Can be changed until the first message is sent"), children: [
+          /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder" }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("项目", "Project") }),
+          /* @__PURE__ */ jsxRuntime.jsxs("select", { value: scope.project_id ?? "", disabled: busy, "aria-label": sdk.T("新对话所属项目", "Project for this new chat"), onChange: (event) => enter({ id: event.target.value }), children: [
+            /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("未绑定项目", "No project") }),
+            scope.projects.map((p) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: p.id, children: p.name }, p.id))
+          ] })
+        ] }),
+        !!suggestions.length && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-slash", role: "listbox", "aria-label": sdk.T("命令", "Command"), children: suggestions.map((item, index) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-slash-item${index === selected ? " active" : ""}`, role: "option", "aria-selected": index === selected, onMouseDown: (event) => {
+          event.preventDefault();
+          pick(index);
+        }, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.label }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: item.hint })
+        ] }, `${item.label}:${index}`)) })
+      ] }) }),
       editing && /* @__PURE__ */ jsxRuntime.jsx(sdk.Modal, { className: "gah-ws-dialog", label: sdk.T("工作区与项目设置", "Workspace and project settings"), busy: working, onClose: () => setEditing(null), children: /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: submit, children: [
         /* @__PURE__ */ jsxRuntime.jsx("h2", { children: editing.action === "workspace" ? sdk.T("切换工作目录", "Switch directory") : editing.action === "create" ? sdk.T("新建项目", "New project") : sdk.T("项目设置", "Project settings") }),
         /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-ws-help", children: editing.action === "workspace" ? sdk.T("使用服务器已存在的目录。空对话原地切换，有历史时新开对话。工作区不是权限沙箱。", "Use an existing server directory. Empty chats switch in place; chats with history open a new chat. A workspace is not a permission sandbox.") : sdk.T("项目是长期身份，记忆按名称保存在 GA 的 temp/projects/<名称>/。目录只是新会话的默认工作区，修改后已有会话不变。", "A project is a durable identity; its memory lives in GA's temp/projects/<name>/. The directory is only the default for new chats; changing it leaves existing chats untouched.") }),
