@@ -5,3 +5,76 @@ description = "Add, replace or disable GA tools (schema + do_<name> handler) wit
 description_zh = "无需改 GA 即可新增、替换或禁用 GA 工具（schema + do_<name> 处理函数）。"
 inject = ["ga.agent"]
 provides = ["ga.tools"]
+
+# One switch per GA native tool. Off = hidden from the model and refused if called.
+[settings.tool_code_run]
+type = "boolean"
+default = true
+label = "code_run"
+label_zh = "code_run"
+description = "Run Python / PowerShell scripts."
+description_zh = "执行 Python / PowerShell 脚本。"
+
+[settings.tool_file_read]
+type = "boolean"
+default = true
+label = "file_read"
+label_zh = "file_read"
+description = "Read files."
+description_zh = "读取文件。"
+
+[settings.tool_file_patch]
+type = "boolean"
+default = true
+label = "file_patch"
+label_zh = "file_patch"
+description = "Edit files by exact-match replacement."
+description_zh = "按精确匹配替换修改文件。"
+
+[settings.tool_file_write]
+type = "boolean"
+default = true
+label = "file_write"
+label_zh = "file_write"
+description = "Create, overwrite or append files."
+description_zh = "新建、覆盖或追加写入文件。"
+
+[settings.tool_web_scan]
+type = "boolean"
+default = true
+label = "web_scan"
+label_zh = "web_scan"
+description = "Browser: read page content and tabs (needs the browser extension)."
+description_zh = "浏览器：读取页面内容和标签页（需要浏览器扩展）。"
+
+[settings.tool_web_execute_js]
+type = "boolean"
+default = true
+label = "web_execute_js"
+label_zh = "web_execute_js"
+description = "Browser: run JavaScript in the page (needs the browser extension)."
+description_zh = "浏览器：在页面中执行 JavaScript（需要浏览器扩展）。"
+
+[settings.tool_update_working_checkpoint]
+type = "boolean"
+default = true
+label = "update_working_checkpoint"
+label_zh = "update_working_checkpoint"
+description = "Working notepad kept across turns."
+description_zh = "跨轮次保留的工作便签。"
+
+[settings.tool_ask_user]
+type = "boolean"
+default = true
+label = "ask_user"
+label_zh = "ask_user"
+description = "Pause and ask the user a question."
+description_zh = "暂停任务向用户提问。"
+
+[settings.tool_start_long_term_update]
+type = "boolean"
+default = true
+label = "start_long_term_update"
+label_zh = "start_long_term_update"
+description = "Distill long-term memory after a task."
+description_zh = "任务结束后整理长期记忆。"

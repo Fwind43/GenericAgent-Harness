@@ -136,6 +136,9 @@ def apply(ctx, config):
     mod = sys.modules[type(ctx.get("ga.agent")).__module__]
     reg = ToolRegistry(mod)
     ctx.scope.add(reg.close)
-    for n in config.get("disable", []):
+    off = list(config.get("disable", []))
+    # per-tool switches from plugin.toml settings: tool_<name> = false disables <name>
+    off += [k[5:] for k, v in config.items() if k.startswith("tool_") and v is False]
+    for n in dict.fromkeys(off):
         reg.disable(n)
     ctx.provide("ga.tools", reg)
