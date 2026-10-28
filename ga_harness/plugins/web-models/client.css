@@ -152,3 +152,7 @@
 .gah-model-dialog .model-suggest small{margin-left:auto;flex:none;max-width:45%;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gah-model-dialog .model-suggest p{margin:0;padding:8px 10px;color:var(--muted);font-size:12px}
 @media(max-width:700px){.gah-model-dialog .model-grid{grid-template-columns:minmax(0,1fr)}}
+/* selected model row: accent bar + tinted background so the current choice reads at a glance */
+.gah-picker-option[aria-pressed="true"]{position:relative;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text);font-weight:600}
+.gah-picker-option[aria-pressed="true"]::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:2px;background:var(--accent)}
+.gah-picker-option[aria-pressed="true"]:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 18%,transparent)}

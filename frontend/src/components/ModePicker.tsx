@@ -13,12 +13,15 @@ const describe = (item: AgentPreset | null) => item
 
 const ModeIcon = () => <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.5 13.6 4.75v6.5L8 14.5 2.4 11.25v-6.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><circle cx="8" cy="8" r="2" fill="currentColor" /></svg>;
 
-// Read-only mode label shown next to the session title; the mode is fixed once a conversation starts.
+// Read-only mode label shown next to the session title (non-standard modes only); the mode is fixed once a conversation starts.
 export function ModeBadge() {
   const { state } = useHost();
   const presets = state.presets;
   if (!presets || !presets.items.length) return null;
   const active = presets.items.find(item => item.id === presets.current) ?? null;
+  // The standard agent is the default: labelling it next to every title is noise
+  // (and duplicates the composer picker on empty chats). Only flag non-default modes.
+  if (!active) return null;
   return <span className="gah-mode-badge" title={describe(active)}><ModeIcon /><span>{label(active)}</span></span>;
 }
 
