@@ -4,7 +4,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const path = require('node:path');
-const { Backend } = require('./backend');
+const { Backend, isGaRoot } = require('./backend');
 
 let backend = null;
 let win = null;
@@ -86,9 +86,55 @@ function createWindow(url) {
   win.loadURL(`${url}?gah_token=${backend.token}`);
 }
 
+// Ask for a GenericAgent checkout until the user picks a valid one (saved to desktop.json)
+// or gives up. `reason` explains why we are asking. Returns true when a folder was saved.
+async function pickGaRoot(reason, defaultPath) {
+  for (;;) {
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'GenericAgent-Harness',
+      message: 'GenericAgent folder needed',
+      detail: `${reason}\n\nGenericAgent-Harness runs on top of a GenericAgent checkout (the folder that contains agentmain.py). Choose it to continue; the choice is saved in:\n${backend.settings.file}`,
+      buttons: ['Choose folder...', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response !== 0) return false;
+    const res = await dialog.showOpenDialog({
+      title: 'Choose the GenericAgent folder (contains agentmain.py)',
+      defaultPath: defaultPath || undefined,
+      properties: ['openDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) continue;
+    const dir = res.filePaths[0];
+    if (!isGaRoot(dir)) {
+      reason = `${dir} does not contain agentmain.py.`;
+      defaultPath = dir;
+      continue;
+    }
+    backend.setGaRoot(dir);
+    return true;
+  }
+}
+
+// Make sure a usable GA folder is configured before the backend starts.
+async function ensureGaRoot() {
+  const { value, source } = backend.gaRoot();
+  if (isGaRoot(value)) return true;
+  const reason = value
+    ? `The configured GenericAgent folder is not usable:\n${value}\n(from ${source}; agentmain.py not found)`
+    : 'No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root).';
+  return pickGaRoot(reason, value);
+}
+
 async function boot() {
   try {
     backend = new Backend(app.getPath('userData'), app.isPackaged ? process.resourcesPath : null);
+    if (!(await ensureGaRoot())) {
+      app.exit(1);
+      return;
+    }
     backend.start();
     const url = await backend.waitReady();
     origin = new URL(url).origin;
@@ -102,8 +148,21 @@ async function boot() {
   } catch (err) {
     const tail = backend ? backend.tail.slice(-15).join('\n') : '';
     const where = backend ? `\n\nLog: ${backend.logFile}\nSettings: ${backend.settings.file}` : '';
-    dialog.showErrorBox('GenericAgent-Harness failed to start', `${err.message}\n\n${tail}${where}`);
     if (backend) await backend.stop(1000);
+    // A wrong-but-plausible GA folder only shows up once the backend runs: let the user re-pick.
+    const { response } = await dialog.showMessageBox({
+      type: 'error',
+      title: 'GenericAgent-Harness',
+      message: 'GenericAgent-Harness failed to start',
+      detail: `${err.message}\n\n${tail}${where}`,
+      buttons: backend ? ['Quit', 'Choose GenericAgent folder...'] : ['Quit'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (response === 1 && await pickGaRoot('Choose a different GenericAgent folder.', backend.gaRoot().value)) {
+      app.relaunch();
+    }
     app.exit(1);
   }
 }

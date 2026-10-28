@@ -11,6 +11,7 @@
 const { spawn, spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..', '..');
@@ -32,23 +33,86 @@ function runtime(resourcesPath) {
   return { python, cwd: REPO, pythonPath: null };
 }
 
-// Optional <userData>/desktop.json: {"python": "...", "args": ["--ga-root", "..."], "cwd": "...", "env": {}}
+// Optional <userData>/desktop.json:
+//   {"ga_root": "...", "python": "...", "args": [...], "cwd": "...", "env": {}}
+// ga_root is written by the shell itself once the user picks a GenericAgent folder.
+function readSettingsFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw new Error(`${file}: ${err.message}`);
+  }
+}
+
 function loadSettings(userData, rt) {
   const file = path.join(userData, 'desktop.json');
-  let data = {};
-  try {
-    data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw new Error(`${file}: ${err.message}`);
-  }
+  const data = readSettingsFile(file);
   return {
     file,
+    gaRoot: typeof data.ga_root === 'string' ? data.ga_root : null,
     python: process.env.GAH_DESKTOP_PYTHON || data.python || rt.python,
     args: Array.isArray(data.args) ? data.args.map(String) : [],
     cwd: data.cwd || rt.cwd,
     pythonPath: rt.pythonPath,
     env: data.env && typeof data.env === 'object' ? data.env : {},
   };
+}
+
+// ---- GenericAgent checkout ------------------------------------------------------------
+// The backend needs GA's agentmain.py. Mirror ga_harness/launcher.resolve_ga_root so the shell
+// can check *before* spawning and ask the user instead of letting the backend die with code 2.
+
+function isGaRoot(dir) {
+  return typeof dir === 'string' && dir !== '' && fs.existsSync(path.join(dir, 'agentmain.py'));
+}
+
+function harnessConfigPath() {
+  return path.join(process.env.GAH_HOME || path.join(os.homedir(), '.ga-harness'), 'config.toml');
+}
+
+// Only the top-level `ga_root = "..."` / `'...'` line is needed; not a general TOML parser.
+function readHarnessGaRoot() {
+  let text;
+  try { text = fs.readFileSync(harnessConfigPath(), 'utf8'); } catch { return null; }
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\[/.test(line)) break;                     // keys after a table header are not top-level
+    let m = line.match(/^\s*ga_root\s*=\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) return m[1].replace(/\\(["\\])/g, '$1');
+    m = line.match(/^\s*ga_root\s*=\s*'([^']*)'/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function expandHome(p) {
+  return p && /^~(?=$|[\\/])/.test(p) ? path.join(os.homedir(), p.slice(1)) : p;
+}
+
+// Returns {value, source} in launcher order (--ga-root arg > desktop.json > $GA_ROOT >
+// config.toml); value is null when nothing is configured.
+function configuredGaRoot(settings) {
+  const i = settings.args.indexOf('--ga-root');
+  if (i >= 0 && settings.args[i + 1]) return { value: path.resolve(settings.args[i + 1]), source: `${settings.file} (args)` };
+  const eq = settings.args.find((a) => a.startsWith('--ga-root='));
+  if (eq) return { value: path.resolve(eq.slice('--ga-root='.length)), source: `${settings.file} (args)` };
+  if (settings.gaRoot) return { value: path.resolve(expandHome(settings.gaRoot)), source: settings.file };
+  const env = { ...process.env, ...settings.env }.GA_ROOT;
+  if (env) return { value: path.resolve(env), source: 'GA_ROOT' };
+  const toml = readHarnessGaRoot();
+  if (toml) return { value: path.resolve(expandHome(toml)), source: harnessConfigPath() };
+  return { value: null, source: null };
+}
+
+// Persist the chosen folder in desktop.json, keeping every other key.
+function saveGaRoot(settings, dir) {
+  const data = readSettingsFile(settings.file);
+  data.ga_root = dir;
+  fs.mkdirSync(path.dirname(settings.file), { recursive: true });
+  const tmp = `${settings.file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, settings.file);
+  settings.gaRoot = dir;
 }
 
 class Backend {
@@ -63,6 +127,10 @@ class Backend {
     this.exited = null;      // Promise resolved with the exit code
     this.tail = [];          // last output lines for error dialogs
   }
+
+  gaRoot() { return configuredGaRoot(this.settings); }
+
+  setGaRoot(dir) { saveGaRoot(this.settings, dir); }
 
   start() {
     fs.mkdirSync(path.dirname(this.readyFile), { recursive: true });
@@ -87,6 +155,9 @@ class Backend {
       env.PYTHONPATH = [this.settings.pythonPath, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
     }
     const args = ['-m', 'ga_harness.cli', 'run', '--ui', 'web', ...this.settings.args];
+    // desktop.json ga_root wins over $GA_ROOT / config.toml; an explicit --ga-root arg wins over both.
+    const hasArg = this.settings.args.some((a) => a === '--ga-root' || a.startsWith('--ga-root='));
+    if (this.settings.gaRoot && !hasArg) args.push('--ga-root', path.resolve(expandHome(this.settings.gaRoot)));
     this.child = spawn(this.settings.python, args, {
       cwd: this.settings.cwd,
       env,
@@ -151,4 +222,4 @@ class Backend {
   }
 }
 
-module.exports = { Backend };
+module.exports = { Backend, isGaRoot };

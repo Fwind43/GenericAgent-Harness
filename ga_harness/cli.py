@@ -24,6 +24,17 @@ def _extra_dirs(env: str) -> list[Path]:
     return [Path(p) for p in os.environ.get(env, "").split(os.pathsep) if p]
 
 
+def _err(msg: str) -> None:
+    """Report to the real stderr. Once ga-stdout is mounted, sys.stderr is a proxy that turns
+    lines into agent.log events, so failures printed there would never reach the terminal or
+    a supervising process (the desktop shell's backend.log)."""
+    stream = sys.__stderr__ or sys.stderr
+    try:
+        print(msg, file=stream, flush=True)
+    except Exception:
+        pass
+
+
 def select_frontend(tree: list[dict], manifests: dict, ui: str | None) -> list[dict]:
     """Ensure exactly one frontend plugin. --ui NAME replaces any frontend in the tree with
     ui-NAME; otherwise the tree's own frontend wins, falling back to ui-cli."""
@@ -95,7 +106,7 @@ def main(argv=None) -> int:
     try:
         tree = preferences.resolve(preferences.read()[0])
     except (ValueError, OSError):
-        print("[gah] plugin settings could not be loaded; repair $GAH_PLUGIN_CONFIG before launching", file=sys.stderr)
+        _err("[gah] plugin settings could not be loaded; repair $GAH_PLUGIN_CONFIG before launching")
         return 2
     if args.cmd == "tree":
         for e in tree:
@@ -105,7 +116,7 @@ def main(argv=None) -> int:
     if args.workspace or args.project:
         entry = next((e for e in tree if e["name"] == "workspace-store" and not e["disabled"]), None)
         if entry is None:
-            print("[gah] workspace selection requires workspace-store", file=sys.stderr)
+            _err("[gah] workspace selection requires workspace-store")
             return 2
         entry["config"] = {**(entry["config"] or {}),
                            "start_workspace": args.workspace, "start_project": args.project}
@@ -119,13 +130,13 @@ def main(argv=None) -> int:
         bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"
                and not (v.get("missing") and set(v["missing"]) <= dormant)}
         if bad:
-            print(f"[gah] plugins not active: {bad}", file=sys.stderr)
+            _err(f"[gah] plugins not active: {bad}")
         if (args.workspace or args.project) and rt.ctx.get("workspaces") is None:
-            print("[gah] requested workspace/project could not be activated; refusing to run", file=sys.stderr)
+            _err("[gah] requested workspace/project could not be activated; refusing to run")
             return 2
         frontend = rt.ctx.get("frontend")
         if frontend is None:
-            print("[gah] no active plugin provides `frontend` (does it have its `agent`?)", file=sys.stderr)
+            _err("[gah] no active plugin provides `frontend` (does it have its `agent`?)")
             return 2
         return frontend.main(task=args.task, timeout=args.timeout)
     finally:

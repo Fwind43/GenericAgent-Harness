@@ -15,12 +15,22 @@ The backend is `python -m ga_harness.cli run --ui web` using the repository `.ve
 Optional `<userData>/desktop.json` (path shown in startup error dialogs):
 
 ```json
-{ "python": "E:/Work/GenericAgent/.venv/Scripts/python.exe",
-  "args": ["--ga-root", "E:/Work/GenericAgent", "--patch", "C:/Users/me/.ga-harness/web-mykey.toml"],
-  "cwd": "C:/path/to/ga-harness", "env": {} }
+{ "ga_root": "E:/Work/GenericAgent",
+  "python": "E:/Work/GenericAgent/.venv/Scripts/python.exe",
+  "args": [], "cwd": "C:/path/to/ga-harness", "env": {} }
 ```
 
 `GAH_DESKTOP_PYTHON` overrides `python`. Backend output goes to `<userData>/logs/backend.log`.
+
+**GenericAgent folder.** Before spawning the backend the shell resolves the GA checkout in this
+order: `--ga-root` in `args` > `ga_root` in desktop.json > `$GA_ROOT` > `ga_root` in
+`~/.ga-harness/config.toml`. If none points at a folder containing `agentmain.py` (typical when
+launched from the Start menu / Finder, where shell env vars are absent), a dialog asks the user to
+choose it and saves the choice as `ga_root` in desktop.json. The startup-failure dialog also offers
+"Choose GenericAgent folder..." and relaunches.
+
+Startup errors from `gah` itself (`[gah] ...`) are written to the real stderr even after
+`ga-stdout` has replaced `sys.stderr`, so they appear in `backend.log` and the failure dialog.
 
 ## Backend contract
 
