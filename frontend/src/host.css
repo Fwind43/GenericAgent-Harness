@@ -54,7 +54,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outlin
 .side-conn .dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.5}
 .side-conn .dot.live::before{background:#2e9d5b;opacity:1}
 .icon-btn{background:transparent;color:var(--muted);border:0;border-radius:8px;padding:4px 8px;font-size:16px;line-height:1}
-.lang-btn{font-size:13px;font-weight:600;min-width:32px}
 .icon-btn:hover:not(:disabled){background:var(--border);color:var(--text)}
 .side-close{width:28px;height:28px;padding:0;align-items:center;justify-content:center;border-radius:6px}
 #sideOpen,.side-close{display:none}
@@ -165,3 +164,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-mode-name{font-size:13px;font-weight:600}.gah-mode-name small{margin-left:6px;font-weight:400;color:var(--muted)}
 .gah-mode-desc{font-size:12px;color:var(--muted);line-height:1.4}
 .gah-mode-check{position:absolute;right:10px;top:8px;color:var(--accent)}
+.gah-ico[data-i="globe"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E")}
+.gah-setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--border)}
+.gah-setting-text{display:flex;flex-direction:column;gap:3px;min-width:0}.gah-setting-text strong{font-size:14px;font-weight:600}.gah-setting-text span{font-size:12.5px;color:var(--muted)}
+.gah-lang-options{display:inline-flex;flex:none;padding:2px;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted)}
+.gah-lang-options button{border:0;border-radius:6px;padding:5px 14px;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.gah-lang-options button.active{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+@media (max-width:560px){.gah-setting-row{flex-direction:column;align-items:flex-start}}

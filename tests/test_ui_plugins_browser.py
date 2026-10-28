@@ -155,8 +155,10 @@ def test_language_follows_browser_and_toggle(browser, plugins_app):
     pw.expect(card(dialog, "ga-core")).to_contain_text("Host an unmodified GenericAgent")
     assert not any("\u4e00" <= ch <= "\u9fff" for ch in dialog.inner_text())
     page.keyboard.press("Escape")
-    page.locator("#langBtn").click()
-    page.wait_for_load_state()
+    page.locator("#settingsBtn").click()
+    page.locator(".gah-settings-tab", has_text="General").click()
+    with page.expect_navigation():
+        page.locator('.gah-lang-options [data-lang="zh"]').click()
     assert page.evaluate("GAH_LANG") == "zh"
     dialog = open_plugins(page, base)
     pw.expect(card(dialog, "ga-core")).to_contain_text("\u627f\u8f7d\u672a\u7ecf\u4fee\u6539\u7684 GenericAgent")

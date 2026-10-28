@@ -1,9 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { request } from './api';
-import { language, save, saved, T } from './i18n';
+import { save, saved, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
+import { GeneralSettings } from './components/GeneralSettings';
 import { ChatMessage } from './components/ChatMessage';
 import { ModeBadge, ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
@@ -119,13 +120,12 @@ export function App() {
       <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>GenericAgent-Harness</h1><button type="button" className="icon-btn side-close" data-gah-close onClick={() => { if (!narrow()) setCollapsed(true); }} title={T('收起侧边栏', 'Collapse sidebar')} aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
       <div className="side-body"><Slot name="sidebar" /></div>
       <div className="side-resize" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin={SIDE_MIN} aria-valuemax={SIDE_MAX} aria-valuenow={sideWidth} aria-label={T('拖动调整侧边栏宽度', 'Resize sidebar')} title={T('拖动调整宽度，双击恢复默认', 'Drag to resize, double-click to reset')} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => setSideWidth(SIDE_DEFAULT)} />
-      <div className="side-foot"><Slot name="sidebar-foot" /><Settings><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
+      <div className="side-foot"><Slot name="sidebar-foot" /><Settings><GeneralSettings /><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>
     <div className="scrim" data-gah-close />
     <div className="main-col">
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}<span className="spacer" /><Slot name="header" />
-        <button type="button" className="icon-btn lang-btn" id="langBtn" title={T('Switch to English', '切换到中文')} onClick={() => { save('gah-lang', language === 'zh' ? 'en' : 'zh'); location.reload(); }}>{T('EN', '中')}</button>
       </header>
       <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
