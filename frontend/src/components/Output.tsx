@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { T } from '../i18n';
 
 export function Chevron() {
@@ -15,6 +15,14 @@ export function Disclosure({ title, children, initial = false, className = '', s
   chevron?: 'start' | 'end'; label?: string;
 }) {
   const [open, setOpen] = useState(initial);
+  // Follow later changes of ``initial`` too: a live step or group opens while it runs
+  // and collapses once it is done; manual toggles are kept until the next change.
+  const seen = useRef(initial);
+  useEffect(() => {
+    if (seen.current === initial) return;
+    seen.current = initial;
+    setOpen(initial);
+  }, [initial]);
   return <details className={className} data-state={state} open={open} onToggle={e => setOpen(e.currentTarget.open)}>
     <summary aria-label={label}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{children}
   </details>;
