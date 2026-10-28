@@ -154,7 +154,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   .gah-settings-tab{flex:1;min-height:44px;padding:9px 12px}
   .gah-settings-panel.gah-model-dialog>.dialog-content,.gah-settings-panel.gah-plugin-dialog>.dialog-content{padding:16px}
 }
-.new-chat-bar{display:flex;gap:6px;align-items:center;margin:0 0 6px 4px}
+.new-chat-bar{display:flex;gap:6px;align-items:center;max-width:var(--col-w,820px);margin:0 auto 6px;padding-left:4px}
 .gah-mode{position:relative}
 .gah-mode-trigger{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid transparent;border-radius:8px;background:none;color:var(--text);font:inherit;font-size:13px;cursor:pointer}
 .gah-mode-trigger:hover:not(:disabled),.gah-mode-trigger[aria-expanded=true]{border-color:var(--border);background:var(--surface-muted)}
