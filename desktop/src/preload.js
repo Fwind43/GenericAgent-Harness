@@ -10,4 +10,9 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
   pickDirectory: (opts) => ipcRenderer.invoke('gah:pick-directory', opts || {}),
   openPath: (target) => ipcRenderer.invoke('gah:open-path', target),
   openExternal: (url) => ipcRenderer.invoke('gah:open-external', url),
+  updates: Object.freeze({
+    status: () => ipcRenderer.invoke('gah:update-status'),
+    check: () => ipcRenderer.invoke('gah:update-check'),
+    configure: (patch) => ipcRenderer.invoke('gah:update-config', patch || {}),
+  }),
 }));

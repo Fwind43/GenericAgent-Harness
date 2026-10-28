@@ -1,11 +1,16 @@
 name: desktop
 
 # Builds the Electron desktop app for Windows, macOS (arm64 + x64) and Linux.
-# Every run uploads unsigned installers as artifacts; a "desktop-v*" tag also publishes a release.
+# Every run uploads unsigned installers as artifacts; a "v*" tag (e.g. v0.2.0) also creates a
+# draft release. The release carries, besides the installers:
+#   update.json + ga-harness-app-<version>.zip   code-only update read by desktop/src/updater.js
+#   latest.yml / latest-linux.yml + *.blockmap   installer update (electron-updater, generic feed)
+# Bump desktop/MIN_SHELL when a release needs a newer desktop shell; otherwise desktop users
+# only download the small code package.
 on:
   push:
     branches: [main, desktop]
-    tags: ["desktop-v*"]
+    tags: ["v*"]
     paths:
       - "desktop/**"
       - "frontend/**"
@@ -65,10 +70,8 @@ jobs:
         run: npm ci
 
       - name: Set version from tag
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
-        working-directory: desktop
-        shell: bash
-        run: npm version "${GITHUB_REF_NAME#desktop-v}" --no-git-tag-version --allow-same-version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node desktop/scripts/set-version.mjs "${{ github.ref_name }}"
 
       - name: Check shell sources
         working-directory: desktop
@@ -94,10 +97,49 @@ jobs:
             desktop/dist/*.dmg
             desktop/dist/*.AppImage
             desktop/dist/*.tar.gz
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
+            desktop/dist/latest-linux.yml
+
+  # Code-only update package (platform independent: ga_harness incl. ui-web dist and plugins).
+  app:
+    name: app-bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node desktop/scripts/set-version.mjs "${{ github.ref_name }}"
+
+      - name: Build web frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build code package and update.json
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ga_harness/__init__.py)
+          python3 desktop/scripts/app_bundle.py "$version" out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-app
+          if-no-files-found: error
+          path: |
+            out/update.json
+            out/*.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write

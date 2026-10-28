@@ -16,26 +16,92 @@ const path = require('node:path');
 
 const REPO = path.resolve(__dirname, '..', '..');
 
+// ---- Versions and updated code ---------------------------------------------------------
+// A release ships the shell installer and a small "app bundle" (just the ga_harness package).
+// Code-only updates unpack into <userData>/app/<version>/ga_harness; app/state.json records
+// {"current", "previous", "bad": [...]}. The packaged resources/py stays the last fallback.
+
+function parseVersion(v) {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(v || '').trim());
+  return m ? { nums: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] || null } : null;
+}
+
+// -1 / 0 / 1; unparsable versions sort first. A prerelease sorts before its release.
+function compareVersions(a, b) {
+  const x = parseVersion(a);
+  const y = parseVersion(b);
+  if (!x || !y) return (x ? 1 : 0) - (y ? 1 : 0);
+  for (let i = 0; i < 3; i += 1) if (x.nums[i] !== y.nums[i]) return x.nums[i] < y.nums[i] ? -1 : 1;
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  return x.pre.localeCompare(y.pre, 'en', { numeric: true }) < 0 ? -1 : 1;
+}
+
+// __version__ of the ga_harness package under `dir`, or null.
+function readCodeVersion(dir) {
+  try {
+    const text = fs.readFileSync(path.join(dir, 'ga_harness', '__init__.py'), 'utf8');
+    const m = /^__version__\s*=\s*["']([^"']+)["']/m.exec(text);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+function appDir(userData) { return path.join(userData, 'app'); }
+
+function readAppState(userData) {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(appDir(userData), 'state.json'), 'utf8'));
+    return { current: data.current || null, previous: data.previous || null, bad: Array.isArray(data.bad) ? data.bad.map(String) : [] };
+  } catch { return { current: null, previous: null, bad: [] }; }
+}
+
+function writeAppState(userData, state) {
+  const file = path.join(appDir(userData), 'state.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+// The newest usable updated code, if it is newer than what the installer shipped.
+function selectUpdatedCode(userData, builtinVersion) {
+  const state = readAppState(userData);
+  for (const version of [state.current, state.previous]) {
+    if (!version || state.bad.includes(version)) continue;
+    const dir = path.join(appDir(userData), version);
+    if (readCodeVersion(dir) !== version) continue;
+    if (compareVersions(version, builtinVersion) <= 0) continue;   // a newer installer wins
+    return { dir, version, source: 'update' };
+  }
+  return null;
+}
+
 // Where the backend comes from. Packaged builds carry a standalone CPython under
 // resources/python and the ga_harness package under resources/py (see scripts/prepare.mjs);
-// from source we use the repository checkout and its .venv.
-function runtime(resourcesPath) {
+// a code-only update replaces resources/py with <userData>/app/<version>.
+// From source we use the repository checkout and its .venv.
+function runtime(resourcesPath, userData, builtinVersion) {
   if (resourcesPath) {
     const python = process.platform === 'win32'
       ? path.join(resourcesPath, 'python', 'python.exe')
       : path.join(resourcesPath, 'python', 'bin', 'python3');
-    return { python, cwd: path.join(resourcesPath, 'py'), pythonPath: path.join(resourcesPath, 'py') };
+    const builtin = path.join(resourcesPath, 'py');
+    const code = selectUpdatedCode(userData, builtinVersion)
+      || { dir: builtin, version: readCodeVersion(builtin) || builtinVersion, source: 'builtin' };
+    return { python, cwd: code.dir, pythonPath: code.dir, code };
   }
   const venv = process.platform === 'win32'
     ? path.join(REPO, '.venv', 'Scripts', 'python.exe')
     : path.join(REPO, '.venv', 'bin', 'python');
   const python = fs.existsSync(venv) ? venv : (process.platform === 'win32' ? 'python' : 'python3');
-  return { python, cwd: REPO, pythonPath: null };
+  return { python, cwd: REPO, pythonPath: null, code: { dir: REPO, version: readCodeVersion(REPO), source: 'source' } };
 }
 
 // Optional <userData>/desktop.json:
-//   {"ga_root": "...", "python": "...", "args": [...], "cwd": "...", "env": {}}
-// ga_root is written by the shell itself once the user picks a GenericAgent folder.
+//   {"ga_root": "...", "python": "...", "args": [...], "cwd": "...", "env": {},
+//    "update": {"mirror": "", "auto_check": true}}
+// ga_root and update are written by the shell itself (folder picker, tray menu).
 function readSettingsFile(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -104,22 +170,32 @@ function configuredGaRoot(settings) {
   return { value: null, source: null };
 }
 
-// Persist the chosen folder in desktop.json, keeping every other key.
-function saveGaRoot(settings, dir) {
-  const data = readSettingsFile(settings.file);
-  data.ga_root = dir;
-  fs.mkdirSync(path.dirname(settings.file), { recursive: true });
-  const tmp = `${settings.file}.${process.pid}.tmp`;
+// Read-modify-write desktop.json, keeping every other key. Returns the written object.
+function editSettingsFile(file, mutate) {
+  const data = readSettingsFile(file);
+  mutate(data);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-  fs.renameSync(tmp, settings.file);
+  fs.renameSync(tmp, file);
+  return data;
+}
+
+// Persist the chosen folder in desktop.json.
+function saveGaRoot(settings, dir) {
+  editSettingsFile(settings.file, (data) => { data.ga_root = dir; });
   settings.gaRoot = dir;
 }
 
 class Backend {
   // resourcesPath: process.resourcesPath when packaged, otherwise null (run from source).
-  constructor(userData, resourcesPath = null) {
+  // builtinVersion: the shell (installer) version, which equals the code it shipped with.
+  constructor(userData, resourcesPath = null, builtinVersion = null) {
     this.userData = userData;
-    this.settings = loadSettings(userData, runtime(resourcesPath));
+    const rt = runtime(resourcesPath, userData, builtinVersion);
+    this.code = rt.code;     // {dir, version, source: 'builtin' | 'update' | 'source'}
+    this.settings = loadSettings(userData, rt);
+    this.url = null;
     this.token = crypto.randomBytes(32).toString('hex');
     this.readyFile = path.join(userData, 'run', `backend-${process.pid}.json`);
     this.logFile = path.join(userData, 'logs', 'backend.log');
@@ -131,6 +207,18 @@ class Backend {
   gaRoot() { return configuredGaRoot(this.settings); }
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
+
+  // The updated code failed to start: never pick it again. Returns true when another
+  // start attempt makes sense (an older update or the built-in code is left to try).
+  rejectUpdatedCode() {
+    if (this.code.source !== 'update') return false;
+    const state = readAppState(this.userData);
+    if (!state.bad.includes(this.code.version)) state.bad.push(this.code.version);
+    if (state.current === this.code.version) state.current = state.previous;
+    if (state.previous === this.code.version || state.previous === state.current) state.previous = null;
+    writeAppState(this.userData, state);
+    return true;
+  }
 
   start() {
     fs.mkdirSync(path.dirname(this.readyFile), { recursive: true });
@@ -190,7 +278,7 @@ class Backend {
       if (dead) throw new Error('backend exited before it was ready');
       try {
         const info = JSON.parse(fs.readFileSync(this.readyFile, 'utf8'));
-        if (info.url) return info.url;
+        if (info.url) { this.url = info.url; return info.url; }
       } catch { /* not written yet */ }
       await new Promise((r) => setTimeout(r, 150));
     }
@@ -222,4 +310,7 @@ class Backend {
   }
 }
 
-module.exports = { Backend, isGaRoot };
+module.exports = {
+  Backend, isGaRoot, editSettingsFile, readSettingsFile,
+  compareVersions, parseVersion, readCodeVersion, appDir, readAppState, writeAppState,
+};

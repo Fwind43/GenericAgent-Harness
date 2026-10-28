@@ -13,9 +13,12 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/backend.js && node --check src/preload.js && node --check scripts/prepare.mjs",
+    "check": "node --check src/main.js && node --check src/backend.js && node --check src/preload.js && node --check src/updater.js && node --check scripts/prepare.mjs",
     "prepare:resources": "node scripts/prepare.mjs",
     "dist": "node scripts/prepare.mjs && electron-builder --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "^38.0.0",
