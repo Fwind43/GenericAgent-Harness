@@ -171,3 +171,19 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-lang-options button{border:0;border-radius:6px;padding:5px 14px;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
 .gah-lang-options button.active{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 @media (max-width:560px){.gah-setting-row{flex-direction:column;align-items:flex-start}}
+
+/* session view tabs (Chat + plugin views) and the "..." menu */
+.gah-view-tabs{display:flex;align-items:flex-end;gap:2px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--bg);flex:none}
+.gah-view-tab{background:transparent;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:6px 12px 8px;font:inherit;font-size:13.5px;color:var(--muted);cursor:pointer}
+.gah-view-tab:hover{color:var(--text)}
+.gah-view-tab.active{color:var(--text);border-bottom-color:var(--accent);font-weight:500}
+.gah-view-more{position:relative}
+.gah-view-dots{letter-spacing:1px;border-bottom-color:transparent!important}
+.gah-view-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.12)}
+.gah-view-menu button{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;background:transparent;border:0;border-radius:6px;font:inherit;font-size:13.5px;color:var(--text);text-align:left;cursor:pointer}
+.gah-view-menu button:hover{background:var(--surface-muted)}
+.gah-view-menu button span{width:16px;text-align:center;color:var(--muted)}
+.gah-view-area{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.gah-view-area[hidden],main[hidden]{display:none}
+.gah-view-area .gah-view{flex:1;min-height:0;display:flex;flex-direction:column}
+.gah-view[hidden]{display:none}

@@ -1,0 +1,6 @@
+name = "web-trace"
+category = "ui"
+entry = "main:apply"
+description = "Trace view for ui-web: a timeline of each run's inputs, model calls, tool calls and timings."
+description_zh = "ui-web 的轨迹视图：按时间线展示每次任务的输入、模型调用、工具调用和耗时。"
+inject = ["web.host"]

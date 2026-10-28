@@ -1,0 +1,25 @@
+.gah-trace-view{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-trace{max-width:900px;width:100%;margin:0 auto;padding:20px 20px 32px;display:flex;flex-direction:column;gap:10px}
+.gah-trace-empty{color:var(--muted);text-align:center;margin-top:18vh;padding:0 20px}
+.gah-trace-empty b{display:block;color:var(--text);font-size:18px;font-weight:600;margin-bottom:6px}
+.gah-trace-run{border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.gah-trace-run-head{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;background:transparent;border:0;font:inherit;color:var(--text);text-align:left;cursor:pointer}
+.gah-trace-caret{width:12px;color:var(--muted);flex:none}
+.gah-trace-run-title{font-weight:600;font-size:14px;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-trace-run-title em{font-style:normal;font-weight:400;color:var(--muted);margin-left:8px}
+.gah-trace-run-meta{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gah-trace-list{list-style:none;margin:0;padding:2px 14px 12px 20px;position:relative}
+.gah-trace-list::before{content:"";position:absolute;left:27px;top:6px;bottom:18px;width:1px;background:var(--border)}
+.gah-trace-row{position:relative}
+.gah-trace-head{display:flex;align-items:center;gap:10px;width:100%;min-height:30px;padding:4px 6px 4px 0;background:transparent;border:0;border-radius:6px;font:inherit;font-size:13px;color:var(--text);text-align:left;cursor:pointer}
+.gah-trace-head:disabled{cursor:default}
+.gah-trace-head:not(:disabled):hover{background:var(--surface-muted)}
+.gah-trace-dot{width:9px;height:9px;border-radius:50%;flex:none;margin-left:3px;background:var(--muted);box-shadow:0 0 0 3px var(--surface);position:relative}
+.k-input .gah-trace-dot{background:#3b82f6}.k-model .gah-trace-dot{background:#8b5cf6}.k-tool .gah-trace-dot{background:#10b981}
+.k-note .gah-trace-dot{background:#f59e0b}.k-output .gah-trace-dot{background:var(--accent)}.failed .gah-trace-dot{background:var(--danger)}
+.gah-trace-title{font-weight:500;white-space:nowrap}
+.failed .gah-trace-title{color:var(--danger)}
+.k-tool .gah-trace-title{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.gah-trace-meta{color:var(--muted);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-trace-secs{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gah-trace-detail{margin:2px 0 8px 22px;padding:10px 12px;max-height:320px;overflow:auto;background:var(--code-bg);border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word}

@@ -5,6 +5,7 @@ import type { PluginAPI, SlotName } from './sdk';
 import { host, useHost } from './store';
 import { T, errorText } from './i18n';
 import { settings, useSettings } from './settings';
+import { views, useViews } from './views';
 
 export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
@@ -28,6 +29,17 @@ export function SettingsPanel({ api, label, icon, order = 0, className = '', onO
     aria-labelledby={'gah-settings-tab-' + id} className={'gah-settings-panel ' + className} hidden={!visible}>
     {visible && children}
   </section></PluginSlot>;
+}
+// A session view tab next to the built-in chat view; children render only while the view is active.
+export function ViewPanel({ api, label, order = 0, className = '', children }: {
+  api: PluginAPI; label: string; order?: number; className?: string; children: ReactNode;
+}) {
+  const id = api.name;
+  const { active } = useViews();
+  useLayoutEffect(() => views.register({ id, label, order }), [id, label, order]);
+  const visible = active === id;
+  return <PluginSlot api={api} name="view"><section id={'gah-view-' + id} role="tabpanel" aria-labelledby={'gah-view-tab-' + id}
+    className={'gah-view ' + className} hidden={!visible}>{visible && children}</section></PluginSlot>;
 }
 export function Icon({ name }: { name: string }) { return <span className="gah-ico" data-i={name} aria-hidden="true" />; }
 export function Modal({ className, label, busy = false, onClose, children }: {

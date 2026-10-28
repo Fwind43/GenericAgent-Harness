@@ -9,6 +9,8 @@ import { ChatMessage } from './components/ChatMessage';
 import { ModeBadge, ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
+import { ViewTabs } from './components/ViewTabs';
+import { CHAT_VIEW, useViews } from './views';
 
 // React never reconciles the children owned by a plugin.
 const Slot = memo(function Slot({ name }: { name: SlotName }) {
@@ -29,6 +31,7 @@ export function App() {
   const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
   const stick = useRef(true), submitting = useRef(false);
+  const { active: view } = useViews();
   const busy = state.running || changing || sending;
   const stats = sessionStats(state.messages ?? []);
   const currentSession = state.sessions?.find((session) => session.id === state.session_id);
@@ -131,11 +134,13 @@ export function App() {
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}<span className="spacer" /><Slot name="header" />
       </header>
+      <ViewTabs />
       <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
-      <main id="scroll" ref={scroll} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
+      <main id="scroll" ref={scroll} hidden={view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <div className="empty">{T('开始一个新任务', 'Start a new task')}</div>}</div>
       </main>
+      <div className="gah-view-area" hidden={view === CHAT_VIEW}><Slot name="view" /></div>
       <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" onSubmit={send}>
         <Slot name="composer-top" />
         <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onFocus={() => host.emit('composer-focus', true)} onBlur={() => host.emit('composer-focus', false)} onKeyDown={event => {

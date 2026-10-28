@@ -64,6 +64,10 @@ name = "web-plugins"
 [[plugins]]
 name = "web-workspaces"
 
+# session "Trace" view: timeline of inputs, model calls, tool calls and timings
+[[plugins]]
+name = "web-trace"
+
 # per-message edit/regenerate and branch switching; add-on for ui-web
 [[plugins]]
 name = "worldline"

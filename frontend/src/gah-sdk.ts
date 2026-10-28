@@ -7,8 +7,9 @@ import { plugins } from './plugin-runtime';
 import type { BrowserSDK, PluginSetup, ReactPlugin } from './sdk';
 
 export { host, useHost } from './store';
+export { views, useViews, CHAT_VIEW } from './views';
 export { T, save, saved, errorText } from './i18n';
-export { Icon, Modal, PluginSlot, SettingsPanel, useOperation, matches, alertDialog, confirmDialog, promptDialog } from './plugin-kit';
+export { Icon, Modal, PluginSlot, SettingsPanel, ViewPanel, useOperation, matches, alertDialog, confirmDialog, promptDialog } from './plugin-kit';
 export type { AskOptions } from './plugin-kit';
 export type * from './types';
 export type { PluginAPI, SlotName, Cleanup, Interceptor, PluginSetup, ReactPlugin, DomChild } from './sdk';

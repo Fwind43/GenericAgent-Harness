@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { HostState } from './types';
 
-export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'overlay' | 'settings';
+export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'overlay' | 'settings' | 'view';
 export type Cleanup = () => void;
 export type Interceptor = (text: string) => boolean | Promise<boolean>;
 export type DomChild = Node | string | number | boolean | null | undefined | DomChild[];
