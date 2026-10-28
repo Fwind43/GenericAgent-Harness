@@ -41,7 +41,7 @@ def test_cli_applies_saved_preferences_before_mount(tmp_path, monkeypatch, capsy
 
 
 @pytest.mark.parametrize("command", ["tree", "run"])
-def test_cli_refuses_corrupt_preferences_without_mounting(tmp_path, monkeypatch, capsys, command):
+def test_cli_refuses_corrupt_preferences_without_mounting(tmp_path, monkeypatch, capfd, command):
     path = tmp_path / "plugins.json"
     path.write_text("SYNTHETIC-PRIVATE-INVALID-JSON", encoding="utf-8")
     monkeypatch.setenv("GAH_PLUGIN_CONFIG", str(path))
@@ -54,7 +54,7 @@ def test_cli_refuses_corrupt_preferences_without_mounting(tmp_path, monkeypatch,
 
     monkeypatch.setattr(cli, "mount", unexpected_mount)
     assert cli.main([command]) == 2
-    err = capsys.readouterr().err
+    err = capfd.readouterr().err
     assert "plugin settings could not be loaded" in err
     assert "PRIVATE" not in err
     assert path.read_text(encoding="utf-8") == "SYNTHETIC-PRIVATE-INVALID-JSON"

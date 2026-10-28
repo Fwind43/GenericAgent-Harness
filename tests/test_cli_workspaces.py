@@ -8,7 +8,7 @@ from ga_harness import cli, launcher
 
 @pytest.mark.parametrize("option,value", [("--workspace", "DIR"), ("--project", "project-a")])
 @pytest.mark.parametrize("active", [False, True])
-def test_startup_scope_config_and_fail_closed(tmp_path, monkeypatch, capsys, option, value, active):
+def test_startup_scope_config_and_fail_closed(tmp_path, monkeypatch, capfd, option, value, active):
     monkeypatch.setenv("GAH_PLUGIN_CONFIG", str(tmp_path / "plugins.json"))
     monkeypatch.delenv("GAH_PLUGIN_PATH", raising=False)
     monkeypatch.delenv("GAH_PROFILE_PATH", raising=False)
@@ -29,7 +29,7 @@ def test_startup_scope_config_and_fail_closed(tmp_path, monkeypatch, capsys, opt
     assert config["start_workspace" if option == "--workspace" else "start_project"] == value
     assert len(called) == int(active)
     if not active:
-        assert "refusing to run" in capsys.readouterr().err
+        assert "refusing to run" in capfd.readouterr().err
 
 
 def test_startup_scope_arguments_are_exclusive():
