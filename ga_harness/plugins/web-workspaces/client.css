@@ -28,3 +28,7 @@
 .gah-scope-pick .gah-ico{width:14px;height:14px}
 .gah-scope-pick select{border:0;background:transparent;color:var(--text);font:inherit;max-width:220px;cursor:pointer;padding:2px}
 .gah-scope-pick select:disabled{opacity:.5;cursor:default}
+.gah-scope-dir{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted,inherit);font:inherit;font-size:12px;padding:2px 4px;cursor:pointer;max-width:260px}
+.gah-scope-dir b{font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-scope-dir:hover:not(:disabled) b{text-decoration:underline}
+.gah-scope-dir:disabled{opacity:.5;cursor:default}

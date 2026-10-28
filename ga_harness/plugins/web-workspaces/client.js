@@ -108,6 +108,11 @@ var GAHPlugin_web_workspaces = (function(exports, jsxRuntime, react, sdk) {
             scope.projects.map((p) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: p.id, children: p.name }, p.id))
           ] })
         ] }),
+        scope && !state.messages.length && !state.running && /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-scope-dir", disabled: busy, title: `${scope.workspace ?? ""}
+${scope.project ? sdk.T("点击修改项目目录", "Click to change the project directory") : sdk.T("点击切换工作目录", "Click to switch directory")}`, onClick: () => open("workspace"), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("目录", "Directory") }),
+          /* @__PURE__ */ jsxRuntime.jsx("b", { children: (scope.workspace ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || scope.workspace })
+        ] }),
         !!suggestions.length && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-slash", role: "listbox", "aria-label": sdk.T("命令", "Command"), children: suggestions.map((item, index) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-slash-item${index === selected ? " active" : ""}`, role: "option", "aria-selected": index === selected, onMouseDown: (event) => {
           event.preventDefault();
           pick(index);
