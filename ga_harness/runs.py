@@ -389,19 +389,22 @@ class Runs:
     def _fold_notes(messages, data):
         """Attach plugin ``notes`` ([{kind, text}]) to the running assistant message.
 
-        Each note records the last started turn so the UI can place it between
-        steps (for example a steered user message delivered at a turn boundary).
+        A note is placed after ``turn``: the plugin's explicit integer ``turn`` when
+        given (plugin events and agent events can arrive in either order), otherwise
+        the last started turn. The UI uses it to keep notes in sequence with steps.
         """
         notes = data.get("notes") if isinstance(data, dict) else None
         if not isinstance(notes, list) or not messages or messages[-1].get("status") != "running":
             return False
         message = messages[-1]
         turns = [t for t in message.get("turns") or [] if isinstance(t, dict)]
-        turn = max((t.get("turn") or 0 for t in turns), default=0) or len(turns)
+        latest = max((t.get("turn") or 0 for t in turns), default=0) or len(turns)
         added = False
         for note in notes:
             if isinstance(note, dict) and isinstance(note.get("text"), str) and note["text"].strip():
                 kind = note.get("kind") if isinstance(note.get("kind"), str) else "note"
+                turn = note.get("turn")
+                turn = turn if isinstance(turn, int) and not isinstance(turn, bool) else latest
                 message.setdefault("notes", []).append(
                     {"kind": kind, "text": note["text"], "turn": turn, "created_at": time.time()})
                 added = True

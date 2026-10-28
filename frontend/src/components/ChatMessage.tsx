@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { Fragment, memo } from 'react';
 import { T } from '../i18n';
 import { host } from '../store';
 import type { Message, MessageNote, ToolCall, Turn, Usage } from '../types';
@@ -108,8 +108,22 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
   const steps = finalTurn ? turns.slice(0, -1) : turns;
   const reply = (fin ? fin.reply : m.text) || '';
   const awaiting = last && finalQuestion;
-  // Kept outside the collapsible steps so a steered message stays visible after the run.
-  const notes = (m.notes ?? []).map((note, i) => <Note key={i} note={note} />);
+  // A note records the last turn started when it was delivered, so it belongs after
+  // that turn. Steps are split into separate collapsible groups around notes, which
+  // keeps the order intact and the notes visible when the steps are collapsed.
+  const notes = (m.notes ?? []).map((note, i) => ({ note, i, at: typeof note.turn === 'number' ? note.turn : Infinity }));
+  const groups: { steps: Turn[]; notes: typeof notes }[] = [{ steps: [], notes: [] }];
+  let pending = notes.slice();
+  for (const step of steps) {
+    const before = pending.filter(n => n.at < (step.turn ?? 0));
+    if (before.length) {
+      groups.at(-1)!.notes.push(...before);
+      pending = pending.filter(n => !before.includes(n));
+      groups.push({ steps: [], notes: [] });
+    }
+    groups.at(-1)!.steps.push(step);
+  }
+  groups.at(-1)!.notes.push(...pending);
   return <div className={'msg ' + m.role}>
     {m.role === 'assistant' && <div className="meta"><span className="dot" /><span className="assistant-name">GenericAgent</span>
       {m.model?.trim() && <span className="model-name" title={T('使用的模型：', 'Model used: ') + m.model}>{m.model}</span>}
@@ -117,10 +131,15 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       <MessageTime message={m} />
     </div>}
     {m.role === 'user' ? <><div className="body">{m.text}</div><MessageTime message={m} /></> : turns.length ? <>
-      {!!steps.length && <Disclosure className={'steps' + (running ? ' running' : '')} initial={running} title={<>
-        <span className="process-dot" /><span>{running ? T('执行中 · ', 'Working · ') : T('执行过程 · ', 'Steps · ')}{steps.length}{T(' 步', ' steps')}</span>
-      </>}>{steps.map((turn, index) => <Step key={turn.turn} turn={turn} live={running && !finalTurn && index === steps.length - 1} />)}</Disclosure>}
-      {notes}
+      {groups.map((group, g) => {
+        const tail = g === groups.length - 1, active = running && tail;
+        return <Fragment key={g}>
+          {!!group.steps.length && <Disclosure className={'steps' + (active ? ' running' : '')} initial={active} title={<>
+            <span className="process-dot" /><span>{active ? T('执行中 · ', 'Working · ') : T('执行过程 · ', 'Steps · ')}{group.steps.length}{T(' 步', ' steps')}</span>
+          </>}>{group.steps.map((turn, index) => <Step key={turn.turn} turn={turn} live={active && !finalTurn && index === group.steps.length - 1} />)}</Disclosure>}
+          {group.notes.map(n => <Note key={n.i} note={n.note} />)}
+        </Fragment>;
+      })}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
         {finalTurn.summary && <span className="ttl">{finalTurn.summary}</span>}<Tokens usage={finalTurn.usage} /></div>
         <Thinking text={finalTurn.thinking} /><Summary text={finalTurn.summary} />

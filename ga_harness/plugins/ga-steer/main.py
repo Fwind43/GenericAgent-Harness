@@ -55,9 +55,11 @@ def apply(ctx, config):
             state["entry"] = _compose(state["items"])
             handler._done_hooks.insert(0, state["entry"])
 
-    def _applied():
+    def _applied(turn=None):
         ids = [item["id"] for item in state["items"]]
-        notes = [{"kind": "steer", "text": item["text"]} for item in state["items"]]
+        # ``turn`` is the GA turn whose end delivered the text; the note belongs after it.
+        notes = [{"kind": "steer", "text": item["text"], **({"turn": turn} if isinstance(turn, int) else {})}
+                 for item in state["items"]]
         state["items"] = []
         if ids:
             # ``notes`` asks the host to show the delivered text in the transcript.
@@ -83,10 +85,10 @@ def apply(ctx, config):
             def turn_end(response, tool_calls, tool_results, turn, next_prompt, exit_reason):
                 with lock:
                     if _detach(handler):
-                        _applied()  # popped from _done_hooks: already in next_prompt
+                        _applied(turn)  # popped from _done_hooks: already in next_prompt
                     elif state["items"] and not exit_reason:
                         next_prompt = (next_prompt + "\n\n" if next_prompt else "") + _compose(state["items"])
-                        _applied()
+                        _applied(turn)
                     else:
                         _sync()
                 return original(response, tool_calls, tool_results, turn, next_prompt, exit_reason)
