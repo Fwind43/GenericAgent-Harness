@@ -5,6 +5,7 @@ import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
 import { ChatMessage } from './components/ChatMessage';
+import { ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
 
@@ -131,7 +132,7 @@ export function App() {
       <main id="scroll" ref={scroll} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <div className="empty">{T('开始一个新任务', 'Start a new task')}</div>}</div>
       </main>
-      <footer><form id="form" onSubmit={send}>
+      <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" onSubmit={send}>
         <Slot name="composer-top" />
         <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onFocus={() => host.emit('composer-focus', true)} onBlur={() => host.emit('composer-focus', false)} onKeyDown={event => {
           host.emit('composer-key', event);

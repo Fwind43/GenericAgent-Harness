@@ -151,4 +151,15 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
   .gah-settings-tab{flex:1;min-height:44px;padding:9px 12px}
   .gah-settings-panel.gah-model-dialog>.dialog-content,.gah-settings-panel.gah-plugin-dialog>.dialog-content{padding:16px}
 }
-
+.new-chat-bar{display:flex;gap:6px;align-items:center;margin:0 0 6px 4px}
+.gah-mode{position:relative}
+.gah-mode-trigger{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid transparent;border-radius:8px;background:none;color:var(--text);font:inherit;font-size:13px;cursor:pointer}
+.gah-mode-trigger:hover:not(:disabled),.gah-mode-trigger[aria-expanded=true]{border-color:var(--border);background:var(--surface-muted)}
+.gah-mode-trigger:disabled{opacity:.55;cursor:default}
+.gah-mode-caret{color:var(--muted);font-size:11px}
+.gah-mode-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:30;min-width:260px;max-width:min(360px,calc(100vw - 32px));max-height:50vh;overflow:auto;margin:0;padding:4px;list-style:none;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.gah-mode-menu button{position:relative;display:flex;flex-direction:column;gap:2px;width:100%;padding:7px 28px 7px 10px;border:0;border-radius:7px;background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.gah-mode-menu button:hover{background:var(--surface-muted)}
+.gah-mode-name{font-size:13px;font-weight:600}.gah-mode-name small{margin-left:6px;font-weight:400;color:var(--muted)}
+.gah-mode-desc{font-size:12px;color:var(--muted);line-height:1.4}
+.gah-mode-check{position:absolute;right:10px;top:8px;color:var(--accent)}
