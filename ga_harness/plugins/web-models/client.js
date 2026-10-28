@@ -5,8 +5,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
     const [open, setOpen] = react.useState(false), [query, setQuery] = react.useState(""), [provider, setProvider] = react.useState("");
     const trigger = react.useRef(null), popup = react.useRef(null), search = react.useRef(null);
-    const catalog = state.models, effort = state.effort, presets = state.presets;
-    const activePreset = presets == null ? void 0 : presets.items.find((item) => item.id === presets.current);
+    const catalog = state.models, effort = state.effort;
     const current = catalog == null ? void 0 : catalog.items.find((item) => item.id === catalog.current);
     const groups = /* @__PURE__ */ new Map();
     for (const item of (catalog == null ? void 0 : catalog.items) || []) {
@@ -58,7 +57,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       }, children: [
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-name", children: (current == null ? void 0 : current.name) || (current == null ? void 0 : current.model) || sdk.T("选择模型", "Choose model") }),
         effort && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-effort", children: effort.current || "default" }),
-        activePreset && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-effort gah-model-preset", children: sdk.T(activePreset.name_zh || activePreset.name, activePreset.name) }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-caret", "aria-hidden": "true", children: "⌃" })
       ] }) }) }),
       open && reactDom.createPortal(/* @__PURE__ */ jsxRuntime.jsxs("div", { ref: popup, popover: "auto", role: "dialog", "aria-label": sdk.T("模型与思考强度", "Model and reasoning effort"), id: "gah-model-picker", className: "gah-model-popover", onToggle: (event) => {
@@ -101,13 +99,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅当前对话", "This chat only") })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-effort-options", role: "group", "aria-label": sdk.T("推理强度", "Reasoning effort"), children: ["", ...effort.options].map((option) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", "aria-pressed": option === (effort.current || ""), disabled: busy, onClick: () => select("/api/effort", { value: option }), children: option || "default" }, option)) })
-        ] }),
-        presets && presets.items.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-effort gah-picker-preset", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-label", children: [
-            sdk.T("Agent 预设", "Agent preset"),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅当前对话", "This chat only") })
-          ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-effort-options", role: "group", "aria-label": sdk.T("Agent 预设", "Agent preset"), children: [null, ...presets.items].map((item) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", title: item ? sdk.T(item.description_zh || item.description || "", item.description || "") : void 0, "aria-pressed": ((item == null ? void 0 : item.id) || null) === (presets.current || null), disabled: busy, onClick: () => select("/api/preset", { value: (item == null ? void 0 : item.id) || "" }), children: item ? sdk.T(item.name_zh || item.name, item.name) : sdk.T("默认", "Default") }, (item == null ? void 0 : item.id) || "")) })
         ] })
       ] }), document.body)
     ] });
