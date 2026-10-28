@@ -5,7 +5,7 @@ import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
 import { ChatMessage } from './components/ChatMessage';
-import { ModePicker } from './components/ModePicker';
+import { ModeBadge, ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
 
@@ -124,7 +124,7 @@ export function App() {
     <div className="scrim" data-gah-close />
     <div className="main-col">
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
-        {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}<span className="spacer" /><Slot name="header" />
+        {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}<span className="spacer" /><Slot name="header" />
         <button type="button" className="icon-btn lang-btn" id="langBtn" title={T('Switch to English', '切换到中文')} onClick={() => { save('gah-lang', language === 'zh' ? 'en' : 'zh'); location.reload(); }}>{T('EN', '中')}</button>
       </header>
       <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>

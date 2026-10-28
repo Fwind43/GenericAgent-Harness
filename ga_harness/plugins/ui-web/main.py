@@ -308,6 +308,9 @@ class WebFrontend:
         if value is not None and presets.get(value) is None:
             return 400, {"error": "unknown agent preset"}
         with self.lock:
+            current = self.sessions.current() or {}
+            if current.get("messages") and value != (current.get("state") or {}).get("preset"):
+                return 409, {"error": "the agent mode is fixed once the conversation has started"}
             try:
                 self.sessions.remember(preset=value)
             except RuntimeError as e:

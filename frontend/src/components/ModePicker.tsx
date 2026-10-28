@@ -11,6 +11,17 @@ const describe = (item: AgentPreset | null) => item
   ? T(item.description_zh || item.description || '', item.description || '')
   : T('\u5b8c\u6574\u7684 GenericAgent\uff0c\u4e0d\u52a0\u9650\u5236', 'Full GenericAgent, no restrictions');
 
+const ModeIcon = () => <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.5 13.6 4.75v6.5L8 14.5 2.4 11.25v-6.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><circle cx="8" cy="8" r="2" fill="currentColor" /></svg>;
+
+// Read-only mode label shown next to the session title; the mode is fixed once a conversation starts.
+export function ModeBadge() {
+  const { state } = useHost();
+  const presets = state.presets;
+  if (!presets || !presets.items.length) return null;
+  const active = presets.items.find(item => item.id === presets.current) ?? null;
+  return <span className="gah-mode-badge" title={describe(active)}><ModeIcon /><span>{label(active)}</span></span>;
+}
+
 export function ModePicker({ disabled }: { disabled: boolean }) {
   const { state } = useHost();
   const [open, setOpen] = useState(false), [saving, setSaving] = useState(false);
@@ -38,7 +49,7 @@ export function ModePicker({ disabled }: { disabled: boolean }) {
   return <div className="gah-mode" ref={root}>
     <button type="button" ref={trigger} className="gah-mode-trigger" disabled={locked} aria-haspopup="listbox" aria-expanded={open}
       title={describe(active)} onClick={() => setOpen(value => !value)}>
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.5 13.6 4.75v6.5L8 14.5 2.4 11.25v-6.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><circle cx="8" cy="8" r="2" fill="currentColor" /></svg>
+      <ModeIcon />
       <span>{label(active)}</span><span className="gah-mode-caret" aria-hidden="true">{'\u2304'}</span>
     </button>
     {open && <ul className="gah-mode-menu" role="listbox" aria-label={T('Agent \u6a21\u5f0f', 'Agent mode')}>
