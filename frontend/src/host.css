@@ -157,7 +157,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-settings-panel.channel-dialog .channel-heading h2{margin:0}
 /* General: a readable, centred column of rows instead of a 900px-wide strip */
 .gah-general-settings>.dialog-content{padding:20px 24px}
-.gah-general-settings .gah-setting-row{max-width:640px}
+.gah-general-settings .gah-setting-row{max-width:520px}
 @media(max-width:720px){
   .gah-settings-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);border-radius:12px}
   .gah-settings-dialog[open]{flex-direction:column}
