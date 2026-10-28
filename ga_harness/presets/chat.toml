@@ -1,6 +1,0 @@
-name = "Plain chat"
-name_zh = "纯聊天"
-description = "Conversation only: no code execution, files or browser."
-description_zh = "只聊天：不执行代码、不读写文件、不操作浏览器。"
-disable_tools = ["code_run", "file_read", "file_write", "file_patch", "web_scan", "web_execute_js"]
-prompt = """Tools for code, files and the browser are disabled in this conversation. Answer directly from your own knowledge."""

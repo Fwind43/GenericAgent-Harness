@@ -16,7 +16,7 @@ from .kernel import Runtime
 from .kernel.loader import build_tree, discover, mount
 
 PKG = Path(__file__).resolve().parent
-PLUGIN_DIRS = [PKG / "plugins"]
+PLUGIN_DIRS = [PKG / "plugins", Path.home() / ".ga-harness" / "plugins"]  # user plugins override built-ins
 PROFILE_DIRS = [PKG / "profiles"]
 
 

@@ -105,7 +105,10 @@ performed.
 
 A preset is a named, per-session adjustment applied to each isolated worker run.
 Built-in presets live in `ga_harness/presets/*.toml`; user presets in
-`~/.ga-harness/presets/*.toml` (same id overrides the built-in one). Keys:
+`~/.ga-harness/presets/*.toml` (same id overrides the built-in one).
+Built-ins: `creative` (extend the app by writing plugins/modes); no preset is the standard
+agent. User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
+built-in). Keys:
 `name`, `name_zh`, `description`, `description_zh`, `prompt` (appended through
 `ga-prompt`) and `disable_tools` (passed to `ga-tools.disable`). Host and
 storage plugins are never touched.
