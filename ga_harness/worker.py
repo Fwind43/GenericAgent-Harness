@@ -38,6 +38,51 @@ def recipe_for(ctx, extra=()):
     return recipe
 
 
+PLUGIN_TOOL = {"type": "function", "function": {
+    "name": "plugin_control",
+    "description": ("List, enable, disable or rescan ga-harness plugins. Changes apply immediately "
+                    "in the host without a restart. Only user plugins in ~/.ga-harness/plugins can "
+                    "be toggled; after writing a new plugin there, call rescan, then enable it."),
+    "parameters": {"type": "object", "properties": {
+        "action": {"type": "string", "enum": ["list", "enable", "disable", "rescan"]},
+        "name": {"type": "string", "description": "Plugin name, required for enable/disable"},
+    }, "required": ["action"]},
+}}
+
+
+def _register_plugin_tool(tools, send, pending, timeout=60.0):
+    """Expose host plugin control to the agent over the run pipe (request/reply)."""
+    if tools is None or not hasattr(tools, "register"):
+        return None
+    import importlib
+    import json
+    import uuid
+
+    def plugin_control(handler, args, response):
+        StepOutcome = importlib.import_module("agent_loop").StepOutcome
+        args = args if isinstance(args, dict) else {}
+        body = {"action": args.get("action", "list")}
+        if args.get("name"):
+            body["name"] = args["name"]
+        rid = uuid.uuid4().hex
+        slot = pending[rid] = {"event": threading.Event(), "reply": None}
+        try:
+            send("plugin", id=rid, body=body)
+            slot["event"].wait(timeout)
+        except (OSError, ValueError, EOFError) as exc:
+            slot["reply"] = {"error": f"host unreachable ({type(exc).__name__})"}
+        finally:
+            pending.pop(rid, None)
+        reply = slot["reply"] or {"error": "host did not answer (run cancelled or timed out)"}
+        if reply.get("error"):
+            msg = f"[Error] plugin_control: {reply['error']}"
+        else:
+            msg = json.dumps(reply.get("result"), ensure_ascii=False, indent=1)
+        return StepOutcome(msg, next_prompt=msg + "\n")
+
+    return tools.register(PLUGIN_TOOL, plugin_control)
+
+
 def run_worker(connection, recipe, payload):
     # Importing/mounting GA only happens after spawn, never in the host's thread.
     from .kernel import Runtime
@@ -84,15 +129,28 @@ def run_worker(connection, recipe, payload):
         for name in EVENTS:
             runtime.ctx.on(name, lambda data, event=name: send("event", name=event, data=data))
 
+        pending = {}
+
         def control():
             try:
-                while connection.recv().get("kind") != "cancel":
-                    pass
+                while True:
+                    packet = connection.recv()
+                    kind = packet.get("kind")
+                    if kind == "cancel":
+                        break
+                    if kind == "plugin_result":
+                        slot = pending.get(packet.get("id"))
+                        if slot is not None:
+                            slot["reply"] = packet
+                            slot["event"].set()
             except (EOFError, OSError):
                 pass
+            for slot in list(pending.values()):
+                slot["event"].set()
             agent.abort()
 
         threading.Thread(target=control, name="run-control", daemon=True).start()
+        _register_plugin_tool(runtime.ctx.get("ga.tools"), send, pending)
         # Snapshot the worker's actual selection after restore/apply_effort, not
         # the host's currently selected session or its model defaults.
         backend = getattr(getattr(raw, "llmclient", None), "backend", None)

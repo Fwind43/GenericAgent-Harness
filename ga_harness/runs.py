@@ -26,8 +26,11 @@ STREAM_FLUSH_SECONDS = 1.0
 
 class Runs:
     def __init__(self, sessions, workspaces, recipe, *, emit=None, max_parallel=4,
-                 cancel_grace=5.0, process_context=None, worker=run_worker):
+                 cancel_grace=5.0, process_context=None, worker=run_worker,
+                 plugin_handler=None):
         self.sessions, self.workspaces, self.recipe = sessions, workspaces, recipe
+        # Host-side handler for plugin requests raised by a worker's agent tool.
+        self.plugin_handler = plugin_handler
         self.lock = sessions.lock
         self.emit = emit or (lambda name, data: None)
         self.max_parallel = max(1, int(max_parallel))
@@ -293,6 +296,19 @@ class Runs:
             record = self.get(rid)
         self._notify("run.finished", record, run=record, message=messages[-1])
 
+    def _plugin_request(self, connection, packet):
+        reply = {"kind": "plugin_result", "id": packet.get("id")}
+        try:
+            if self.plugin_handler is None:
+                raise RuntimeError("plugin control is not available in this host")
+            reply["result"] = self.plugin_handler(packet.get("body") or {})
+        except Exception as exc:  # reported back to the agent, never fatal to the run
+            reply["error"] = f"{type(exc).__name__}: {exc}"
+        try:
+            connection.send(reply)
+        except (OSError, ValueError, EOFError):
+            pass
+
     def _monitor(self, rid, live):
         connection, process = live["connection"], live["process"]
         try:
@@ -301,6 +317,8 @@ class Runs:
                     packet = connection.recv()
                     if packet.get("kind") == "event":
                         self._event(rid, packet)
+                    elif packet.get("kind") == "plugin":
+                        self._plugin_request(connection, packet)
                     elif packet.get("kind") == "done":
                         self._finish(rid, "done", state=packet.get("state"), text=packet.get("text"))
                         break

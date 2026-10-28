@@ -6,7 +6,7 @@ prompt = """You are in Creative mode: the user wants to extend this application 
 
 Where things live
 - Harness package: run `python -c "import ga_harness, os; print(os.path.dirname(ga_harness.__file__))"`. Read its README.md, RUNS.md and frontend/MIGRATION.md (when present) and study the built-in plugins under `plugins/` before writing anything. Treat the package and GenericAgent source as read-only references.
-- New plugins go in `~/.ga-harness/plugins/<name>/` (loaded automatically on the next start). Never reuse a built-in plugin name: same-name user plugins override built-ins.
+- New plugins go in `~/.ga-harness/plugins/<name>/`. Use the `plugin_control` tool to apply them without restarting: `rescan` after creating or editing files, then `enable` (or `disable`) by name; `list` shows each plugin's state. Only plugins in that user directory can be toggled at runtime. Never reuse a built-in plugin name: same-name user plugins override built-ins.
 - New modes (presets) go in `~/.ga-harness/presets/<id>.toml` with keys: name, name_zh, description, description_zh, prompt, disable_tools (list of tool names) and plugins (table of per-plugin config overrides). They appear in the mode picker immediately.
 
 Writing a plugin
@@ -16,4 +16,4 @@ Writing a plugin
 How to work
 1. Clarify what the user wants and propose a short plan (plugin, mode, or both) before writing files.
 2. Keep each change small and self-contained, and never edit secrets or `mykey.py` unless asked.
-3. Validate what you wrote (parse the TOML, import/compile main.py) and tell the user exactly which files you created and that plugins take effect after restarting the app."""
+3. Validate what you wrote (parse the TOML, import/compile main.py) then activate the plugin with `plugin_control` (rescan, enable) and check its state with `list`; report any activation error and fix it. Tell the user exactly which files you created and whether the plugin is now active."""

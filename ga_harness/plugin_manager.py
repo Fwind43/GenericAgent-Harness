@@ -1,7 +1,9 @@
 """Local plugin preferences, independent of any frontend.
 
 Only manifest-declared public fields are exposed. Changes are staged for the
-next launch; this module never imports or unloads a plugin to inspect it.
+next launch, except for "hot" plugins (installed in the user plugin directory and
+not hosting core capabilities), which are unmounted/remounted in place after a
+successful save. Inspection never imports or unloads a plugin.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -31,6 +34,31 @@ def frontend_capabilities(manifests):
     are add-ons for that frontend: when another frontend is selected they stay dormant."""
     return {cap for m in manifests.values() if "frontend" in m.provides
             for cap in m.provides if cap != "frontend"}
+
+
+# Capabilities whose owners cannot be swapped while the host is running.
+HOST_ONLY = {"agent", "frontend", "web.host", "sessions", "runs", "workspaces", "models",
+             "plugin.manager", "plugin.catalog"}
+
+
+def user_plugin_dir():
+    return (Path.home() / ".ga-harness" / "plugins").resolve()
+
+
+def hot_capable(manifest):
+    """True if the plugin can be (un)mounted at runtime without a restart."""
+    if protected(manifest) or set(manifest.provides) & HOST_ONLY:
+        return False
+    try:
+        return Path(manifest.path).resolve().is_relative_to(user_plugin_dir())
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def purge_modules(name):
+    pkg = "ga_harness_ext_" + name.replace("-", "_")
+    for key in [k for k in sys.modules if k == pkg or k.startswith(pkg + ".")]:
+        del sys.modules[key]
 
 
 def protected(manifest):
@@ -216,7 +244,8 @@ class PluginManager:
                               "packages": list(getattr(m, "packages", [])), "missing_packages": lack,
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,
-                              "protected": protected(m), "fields": fields, "config": values,
+                              "protected": protected(m), "hot": hot_capable(m),
+                              "fields": fields, "config": values,
                               "requires": m.inject, "provides": m.provides,
                               "missing": [c for c in m.inject if not c.endswith("?") and not self.ctx.has(c)],
                               "dependents": sorted(n for n, other in p.manifests.items()
@@ -283,6 +312,86 @@ class PluginManager:
                 if issues:
                     raise RuntimeError("dependency check failed: " + "; ".join(issues))
                 p.write(data)
-                return self.catalog()
             finally:
                 lock_path.unlink()
+            result = {}
+            if hot_capable(p.manifests[name]):
+                entry = next((e for e in p.resolve(data) if e["name"] == name),
+                             {"name": name, "disabled": True, "config": {}})
+                try:
+                    self._hot_apply(name, entry)
+                    result["applied"] = True
+                except Exception as error:  # keep secrets out: report the class only
+                    result["applied"] = False
+                    result["hot_error"] = f"hot apply failed ({type(error).__name__}); restart to apply"
+            return {**self.catalog(), **result}
+
+    def _hot_apply(self, name, entry):
+        """Unmount ``name`` and remount it from disk with ``entry``'s config."""
+        rt = self.ctx.runtime
+        m = self.preferences.manifests[name]
+        unmet = getattr(rt, "unmet_packages", None)
+        if unmet is None:
+            unmet = rt.unmet_packages = {}
+        if name in rt.handles:
+            rt.remove(name)
+        purge_modules(name)
+        unmet.pop(name, None)
+        running = {"name": name, "disabled": entry["disabled"], "config": copy.deepcopy(entry["config"])}
+        try:
+            if not entry["disabled"]:
+                lack = missing_packages(getattr(m, "packages", []))
+                if lack:
+                    unmet[name] = lack
+                else:
+                    rt.add(m.to_plugin(), copy.deepcopy(entry["config"]))
+        finally:
+            for i, e in enumerate(self.running_tree):
+                if e["name"] == name:
+                    self.running_tree[i] = {**e, **running}
+                    break
+            else:
+                self.running_tree.append(running)
+
+    def rescan(self):
+        """Pick up plugins added to (or edited in) the user plugin directory."""
+        from .kernel.loader import discover
+        p = self.preferences
+        with p.lock:
+            for name, m in discover([user_plugin_dir()]).items():
+                old = p.manifests.get(name)
+                if old is None or hot_capable(old):
+                    p.manifests[name] = m
+        return self.catalog()
+
+    def agent_control(self, body):
+        """Small, revision-free surface for the agent: list / enable / disable / rescan.
+
+        Only hot-capable (user directory) plugins can be toggled, so the agent can never
+        disable core/host plugins or leave the host waiting for a restart.
+        """
+        body = body if isinstance(body, dict) else {}
+        action = body.get("action", "list")
+        if action == "rescan":
+            catalog = self.rescan()
+        elif action in {"enable", "disable"}:
+            name = body.get("name")
+            m = self.preferences.manifests.get(name) if isinstance(name, str) else None
+            if m is None:
+                raise ValueError("unknown plugin")
+            if not hot_capable(m):
+                raise ValueError("only plugins in ~/.ga-harness/plugins can be toggled at runtime")
+            current = next(i for i in self.catalog()["items"] if i["name"] == name)
+            catalog = self.change({"name": name, "action": "save", "enabled": action == "enable",
+                                   "config": current["config"], "revision": self.catalog()["revision"]})
+        elif action == "list":
+            catalog = self.catalog()
+        else:
+            raise ValueError("unknown action; use list, enable, disable or rescan")
+        items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "restart_required",
+                                    "description", "missing_packages")} for i in catalog["items"]]
+        out = {"items": items, "issues": catalog["issues"]}
+        for k in ("applied", "hot_error"):
+            if k in catalog:
+                out[k] = catalog[k]
+        return out
