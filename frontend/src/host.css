@@ -131,27 +131,42 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-ico[data-i="settings"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6'/%3E%3C/svg%3E")}
 .gah-ico[data-i="channels"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='6' rx='1'/%3E%3Crect x='2' y='15' width='6' height='6' rx='1'/%3E%3Crect x='16' y='15' width='6' height='6' rx='1'/%3E%3Cpath d='M12 9v3M5 15v-3h14v3'/%3E%3C/svg%3E")}
 .gah-settings-dialog{width:min(1080px,calc(100vw - 32px));max-width:none;height:min(760px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);overflow:hidden}
-.gah-settings-dialog[open]{display:flex;flex-direction:column}
-.gah-settings-head{flex:none;padding:10px 20px}
-.gah-settings-head .secondary{padding:6px 12px;font-size:13px}
-.gah-settings-tabs{display:flex;flex:none;align-items:stretch;gap:6px;padding:0 20px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin}
-.gah-settings-tab{display:inline-flex;flex:none;align-items:center;justify-content:center;gap:8px;min-height:40px;margin:0 0 -1px;padding:8px 14px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;white-space:nowrap}
-.gah-settings-tab:hover:not(:disabled){color:var(--text);background:var(--surface-muted)}
-.gah-settings-tab[aria-selected="true"]{border-bottom-color:var(--accent);color:var(--text);font-weight:600}
-.gah-settings-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-4px;border-radius:6px}
-.gah-settings-body{flex:1;min-width:0;min-height:0;overflow:hidden}
+.gah-settings-dialog[open]{display:flex;flex-direction:row}
+.gah-settings-dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+.gah-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.gah-icon-btn:hover:not(:disabled){background:var(--surface-muted);color:var(--text)}
+.gah-icon-btn .gah-ico{color:inherit}
+/* desktop: vertical section nav on the left; panels keep their own heading */
+.gah-settings-nav{flex:none;display:flex;flex-direction:column;width:200px;min-height:0;border-right:1px solid var(--border);background:var(--surface-muted)}
+.gah-settings-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 12px 10px 18px}
+.gah-settings-head h2{margin:0;font-size:15px;font-weight:600}
+.gah-settings-tabs{display:flex;flex-direction:column;flex:1;min-height:0;gap:2px;padding:4px 8px 12px;overflow-y:auto;scrollbar-width:thin}
+.gah-settings-tab{display:flex;flex:none;align-items:center;gap:10px;min-height:36px;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:13px;text-align:left;white-space:nowrap;cursor:pointer}
+.gah-settings-tab .gah-ico{color:inherit}
+.gah-settings-tab:hover:not(:disabled){color:var(--text);background:var(--hover,var(--surface))}
+.gah-settings-tab[aria-selected="true"]{color:var(--text);background:var(--surface);font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
+.gah-settings-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gah-settings-body{flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.gah-settings-body>.gah-slot{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-settings-body>.gah-slot>[data-gah-plugin]{display:contents}
 .gah-settings-panel{display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
 .gah-settings-panel[hidden]{display:none!important}
 .gah-settings-panel>.dialog-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.gah-settings-panel>.dialog-head{flex:none}
+.gah-settings-panel>.dialog-head{flex:none;min-height:57px;box-sizing:border-box}
 .gah-settings-panel.gah-model-dialog>.dialog-content,.gah-settings-panel.gah-plugin-dialog>.dialog-content{padding:20px 24px 24px}
 .gah-settings-panel.channel-dialog .channel-heading h2{margin:0}
+/* General: a readable, centred column of rows instead of a 900px-wide strip */
+.gah-general-settings>.dialog-content{padding:20px 24px}
+.gah-general-settings .gah-setting-row{max-width:640px}
 @media(max-width:720px){
   .gah-settings-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);border-radius:12px}
-  .gah-settings-head{padding:14px 16px}
-  .gah-settings-tabs{gap:0;padding:0 8px}
-  .gah-settings-tab{flex:1;min-height:44px;padding:9px 12px}
+  .gah-settings-dialog[open]{flex-direction:column}
+  .gah-settings-nav{width:auto;border-right:0;border-bottom:1px solid var(--border);background:transparent}
+  .gah-settings-head{padding:10px 8px 6px 16px}
+  .gah-settings-tabs{flex-direction:row;gap:4px;padding:0 8px 8px;overflow-x:auto;overflow-y:hidden}
+  .gah-settings-tab{flex:none;min-height:36px;padding:7px 12px}
+  .gah-settings-tab[aria-selected="true"]{box-shadow:inset 0 -2px 0 var(--accent);background:var(--surface-muted)}
+  .gah-settings-panel>.dialog-head{min-height:0}
   .gah-settings-panel.gah-model-dialog>.dialog-content,.gah-settings-panel.gah-plugin-dialog>.dialog-content{padding:16px}
 }
 .new-chat-bar{display:flex;gap:6px;align-items:center;max-width:var(--col-w,820px);margin:0 auto 6px;padding-left:4px}
