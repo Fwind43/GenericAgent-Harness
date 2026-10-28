@@ -67,3 +67,7 @@ name = "web-workspaces"
 # per-message edit/regenerate and branch switching; add-on for ui-web
 [[plugins]]
 name = "worldline"
+
+# queue messages sent while a task runs; edit/cancel/steer (non-interrupting injection via ga-steer)
+[[plugins]]
+name = "run-queue"

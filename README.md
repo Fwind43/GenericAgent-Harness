@@ -65,6 +65,7 @@ GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `~/.ga-harnes
 | `web-plugins` / `web-channels` | 统一设置中的插件、通道管理面板；通道面板需启用对应后端能力 |
 | `web-workspaces` / `web-theme` | 工作区与项目命令、编辑弹窗，以及浅色/深色/暖色主题 |
 | `worldline` | 消息编辑、重新生成、分支切换与在新对话中分支 |
+| `run-queue` | 运行中发送的消息进入队列，可编辑、取消，或“引导”在下一轮非打断注入当前任务（worker 侧由 `ga-steer` 实现） |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
 | `ui-web` | React + TypeScript 浏览器界面，Python 标准库提供 HTTP + SSE；默认 `http://127.0.0.1:8765/`，只接受同源请求 |

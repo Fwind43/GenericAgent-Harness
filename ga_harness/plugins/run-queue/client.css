@@ -1,0 +1,13 @@
+.gah-queue{margin:0 0 8px;border:1px solid var(--line,#ddd);border-radius:10px;padding:6px 8px;background:var(--panel,transparent);font-size:13px}
+.gah-queue-head{display:flex;gap:8px;align-items:baseline;color:var(--muted,#888);font-size:12px;margin-bottom:4px}
+.gah-queue-hint{margin-left:auto}
+.gah-queue-item{display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px dashed var(--line,#e5e5e5)}
+.gah-queue-item:first-of-type{border-top:0}
+.gah-queue-item.steering{opacity:.65}
+.gah-queue-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gah-queue-actions{display:flex;gap:4px;flex-shrink:0}
+.gah-queue-actions button{font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ddd);background:transparent;color:inherit;cursor:pointer}
+.gah-queue-actions button:disabled{opacity:.5;cursor:default}
+.gah-queue-actions button.danger:hover:not(:disabled){color:#c33;border-color:#c33}
+.gah-queue-tag{font-size:12px;color:var(--muted,#888);padding:2px 4px}
+@media (max-width:640px){.gah-queue-item{flex-wrap:wrap}.gah-queue-actions{margin-left:auto}}

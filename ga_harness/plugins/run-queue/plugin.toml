@@ -1,0 +1,6 @@
+name = "run-queue"
+category = "core"
+entry = "main:apply"
+description = "Queue messages sent while a task is running: edit, cancel, or steer them into the running task without interrupting it."
+description_zh = "任务运行中发送的消息进入队列：可修改、取消，或以不打断的方式引导注入正在运行的任务。"
+inject = ["web.host", "runs", "sessions"]

@@ -102,10 +102,14 @@ export function App() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const task = draft.trim();
-    if (!task || busy || submitting.current) return;
+    // While a task runs, plugins (e.g. run-queue) may claim the message; otherwise it is refused.
+    if (!task || changing || sending || submitting.current) return;
     submitting.current = true; setSending(true); host.notice();
     try {
-      if (!(await plugins.claim(task))) await request('/api/run', { task, session_id: state.session_id });
+      if (!(await plugins.claim(task))) {
+        if (state.running) { host.notice(T('任务运行中，请稍候', 'A task is running; please wait')); return; }
+        await request('/api/run', { task, session_id: state.session_id });
+      }
       setDraft(''); stick.current = true;
     } catch (error) { host.report(error); }
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
@@ -141,7 +145,7 @@ export function App() {
         }} />
         <div className="composer-row"><Slot name="composer" /><span className="spacer" />
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
-          <button type="submit" id="send" disabled={busy || !draft.trim()}>{T('发送', 'Send')}</button>
+          <button type="submit" id="send" disabled={changing || sending || !draft.trim()}>{T('发送', 'Send')}</button>
         </div>
       </form>{stats.length ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />
