@@ -1,0 +1,22 @@
+name = "web-lan"
+category = "service"
+entry = "main:apply"
+description = "LAN access: forwards this machine's LAN IPv4 to the local web UI for phones/computers on the same network (token required, private peers only), with QR entry link and token reset."
+description_zh = "局域网访问：把本机局域网 IPv4 端口转发到本地网页界面，供同一网络的手机/电脑访问（强制 token，仅放行内网地址），提供二维码入口链接和重置 token。"
+inject = ["web.host"]
+
+[settings.port]
+type = "integer"
+default = 0
+label = "LAN port"
+label_zh = "局域网端口"
+description = "Port opened on the LAN IP; 0 = same as the web UI port."
+description_zh = "在局域网 IP 上监听的端口；0 表示与网页界面端口相同。"
+
+[settings.bind]
+type = "string"
+default = ""
+label = "Bind address"
+label_zh = "绑定地址"
+description = "Fixed LAN IPv4 to listen on; empty = pick in the panel (defaults to the first detected one)."
+description_zh = "固定监听的局域网 IPv4；留空则在面板中选择（默认第一个检测到的地址）。"
