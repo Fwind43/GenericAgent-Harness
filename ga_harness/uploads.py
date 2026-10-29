@@ -1,6 +1,6 @@
 """Composer attachments: files uploaded from the web UI for a run.
 
-Files are stored under ``~/.ga-harness/uploads/<YYYYMMDD>/<id>_<name>``. A run
+Files are stored under ``$GAH_HOME/uploads/<YYYYMMDD>/<id>_<name>``. A run
 references them by the descriptor returned from ``save`` ({id, name, path, mime,
 size, image}); ``resolve`` re-validates descriptors coming back from the client so
 a request can never point the agent at an arbitrary file outside the upload root.
@@ -12,8 +12,9 @@ import re
 import time
 import uuid
 from pathlib import Path
+from . import paths
 
-ROOT = Path.home() / ".ga-harness" / "uploads"
+ROOT = paths.home() / "uploads"
 MAX_FILE = 50 << 20            # per-file limit
 MAX_FILES = 20                 # per message
 # Formats every vision-capable GA backend accepts as an inline image block.

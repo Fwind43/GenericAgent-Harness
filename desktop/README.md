@@ -24,7 +24,7 @@ Optional `<userData>/desktop.json` (path shown in startup error dialogs):
 
 **GenericAgent folder.** Before spawning the backend the shell resolves the GA checkout in this
 order: `--ga-root` in `args` > `ga_root` in desktop.json > `$GA_ROOT` > `ga_root` in
-`~/.ga-harness/config.toml`. If none points at a folder containing `agentmain.py` (typical when
+`config.toml` of the data folder below. If none points at a folder containing `agentmain.py` (typical when
 launched from the Start menu / Finder, where shell env vars are absent), a dialog asks the user to
 choose it and saves the choice as `ga_root` in desktop.json. The startup-failure dialog also offers
 "Choose GenericAgent folder..." and relaunches.
@@ -39,6 +39,16 @@ the pre-created folder, copied) over on first start; if that fails the old locat
 used and an interrupted copy is retried on the next start. The copy holds `mykey.py`,
 memory and sessions, so the NSIS installer (`resources/installer.nsh`) keeps it on upgrade and
 asks before deleting it on uninstall (silent uninstall keeps it).
+
+**Data folder.** ga-harness's own data (`config.toml`, plugin settings, presets, uploads, chat
+history) lives in `GAH_HOME`, which the shell sets to a `data` folder next to the program: the
+install or unpack folder on Windows, the unpacked folder or the AppImage's folder on Linux. macOS
+(the signed .app is replaced on update), running from source, or a `data` folder that is not
+writable fall back to `~/.ga-harness`; a `GAH_HOME` set in the environment or desktop.json `env`
+wins. On first start an existing `~/.ga-harness` is copied into the new folder (the original is
+left in place; an interrupted copy is retried). Settings > GenericAgent shows the folder in use.
+The installer pre-creates `<install dir>/data` with the same permissions as `GenericAgent`, keeps
+it on upgrade and asks before deleting it on uninstall.
 
 Startup errors from `gah` itself (`[gah] ...`) are written to the real stderr even after
 `ga-stdout` has replaced `sys.stderr`, so they appear in `backend.log` and the failure dialog.
@@ -82,7 +92,7 @@ cd ../desktop && npm ci && npm run dist      # needs uv on PATH
 `GAH_DESKTOP_PYTHON_VERSION`) into `stage/python` and the `ga_harness` package (with built web
 bundles) into `stage/py`; electron-builder ships both as `resources/python` and `resources/py`.
 The packaged app runs `resources/python` with `PYTHONPATH=resources/py`; GA itself is still
-resolved by `--ga-root` / `$GA_ROOT` / `~/.ga-harness/config.toml` and its own interpreter.
+resolved by `--ga-root` / `$GA_ROOT` / `<data folder>/config.toml` and its own interpreter.
 
 CI: `.github/workflows/desktop.yml` builds windows-x64, macos-arm64, macos-x64 and linux-x64 on
 pushes to `main`/`desktop` and on PRs touching desktop/frontend/ga_harness, uploading unsigned

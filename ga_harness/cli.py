@@ -12,11 +12,12 @@ import os
 import sys
 from pathlib import Path
 
+from . import paths
 from .kernel import Runtime
 from .kernel.loader import build_tree, discover, mount
 
 PKG = Path(__file__).resolve().parent
-PLUGIN_DIRS = [PKG / "plugins", Path.home() / ".ga-harness" / "plugins"]  # user plugins override built-ins
+PLUGIN_DIRS = [PKG / "plugins", paths.home() / "plugins"]  # user plugins override built-ins
 PROFILE_DIRS = [PKG / "profiles"]
 
 
@@ -63,7 +64,7 @@ def _tree(args, manifests=None):
                 tree.insert(index, {"name": "run-store", "config": {}, "disabled": False})
     if args.ga_root:
         for e in tree:
-            if e["name"].startswith("ga-"):
+            if e["name"].startswith("ga-") or e["name"] == "session-store":
                 e["config"].setdefault("ga_root", args.ga_root)
     return tree
 
@@ -76,7 +77,7 @@ def main(argv=None) -> int:
         p.add_argument("--profile", default="ga-compat")
         p.add_argument("--patch", action="append", default=[])
         p.add_argument("--ga-root", default=None,
-                       help="GenericAgent checkout (default: $GA_ROOT, then ~/.ga-harness/config.toml ga_root)")
+                       help="GenericAgent checkout (default: $GA_ROOT, then $GAH_HOME/config.toml ga_root)")
         p.add_argument("--ui", default=None, help="frontend plugin ui-<UI> (cli, tui, web, ...)")
         if name == "run":
             p.add_argument("task", nargs="?", default=None)

@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+from . import paths
 
 from .packages import install as install_packages, missing as missing_packages
 
@@ -26,7 +27,7 @@ MAX_FILE = 1 << 20
 
 
 def settings_path():
-    return Path(os.environ.get("GAH_PLUGIN_CONFIG") or Path.home() / ".ga-harness" / "plugins.json").expanduser()
+    return Path(os.environ.get("GAH_PLUGIN_CONFIG") or paths.home() / "plugins.json").expanduser()
 
 
 def frontend_capabilities(manifests):
@@ -42,7 +43,7 @@ HOST_ONLY = {"agent", "frontend", "web.host", "sessions", "runs", "workspaces", 
 
 
 def user_plugin_dir():
-    return (Path.home() / ".ga-harness" / "plugins").resolve()
+    return (paths.home() / "plugins").resolve()
 
 
 def hot_capable(manifest):

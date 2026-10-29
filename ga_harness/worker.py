@@ -55,7 +55,7 @@ def recipe_for(ctx, extra=()):
 PLUGIN_TOOL = {"type": "function", "function": {
     "name": "plugin_control",
     "description": ("List, enable, disable or rescan ga-harness plugins. Changes apply immediately "
-                    "in the host without a restart. Only user plugins in ~/.ga-harness/plugins can "
+                    "in the host without a restart. Only user plugins in $GAH_HOME/plugins can "
                     "be toggled; after writing a new plugin there, call rescan, then enable it."),
     "parameters": {"type": "object", "properties": {
         "action": {"type": "string", "enum": ["list", "enable", "disable", "rescan"]},

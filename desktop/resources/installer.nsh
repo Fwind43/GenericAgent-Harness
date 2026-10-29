@@ -6,6 +6,8 @@
 ; install dir, which also runs on every upgrade, so replace it:
 ;   upgrade   -> remove the app files, keep GenericAgent
 ;   uninstall -> remove the app files, then ask before deleting GenericAgent (silent: keep)
+; <install dir>\data is ga-harness's own data (GAH_HOME: settings, plugins, uploads, chat
+; history; see backend.js harnessDataDir) and is handled the same way.
 
 !macro gahRemoveAppFiles
   Push $R0
@@ -16,6 +18,7 @@
     StrCmp $R1 "." gahRemoveNext
     StrCmp $R1 ".." gahRemoveNext
     StrCmp $R1 "GenericAgent" gahRemoveNext
+    StrCmp $R1 "data" gahRemoveNext
     ${if} ${FileExists} "$INSTDIR\$R1\*.*"
       RMDir /r "$INSTDIR\$R1"
     ${else}
@@ -38,18 +41,26 @@
         RMDir /r "$INSTDIR\GenericAgent"
       gahKeepGa:
     ${endif}
+    ${if} ${FileExists} "$INSTDIR\data\*.*"
+      MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "是否同时删除 ga-harness 数据文件夹？$\r$\n其中包含设置、插件配置、上传文件和聊天记录，删除后无法恢复。$\r$\n$\r$\n$INSTDIR\data$\r$\n$\r$\nAlso delete the ga-harness data folder? It contains settings, plugin configuration, uploads and chat history; this cannot be undone." /SD IDNO IDNO gahKeepData
+        RMDir /r "$INSTDIR\data"
+      gahKeepData:
+    ${endif}
     RMDir "$INSTDIR"
   ${endif}
 !macroend
 
-; Creates the bundled copy's folder at install time. When the installer runs elevated
+; Creates the bundled copy's folder and the data folder at install time. When the installer runs elevated
 ; (install for all users, or a per-user install into a protected folder such as
 ; Program Files) the app itself cannot create or write it later, so let regular users
-; modify this one folder; the rest of the install dir stays read-only.
+; modify these two folders; the rest of the install dir stays read-only.
 !macro customInstall
   CreateDirectory "$INSTDIR\GenericAgent"
+  CreateDirectory "$INSTDIR\data"
   ${if} ${UAC_IsAdmin}
     nsExec::Exec '"$SYSDIR\icacls.exe" "$INSTDIR\GenericAgent" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q'
+    Pop $0
+    nsExec::Exec '"$SYSDIR\icacls.exe" "$INSTDIR\data" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q'
     Pop $0
   ${endif}
 !macroend

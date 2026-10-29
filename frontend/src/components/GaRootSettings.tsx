@@ -11,6 +11,7 @@ type Where = { path: string | null; source: string | null };
 type GaRootInfo = {
   running: Where | null; next: Where; choice: 'auto' | 'custom' | 'bundled';
   bundledDir: string; bundledAvailable: boolean; locked: boolean; settingsFile: string;
+  dataDir?: { path: string; source: 'program' | 'home' | 'env'; fallback?: string };
 };
 type Result = { info: GaRootInfo; canceled?: boolean; error?: string };
 type GaRootApi = {
@@ -30,7 +31,7 @@ function sourceText(src: string | null) {
   if (src.includes('(args)')) return T('desktop.json 启动参数 --ga-root', 'desktop.json args (--ga-root)');
   if (src.endsWith('desktop.json')) return T('手动指定', 'Chosen by you');
   if (src.includes('GA_ROOT')) return T('环境变量 GA_ROOT', 'GA_ROOT environment variable');
-  if (src.endsWith('config.toml')) return T('~/.ga-harness/config.toml', '~/.ga-harness/config.toml');
+  if (src.endsWith('config.toml')) return src;
   return src;
 }
 
@@ -81,6 +82,18 @@ export function GaRootSettings() {
               onClick={() => desktop.openPath!(i.running!.path!).catch(() => {})}>{T('打开', 'Open')}</button>}
           </div>
 
+          {i.dataDir && <div className="gah-setting-row">
+            <div className="gah-setting-text"><strong>{T('数据目录', 'Data folder')}</strong>
+              <span className="gah-ga-path">{i.dataDir.path}</span>
+              <span>{i.dataDir.source === 'program' ? T('程序目录下的 data（设置、插件、上传文件、聊天记录）', 'data next to the program (settings, plugins, uploads, chats)')
+                : i.dataDir.source === 'env' ? T('由 GAH_HOME 指定', 'Set by GAH_HOME')
+                : i.dataDir.fallback ? T(`程序目录不可写（${i.dataDir.fallback}），改用用户目录`, `The program folder is not writable (${i.dataDir.fallback}); using the user folder`)
+                : T('用户目录', 'User folder')}</span>
+              <span>{T('聊天记录按 GenericAgent 目录分开保存，切换目录后显示对应的记录', 'Chats are kept per GenericAgent folder; switching folders shows that folder\'s chats')}</span></div>
+            {desktop?.openPath && <button type="button" className="gah-update-btn"
+              onClick={() => desktop.openPath!(i.dataDir!.path).catch(() => {})}>{T('打开', 'Open')}</button>}
+          </div>}
+
           {pending && <div className="gah-update-card phase-ready" aria-live="polite">
             <div className="gah-update-status"><span className="gah-update-dot" />
               <span className="gah-update-phase">{T('重启后将改用：', 'After restart: ')}{i.next.path || T('（无）', '(none)')}</span></div>
@@ -106,7 +119,7 @@ export function GaRootSettings() {
             </div>}
             {i.choice !== 'auto' && <div className="gah-setting-row">
               <div className="gah-setting-text"><strong>{T('自动检测', 'Detect automatically')}</strong>
-                <span>{T('依次使用 GA_ROOT、~/.ga-harness/config.toml，最后是内置副本', 'Use GA_ROOT, then ~/.ga-harness/config.toml, then the bundled copy')}</span></div>
+                <span>{T('依次使用 GA_ROOT、数据目录中的 config.toml，最后是内置副本', 'Use GA_ROOT, then config.toml in the data folder, then the bundled copy')}</span></div>
               <button type="button" className="gah-update-btn" disabled={busy}
                 onClick={() => act(api.set('auto'))}>{T('恢复默认', 'Reset')}</button>
             </div>}

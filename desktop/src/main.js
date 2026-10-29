@@ -313,12 +313,13 @@ async function pickGaRoot(reason, defaultPath) {
 async function ensureGaRoot() {
   const { value, source } = backend.gaRoot();
   if (isGaRoot(value)) return true;
+  const cfg = path.join(backend.dataDir().path, 'config.toml');
   const reason = value
     ? t(`配置的 GenericAgent 目录不可用：\n${value}\n（来自 ${source}；未找到 agentmain.py）`,
       `The configured GenericAgent folder is not usable:\n${value}\n(from ${source}; agentmain.py not found)`)
-    : t(`尚未配置 GenericAgent 目录（没有 GA_ROOT，~/.ga-harness/config.toml 中也没有 ga_root）${
+    : t(`尚未配置 GenericAgent 目录（没有 GA_ROOT，${cfg} 中也没有 ga_root）${
       backend.bundledGaError ? `，且内置副本无法准备：\n${backend.bundledGaError}` : '。'}`,
-    `No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root)${
+    `No GenericAgent folder is configured (no GA_ROOT, no ga_root in ${cfg})${
       backend.bundledGaError ? `, and the bundled copy could not be prepared:\n${backend.bundledGaError}` : '.'}`);
   return pickGaRoot(reason, value);
 }

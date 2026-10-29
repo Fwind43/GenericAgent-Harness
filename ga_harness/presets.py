@@ -19,9 +19,10 @@ import copy
 import re
 import tomllib
 from pathlib import Path
+from . import paths
 
 BUILTIN_DIR = Path(__file__).with_name("presets")
-USER_DIR = Path.home() / ".ga-harness" / "presets"
+USER_DIR = paths.home() / "presets"
 PROTECTED = frozenset(("ga-core", "ga-hooks", "ga-events", "ga-stdout"))
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 

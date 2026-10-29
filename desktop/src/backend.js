@@ -271,14 +271,60 @@ function syncBundledGa(codeDir, dest) {
   return dest;
 }
 
-function harnessConfigPath() {
-  return path.join(process.env.GAH_HOME || path.join(os.homedir(), '.ga-harness'), 'config.toml');
+// ga-harness's own data (settings, plugins, uploads, chat history; GAH_HOME for the backend).
+// Kept in a `data` folder next to the program when that folder is writable: the install or
+// unpack dir on Windows, the unpacked dir or the AppImage's folder on Linux. macOS (.app
+// replaced on update), running from source, or a read-only program dir: ~/.ga-harness.
+// An explicit GAH_HOME (environment or desktop.json env) always wins.
+const DATA_MIGRATING = '.gah-migrating';
+
+function homeDataDir() { return path.join(os.homedir(), '.ga-harness'); }
+
+function programDataDir(resourcesPath) {
+  if (!resourcesPath || process.platform === 'darwin') return null;
+  if (process.platform === 'linux' && process.env.APPIMAGE) {
+    return path.join(path.dirname(process.env.APPIMAGE), 'data');
+  }
+  return path.join(path.dirname(resourcesPath), 'data');
+}
+
+// First start with a program data folder: copy ~/.ga-harness into it (the original stays as
+// it is, so the CLI / older versions keep working). A marker makes an interrupted copy
+// restart; until the copy has completed the old location keeps being used.
+function fillDataDir(from, to) {
+  const marker = path.join(to, DATA_MIGRATING);
+  try {
+    fs.writeFileSync(marker, '');
+    fs.cpSync(from, to, { recursive: true, force: true });
+    fs.unlinkSync(marker);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function harnessDataDir(resourcesPath, settingsEnv = {}) {
+  const explicit = settingsEnv.GAH_HOME || process.env.GAH_HOME;
+  if (explicit) return { path: path.resolve(expandHome(explicit)), source: 'env' };
+  const home = homeDataDir();
+  const dir = programDataDir(resourcesPath);
+  if (!dir) return { path: home, source: 'home' };
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* checked below */ }
+  if (!fs.existsSync(dir) || !dirWritable(dir)) return { path: home, source: 'home', fallback: dir };
+  if (fs.existsSync(home) && needsFill(dir) && !fillDataDir(home, dir)) {
+    return { path: home, source: 'home', fallback: dir };
+  }
+  return { path: dir, source: 'program' };
+}
+
+function harnessConfigPath(dataDir = null) {
+  return path.join(dataDir || process.env.GAH_HOME || homeDataDir(), 'config.toml');
 }
 
 // Only the top-level `ga_root = "..."` / `'...'` line is needed; not a general TOML parser.
-function readHarnessGaRoot() {
+function readHarnessGaRoot(dataDir = null) {
   let text;
-  try { text = fs.readFileSync(harnessConfigPath(), 'utf8'); } catch { return null; }
+  try { text = fs.readFileSync(harnessConfigPath(dataDir), 'utf8'); } catch { return null; }
   for (const line of text.split(/\r?\n/)) {
     if (/^\s*\[/.test(line)) break;                     // keys after a table header are not top-level
     let m = line.match(/^\s*ga_root\s*=\s*"((?:[^"\\]|\\.)*)"/);
@@ -295,7 +341,7 @@ function expandHome(p) {
 
 // Returns {value, source} in launcher order (--ga-root arg > desktop.json > $GA_ROOT >
 // config.toml); value is null when nothing is configured.
-function configuredGaRoot(settings) {
+function configuredGaRoot(settings, dataDir = null) {
   const i = settings.args.indexOf('--ga-root');
   if (i >= 0 && settings.args[i + 1]) return { value: path.resolve(settings.args[i + 1]), source: `${settings.file} (args)` };
   const eq = settings.args.find((a) => a.startsWith('--ga-root='));
@@ -305,8 +351,8 @@ function configuredGaRoot(settings) {
   if (settings.gaRoot) return { value: path.resolve(expandHome(settings.gaRoot)), source: settings.file };
   const env = { ...process.env, ...settings.env }.GA_ROOT;
   if (env) return { value: path.resolve(env), source: 'GA_ROOT' };
-  const toml = readHarnessGaRoot();
-  if (toml) return { value: path.resolve(expandHome(toml)), source: harnessConfigPath() };
+  const toml = readHarnessGaRoot(dataDir);
+  if (toml) return { value: path.resolve(expandHome(toml)), source: harnessConfigPath(dataDir) };
   return { value: null, source: null };
 }
 
@@ -351,7 +397,7 @@ class Backend {
 
   // The configured checkout wins; otherwise the bundled copy (synced on first use).
   gaRoot() {
-    const configured = configuredGaRoot(this.settings);
+    const configured = configuredGaRoot(this.settings, this.dataDir().path);
     if (configured.value) return configured;
     if (this.bundledGa === undefined) {
       try {
@@ -365,6 +411,12 @@ class Backend {
   }
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
+
+  // Resolved (and, once, filled from ~/.ga-harness) on first use; see harnessDataDir.
+  dataDir() {
+    if (!this.dataInfo) this.dataInfo = harnessDataDir(this.resourcesPath, this.settings.env);
+    return this.dataInfo;
+  }
 
   // Resolved (and, once, migrated) on first use; see bundledGaDir.
   bundledDir() {
@@ -385,6 +437,7 @@ class Backend {
       bundledAvailable: isGaRoot(path.join(this.code.dir, 'genericagent')) || isGaRoot(bundledDir),
       locked: hasGaRootArg(this.settings),
       settingsFile: this.settings.file,
+      dataDir: this.dataDir(),
     };
   }
 
@@ -417,6 +470,7 @@ class Backend {
       GAH_WEB_TOKEN: this.token,
       GAH_WEB_READY_FILE: this.readyFile,
       GAH_WEB_EXIT_ON_STDIN_EOF: '1',
+      GAH_HOME: this.dataDir().path,
     };
     if (this.settings.pythonPath) {
       // launcher.maybe_reexec keeps REPO on PYTHONPATH when it hops to GA's interpreter.
@@ -492,6 +546,6 @@ class Backend {
 }
 
 module.exports = {
-  Backend, isGaRoot, editSettingsFile, readSettingsFile, syncBundledGa, bundledGaDir,
+  Backend, isGaRoot, editSettingsFile, readSettingsFile, syncBundledGa, bundledGaDir, harnessDataDir,
   compareVersions, parseVersion, readCodeVersion, appDir, readAppState, writeAppState,
 };

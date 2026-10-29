@@ -4,7 +4,7 @@ GA's dependencies live in its checkout's .venv, not in the harness venv.  When
 `gah run` starts under some other Python, it re-executes itself with GA's
 interpreter (PYTHONPATH -> this repo) so users never set paths by hand.
 
-ga_root resolution order: --ga-root > $GA_ROOT > ~/.ga-harness/config.toml `ga_root`.
+ga_root resolution order: --ga-root > $GA_ROOT > $GAH_HOME/config.toml `ga_root` ($GAH_HOME defaults to ~/.ga-harness).
 """
 from __future__ import annotations
 import os
@@ -12,13 +12,14 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from . import paths
 
 REPO = Path(__file__).resolve().parent.parent
 REEXEC_ENV = "GAH_REEXEC"
 
 
 def config_path() -> Path:
-    return Path(os.environ.get("GAH_HOME") or Path.home() / ".ga-harness") / "config.toml"
+    return paths.home() / "config.toml"
 
 
 def resolve_ga_root(cli_value: str | None = None) -> str | None:
