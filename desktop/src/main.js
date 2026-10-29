@@ -54,9 +54,21 @@ function registerBridge() {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
     return updater.status();
   });
+  ipcMain.handle('gah:update-state', (event) => {
+    if (!fromBackend(event) || !updater) throw new Error('forbidden');
+    return updater.snapshot();
+  });
   ipcMain.handle('gah:update-check', (event) => {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
-    return updater.check({ silent: false });
+    return updater.check({ ui: true });
+  });
+  ipcMain.handle('gah:update-install', (event) => {
+    if (!fromBackend(event) || !updater) throw new Error('forbidden');
+    return updater.install();
+  });
+  ipcMain.handle('gah:update-restart', (event) => {
+    if (!fromBackend(event) || !updater) throw new Error('forbidden');
+    return updater.restart();
   });
   ipcMain.handle('gah:update-config', (event, patch = {}) => {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
@@ -65,8 +77,20 @@ function registerBridge() {
     if (typeof patch.autoCheck === 'boolean') clean.autoCheck = patch.autoCheck;
     updater.setConfig(clean);
     refreshTrayMenu();
-    return updater.status();
+    return updater.snapshot();
   });
+}
+
+// Push updater progress to the page (Settings > Updates listens for it).
+function sendUpdateState(snapshot) {
+  if (win && !win.isDestroyed()) win.webContents.send('gah:update-state', snapshot);
+}
+
+// Tray "Check for updates": show Settings > Updates, where the progress is visible.
+function openUpdateSettings() {
+  showWindow();
+  if (win && !win.isDestroyed()) win.webContents.send('gah:update-open');
+  updater.check({ ui: true }).catch(() => {});
 }
 
 // Stop the backend and mark the app as quitting (used before installers take over).
@@ -120,7 +144,7 @@ function refreshTrayMenu() {
       label: 'Updates',
       submenu: [
         { label: `Version ${st.codeVersion || '?'} (app ${st.shellVersion})`, enabled: false },
-        { label: 'Check for updates...', click: () => updater.check({ silent: false }) },
+        { label: 'Check for updates...', click: () => openUpdateSettings() },
         { label: 'Check automatically', type: 'checkbox', checked: st.autoCheck,
           click: (item) => { updater.setConfig({ autoCheck: item.checked }); refreshTrayMenu(); } },
         { label: `Download mirror: ${st.mirror || 'GitHub (direct)'}...`,
@@ -226,7 +250,7 @@ async function boot() {
     backend.start();
     const url = await backend.waitReady();
     origin = new URL(url).origin;
-    updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit });
+    updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState });
     registerBridge();
     createTray();
     createWindow(url);

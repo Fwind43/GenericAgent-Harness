@@ -72,15 +72,27 @@ function run(cmd, args) {
   });
 }
 
+
+const LOG_MAX = 200;
+const EMIT_EVERY = 120;   // ms between progress pushes to the renderer
+
+// phase: idle | checking | latest | available | downloading | verifying | installing | ready | error | source
+// kind:  code (app bundle) | shell (installer via electron-updater) | manual (open the release page)
 class Updater {
   // opts: { getBackend: () => Backend, getWindow: () => BrowserWindow|null,
-  //         relaunch: () => void (restart the whole app), prepareQuit: async () => void }
+  //         relaunch: () => void (restart the whole app), prepareQuit: async () => void,
+  //         onState?: (snapshot) => void (pushes progress to the settings page) }
   constructor(opts) {
     this.opts = opts;
     this.busy = false;
     this.timer = null;
     this.shellUpdater = undefined;   // lazily loaded electron-updater autoUpdater (or null)
     this.dismissed = null;           // version the user postponed during this session
+    this.pending = null;             // { info, kind } found by the last check
+    this.ready = null;               // { version, kind, restart } once installed / downloaded
+    this.st = { phase: 'idle', kind: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
+    this.log = [];
+    this.lastEmit = 0;
   }
 
   get backend() { return this.opts.getBackend(); }
@@ -103,21 +115,50 @@ class Updater {
       data.update = u;
     });
     this.schedule();
-    return this.config();
+    const cfg = this.config();
+    this.note(`Settings saved: mirror ${cfg.mirror || 'GitHub (direct)'}, auto check ${cfg.autoCheck ? 'on' : 'off'}`);
+    this.emit(true);
+    return cfg;
   }
 
   url(file) { return mirrored(this.config().mirror, `${LATEST}/${file}`); }
 
-  // Public status for the renderer bridge / menus.
+  // Public status for menus.
   status() {
     const code = this.backend.code;
     return {
       shellVersion: app.getVersion(),
       codeVersion: code.version,
       codeSource: code.source,
+      packaged: app.isPackaged,
+      releasesPage: RELEASES_PAGE,
+      settingsFile: this.settingsFile,
       ...this.config(),
       presets: MIRROR_PRESETS,
     };
+  }
+
+  // Full state for the settings page: versions, config, current phase/progress and the log.
+  snapshot() {
+    return { ...this.status(), ...this.st, busy: this.busy, log: this.log.slice() };
+  }
+
+  note(msg, level = 'info') {
+    this.log.push({ t: Date.now(), level, msg: String(msg) });
+    if (this.log.length > LOG_MAX) this.log.splice(0, this.log.length - LOG_MAX);
+  }
+
+  set(patch, msg, level) {
+    Object.assign(this.st, patch);
+    if (msg) this.note(msg, level);
+    this.emit(true);
+  }
+
+  emit(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastEmit < EMIT_EVERY) return;
+    this.lastEmit = now;
+    try { this.opts.onState?.(this.snapshot()); } catch { /* window gone */ }
   }
 
   schedule() {
@@ -145,63 +186,149 @@ class Updater {
   }
 
   // silent: background check, only speaks up when something new is available.
-  async check({ silent = false } = {}) {
-    if (this.busy) return { state: 'busy' };
+  // ui: called from the settings page, which shows state itself, so no dialogs at all.
+  async check({ silent = false, ui = false } = {}) {
+    if (this.busy) return this.snapshot();
     this.busy = true;
     try {
-      return await this.checkInner(silent);
+      await this.checkInner(silent, ui);
     } catch (err) {
-      if (!silent) {
+      this.set({ phase: 'error', error: err.message }, `Update failed: ${err.message}`, 'error');
+      if (!silent && !ui) {
         await this.message({
-          type: 'error', title: 'GenericAgent-Harness', message: 'Update check failed',
-          detail: `${err.message}\n\nMirror: ${this.config().mirror || '(none, direct GitHub)'}\nChange it in the tray menu: Updates > Download mirror.`,
+          type: 'error', title: 'GenericAgent-Harness', message: 'Update failed',
+          detail: `${err.message}\n\nMirror: ${this.config().mirror || '(none, direct GitHub)'}\nChange it in Settings > Updates.`,
         });
       }
-      return { state: 'error', error: err.message };
     } finally {
       this.busy = false;
+      this.emit(true);
     }
+    return this.snapshot();
   }
 
-  async checkInner(silent) {
+  async checkInner(silent, ui) {
+    const dialogs = !silent && !ui;
     if (!app.isPackaged) {
-      if (!silent) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'Running from source', detail: 'Updates apply to packaged builds only; use git pull here.' });
-      return { state: 'source' };
+      this.set({ phase: 'source' }, 'Running from source: updates apply to packaged builds only.');
+      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'Running from source', detail: 'Updates apply to packaged builds only; use git pull here.' });
+      return;
     }
+    if (this.ready) {   // already installed, only a restart is missing
+      this.set({ phase: 'ready', version: this.ready.version, kind: this.ready.kind });
+      if (dialogs) await this.offerRestart();
+      return;
+    }
+    this.set({ phase: 'checking', error: null }, `Checking for updates (${silent ? 'background' : 'manual'}) via ${this.config().mirror || 'GitHub'}`);
     const info = await this.fetchInfo();
     const current = this.backend.code.version;
+    this.st.checkedAt = Date.now();
     if (compareVersions(info.version, current) <= 0) {
-      if (!silent) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'You are up to date', detail: `Version ${current}` });
-      return { state: 'latest', version: current };
+      this.pending = null;
+      this.set({ phase: 'latest', version: info.version, kind: null }, `Up to date: latest release is ${info.version}, running ${current}`);
+      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'You are up to date', detail: `Version ${current}` });
+      return;
     }
-    if (silent && this.dismissed === info.version) return { state: 'postponed', version: info.version };
     const shellOk = compareVersions(info.min_shell || '0.0.0', app.getVersion()) <= 0;
-    return shellOk ? this.offerCodeUpdate(info) : this.offerShellUpdate(info);
+    const kind = shellOk ? 'code' : (this.loadShellUpdater() ? 'shell' : 'manual');
+    this.pending = { info, kind };
+    const what = { code: `code update, ${mb(info.app.size)}`, shell: `needs desktop app ${info.min_shell}+, installer update`, manual: `needs desktop app ${info.min_shell}+, download it from the release page` }[kind];
+    this.set({ phase: 'available', version: info.version, kind, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
+      `Version ${info.version} is available (${what})`);
+    if (ui || (silent && this.dismissed === info.version)) return;
+    await this.offer(info, kind);
+  }
+
+  // Dialog flow (tray menu / background check). The settings page calls install() directly.
+  async offer(info, kind) {
+    const detail = kind === 'code'
+      ? `Current: ${this.backend.code.version}\n\nThis is a code update (${mb(info.app.size)}); the desktop app itself stays as is.`
+      : `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${info.min_shell} or later).`;
+    const buttons = kind === 'manual' ? ['Open release page', 'Later'] : [kind === 'code' ? 'Update' : 'Download', 'Release notes', 'Later'];
+    const { response } = await this.message({
+      type: 'info', title: 'GenericAgent-Harness', message: `Version ${info.version} is available`,
+      detail: `${detail}\n\nProgress is shown in Settings > Updates.`,
+      buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true,
+    });
+    if (kind === 'manual') {
+      if (response === 0) shell.openExternal(RELEASES_PAGE);
+      else this.dismissed = info.version;
+      return;
+    }
+    if (response === 1) shell.openExternal(RELEASES_PAGE);
+    if (response !== 0) { this.dismissed = info.version; this.note(`Postponed ${info.version}`); this.emit(true); return; }
+    await this.installInner(this.pending);
+    await this.offerRestart();
+  }
+
+  // Settings page: download + install what the last check found, reporting progress.
+  async install() {
+    if (this.busy) return this.snapshot();
+    const p = this.pending;
+    if (!p) throw new Error('no update available; check first');
+    if (p.kind === 'manual') { shell.openExternal(RELEASES_PAGE); this.note('Opened the release page'); this.emit(true); return this.snapshot(); }
+    this.busy = true;
+    try {
+      await this.installInner(p);
+    } catch (err) {
+      this.set({ phase: 'error', error: err.message }, `Install failed: ${err.message}`, 'error');
+    } finally {
+      this.busy = false;
+      this.emit(true);
+    }
+    return this.snapshot();
+  }
+
+  async installInner(p) {
+    if (p.kind === 'code') await this.installCode(p.info);
+    else await this.downloadShell(p.info);
+    this.pending = null;
+  }
+
+  async restart() {
+    if (!this.ready) throw new Error('nothing to restart for');
+    this.note(`Restarting to apply ${this.ready.version}`);
+    this.emit(true);
+    await this.ready.restart();
+    return true;
   }
 
   // ---- code-only update -------------------------------------------------------------------
 
-  async offerCodeUpdate(info) {
-    const mb = info.app.size ? ` (${(info.app.size / 1048576).toFixed(1)} MB)` : '';
-    const { response } = await this.message({
-      type: 'info', title: 'GenericAgent-Harness', message: `Version ${info.version} is available`,
-      detail: `Current: ${this.backend.code.version}\n\nThis is a code update${mb}; the desktop app itself stays as is.`,
-      buttons: ['Update', 'Release notes', 'Later'], defaultId: 0, cancelId: 2, noLink: true,
-    });
-    if (response === 1) shell.openExternal(RELEASES_PAGE);
-    if (response !== 0) { this.dismissed = info.version; return { state: 'postponed', version: info.version }; }
-    await this.installCode(info);
-    return this.offerRestart(info.version, () => this.opts.relaunch());
+  async download(url, expectedSize) {
+    this.set({ phase: 'downloading', received: 0, total: expectedSize || 0 }, `Downloading ${url}`);
+    const res = await fetchOk(url, 10 * 60 * 1000);
+    const total = Number(res.headers.get('content-length')) || expectedSize || 0;
+    this.st.total = total;
+    const chunks = [];
+    let got = 0;
+    if (res.body && res.body.getReader) {
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(Buffer.from(value));
+        got += value.length;
+        this.st.received = got;
+        this.emit();
+      }
+    } else {
+      chunks.push(Buffer.from(await res.arrayBuffer()));
+      got = chunks[0].length;
+    }
+    this.st.received = got;
+    return Buffer.concat(chunks, got);
   }
 
   async installCode(info) {
     const root = appDir(this.backend.userData);
     fs.mkdirSync(root, { recursive: true });
-    const res = await fetchOk(this.url(info.app.file), 10 * 60 * 1000);
-    const buf = Buffer.from(await res.arrayBuffer());
+    const buf = await this.download(this.url(info.app.file), info.app.size);
+    this.set({ phase: 'verifying' }, `Downloaded ${mb(buf.length)}; verifying SHA-256`);
     const digest = sha256(buf);
     if (digest !== info.app.sha256.toLowerCase()) throw new Error(`checksum mismatch for ${info.app.file} (got ${digest})`);
 
+    this.set({ phase: 'installing' }, 'Checksum OK; extracting the app bundle');
     const zip = path.join(root, `${info.version}.zip`);
     const tmp = path.join(root, `.${info.version}.tmp`);
     const dest = path.join(root, info.version);
@@ -227,6 +354,8 @@ class Updater {
       bad: state.bad.filter((v) => v !== info.version),
     });
     this.prune(root, info.version, code.source === 'update' ? code.version : null);
+    this.ready = { version: info.version, kind: 'code', restart: () => this.opts.relaunch() };
+    this.set({ phase: 'ready', version: info.version, kind: 'code' }, `Version ${info.version} installed; restart to use it`);
   }
 
   // Keep only the new version and the one running now (the rollback target).
@@ -247,18 +376,19 @@ class Updater {
     } catch { return false; }
   }
 
-  async offerRestart(version, restart) {
+  async offerRestart() {
+    if (!this.ready) return;
+    const { version } = this.ready;
     const running = await this.runningTasks();
     const { response } = await this.message({
       type: running ? 'warning' : 'info', title: 'GenericAgent-Harness', message: `Version ${version} is ready`,
       detail: running
-        ? 'A task is still running. Restarting now stops it. You can also restart later from the tray menu or simply on next launch.'
+        ? 'A task is still running. Restarting now stops it. You can also restart later from Settings > Updates or simply on next launch.'
         : 'Restart GenericAgent-Harness to use it.',
       buttons: ['Restart now', 'Later'], defaultId: running ? 1 : 0, cancelId: 1, noLink: true,
     });
-    if (response === 0) { await restart(); return { state: 'restarting', version }; }
+    if (response === 0) { await this.restart(); return; }
     this.dismissed = version;
-    return { state: 'installed', version };
   }
 
   // ---- shell (installer) update -----------------------------------------------------------
@@ -280,38 +410,30 @@ class Updater {
     return this.shellUpdater;
   }
 
-  async offerShellUpdate(info) {
+  async downloadShell(info) {
     const updater = this.loadShellUpdater();
-    const detail = `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${info.min_shell} or later).`;
-    if (!updater) {
-      const { response } = await this.message({
-        type: 'info', title: 'GenericAgent-Harness', message: `Version ${info.version} is available`,
-        detail: `${detail}\n\nDownload the installer from the release page.`,
-        buttons: ['Open release page', 'Later'], defaultId: 0, cancelId: 1, noLink: true,
-      });
-      if (response === 0) shell.openExternal(RELEASES_PAGE);
-      else this.dismissed = info.version;
-      return { state: 'manual', version: info.version };
-    }
-    const { response } = await this.message({
-      type: 'info', title: 'GenericAgent-Harness', message: `Version ${info.version} is available`,
-      detail: `${detail}\n\nThe new installer will be downloaded and installed.`,
-      buttons: ['Download', 'Release notes', 'Later'], defaultId: 0, cancelId: 2, noLink: true,
-    });
-    if (response === 1) shell.openExternal(RELEASES_PAGE);
-    if (response !== 0) { this.dismissed = info.version; return { state: 'postponed', version: info.version }; }
-
+    if (!updater) throw new Error('installer updates are not supported on this platform');
     // Generic feed = the same latest/download URL, so the mirror applies to the installer too.
     updater.setFeedURL({ provider: 'generic', url: this.url('').replace(/\/$/, '') });
+    this.set({ phase: 'checking' }, 'Looking up the installer for this platform');
     const result = await updater.checkForUpdates();
     if (!result || !result.updateInfo || compareVersions(result.updateInfo.version, app.getVersion()) <= 0) {
       throw new Error('the release has no installer update for this platform');
     }
-    await updater.downloadUpdate();
-    return this.offerRestart(result.updateInfo.version, async () => {
-      await this.opts.prepareQuit();
-      updater.quitAndInstall(false, true);
-    });
+    const version = result.updateInfo.version;
+    this.set({ phase: 'downloading', received: 0, total: 0 }, `Downloading installer ${version}`);
+    const onProgress = (p) => { this.st.received = p.transferred || 0; this.st.total = p.total || 0; this.emit(); };
+    updater.on('download-progress', onProgress);
+    try {
+      await updater.downloadUpdate();
+    } finally {
+      updater.removeListener('download-progress', onProgress);
+    }
+    this.ready = {
+      version, kind: 'shell',
+      restart: async () => { await this.opts.prepareQuit(); updater.quitAndInstall(false, true); },
+    };
+    this.set({ phase: 'ready', version, kind: 'shell' }, `Installer ${version} downloaded; restart to install it`);
   }
 
   // ---- mirror menu -----------------------------------------------------------------------
@@ -322,7 +444,7 @@ class Updater {
     const custom = MIRROR_PRESETS.some((p) => p.value === current) ? 'Custom...' : `\u2713 Custom: ${current}`;
     const { response } = await this.message({
       type: 'question', title: 'GenericAgent-Harness', message: 'Download mirror for updates',
-      detail: `Update files come from GitHub releases. A mirror is a URL prefix (or a template with {url}).\n\nFor a custom mirror, set "update": {"mirror": "..."} in:\n${this.settingsFile}`,
+      detail: `Update files come from GitHub releases. A mirror is a URL prefix (or a template with {url}).\n\nA custom mirror can be entered in Settings > Updates, or set "update": {"mirror": "..."} in:\n${this.settingsFile}`,
       buttons: [...presets, custom, 'Cancel'], cancelId: presets.length + 1, noLink: true,
     });
     if (response < presets.length) this.setConfig({ mirror: MIRROR_PRESETS[response].value });
@@ -330,5 +452,7 @@ class Updater {
     return this.config();
   }
 }
+
+function mb(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} MB` : 'size unknown'; }
 
 module.exports = { Updater, mirrored, MIRROR_PRESETS };
