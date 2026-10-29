@@ -54,6 +54,8 @@ function nest(items: Session[]) {
   for (const s of items) walk(s, 0); // cycle safety: nothing is ever dropped
   return out;
 }
+// Pinned chats lead each list (most recently pinned first); the rest keep their order.
+const pinFirst = (items: Session[]) => [...items].sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
 export function Sessions({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -99,10 +101,11 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : '';
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${depth ? ' child' : ''}`} style={depth ? { paddingLeft: depth * 14 } : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
-        <span className="gah-sess-title">{label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
+        {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
         {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>
       <span className="gah-sess-acts">
+        <button type="button" className={`gah-sess-act${session.pinned ? ' on' : ''}`} disabled={busy} aria-pressed={!!session.pinned} aria-label={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} title={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} onClick={() => void act(session.pinned ? 'unpin' : 'pin', { id: session.id })}><Icon name="pin" /></button>
         <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u91cd\u547d\u540d', 'Rename')} onClick={async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); }}><Icon name="pencil" /></button>
         <button type="button" className="gah-sess-act" disabled={busy || !!status} aria-label={T('\u79fb\u52a8\u5230\u9879\u76ee', 'Move to project')} aria-expanded={moving === session.id} onClick={() => setMoving(moving === session.id ? '' : session.id)}><Icon name="folder" /></button>
         <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u5220\u9664', 'Remove')} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u4f1a\u8bdd', 'Remove chat'), danger: true, confirm: T('\u5220\u9664', 'Remove'), message: T('\u4ece\u5217\u8868\u5220\u9664\u6b64\u4f1a\u8bdd\uff1f\u5386\u53f2\u8bb0\u5f55\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u3002', 'Remove this chat from the list? History stays in the local database.') })) void act('delete', { id: session.id }); }}><Icon name="trash" /></button></span>
@@ -114,8 +117,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
   };
   // Long groups show the latest few (plus the open chat); searching always shows every match.
   const list = (key: string, items: Session[], home: string | undefined, limit: number) => {
-    const rows = nest(items), all = !!q || !!expanded[key];
-    const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id);
+    const rows = nest(pinFirst(items)), all = !!q || !!expanded[key];
+    const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id || !!r.session.pinned);
     return <div className="gah-sess-items" role="list">
       {rows.length ? shown.map(r => row(r.session, r.depth, home)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
       {!q && rows.length > limit && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, [key]: !all }))}>{all ? T('\u6536\u8d77', 'Show less') : `${T('\u663e\u793a\u5168\u90e8', 'Show all')} (${rows.length})`}</button>}
@@ -184,7 +187,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
       {scope ? <>
         {shownSections.map(key => sections[key]())}
         {!shownSections.length && <div className="gah-sess-empty">{T('\u6240\u6709\u5206\u533a\u5df2\u9690\u85cf', 'All sections are hidden')} <button type="button" className="gah-sess-more" onClick={() => updateLayout(old => ({ ...old, sections: Object.fromEntries(SECTION_KEYS.map(k => [k, { ...old.sections[k], show: true }])) as Layout['sections'] }))}>{T('\u5168\u90e8\u663e\u793a', 'Show all')}</button></div>}
-      </> : <div className="gah-sess-items flat" role="list">{(state.sessions ?? []).filter(s => !q || label(s).toLowerCase().includes(q)).map(s => row(s, 0))}</div>}
+      </> : <div className="gah-sess-items flat" role="list">{pinFirst((state.sessions ?? []).filter(s => !q || label(s).toLowerCase().includes(q))).map(s => row(s, 0))}</div>}
     </div></div></PluginSlot>;
 }
 

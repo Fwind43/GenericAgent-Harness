@@ -137,6 +137,8 @@ class Sessions:
             for column in ("workspace", "project_id", "parent_id"):
                 if column not in columns:
                     db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            if "pinned" not in columns:   # pin time; 0 = not pinned
+                db.execute("ALTER TABLE sessions ADD COLUMN pinned REAL NOT NULL DEFAULT 0")
             db.execute("CREATE INDEX IF NOT EXISTS session_parent ON sessions(parent_id)")
             row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
             sid = row[0] if row else None
@@ -177,7 +179,7 @@ class Sessions:
         with self.lock:
             self._init()
             with self._db() as db:
-                rows = db.execute("SELECT id,title,updated,workspace,project_id,parent_id FROM sessions WHERE deleted=0 ORDER BY updated DESC,id").fetchall()
+                rows = db.execute("SELECT id,title,updated,workspace,project_id,parent_id,pinned FROM sessions WHERE deleted=0 ORDER BY pinned DESC,updated DESC,id").fetchall()
             return [dict(row, running=row["id"] in self.active) for row in rows]
 
     def _write(self, db, current, messages, state):
@@ -257,7 +259,7 @@ class Sessions:
             if action == "new":
                 return self.create(parent_id=parent_id, workspace=workspace, project_id=project_id, title=title, select=True)
             current = self.current()
-            if action not in ("select", "rename", "delete"):
+            if action not in ("select", "rename", "delete", "pin", "unpin"):
                 raise ValueError("unknown session action")
             self.get(sid)
             fallback = (current["workspace"], current["project_id"])
@@ -270,6 +272,9 @@ class Sessions:
                     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 120:
                         raise ValueError("title must contain 1-120 characters")
                     db.execute("UPDATE sessions SET title=? WHERE id=?", (title.strip(), sid))
+                elif action in ("pin", "unpin"):
+                    # Pinning never changes selection or the transcript's updated time.
+                    db.execute("UPDATE sessions SET pinned=? WHERE id=?", (time.time() if action == "pin" else 0, sid))
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
                     if sid == current["id"]:

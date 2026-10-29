@@ -79,3 +79,7 @@
 .gah-sess-label>.gah-sess-head-btn{opacity:0;transition:opacity .12s}
 .gah-sess-label:hover>.gah-sess-head-btn,.gah-sess-label:focus-within>.gah-sess-head-btn,.gah-sess-label:has(.gah-sess-edit.on)>.gah-sess-head-btn{opacity:1}
 }
+/* Pinned chats: a small pin before the title; the pin action stays tinted while active. */
+.gah-sess-pin{flex:none;display:inline-flex;color:var(--muted);margin-right:4px}
+.gah-sess-pin .gah-ico{width:12px;height:12px}
+.gah-sess-act.on{color:var(--text)}
