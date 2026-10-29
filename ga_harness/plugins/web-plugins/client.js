@@ -110,9 +110,10 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all");
     const cards = react.useRef(null), back = react.useRef(null);
     const selected = config == null ? void 0 : config.items.find((plugin) => plugin.name === editing);
-    const shown = ((config == null ? void 0 : config.items) || []).filter((plugin) => {
+    const visible = ((config == null ? void 0 : config.items) || []).filter((plugin) => !plugin.worker_only);
+    const shown = visible.filter((plugin) => {
       var _a, _b;
-      return !plugin.worker_only && inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
+      return inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
     });
     const toGrid = () => {
       if (working) return;
@@ -161,7 +162,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
             label,
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: (config == null ? void 0 : config.items.filter((plugin) => inFilter(plugin, key)).length) || 0 })
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inFilter(plugin, key)).length })
           ] }, key)) }),
           error && !selected && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-groups", ref: cards, "aria-label": sdk.T("插件列表", "Plugin list"), children: categories.map(([key, label]) => {
