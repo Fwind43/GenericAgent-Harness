@@ -1,0 +1,27 @@
+/* Tailscale remote access panel, themed by the host palette. */
+.gah-dialog.ts-dialog{width:min(640px,calc(100vw - 32px));max-width:none;border-radius:16px}
+.ts-dialog .ts-head{align-items:flex-start;gap:16px;padding:22px 24px}
+.ts-dialog .ts-head h2{font-size:19px;line-height:1.4}
+.ts-dialog .ts-head p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.ts-dialog .btn{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer}
+.ts-dialog .btn:hover:not(:disabled){background:var(--surface-muted)}
+.ts-dialog .btn:disabled{opacity:.5;cursor:default}
+.ts-dialog .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.ts-dialog .btn.danger{color:#c0392b}
+.ts-dialog .ts-body{display:flex;flex-direction:column;gap:14px;padding:0 24px 24px}
+.ts-dialog .ts-card{border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--surface)}
+.ts-dialog .ts-row{display:flex;align-items:center;gap:10px}
+.ts-dialog .ts-spacer{flex:1}
+.ts-dialog .ts-dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.ts-dialog .ts-dot.on{background:#22a06b}
+.ts-dialog .ts-meta{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;font-size:13px}
+.ts-dialog .ts-meta dt{color:var(--muted)}
+.ts-dialog .ts-meta dd{margin:0;word-break:break-all}
+.ts-dialog .ts-error{margin:12px 0 0;color:#c0392b;font-size:13px}
+.ts-dialog .ts-entry{display:flex;gap:18px;align-items:flex-start}
+.ts-dialog .ts-qr{width:168px;height:168px;flex:none;border-radius:8px}
+.ts-dialog .ts-links{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ts-dialog .ts-tabs,.ts-dialog .ts-actions{display:flex;flex-wrap:wrap;gap:8px}
+.ts-dialog .ts-url{display:block;padding:8px 10px;border-radius:8px;background:var(--surface-muted);font-size:12px;word-break:break-all}
+.ts-dialog .ts-links small{color:var(--muted);font-size:12px;line-height:1.5}
+@media (max-width:560px){.ts-dialog .ts-entry{flex-direction:column;align-items:center}.ts-dialog .ts-head{padding:18px}.ts-dialog .ts-body{padding:0 18px 18px}}

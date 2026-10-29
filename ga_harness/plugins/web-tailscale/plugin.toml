@@ -1,0 +1,22 @@
+name = "web-tailscale"
+category = "service"
+entry = "main:apply"
+description = "Remote access over Tailscale/Headscale: forwards this machine's tailnet IP to the local web UI (token required), with QR entry link and token reset."
+description_zh = "通过 Tailscale/Headscale 远程访问：把本机 tailnet IP 端口转发到本地网页界面（强制 token），提供二维码入口链接和重置 token。"
+inject = ["web.host"]
+
+[settings.port]
+type = "integer"
+default = 0
+label = "Tailnet port"
+label_zh = "Tailnet 端口"
+description = "Port opened on the tailnet IP; 0 = same as the web UI port."
+description_zh = "在 tailnet IP 上监听的端口；0 表示与网页界面端口相同。"
+
+[settings.tailscale_path]
+type = "string"
+default = ""
+label = "tailscale executable"
+label_zh = "tailscale 可执行文件"
+description = "Leave empty to find it on PATH or in the default install folder."
+description_zh = "留空则在 PATH 或默认安装目录中查找。"
