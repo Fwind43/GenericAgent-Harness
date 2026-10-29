@@ -94,7 +94,7 @@ Two kinds, both checked from the tray menu (Updates > Check for updates) and aut
 - **Installer update**: when `update.json`'s `min_shell` is newer than the installed app, the
   code package is not applied; Windows/Linux (AppImage) download the new installer through
   electron-updater (`latest.yml` / `latest-linux.yml` + blockmap, generic feed on
-  `releases/latest/download`) and install on restart. macOS builds are unsigned, so they open
+  `releases/latest/download`) and install on restart. macOS builds are only ad-hoc signed, so they open
   the release page instead. Bump `desktop/MIN_SHELL` in any release that changes Electron code,
   the bundled Python, dependencies or the backend launch contract.
 
@@ -111,6 +111,8 @@ A mirror is a prefix put before the full GitHub URL; use `{url}` for other shape
 
 ## Not done yet
 
-User plugin directory and per-plugin venvs (uv), signing/notarization (installers are unsigned:
-Windows SmartScreen and macOS Gatekeeper will warn; on macOS use right-click > Open or
-`xattr -dr com.apple.quarantine`), in-place updates on macOS.
+User plugin directory and per-plugin venvs (uv), Developer ID signing and notarization, in-place updates on macOS.
+Windows installers are unsigned (SmartScreen warns). macOS builds are ad-hoc signed
+(`mac.identity: "-"`), so Gatekeeper reports "cannot verify the developer" instead of "damaged":
+open once via System Settings > Privacy & Security > Open Anyway, or run
+`xattr -cr "/Applications/GenericAgent-Harness.app"`.
