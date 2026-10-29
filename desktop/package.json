@@ -36,6 +36,7 @@
     "files": [
       "src/**",
       "resources/icon.png",
+      "resources/icon.ico",
       "package.json"
     ],
     "extraResources": [
@@ -53,7 +54,7 @@
         "nsis",
         "zip"
       ],
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,

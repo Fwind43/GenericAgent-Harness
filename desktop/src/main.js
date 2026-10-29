@@ -14,7 +14,8 @@ let origin = null;
 let quitting = false;
 let tray = null;
 let updater = null;
-const ICON = path.join(__dirname, '..', 'resources', 'icon.png');
+// Windows picks the matching frame from a multi-size .ico; downscaling the 512px PNG blurs it.
+const ICON = path.join(__dirname, '..', 'resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -196,7 +197,7 @@ function showWindow() {
 function createTray() {
   try {
     let img = nativeImage.createFromPath(ICON);
-    img = img.resize({ width: process.platform === 'darwin' ? 18 : 16, height: process.platform === 'darwin' ? 18 : 16 });
+    if (process.platform !== 'win32') img = img.resize({ width: process.platform === 'darwin' ? 18 : 16, height: process.platform === 'darwin' ? 18 : 16 });
     tray = new Tray(img);
   } catch (err) {
     // No tray available (e.g. some Linux desktops): fall back to quit-on-close.
@@ -242,7 +243,7 @@ function createWindow(url) {
     minWidth: 720,
     minHeight: 480,
     title: 'GenericAgent-Harness',
-    icon: path.join(__dirname, '..', 'resources', 'icon.png'),
+    icon: ICON,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
