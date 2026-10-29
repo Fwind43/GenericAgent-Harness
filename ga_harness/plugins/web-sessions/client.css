@@ -72,3 +72,8 @@
 .gah-sess-menu-item{display:block;width:100%;height:30px;padding:0 8px;background:transparent;border:0;border-radius:6px;color:var(--text);font:inherit;text-align:left;cursor:pointer;white-space:nowrap}
 .gah-sess-menu-item:hover:not(:disabled){background:var(--hover)}
 .gah-sess-menu-item:disabled{opacity:.4;cursor:default}
+/* Section header buttons appear only on hover/focus or while the edit menu is open. */
+@media (hover:hover){
+.gah-sess-label>.gah-sess-head-btn{opacity:0;transition:opacity .12s}
+.gah-sess-label:hover>.gah-sess-head-btn,.gah-sess-label:focus-within>.gah-sess-head-btn,.gah-sess-label:has(.gah-sess-edit.on)>.gah-sess-head-btn{opacity:1}
+}
