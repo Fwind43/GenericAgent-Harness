@@ -20,7 +20,7 @@ Optional `<userData>/desktop.json` (path shown in startup error dialogs):
   "args": [], "cwd": "C:/path/to/ga-harness", "env": {} }
 ```
 
-`GAH_DESKTOP_PYTHON` overrides `python`. Backend output goes to `<userData>/logs/backend.log`.
+`GAH_DESKTOP_PYTHON` overrides `python`. Backend output goes to `<program location>/data/logs/backend.log` (next to the exe, the AppImage, or the `.app` bundle on macOS), together with the Python `host.log`, `worker-YYYYMMDD.log` and `faults.log`; `<userData>/logs` is used only if that folder is not writable.
 
 **GenericAgent folder.** Before spawning the backend the shell resolves the GA checkout in this
 order: `--ga-root` in `args` > `ga_root` in desktop.json > `$GA_ROOT` > `ga_root` in

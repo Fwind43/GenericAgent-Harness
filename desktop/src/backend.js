@@ -288,6 +288,23 @@ function programDataDir(resourcesPath) {
   return path.join(path.dirname(resourcesPath), 'data');
 }
 
+// Logs always go to <program location>/data/logs, on every platform/version: next to the
+// exe (Windows/Linux), the AppImage, or the .app bundle (macOS). Falls back to
+// <userData>/logs only when that folder cannot be written (e.g. read-only install dir).
+function programLogDir(resourcesPath, userData) {
+  let dir = null;
+  if (resourcesPath && process.platform === 'darwin') {
+    dir = path.join(path.resolve(resourcesPath, '..', '..', '..'), 'data', 'logs');
+  } else if (programDataDir(resourcesPath)) {
+    dir = path.join(programDataDir(resourcesPath), 'logs');
+  }
+  if (dir) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* checked below */ }
+    if (fs.existsSync(dir) && dirWritable(dir)) return dir;
+  }
+  return path.join(userData, 'logs');
+}
+
 // First start with a program data folder: copy ~/.ga-harness into it (the original stays as
 // it is, so the CLI / older versions keep working). A marker makes an interrupted copy
 // restart; until the copy has completed the old location keeps being used.
@@ -389,7 +406,8 @@ class Backend {
     this.url = null;
     this.token = crypto.randomBytes(32).toString('hex');
     this.readyFile = path.join(userData, 'run', `backend-${process.pid}.json`);
-    this.logFile = path.join(userData, 'logs', 'backend.log');
+    this.logDir = programLogDir(resourcesPath, userData);
+    this.logFile = path.join(this.logDir, 'backend.log');
     this.child = null;
     this.exited = null;      // Promise resolved with the exit code
     this.tail = [];          // last output lines for error dialogs
@@ -471,6 +489,7 @@ class Backend {
       GAH_WEB_READY_FILE: this.readyFile,
       GAH_WEB_EXIT_ON_STDIN_EOF: '1',
       GAH_HOME: this.dataDir().path,
+      GAH_LOG_DIR: this.logDir,
     };
     if (this.settings.pythonPath) {
       // launcher.maybe_reexec keeps REPO on PYTHONPATH when it hops to GA's interpreter.

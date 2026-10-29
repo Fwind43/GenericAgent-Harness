@@ -1,4 +1,4 @@
-"""Persistent log files under ``$GAH_HOME/logs``.
+"""Persistent log files under ``<program location>/data/logs`` (see ``log_dir``).
 
 Before this, everything went to the console only, so a crash was lost once the window
 scrolled or closed. ``setup("host")`` / ``setup("worker")`` add, per process:
@@ -36,6 +36,22 @@ _state: dict = {}
 
 
 def log_dir() -> Path:
+    """``<program location>/data/logs`` for every version.
+
+    The desktop app passes ``GAH_LOG_DIR`` (next to the exe / AppImage / .app). A source
+    checkout or CLI install uses ``data/logs`` next to the ``ga_harness`` package's parent
+    (the repository root). Only if that cannot be created/written: ``$GAH_HOME/logs``.
+    """
+    explicit = os.environ.get("GAH_LOG_DIR")
+    candidates = [Path(explicit).expanduser()] if explicit else []
+    candidates.append(Path(__file__).resolve().parent.parent / "data" / "logs")
+    for dir in candidates:
+        try:
+            dir.mkdir(parents=True, exist_ok=True)
+            if os.access(dir, os.W_OK):
+                return dir
+        except OSError:
+            pass
     return paths.home() / "logs"
 
 
