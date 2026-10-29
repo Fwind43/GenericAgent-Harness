@@ -327,7 +327,9 @@ class Runs:
             try:
                 process.start()
                 child.close()
+                log.info("run %s start session=%s worker_pid=%s", rid, sid, process.pid)
             except Exception:
+                log.exception("run %s: worker could not start", rid)
                 child.close()
                 parent.close()
                 start_error = "Worker could not start"
@@ -431,6 +433,7 @@ class Runs:
             record = self.get(rid)
             if record["status"] not in ACTIVE:
                 return
+            log.info("run %s finish status=%s error=%s", rid, status, error)
             if record["status"] == "cancelling":
                 status = "aborted"
             messages = copy.deepcopy(live["messages"])

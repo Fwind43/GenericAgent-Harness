@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import logging
+import multiprocessing
 import os
 import threading
 from pathlib import Path
@@ -190,6 +192,10 @@ def _register_plugin_tool(tools, host, timeout=60.0):
 
 def run_worker(connection, recipe, payload):
     # Importing/mounting GA only happens after spawn, never in the host's thread.
+    from . import logfile
+    if threading.current_thread() is threading.main_thread() and multiprocessing.parent_process() is not None:
+        logfile.setup("worker")  # only in a real spawned worker, not when tests call it inline
+    logging.getLogger("gah.worker").info("run %s start session=%s", payload.get("run_id"), payload.get("session_id"))
     from .kernel import Runtime
     from .sessions import apply_effort, capture, restore
     from .workspaces import Workspaces

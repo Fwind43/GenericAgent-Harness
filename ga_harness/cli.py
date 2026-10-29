@@ -95,6 +95,8 @@ def main(argv=None) -> int:
             rc = launcher.maybe_reexec(raw, args.ga_root)
             if rc is not None:
                 return rc
+            from . import logfile
+            logfile.setup("host")
 
     manifests = discover(PLUGIN_DIRS + _extra_dirs("GAH_PLUGIN_PATH"))
     if args.cmd == "plugins":
