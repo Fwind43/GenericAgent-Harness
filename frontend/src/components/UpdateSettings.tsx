@@ -55,6 +55,9 @@ export function UpdateSettings() {
   const visible = open && active === ID;
   const [state, setState] = useState<UpdateState | null>(null);
   const [failure, setFailure] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [mirrorError, setMirrorError] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => api ? settings.register({ id: ID, label: T('更新', 'Updates'), icon: 'settings', order: -90 }) : undefined, []);
@@ -67,6 +70,9 @@ export function UpdateSettings() {
     return () => { alive = false; offState(); offOpen(); };
   }, []);
   useEffect(() => {
+    if (state && !editing && !state.presets.some(p => p.value === state.mirror)) setDraft(state.mirror);
+  }, [state?.mirror, editing]);
+  useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [state?.log.length, visible]);
@@ -76,6 +82,14 @@ export function UpdateSettings() {
   const s = state;
   const working = !!s && (s.busy || ACTIVE.has(s.phase));
   const pct = s && s.total > 0 ? Math.min(100, Math.round(s.received / s.total * 100)) : null;
+  const isPreset = !!s && s.presets.some(p => p.value === s.mirror);
+  const custom = !!s && (editing || !isPreset);
+  const saveMirror = () => {
+    const v = draft.trim();
+    if (!/^https?:\/\/[^\s/]+/i.test(v)) { setMirrorError(T('请输入以 http:// 或 https:// 开头的地址', 'Enter an address starting with http:// or https://')); return; }
+    setMirrorError('');
+    run(api.configure({ mirror: v }).then(() => api.state()).then(n => { setState(n); setEditing(false); }));
+  };
 
   return <section id={'gah-settings-panel-' + ID} role="tabpanel" aria-labelledby={'gah-settings-tab-' + ID}
     className="gah-settings-panel gah-update-settings" hidden={!visible}>
@@ -121,12 +135,29 @@ export function UpdateSettings() {
           <div className="gah-setting-row">
             <div className="gah-setting-text"><strong>{T('下载源', 'Download mirror')}</strong>
               <span>{T('GitHub 访问慢时可换镜像', 'Use a mirror if GitHub is slow')}</span></div>
-            <select className="gah-update-select" value={s.presets.some(p => p.value === s.mirror) ? s.mirror : '__custom'} disabled={working}
-              onChange={e => { if (e.target.value !== '__custom') run(api.configure({ mirror: e.target.value }).then(() => api.state()).then(setState)); }}>
+            <select className="gah-update-select" value={custom ? '__custom' : s.mirror} disabled={working}
+              onChange={e => {
+                if (e.target.value === '__custom') { setDraft(isPreset ? '' : s.mirror); setEditing(true); return; }
+                setEditing(false); setMirrorError('');
+                run(api.configure({ mirror: e.target.value }).then(() => api.state()).then(setState));
+              }}>
               {s.presets.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              {!s.presets.some(p => p.value === s.mirror) && <option value="__custom">{s.mirror}</option>}
+              <option value="__custom">{isPreset ? T('自定义…', 'Custom…') : T('自定义：', 'Custom: ') + s.mirror}</option>
             </select>
           </div>
+          {custom && <div className="gah-setting-row gah-update-mirror">
+            <div className="gah-update-mirror-edit">
+              <input className="gah-update-input" type="url" spellCheck={false} disabled={working} value={draft}
+                placeholder={T('https://mirror.example.com/ 或 https://mirror.example.com/{url}', 'https://mirror.example.com/ or https://mirror.example.com/{url}')}
+                onChange={e => { setDraft(e.target.value); setMirrorError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') saveMirror(); else if (e.key === 'Escape' && !isPreset) { setDraft(s.mirror); setMirrorError(''); } }} />
+              <button type="button" className="gah-update-btn primary" disabled={working || draft.trim() === s.mirror} onClick={saveMirror}>{T('保存', 'Save')}</button>
+              {isPreset && <button type="button" className="gah-update-btn" onClick={() => { setEditing(false); setMirrorError(''); }}>{T('取消', 'Cancel')}</button>}
+            </div>
+            <span className="gah-update-hint">{T('下载地址会拼在镜像地址后面；包含 {url} 时替换为原始 GitHub 地址。',
+              'The GitHub URL is appended to the mirror; if it contains {url}, that placeholder is replaced instead.')}</span>
+            {mirrorError && <div className="gah-update-error">{mirrorError}</div>}
+          </div>}
 
           <div className="gah-update-log-head"><strong>{T('更新日志', 'Activity')}</strong><span>{s.log.length}</span></div>
           <div className="gah-update-log" ref={logRef}>

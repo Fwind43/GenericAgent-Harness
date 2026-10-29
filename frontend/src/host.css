@@ -278,6 +278,11 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-setting-text span.gah-ga-path{color:var(--text);font-family:var(--mono,ui-monospace,Consolas,monospace);word-break:break-all}
 .gah-update-error{color:var(--danger);font-size:12px;word-break:break-word}
 .gah-update-select{flex:none;max-width:220px;border:1px solid var(--border);border-radius:8px;padding:5px 8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.gah-update-mirror{flex-direction:column;align-items:stretch;gap:6px}
+.gah-update-mirror-edit{display:flex;gap:8px;align-items:center}
+.gah-update-input{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.gah-update-input:focus{outline:none;border-color:var(--accent)}
+.gah-update-hint{color:var(--muted);font-size:12px}
 .gah-switch{position:relative;flex:none;width:36px;height:20px;cursor:pointer}
 .gah-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
 .gah-switch span{position:absolute;inset:0;border-radius:10px;background:var(--border);transition:background .15s;pointer-events:none}
