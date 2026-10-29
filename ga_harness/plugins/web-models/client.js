@@ -744,13 +744,13 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : ""), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-workspace-head", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-view-switch", role: "group", "aria-label": sdk.T("模型与服务商", "Models and providers"), children: [
-            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isModel, disabled: browsing, onClick: () => switchView("model"), children: [
-              sdk.T("模型", "Models"),
-              /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.entries.length) ?? 0 })
-            ] }),
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": !isModel, disabled: browsing, onClick: () => switchView("provider"), children: [
               sdk.T("服务商", "Providers"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.providers.length) ?? 0 })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isModel, disabled: browsing, onClick: () => switchView("model"), children: [
+              sdk.T("模型", "Models"),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.entries.length) ?? 0 })
             ] })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-refresh", disabled: browsing, onClick: () => {

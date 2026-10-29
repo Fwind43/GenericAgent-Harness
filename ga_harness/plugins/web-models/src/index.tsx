@@ -127,8 +127,8 @@ export function Models({ api }: { api: PluginAPI }) {
       <div className={'dialog-content model-workspace' + (detail ? ' is-detail' : '')}>
         <div className="model-workspace-head">
           <div className="model-view-switch" role="group" aria-label={T('\u6a21\u578b\u4e0e\u670d\u52a1\u5546', 'Models and providers')}>
-            <button type="button" aria-pressed={isModel} disabled={browsing} onClick={() => switchView('model')}>{T('\u6a21\u578b', 'Models')}<span>{config?.entries.length ?? 0}</span></button>
             <button type="button" aria-pressed={!isModel} disabled={browsing} onClick={() => switchView('provider')}>{T('\u670d\u52a1\u5546', 'Providers')}<span>{config?.providers.length ?? 0}</span></button>
+            <button type="button" aria-pressed={isModel} disabled={browsing} onClick={() => switchView('model')}>{T('\u6a21\u578b', 'Models')}<span>{config?.entries.length ?? 0}</span></button>
           </div>
           <button type="button" className="secondary model-refresh" disabled={browsing} onClick={() => { void navigate(() => { void load(); }); }}>{T('\u5237\u65b0', 'Refresh')}</button>
         </div>
