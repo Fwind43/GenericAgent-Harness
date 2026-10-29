@@ -15,16 +15,22 @@ Web plugins: ordinary plugins that inject ``web.host`` and call
 ``/web/<name>/`` and their routes under ``/api/p/<name>/<path>``; the page loads them at
 runtime (``GAH.define`` in the browser) and drops them again when they are withdrawn.
 
-Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true), token, ready_file.
+Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true), token, ready_file,
+allowed_origins (extra browser origins allowed to POST, e.g. a tunnel/reverse-proxy URL),
+allow_no_token (false; binding a non-loopback host without a token is refused unless true).
 Environment overrides for embedding (the desktop shell sets these):
   GAH_WEB_PORT, GAH_WEB_OPEN_BROWSER (0/1), GAH_WEB_TOKEN (require this token; the page is
   entered once via ``/?gah_token=...`` which sets an HttpOnly cookie), GAH_WEB_READY_FILE
   (JSON {"url", "pid"} written atomically once listening; never contains the token),
-  GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed).
+  GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed),
+  GAH_WEB_ALLOWED_ORIGINS (comma-separated, added to allowed_origins), GAH_WEB_ALLOW_NO_TOKEN=1.
+External access: plugins use ``web.host.allow_origin(url)`` (returns an undo callable),
+``web.host.access()`` and ``web.host.set_token()``; see WebHost.
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
 import copy
 import hmac
+import ipaddress
 import os
 import sys
 import html
@@ -38,7 +44,7 @@ import webbrowser
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from ga_harness import presets, uploads
 from ga_harness.sessions import EFFORTS, apply_effort
@@ -54,6 +60,57 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
                "style": "text/css; charset=utf-8"}
 ASSET_FILES = {"script": "client.js", "head": "head.js", "style": "client.css"}
+WILDCARD_HOSTS = ("", "0.0.0.0", "::")
+LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
+
+
+def normalize_origin(value):
+    """``scheme://host[:port]`` (lower-case, default port dropped), or None if not an http(s) origin."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
+    if scheme not in ("http", "https") or not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None and port != (443 if scheme == "https" else 80):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}"
+
+
+def _origin_list(value):
+    if isinstance(value, str):
+        value = value.split(",")
+    out = []
+    for item in value or ():
+        origin = normalize_origin(item)
+        if item and str(item).strip() and origin is None:
+            raise ValueError(f"ui-web: invalid allowed origin: {item!r}")
+        if origin and origin not in out:
+            out.append(origin)
+    return out
+
+
+def _is_ip(host):
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_loopback(host):
+    if host in LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _peek_pipe_until_closed(stream, interval=0.5):
@@ -171,6 +228,32 @@ class WebHost:
                 out.append(f'<script src="{html.escape(m["head"])}" data-gah-plugin="{m["name"]}"></script>')
         return "\n".join(out)
 
+    # ---- external access (for tunnel / reverse-proxy / LAN plugins) ----
+    def allow_origin(self, origin):
+        """Let ``origin`` (an http(s) URL; path ignored) POST to the API. Returns an undo callable."""
+        return self.frontend.add_origin(origin)
+
+    def origins(self):
+        return self.frontend.origins()
+
+    def access(self):
+        """Non-secret access facts: bind host/port, local url, token_required, allowed origins."""
+        fe = self.frontend
+        return {"host": fe.host, "port": fe.bound_port, "url": fe.url, "loopback": fe.loopback_only,
+                "token_required": bool(fe.token), "origins": fe.origins()}
+
+    def entry_url(self, base=None):
+        """``base`` (default: the local url) with the one-time ``?gah_token=`` entry query. Contains the token."""
+        base = (base or self.frontend.url or "").split("?", 1)[0].split("#", 1)[0]
+        if base and not base.endswith("/"):
+            base += "/"
+        token = self.frontend.token
+        return base + (f"?gah_token={quote(token, safe='')}" if token else "")
+
+    def set_token(self, token):
+        """Replace the access token (invalidates existing cookies). Empty is refused when exposed."""
+        return self.frontend.set_token(token)
+
 
 class WebFrontend:
     def __init__(self, ctx, config):
@@ -182,6 +265,17 @@ class WebFrontend:
         self.open_browser = (bool(config.get("open_browser", True)) if flag is None
                              else flag.strip().lower() not in ("", "0", "false", "no"))
         self.token = env.get("GAH_WEB_TOKEN") or config.get("token") or None
+        flag = env.get("GAH_WEB_ALLOW_NO_TOKEN")
+        self.allow_no_token = (bool(config.get("allow_no_token", False)) if flag is None
+                               else flag.strip().lower() not in ("", "0", "false", "no"))
+        self.loopback_only = _is_loopback(str(self.host).strip("[]").lower())
+        if not self.loopback_only and not self.token and not self.allow_no_token:
+            raise ValueError(f"ui-web: host {self.host!r} is reachable from other machines; "
+                             "set a token (GAH_WEB_TOKEN) or allow_no_token = true")
+        self._static_origins = _origin_list(config.get("allowed_origins")) + [
+            o for o in _origin_list(env.get("GAH_WEB_ALLOWED_ORIGINS") or "")]
+        self._runtime_origins = {}
+        self.bound_port = None
         self.ready_file = env.get("GAH_WEB_READY_FILE") or config.get("ready_file") or None
         self.exit_on_stdin_eof = env.get("GAH_WEB_EXIT_ON_STDIN_EOF") == "1"
         console = ctx.get("console")    # ga-stdout captures sys.stdout; talk to the real one
@@ -657,10 +751,68 @@ class WebFrontend:
         self.server = ThreadingHTTPServer((self.host, self.port), Handler)
         self.server.daemon_threads = True
         host, port = self.server.server_address[:2]
-        self.url = f"http://{host}:{port}/"
+        if host in WILDCARD_HOSTS:
+            host = "127.0.0.1"                 # a wildcard is not browsable; open the loopback alias
+        self.bound_port = port
+        self.url = f"http://{f'[{host}]' if ':' in host else host}:{port}/"
         self.cookie_name = f"gah_token_{port}"   # cookies ignore ports; keep instances apart
         threading.Thread(target=self.server.serve_forever, name="ui-web-http", daemon=True).start()
         return self.url
+
+    # ---- external access ----
+    def origins(self):
+        with self.lock:
+            runtime = list(self._runtime_origins)
+        return list(dict.fromkeys(self._static_origins + runtime))
+
+    def add_origin(self, origin):
+        norm = normalize_origin(origin)
+        if norm is None:
+            raise ValueError(f"invalid origin: {origin!r}")
+        with self.lock:
+            self._runtime_origins[norm] = self._runtime_origins.get(norm, 0) + 1
+        done = []
+
+        def undo():
+            with self.lock:
+                if done or norm not in self._runtime_origins:
+                    return
+                done.append(True)
+                self._runtime_origins[norm] -= 1
+                if self._runtime_origins[norm] <= 0:
+                    del self._runtime_origins[norm]
+        return undo
+
+    def set_token(self, token):
+        token = (token or "").strip() or None
+        if token is None and not self.loopback_only and not self.allow_no_token:
+            raise ValueError("a token is required while the server is reachable from other machines")
+        if token is not None and (len(token) < 16 or any(c.isspace() or c in ";,\"" for c in token)):
+            raise ValueError("token must be at least 16 characters without spaces, ';', ',' or quotes")
+        self.token = token
+        return True
+
+    def origin_allowed(self, origin, host_header=None):
+        """CSRF gate for POSTs: no Origin (non-browser), the page itself, loopback aliases,
+        configured/registered origins, or (wildcard bind) a literal-IP origin matching Host."""
+        if origin is None:
+            return True
+        norm = normalize_origin(origin)
+        if norm is None:
+            return False
+        if norm == normalize_origin(self.url or "") or norm in self.origins():
+            return True
+        parts = urlsplit(norm)
+        host, port = (parts.hostname or "").lower(), parts.port or (443 if parts.scheme == "https" else 80)
+        if port != self.bound_port:
+            return False
+        bind = str(self.host).strip("[]").lower()
+        if _is_loopback(host) and (self.loopback_only or bind in WILDCARD_HOSTS):
+            return True
+        # Literal IPs cannot be DNS-rebound, so a LAN address typed into the browser is safe.
+        if bind in WILDCARD_HOSTS or bind == host:
+            return _is_ip(host) and normalize_origin(f"{parts.scheme}://{host_header or ''}") == norm
+        return False
 
     def _write_ready(self):
         if not self.ready_file:
@@ -863,8 +1015,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _same_origin(self):
         # Browsers always send Origin on cross-site POSTs; reject anything not from this page.
-        origin = self.headers.get("Origin")
-        return origin is None or origin.rstrip("/") + "/" == self.frontend.url
+        return self.frontend.origin_allowed(self.headers.get("Origin"), self.headers.get("Host"))
 
     def _authorized(self):
         token = self.frontend.token
@@ -887,7 +1038,8 @@ class _Handler(BaseHTTPRequestHandler):
             return False
         self.send_response(303)
         self.send_header("Location", "/")
-        self.send_header("Set-Cookie", f"{self.frontend.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict")
+        secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https" else ""
+        self.send_header("Set-Cookie", f"{self.frontend.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict{secure}")
         self.send_header("Content-Length", "0")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
