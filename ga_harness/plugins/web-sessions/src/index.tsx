@@ -116,9 +116,11 @@ export function Sessions({ api }: { api: PluginAPI }) {
   }
   const row = (session: Session, depth: number, home?: string) => {
     const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : '';
-    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${depth ? ' child' : ''}`} style={depth ? { paddingLeft: depth * 14 } : undefined} role="listitem">
+    const unread = !status && !!session.unread && session.id !== state.session_id;
+    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}`} style={depth ? { paddingLeft: depth * 14 } : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
+        {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
         {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
         {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>
       <span className="gah-sess-acts">
@@ -170,6 +172,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
       <button type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => setSection(key, { show: false }))}>{T('\u9690\u85cf\u6b64\u5206\u533a', 'Hide this section')}</button>
       {hidden.map(k => <button key={k} type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => setSection(k, { show: true }))}>{T('\u663e\u793a\u201c', 'Show "') + sectionName(k) + T('\u201d', '"')}</button>)}
       <div className="gah-sess-menu-sep" />
+      <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy || !(state.sessions ?? []).some(s => s.unread)} onClick={pick(() => void act('read_all'))}>{T('\u5168\u90e8\u6807\u4e3a\u5df2\u8bfb', 'Mark all as read')}</button>
       <button type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => updateLayout(() => normalizeLayout()))}>{T('\u6062\u590d\u9ed8\u8ba4', 'Restore defaults')}</button>
     </div>;
   };

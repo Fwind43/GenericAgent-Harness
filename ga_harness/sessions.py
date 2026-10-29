@@ -119,12 +119,15 @@ class Sessions:
 
     def _new(self, db, workspace="", project_id="", parent_id="", title="\u65b0\u4f1a\u8bdd"):
         sid = uuid.uuid4().hex
-        db.execute("INSERT INTO sessions (id,title,updated,messages,state,deleted,workspace,project_id,parent_id) VALUES (?,?,?,?,?,0,?,?,?)",
-                   (sid, title, time.time(), "[]", "{}", workspace, project_id, parent_id))
+        now = time.time()
+        db.execute("INSERT INTO sessions (id,title,updated,messages,state,deleted,workspace,project_id,parent_id,read_at) VALUES (?,?,?,?,?,0,?,?,?,?)",
+                   (sid, title, now, "[]", "{}", workspace, project_id, parent_id, now))
         return sid
 
     def _select(self, db, sid):
         db.execute("INSERT OR REPLACE INTO meta VALUES ('current', ?)", (sid,))
+        # Opening a chat reads it.
+        db.execute("UPDATE sessions SET read_at=MAX(read_at,updated,?) WHERE id=?", (time.time(), sid))
 
     def _init(self):
         if self._ready:
@@ -139,6 +142,9 @@ class Sessions:
                     db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
             if "pinned" not in columns:   # pin time; 0 = not pinned
                 db.execute("ALTER TABLE sessions ADD COLUMN pinned REAL NOT NULL DEFAULT 0")
+            if "read_at" not in columns:  # last time the user saw the chat; existing chats start read
+                db.execute("ALTER TABLE sessions ADD COLUMN read_at REAL NOT NULL DEFAULT 0")
+                db.execute("UPDATE sessions SET read_at=updated")
             db.execute("CREATE INDEX IF NOT EXISTS session_parent ON sessions(parent_id)")
             row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
             sid = row[0] if row else None
@@ -205,17 +211,21 @@ class Sessions:
         with self.lock:
             self._init()
             with self._db() as db:
-                rows = db.execute("SELECT id,title,updated,workspace,project_id,parent_id,pinned FROM sessions WHERE deleted=0 ORDER BY pinned DESC,updated DESC,id").fetchall()
-            return [dict(row, running=row["id"] in self.active) for row in rows]
+                rows = db.execute("SELECT id,title,updated,workspace,project_id,parent_id,pinned,read_at FROM sessions WHERE deleted=0 ORDER BY pinned DESC,updated DESC,id").fetchall()
+            # Unread = new transcript content since the user last saw it (opened, or watched it being written).
+            return [dict(row, running=row["id"] in self.active, unread=row["updated"] > row["read_at"]) for row in rows]
 
     def _write(self, db, current, messages, state):
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":
             first = next((m.get("text", "") for m in messages if m.get("role") == "user"), "")
             title = " ".join(first.split())[:60] or title
-        db.execute("UPDATE sessions SET title=?,updated=?,messages=?,state=? WHERE id=?",
-                   (title, time.time(), json.dumps(messages, ensure_ascii=False, allow_nan=False),
-                    json.dumps(state, ensure_ascii=False, allow_nan=False), current["id"]))
+        # A write to the chat on screen is seen as it happens; any other chat becomes unread.
+        now = time.time()
+        db.execute("UPDATE sessions SET title=?,updated=?,messages=?,state=?,"
+                   "read_at=CASE WHEN id=(SELECT value FROM meta WHERE key='current') THEN ? ELSE read_at END WHERE id=?",
+                   (title, now, json.dumps(messages, ensure_ascii=False, allow_nan=False),
+                    json.dumps(state, ensure_ascii=False, allow_nan=False), now, current["id"]))
 
     def save(self, messages):
         """Legacy single-agent API. Background workers must use save_for()."""
@@ -285,7 +295,11 @@ class Sessions:
             if action == "new":
                 return self.create(parent_id=parent_id, workspace=workspace, project_id=project_id, title=title, select=True)
             current = self.current()
-            if action not in ("select", "rename", "delete", "pin", "unpin"):
+            if action == "read_all":
+                with self._db() as db:
+                    db.execute("UPDATE sessions SET read_at=MAX(read_at,updated) WHERE deleted=0")
+                return current
+            if action not in ("select", "rename", "delete", "pin", "unpin", "read", "unread"):
                 raise ValueError("unknown session action")
             self.get(sid)
             fallback = (current["workspace"], current["project_id"])
@@ -301,6 +315,10 @@ class Sessions:
                 elif action in ("pin", "unpin"):
                     # Pinning never changes selection or the transcript's updated time.
                     db.execute("UPDATE sessions SET pinned=? WHERE id=?", (time.time() if action == "pin" else 0, sid))
+                elif action in ("read", "unread"):
+                    # Never changes selection; "unread" holds until the chat is opened or written while open.
+                    db.execute("UPDATE sessions SET read_at=? WHERE id=?",
+                               (time.time() if action == "read" else 0, sid))
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
                     if sid == current["id"]:

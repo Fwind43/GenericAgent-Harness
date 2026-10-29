@@ -38,6 +38,9 @@
 .gah-sess-status.cancelling{background:var(--muted);animation:none}
 @keyframes gah-sess-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.gah-sess-status{animation:none}}
+/* Unread: new content since the chat was last seen; hidden while running (status dot wins). */
+.gah-sess-unread{flex:none;order:2;width:7px;height:7px;margin-left:6px;border-radius:50%;background:var(--accent,#2f80ed)}
+.gah-sess-row.unread .gah-sess-title{font-weight:600;color:var(--text,inherit)}
 .gah-sess-search{margin:2px 0 4px;height:30px;padding:0 10px;border:1px solid var(--border,rgba(127,127,127,.25));border-radius:6px;background:transparent;color:var(--text);font:inherit;font-size:13px;min-width:0}
 .gah-sess-search:focus{outline:none;border-color:var(--accent,#2f80ed)}
 .gah-group-count{flex:none;font-size:11px;color:var(--muted);font-weight:400}

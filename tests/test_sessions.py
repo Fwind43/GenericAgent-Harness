@@ -89,3 +89,31 @@ def test_reasoning_effort_is_per_conversation():
     assert agent.gah_reasoning_effort is None and backend.reasoning_effort == "medium"
     restore(agent, {"effort": "bogus"})
     assert agent.gah_reasoning_effort is None
+
+
+def test_sessions_unread_tracking(tmp_path):
+    import sqlite3
+    path = tmp_path / "sessions.sqlite3"
+    store = Sessions(agent(), path)
+    first = store.current()["id"]
+    second = store.create()["id"]
+    unread = lambda: {r["id"]: r["unread"] for r in store.listing()}
+    assert unread() == {first: False, second: False}
+    # Background write to a chat that is not on screen -> unread; write to the open chat -> read.
+    store.save_for(second, [{"role": "assistant", "text": "done"}], {})
+    store.save([{"role": "user", "text": "hi"}])
+    assert unread() == {first: False, second: True}
+    store.change("rename", second, "renamed")
+    assert unread()[second] is True
+    store.change("select", second)
+    assert unread()[second] is False
+    store.change("unread", first)
+    assert unread()[first] is True and store.current()["id"] == second
+    store.change("read", first)
+    assert unread()[first] is False
+    store.save_for(first, [{"role": "assistant", "text": "x"}], {})
+    assert store.change("read_all")["id"] == second and not any(unread().values())
+    # Pre-existing databases migrate with every chat read.
+    with sqlite3.connect(path) as db:
+        db.execute("ALTER TABLE sessions DROP COLUMN read_at")
+    assert not any(r["unread"] for r in Sessions(agent(), path).listing())

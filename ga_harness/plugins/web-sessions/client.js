@@ -157,11 +157,13 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     }
     const row = (session, depth, home) => {
       const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : "";
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${depth ? " child" : ""}`, style: depth ? { paddingLeft: depth * 14 } : void 0, role: "listitem", children: [
+      const unread = !status && !!session.unread && session.id !== state.session_id;
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}`, style: depth ? { paddingLeft: depth * 14 } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: label(session) }),
           tag && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-tag", children: tag }),
+          unread && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-unread", role: "status", title: sdk.T("未读", "Unread"), "aria-label": sdk.T("未读", "Unread") }),
           !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
           status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })
         ] }),
@@ -248,6 +250,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => setSection(key, { show: false })), children: sdk.T("隐藏此分区", "Hide this section") }),
         hidden.map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => setSection(k, { show: true })), children: sdk.T("显示“", 'Show "') + sectionName(k) + sdk.T("”", '"') }, k)),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy || !(state.sessions ?? []).some((s) => s.unread), onClick: pick(() => void act("read_all")), children: sdk.T("全部标为已读", "Mark all as read") }),
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => updateLayout(() => normalizeLayout())), children: sdk.T("恢复默认", "Restore defaults") })
       ] });
     };
