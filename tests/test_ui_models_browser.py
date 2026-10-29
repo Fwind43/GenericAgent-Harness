@@ -53,7 +53,17 @@ def open_models(page, base):
     page.locator("#settingsBtn").evaluate("b => b.click()")
     dialog = page.locator(".gah-model-dialog")
     pw.expect(dialog.locator(".model-layout")).to_be_visible()
+    show_models(dialog)
     return dialog
+
+
+# The view switch lists Providers first (the default view), then Models.
+def show_providers(dialog):
+    dialog.locator(".model-view-switch button").first.click()
+
+
+def show_models(dialog):
+    dialog.locator(".model-view-switch button").nth(1).click()
 
 
 def button(root, text):
@@ -277,13 +287,13 @@ def test_search_and_provider_filter_crud(browser, models_app):
         form.locator(".model-delete").click()
         button(page.locator(".gah-ask"), "\u5220\u9664").click()
         pw.expect(dialog.locator(".model-list-item")).to_have_count(0)
-        dialog.locator(".model-view-switch button").nth(1).click()
+        show_providers(dialog)
         dialog.locator(".model-search").fill("new-provider")
         dialog.locator(".model-list-item").click()
         provider.locator(".model-delete").click()
         button(page.locator(".gah-ask"), "\u5220\u9664").click()
         pw.expect(dialog.locator(".model-list-item").filter(has_text="new-provider")).to_have_count(0)
-        dialog.locator(".model-view-switch button").first.click()
+        show_models(dialog)
         pw.expect(section(dialog, "new-provider")).to_have_count(0)
         legacy = provider_filter(dialog).locator('option[value^="legacy:"]')
         pw.expect(legacy).to_have_count(2)
@@ -374,11 +384,12 @@ def test_loading_errors_readonly_and_busy(browser, models_app):
         trigger.click()
         pw.expect(dialog.locator(".model-layout")).to_be_visible()
         pw.expect(dialog.locator(".model-add")).to_be_disabled()
+        show_models(dialog)
         provider_filter(dialog).select_option("provider:beta")
         form = model_form(dialog)
         pw.expect(form.get_by_label("\u6a21\u578b ID", exact=True)).to_be_disabled()
         pw.expect(button(form, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_disabled()
-        dialog.locator(".model-view-switch button").nth(1).click()
+        show_providers(dialog)
         pw.expect(dialog.locator(".model-add")).to_be_disabled()
         pw.expect(button(form, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_disabled()
         button(shell, "\u5173\u95ed").click()

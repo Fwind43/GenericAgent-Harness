@@ -11,7 +11,7 @@ export function Models({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost(), { busy, working, run } = useOperation(api);
   const [config, setConfig] = useState<ModelConfig | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [section, setSection] = useState('');
-  const [edit, setEdit] = useState<Edit>({ kind: 'model', serial: 0 }), [detail, setDetail] = useState(false);
+  const [edit, setEdit] = useState<Edit>({ kind: 'provider', serial: 0 }), [detail, setDetail] = useState(false);
   const draft = useRef(false), blocked = useRef(false), leaving = useRef(false), alive = useRef(true);
   const heading = useRef<HTMLHeadingElement>(null);
   const onDirtyChange = useCallback((value: boolean) => { draft.current = value; }, []);
@@ -71,7 +71,7 @@ export function Models({ api }: { api: PluginAPI }) {
     setConfig(null); setError(''); setQuery(''); setSection(''); draft.current = false;
     await run(async () => {
       const next = await api.host.get<ModelConfig>('/api/models/config');
-      setConfig(next); select('model', next.entries[0]?.key, false);
+      setConfig(next); select('provider', next.providers[0]?.id, false);
     }, setError, true);
   }
   const change: SaveModel = (action, id, values) => {

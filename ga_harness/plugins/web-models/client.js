@@ -570,7 +570,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const { state, changing } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
     const [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
-    const [edit, setEdit] = react.useState({ kind: "model", serial: 0 }), [detail, setDetail] = react.useState(false);
+    const [edit, setEdit] = react.useState({ kind: "provider", serial: 0 }), [detail, setDetail] = react.useState(false);
     const draft = react.useRef(false), blocked = react.useRef(false), leaving = react.useRef(false), alive = react.useRef(true);
     const heading = react.useRef(null);
     const onDirtyChange = react.useCallback((value) => {
@@ -673,7 +673,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         var _a2;
         const next = await api.host.get("/api/models/config");
         setConfig(next);
-        select("model", (_a2 = next.entries[0]) == null ? void 0 : _a2.key, false);
+        select("provider", (_a2 = next.providers[0]) == null ? void 0 : _a2.id, false);
       }, setError, true);
     }
     const change = (action, id, values) => {
