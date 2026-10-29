@@ -55,6 +55,45 @@ ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascr
 ASSET_FILES = {"script": "client.js", "head": "head.js", "style": "client.css"}
 
 
+def _peek_pipe_until_closed(stream, interval=0.5):
+    """Wait for EOF on a Windows stdin pipe without a blocking ReadFile.
+
+    A thread parked in a synchronous ReadFile on the inherited stdin pipe makes every
+    ``multiprocessing`` spawn child hang during interpreter start-up (the child's own
+    stdin probing waits on the same pipe), which froze run starts under the desktop shell.
+    Polling with PeekNamedPipe never holds the pipe. Returns False when not applicable
+    (non-Windows or stdin is not a pipe) so the caller falls back to blocking reads.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+        fd = stream.fileno()
+        handle = msvcrt.get_osfhandle(fd)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetFileType.argtypes = [wintypes.HANDLE]
+        kernel32.GetFileType.restype = wintypes.DWORD
+        if kernel32.GetFileType(handle) != 3:      # FILE_TYPE_PIPE
+            return False
+        peek = kernel32.PeekNamedPipe
+        peek.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p,
+                         ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+        peek.restype = wintypes.BOOL
+    except (OSError, ValueError, AttributeError, ImportError):
+        return False
+    avail = wintypes.DWORD()
+    while True:
+        if not peek(handle, None, 0, None, ctypes.byref(avail), None):
+            return True                             # broken pipe: parent went away
+        if avail.value:
+            if not os.read(fd, avail.value):        # data is ready, so this cannot block
+                return True
+            continue
+        time.sleep(interval)
+
+
 class WebHost:
     """Registry of browser-side plugins (the ``web.host`` capability)."""
 
@@ -584,8 +623,9 @@ class WebFrontend:
 
         def watch():
             try:
-                while stream.read(4096):
-                    pass
+                if not _peek_pipe_until_closed(stream):
+                    while stream.read(4096):
+                        pass
             except (OSError, ValueError):
                 pass
             self.log("[web] parent closed stdin; stopping")
