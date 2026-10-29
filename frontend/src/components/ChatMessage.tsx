@@ -23,9 +23,9 @@ export function Tokens({ usage }: { usage?: Usage }) {
       <span key={key} className="tok-ico" title={label + num(usage[key])}>{TOKEN_ICON[key]}{compact(usage[key])}</span>)}</span>
   </span>;
 }
-function Thinking({ text }: { text?: string }) {
+function Thinking({ text, stream = false }: { text?: string; stream?: boolean }) {
   return text ? <Disclosure className="thinking" chevron="start" title={<span className="thinking-label">{T('思考', 'Thinking')}</span>}>
-    <Markdown text={text} className="thinking-body" /></Disclosure> : null;
+    <Markdown text={text} className="thinking-body" stream={stream} /></Disclosure> : null;
 }
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
@@ -65,9 +65,9 @@ const Tool = memo(function Tool({ tool, awaiting }: { tool: ToolCall; awaiting: 
       </> : raw}
     </div></Disclosure>;
 });
-const TurnBody = memo(function TurnBody({ turn, awaiting = false }: { turn: Turn; awaiting?: boolean }) {
-  return <><Thinking text={turn.thinking} /><Summary text={turn.summary} />
-    {turn.reply && <Markdown text={turn.reply} className="reply" />}
+const TurnBody = memo(function TurnBody({ turn, awaiting = false, stream = false }: { turn: Turn; awaiting?: boolean; stream?: boolean }) {
+  return <><Thinking text={turn.thinking} stream={stream} /><Summary text={turn.summary} />
+    {turn.reply && <Markdown text={turn.reply} className="reply" stream={stream} />}
     {turn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
   </>;
 });
@@ -76,7 +76,7 @@ const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
   return <Disclosure className={'step' + (live ? ' running' : '')} initial={live} title={<>
     <span className="no">{T('步骤 ', 'Step ')}{turn.turn}</span><span className="ttl">{title}</span>
     {!!turn.tools.length && <span className="cnt">{turn.tools.length}{T(' 个工具', ' tools')}</span>}<Tokens usage={turn.usage} />
-  </>}><div className="step-body"><TurnBody turn={turn} /></div></Disclosure>;
+  </>}><div className="step-body"><TurnBody turn={turn} stream={live} /></div></Disclosure>;
 });
 function MessageTime({ message }: { message: Message }) {
   if (typeof message.created_at !== 'number' || !Number.isFinite(message.created_at)) return null;
@@ -142,11 +142,11 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       })}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
         {finalTurn.summary && <span className="ttl">{finalTurn.summary}</span>}<Tokens usage={finalTurn.usage} /></div>
-        <Thinking text={finalTurn.thinking} /><Summary text={finalTurn.summary} />
-        {finalTurn.reply && <Markdown text={finalTurn.reply} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
+        <Thinking text={finalTurn.thinking} stream={running} /><Summary text={finalTurn.summary} />
+        {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
       </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={fin.summary} /><Markdown text={fin.reply} /></> : null}
-    </> : <Markdown text={m.text || ''} className={'body' + (running ? ' cursor' : '')} />}
+    </> : <Markdown text={m.text || ''} stream={running} className={'body' + (running ? ' cursor' : '')} />}
     {m.role === 'assistant' && <div className="message-actions">
       <MessageStats m={m} turns={turns} />
       {reply && !running && <CopyButton text={reply} label={T('复制回复', 'Copy reply')} />}

@@ -4,9 +4,54 @@ import { T } from '../i18n';
 export function Chevron() {
   return <svg className="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
-export const Markdown = memo(function Markdown({ text, className = 'body' }: { text: string; className?: string }) {
+/** Reveal speed: the backlog drains in about this many ms, never slower than MIN_CPS. */
+const CATCH_UP_MS = 260, MIN_CPS = 40;
+/**
+ * Streamed text arrives in network-sized bursts. While ``stream`` is set, the
+ * rendered prefix advances every frame at a rate proportional to the backlog, so
+ * bursts read as steady typing yet never fall more than a fraction of a second
+ * behind. Text already present on mount, non-append rewrites and the end of the
+ * text that never streamed are shown at once; a backlog left when the stream
+ * ends keeps draining.
+ */
+export const Markdown = memo(function Markdown({ text, className = 'body', stream = false }: { text: string; className?: string; stream?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => { if (ref.current) window.GAHOutput.setMarkdown(ref.current, text); }, [text]);
+  const shown = useRef(text.length);
+  const target = useRef(text);
+  const frame = useRef(0);
+  const last = useRef(0);
+  const paint = (n: number) => {
+    const t = target.current;
+    // Do not split a surrogate pair.
+    if (n > 0 && n < t.length && t.charCodeAt(n - 1) >= 0xd800 && t.charCodeAt(n - 1) <= 0xdbff) n++;
+    shown.current = n;
+    if (ref.current) window.GAHOutput.setMarkdown(ref.current, n >= t.length ? t : t.slice(0, n));
+  };
+  useLayoutEffect(() => {
+    const prev = target.current;
+    target.current = text;
+    const appended = text.startsWith(prev.slice(0, shown.current));
+    // A stream that ends mid-animation finishes its reveal instead of jumping.
+    if ((!stream && !frame.current) || !appended || document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      cancelAnimationFrame(frame.current); frame.current = 0;
+      paint(text.length);
+      return;
+    }
+    if (!ref.current?.firstChild && !ref.current?.textContent) paint(shown.current);
+    if (frame.current || shown.current >= text.length) return;
+    last.current = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(now - last.current, 100);
+      last.current = now;
+      const backlog = target.current.length - shown.current;
+      if (backlog <= 0) { frame.current = 0; return; }
+      const step = Math.max(1, Math.round(Math.max(backlog * dt / CATCH_UP_MS, MIN_CPS * dt / 1000)));
+      paint(Math.min(target.current.length, shown.current + step));
+      frame.current = shown.current < target.current.length ? requestAnimationFrame(tick) : 0;
+    };
+    frame.current = requestAnimationFrame(tick);
+  }, [text, stream]);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
   return <div ref={ref} className={className} />;
 });
 /** Native details whose summary mirrors the legacy DOM: the chevron leads or trails per element kind. */
