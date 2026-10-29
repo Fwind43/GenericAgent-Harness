@@ -26,12 +26,13 @@ const {
   appDir, compareVersions, editSettingsFile, parseVersion, readAppState, readCodeVersion,
   readSettingsFile, writeAppState,
 } = require('./backend');
+const { t } = require('./i18n');
 
 const REPO = 'Fwind43/GenericAgent-Harness';
 const LATEST = `https://github.com/${REPO}/releases/latest/download`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const MIRROR_PRESETS = [
-  { label: 'GitHub (direct)', value: '' },
+  { label: 'GitHub', value: '' },
   { label: 'ghfast.top', value: 'https://ghfast.top/' },
   { label: 'gh-proxy.com', value: 'https://gh-proxy.com/' },
 ];
@@ -196,8 +197,9 @@ class Updater {
       this.set({ phase: 'error', error: err.message }, `Update failed: ${err.message}`, 'error');
       if (!silent && !ui) {
         await this.message({
-          type: 'error', title: 'GenericAgent-Harness', message: 'Update failed',
-          detail: `${err.message}\n\nMirror: ${this.config().mirror || '(none, direct GitHub)'}\nChange it in Settings > Updates.`,
+          type: 'error', title: 'GenericAgent-Harness', message: t('更新失败', 'Update failed'),
+          detail: t(`${err.message}\n\n镜像：${this.config().mirror || '（无，直连 GitHub）'}\n可在 设置 > 更新 中修改。`,
+            `${err.message}\n\nMirror: ${this.config().mirror || '(none, direct GitHub)'}\nChange it in Settings > Updates.`),
         });
       }
     } finally {
@@ -211,7 +213,7 @@ class Updater {
     const dialogs = !silent && !ui;
     if (!app.isPackaged) {
       this.set({ phase: 'source' }, 'Running from source: updates apply to packaged builds only.');
-      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'Running from source', detail: 'Updates apply to packaged builds only; use git pull here.' });
+      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: t('正在从源码运行', 'Running from source'), detail: t('更新只适用于安装包版本；源码请使用 git pull。', 'Updates apply to packaged builds only; use git pull here.') });
       return;
     }
     if (this.ready) {   // already installed, only a restart is missing
@@ -226,7 +228,7 @@ class Updater {
     if (compareVersions(info.version, current) <= 0) {
       this.pending = null;
       this.set({ phase: 'latest', version: info.version, kind: null }, `Up to date: latest release is ${info.version}, running ${current}`);
-      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: 'You are up to date', detail: `Version ${current}` });
+      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: t('已是最新版本', 'You are up to date'), detail: t(`版本 ${current}`, `Version ${current}`) });
       return;
     }
     const shellOk = compareVersions(info.min_shell || '0.0.0', app.getVersion()) <= 0;
@@ -242,12 +244,16 @@ class Updater {
   // Dialog flow (tray menu / background check). The settings page calls install() directly.
   async offer(info, kind) {
     const detail = kind === 'code'
-      ? `Current: ${this.backend.code.version}\n\nThis is a code update (${mb(info.app.size)}); the desktop app itself stays as is.`
-      : `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${info.min_shell} or later).`;
-    const buttons = kind === 'manual' ? ['Open release page', 'Later'] : [kind === 'code' ? 'Update' : 'Download', 'Release notes', 'Later'];
+      ? t(`当前版本：${this.backend.code.version}\n\n这是代码更新（${mb(info.app.size)}），桌面应用本身保持不变。`,
+        `Current: ${this.backend.code.version}\n\nThis is a code update (${mb(info.app.size)}); the desktop app itself stays as is.`)
+      : t(`当前应用：${app.getVersion()}；版本 ${info.version} 需要更新的桌面应用（${info.min_shell} 或更高）。`,
+        `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${info.min_shell} or later).`);
+    const later = t('稍后', 'Later');
+    const buttons = kind === 'manual' ? [t('打开发布页', 'Open release page'), later]
+      : [kind === 'code' ? t('更新', 'Update') : t('下载', 'Download'), t('更新说明', 'Release notes'), later];
     const { response } = await this.message({
-      type: 'info', title: 'GenericAgent-Harness', message: `Version ${info.version} is available`,
-      detail: `${detail}\n\nProgress is shown in Settings > Updates.`,
+      type: 'info', title: 'GenericAgent-Harness', message: t(`版本 ${info.version} 可用`, `Version ${info.version} is available`),
+      detail: t(`${detail}\n\n进度显示在 设置 > 更新 中。`, `${detail}\n\nProgress is shown in Settings > Updates.`),
       buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true,
     });
     if (kind === 'manual') {
@@ -381,11 +387,12 @@ class Updater {
     const { version } = this.ready;
     const running = await this.runningTasks();
     const { response } = await this.message({
-      type: running ? 'warning' : 'info', title: 'GenericAgent-Harness', message: `Version ${version} is ready`,
+      type: running ? 'warning' : 'info', title: 'GenericAgent-Harness', message: t(`版本 ${version} 已就绪`, `Version ${version} is ready`),
       detail: running
-        ? 'A task is still running. Restarting now stops it. You can also restart later from Settings > Updates or simply on next launch.'
-        : 'Restart GenericAgent-Harness to use it.',
-      buttons: ['Restart now', 'Later'], defaultId: running ? 1 : 0, cancelId: 1, noLink: true,
+        ? t('仍有任务在运行，立即重启会中断它。也可以稍后在 设置 > 更新 中重启，或下次启动时自动生效。',
+          'A task is still running. Restarting now stops it. You can also restart later from Settings > Updates or simply on next launch.')
+        : t('重启 GenericAgent-Harness 以使用新版本。', 'Restart GenericAgent-Harness to use it.'),
+      buttons: [t('立即重启', 'Restart now'), t('稍后', 'Later')], defaultId: running ? 1 : 0, cancelId: 1, noLink: true,
     });
     if (response === 0) { await this.restart(); return; }
     this.dismissed = version;
@@ -441,11 +448,11 @@ class Updater {
   async chooseMirror() {
     const current = this.config().mirror;
     const presets = MIRROR_PRESETS.map((p) => `${p.value === current ? '\u2713 ' : ''}${p.label}`);
-    const custom = MIRROR_PRESETS.some((p) => p.value === current) ? 'Custom...' : `\u2713 Custom: ${current}`;
+    const custom = MIRROR_PRESETS.some((p) => p.value === current) ? t('自定义…', 'Custom...') : `\u2713 ${t('自定义', 'Custom')}: ${current}`;
     const { response } = await this.message({
-      type: 'question', title: 'GenericAgent-Harness', message: 'Download mirror for updates',
-      detail: `Update files come from GitHub releases. A mirror is a URL prefix (or a template with {url}).\n\nA custom mirror can be entered in Settings > Updates, or set "update": {"mirror": "..."} in:\n${this.settingsFile}`,
-      buttons: [...presets, custom, 'Cancel'], cancelId: presets.length + 1, noLink: true,
+      type: 'question', title: 'GenericAgent-Harness', message: t('更新下载镜像', 'Download mirror for updates'),
+      detail: t(`更新文件来自 GitHub Releases。镜像是一个 URL 前缀（或含 {url} 的模板）。\n\n可在 设置 > 更新 中填写自定义镜像，或在以下文件中设置 "update": {"mirror": "..."}：\n${this.settingsFile}`, `Update files come from GitHub releases. A mirror is a URL prefix (or a template with {url}).\n\nA custom mirror can be entered in Settings > Updates, or set "update": {"mirror": "..."} in:\n${this.settingsFile}`),
+      buttons: [...presets, custom, t('取消', 'Cancel')], cancelId: presets.length + 1, noLink: true,
     });
     if (response < presets.length) this.setConfig({ mirror: MIRROR_PRESETS[response].value });
     else if (response === presets.length) shell.openPath(this.settingsFile);

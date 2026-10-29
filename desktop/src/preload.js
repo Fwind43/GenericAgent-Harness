@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
     set: (mode) => ipcRenderer.invoke('gah:ga-root-set', mode),
     restart: (force) => ipcRenderer.invoke('gah:ga-root-restart', !!force),
   }),
+  setLanguage: (lang) => ipcRenderer.send('gah:set-lang', lang),
   updates: Object.freeze({
     status: () => ipcRenderer.invoke('gah:update-status'),
     state: () => ipcRenderer.invoke('gah:update-state'),

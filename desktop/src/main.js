@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell } = 
 const path = require('node:path');
 const { Backend, isGaRoot } = require('./backend');
 const { Updater } = require('./updater');
+const { t, setLanguage, initLanguage } = require('./i18n');
 
 let backend = null;
 let win = null;
@@ -30,6 +31,10 @@ function fromBackend(event) {
 }
 
 function registerBridge() {
+  // The page reports its UI language on every load; tray and dialogs follow it.
+  ipcMain.on('gah:set-lang', (event, lang) => {
+    if (fromBackend(event) && setLanguage(lang)) refreshTrayMenu();
+  });
   ipcMain.handle('gah:pick-directory', async (event, opts = {}) => {
     if (!fromBackend(event)) throw new Error('forbidden');
     const res = await dialog.showOpenDialog(win, {
@@ -88,13 +93,13 @@ function registerBridge() {
     if (!fromBackend(event) || !backend) throw new Error('forbidden');
     if (backend.gaRootInfo().locked) throw new Error('--ga-root is set in desktop.json args');
     const res = await dialog.showOpenDialog(win, {
-      title: 'Choose the GenericAgent folder (contains agentmain.py)',
+      title: t('选择 GenericAgent 目录（包含 agentmain.py）', 'Choose the GenericAgent folder (contains agentmain.py)'),
       defaultPath: backend.gaRoot().value || undefined,
       properties: ['openDirectory'],
     });
     if (res.canceled || !res.filePaths[0]) return { canceled: true, info: backend.gaRootInfo() };
     const dir = res.filePaths[0];
-    if (!isGaRoot(dir)) return { error: `${dir} does not contain agentmain.py`, info: backend.gaRootInfo() };
+    if (!isGaRoot(dir)) return { error: t(`${dir} 中没有 agentmain.py`, `${dir} does not contain agentmain.py`), info: backend.gaRootInfo() };
     backend.setGaRoot(dir);
     return { info: backend.gaRootInfo() };
   });
@@ -117,24 +122,26 @@ function registerBridge() {
 // Tray "GenericAgent folder...": pick a checkout and offer a restart (same as Settings).
 async function changeGaRootFromTray() {
   if (backend.gaRootInfo().locked) {
-    await dialog.showMessageBox({ type: 'info', title: 'GenericAgent-Harness', noLink: true, buttons: ['OK'],
-      message: 'The GenericAgent folder is fixed by --ga-root', detail: `Edit "args" in:\n${backend.settings.file}` });
+    await dialog.showMessageBox({ type: 'info', title: 'GenericAgent-Harness', noLink: true, buttons: [t('确定', 'OK')],
+      message: t('GenericAgent 目录已由 --ga-root 固定', 'The GenericAgent folder is fixed by --ga-root'),
+      detail: t(`请修改此文件中的 "args"：\n${backend.settings.file}`, `Edit "args" in:\n${backend.settings.file}`) });
     return;
   }
   const current = backend.gaRoot();
   const { response } = await dialog.showMessageBox({
     type: 'question', title: 'GenericAgent-Harness', noLink: true,
-    message: 'GenericAgent folder',
-    detail: `Current: ${current.value || '(none)'}\nSource: ${current.source || '-'}\n\nUse an existing GenericAgent checkout (contains agentmain.py), or the copy shipped with the app.`,
-    buttons: ['Choose folder...', 'Use bundled copy', 'Cancel'], defaultId: 0, cancelId: 2,
+    message: t('GenericAgent 目录', 'GenericAgent folder'),
+    detail: t(`当前：${current.value || '（未设置）'}\n来源：${current.source || '-'}\n\n可以使用已有的 GenericAgent 目录（包含 agentmain.py），或使用应用内置的副本。`,
+      `Current: ${current.value || '(none)'}\nSource: ${current.source || '-'}\n\nUse an existing GenericAgent checkout (contains agentmain.py), or the copy shipped with the app.`),
+    buttons: [t('选择目录…', 'Choose folder...'), t('使用内置副本', 'Use bundled copy'), t('取消', 'Cancel')], defaultId: 0, cancelId: 2,
   });
   if (response === 2) return;
   if (response === 0) {
-    const res = await dialog.showOpenDialog({ title: 'Choose the GenericAgent folder (contains agentmain.py)',
+    const res = await dialog.showOpenDialog({ title: t('选择 GenericAgent 目录（包含 agentmain.py）', 'Choose the GenericAgent folder (contains agentmain.py)'),
       defaultPath: current.value || undefined, properties: ['openDirectory'] });
     if (res.canceled || !res.filePaths[0]) return;
     if (!isGaRoot(res.filePaths[0])) {
-      dialog.showErrorBox('GenericAgent-Harness', `${res.filePaths[0]} does not contain agentmain.py.`);
+      dialog.showErrorBox('GenericAgent-Harness', t(`${res.filePaths[0]} 中没有 agentmain.py。`, `${res.filePaths[0]} does not contain agentmain.py.`));
       return;
     }
     backend.setGaRoot(res.filePaths[0]);
@@ -144,9 +151,10 @@ async function changeGaRootFromTray() {
   const busy = updater ? await updater.runningTasks() : false;
   const ask = await dialog.showMessageBox({
     type: 'question', title: 'GenericAgent-Harness', noLink: true,
-    message: 'Restart to use the new GenericAgent folder?',
-    detail: busy ? 'Tasks are still running; restarting stops them.' : 'The change takes effect after a restart.',
-    buttons: ['Restart now', 'Later'], defaultId: busy ? 1 : 0, cancelId: 1,
+    message: t('重启以使用新的 GenericAgent 目录？', 'Restart to use the new GenericAgent folder?'),
+    detail: busy ? t('仍有任务在运行，重启会中断它们。', 'Tasks are still running; restarting stops them.')
+      : t('更改将在重启后生效。', 'The change takes effect after a restart.'),
+    buttons: [t('立即重启', 'Restart now'), t('稍后', 'Later')], defaultId: busy ? 1 : 0, cancelId: 1,
   });
   if (ask.response === 0) { await prepareQuit(); relaunch(); }
 }
@@ -207,23 +215,23 @@ function createTray() {
 
 function refreshTrayMenu() {
   if (!tray) return;
-  const items = [{ label: 'Show GenericAgent-Harness', click: () => showWindow() }, { type: 'separator' }];
+  const items = [{ label: t('显示 GenericAgent-Harness', 'Show GenericAgent-Harness'), click: () => showWindow() }, { type: 'separator' }];
   if (updater) {
     const st = updater.status();
     items.push({
-      label: 'Updates',
+      label: t('更新', 'Updates'),
       submenu: [
-        { label: `Version ${st.codeVersion || '?'} (app ${st.shellVersion})`, enabled: false },
-        { label: 'Check for updates...', click: () => openUpdateSettings() },
-        { label: 'Check automatically', type: 'checkbox', checked: st.autoCheck,
+        { label: t(`版本 ${st.codeVersion || '?'}（应用 ${st.shellVersion}）`, `Version ${st.codeVersion || '?'} (app ${st.shellVersion})`), enabled: false },
+        { label: t('检查更新…', 'Check for updates...'), click: () => openUpdateSettings() },
+        { label: t('自动检查', 'Check automatically'), type: 'checkbox', checked: st.autoCheck,
           click: (item) => { updater.setConfig({ autoCheck: item.checked }); refreshTrayMenu(); } },
-        { label: `Download mirror: ${st.mirror || 'GitHub (direct)'}...`,
+        { label: t(`下载镜像：${st.mirror || 'GitHub（直连）'}…`, `Download mirror: ${st.mirror || 'GitHub (direct)'}...`),
           click: () => updater.chooseMirror().then(refreshTrayMenu) },
       ],
     }, { type: 'separator' });
   }
-  if (backend) items.push({ label: 'GenericAgent folder...', click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
-  items.push({ label: 'Quit', click: () => app.quit() });
+  if (backend) items.push({ label: t('GenericAgent 目录…', 'GenericAgent folder...'), click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
+  items.push({ label: t('退出', 'Quit'), click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
@@ -275,23 +283,24 @@ async function pickGaRoot(reason, defaultPath) {
     const { response } = await dialog.showMessageBox({
       type: 'warning',
       title: 'GenericAgent-Harness',
-      message: 'GenericAgent folder needed',
-      detail: `${reason}\n\nGenericAgent-Harness runs on top of a GenericAgent checkout (the folder that contains agentmain.py). Choose it to continue; the choice is saved in:\n${backend.settings.file}`,
-      buttons: ['Choose folder...', 'Quit'],
+      message: t('需要 GenericAgent 目录', 'GenericAgent folder needed'),
+      detail: t(`${reason}\n\nGenericAgent-Harness 运行在 GenericAgent 目录（包含 agentmain.py 的文件夹）之上。请选择它以继续，选择会保存在：\n${backend.settings.file}`,
+        `${reason}\n\nGenericAgent-Harness runs on top of a GenericAgent checkout (the folder that contains agentmain.py). Choose it to continue; the choice is saved in:\n${backend.settings.file}`),
+      buttons: [t('选择目录…', 'Choose folder...'), t('退出', 'Quit')],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
     });
     if (response !== 0) return false;
     const res = await dialog.showOpenDialog({
-      title: 'Choose the GenericAgent folder (contains agentmain.py)',
+      title: t('选择 GenericAgent 目录（包含 agentmain.py）', 'Choose the GenericAgent folder (contains agentmain.py)'),
       defaultPath: defaultPath || undefined,
       properties: ['openDirectory'],
     });
     if (res.canceled || !res.filePaths[0]) continue;
     const dir = res.filePaths[0];
     if (!isGaRoot(dir)) {
-      reason = `${dir} does not contain agentmain.py.`;
+      reason = t(`${dir} 中没有 agentmain.py。`, `${dir} does not contain agentmain.py.`);
       defaultPath = dir;
       continue;
     }
@@ -305,15 +314,19 @@ async function ensureGaRoot() {
   const { value, source } = backend.gaRoot();
   if (isGaRoot(value)) return true;
   const reason = value
-    ? `The configured GenericAgent folder is not usable:\n${value}\n(from ${source}; agentmain.py not found)`
-    : `No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root)${
-      backend.bundledGaError ? `, and the bundled copy could not be prepared:\n${backend.bundledGaError}` : '.'}`;
+    ? t(`配置的 GenericAgent 目录不可用：\n${value}\n（来自 ${source}；未找到 agentmain.py）`,
+      `The configured GenericAgent folder is not usable:\n${value}\n(from ${source}; agentmain.py not found)`)
+    : t(`尚未配置 GenericAgent 目录（没有 GA_ROOT，~/.ga-harness/config.toml 中也没有 ga_root）${
+      backend.bundledGaError ? `，且内置副本无法准备：\n${backend.bundledGaError}` : '。'}`,
+    `No GenericAgent folder is configured (no GA_ROOT, no ~/.ga-harness/config.toml ga_root)${
+      backend.bundledGaError ? `, and the bundled copy could not be prepared:\n${backend.bundledGaError}` : '.'}`);
   return pickGaRoot(reason, value);
 }
 
 async function boot() {
   try {
     backend = new Backend(app.getPath('userData'), app.isPackaged ? process.resourcesPath : null, app.getVersion());
+    initLanguage(backend.settings.file);
     if (!(await ensureGaRoot())) {
       app.exit(1);
       return;
@@ -328,20 +341,21 @@ async function boot() {
     updater.schedule();
     backend.exited.then((code) => {
       if (quitting) return;
-      dialog.showErrorBox('GenericAgent-Harness', `The backend stopped (code ${code}).\n\n${backend.tail.slice(-15).join('\n')}\n\nLog: ${backend.logFile}`);
+      dialog.showErrorBox('GenericAgent-Harness', t(`后端已停止（代码 ${code}）。\n\n${backend.tail.slice(-15).join('\n')}\n\n日志：${backend.logFile}`,
+        `The backend stopped (code ${code}).\n\n${backend.tail.slice(-15).join('\n')}\n\nLog: ${backend.logFile}`));
       app.quit();
     });
   } catch (err) {
     const tail = backend ? backend.tail.slice(-15).join('\n') : '';
-    const where = backend ? `\n\nLog: ${backend.logFile}\nSettings: ${backend.settings.file}` : '';
+    const where = backend ? t(`\n\n日志：${backend.logFile}\n设置：${backend.settings.file}`, `\n\nLog: ${backend.logFile}\nSettings: ${backend.settings.file}`) : '';
     if (backend) await backend.stop(1000);
     // Downloaded code that does not start: blacklist it and fall back to the previous/built-in code.
     if (backend && backend.code.source === 'update' && backend.rejectUpdatedCode()) {
       await dialog.showMessageBox({
         type: 'warning', title: 'GenericAgent-Harness',
-        message: `Updated version ${backend.code.version} failed to start`,
-        detail: `Falling back to the previous version.\n\n${err.message}\n\n${tail}${where}`,
-        buttons: ['OK'], noLink: true,
+        message: t(`更新后的版本 ${backend.code.version} 启动失败`, `Updated version ${backend.code.version} failed to start`),
+        detail: t(`将回退到上一个版本。\n\n${err.message}\n\n${tail}${where}`, `Falling back to the previous version.\n\n${err.message}\n\n${tail}${where}`),
+        buttons: [t('确定', 'OK')], noLink: true,
       });
       app.relaunch();
       app.exit(1);
@@ -351,14 +365,14 @@ async function boot() {
     const { response } = await dialog.showMessageBox({
       type: 'error',
       title: 'GenericAgent-Harness',
-      message: 'GenericAgent-Harness failed to start',
+      message: t('GenericAgent-Harness 启动失败', 'GenericAgent-Harness failed to start'),
       detail: `${err.message}\n\n${tail}${where}`,
-      buttons: backend ? ['Quit', 'Choose GenericAgent folder...'] : ['Quit'],
+      buttons: backend ? [t('退出', 'Quit'), t('选择 GenericAgent 目录…', 'Choose GenericAgent folder...')] : [t('退出', 'Quit')],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
     });
-    if (response === 1 && await pickGaRoot('Choose a different GenericAgent folder.', backend.gaRoot().value)) {
+    if (response === 1 && await pickGaRoot(t('请选择另一个 GenericAgent 目录。', 'Choose a different GenericAgent folder.'), backend.gaRoot().value)) {
       app.relaunch();
     }
     app.exit(1);
