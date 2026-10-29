@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import multiprocessing
 import threading
 import time
@@ -24,6 +25,8 @@ STREAM_EVENTS = ("assistant.delta", "agent.chunk")
 STREAM_FLUSH_SECONDS = 1.0
 # Worker-plugin events: broadcast and logged, never folded into the transcript.
 PLUGIN_EVENT_PREFIX = "plugin."
+
+log = logging.getLogger(__name__)
 
 
 class SessionBusy(RuntimeError):
@@ -501,15 +504,23 @@ class Runs:
                     self._finish(rid, "error", "Worker exited before completion")
                     break
         except (EOFError, OSError):
-            self._finish(rid, "error", "Worker connection closed before completion")
+            log.warning("run %s: worker connection closed before completion", rid, exc_info=True)
+            try:
+                self._finish(rid, "error", "Worker connection closed before completion")
+            except Exception:
+                log.exception("run %s: could not record closed worker connection", rid)
         except Exception:
-            # Leave a failed persistence transaction untouched. Recovery on the
-            # next startup will mark the durable reservation interrupted.
+            log.exception("run %s: monitor failed", rid)
             try:
                 self._finish(rid, "error", "Run output could not be saved")
             except Exception:
-                pass
+                log.exception("run %s: could not record monitor failure", rid)
         finally:
+            # The monitor is the only owner of a live run; never exit leaving it active.
+            try:
+                self._abandon(rid, "Run monitor stopped before completion")
+            except Exception:
+                log.exception("run %s: could not release abandoned run", rid)
             connection.close()
             if process.is_alive():
                 process.join(timeout=0.2)
@@ -517,6 +528,42 @@ class Runs:
                 # Only this service's own spawned worker, never a host/GA process.
                 process.terminate()
             process.join(timeout=2)
+
+    def _abandon(self, rid, error):
+        """Release a run whose monitor exits without a recorded terminal status."""
+        with self.lock:
+            live = self.live.pop(rid, None)
+            if live is None:
+                return
+            self.sessions.active.discard(live["session_id"])
+            for call in list(live["calls"].values()):
+                call.cancelled.set()
+            live["finished"].set()
+        log.error("run %s: abandoned while active; marking error", rid)
+        messages = copy.deepcopy(live["messages"])
+        record = None
+        try:
+            settle(messages, "error", error)
+            with self.lock:
+                if self.get(rid)["status"] in ACTIVE:
+                    session = self.sessions.get(live["session_id"])
+                    with self.sessions._db() as db:
+                        self.sessions._write(db, session, messages, live["state"])
+                        self._append(db, rid, "run.finished", {"status": "error", "error": error})
+                        db.execute("UPDATE runs SET status='error',ended=?,error=? WHERE id=?", (time.time(), error, rid))
+                record = self.get(rid)
+        except Exception:
+            log.exception("run %s: could not save abandoned transcript", rid)
+            try:
+                with self.lock, self.sessions._db() as db:
+                    db.execute("UPDATE runs SET status='error',ended=?,error=? WHERE id=? AND status IN ('running','cancelling')",
+                               (time.time(), error, rid))
+                    record = self.get(rid)
+            except Exception:
+                log.exception("run %s: could not mark abandoned run", rid)
+        if record is None:
+            record = {"id": rid, "session_id": live["session_id"], "seq": None, "status": "error", "error": error}
+        self._notify("run.finished", record, run=record, message=messages[-1] if messages else None)
 
     def cancel(self, run_id):
         with self.lock:
