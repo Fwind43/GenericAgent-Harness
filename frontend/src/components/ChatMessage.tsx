@@ -27,6 +27,17 @@ function Thinking({ text, stream = false }: { text?: string; stream?: boolean })
   return text ? <Disclosure className="thinking" chevron="start" title={<span className="thinking-label">{T('思考', 'Thinking')}</span>}>
     <Markdown text={text} className="thinking-body" stream={stream} /></Disclosure> : null;
 }
+/**
+ * GA core synthesises a missing summary from the first thinking line, clipped to 60 chars + '...'.
+ * Restore the full line for display when the clipped prefix matches the thinking we already have.
+ */
+function summaryOf(turn?: { summary?: string; thinking?: string } | null) {
+  const summary = turn?.summary;
+  if (!summary?.endsWith('...') || !turn?.thinking) return summary;
+  const line = turn.thinking.trim().split('\n', 1)[0];
+  const prefix = summary.slice(0, -3);
+  return line.length > prefix.length && line.startsWith(prefix) ? line : summary;
+}
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
   // The full summary stays in the body; step headings wrap rather than truncate.
@@ -66,13 +77,13 @@ const Tool = memo(function Tool({ tool, awaiting }: { tool: ToolCall; awaiting: 
     </div></Disclosure>;
 });
 const TurnBody = memo(function TurnBody({ turn, awaiting = false, stream = false }: { turn: Turn; awaiting?: boolean; stream?: boolean }) {
-  return <><Thinking text={turn.thinking} stream={stream} /><Summary text={turn.summary} />
+  return <><Thinking text={turn.thinking} stream={stream} /><Summary text={summaryOf(turn)} />
     {turn.reply && <Markdown text={turn.reply} className="reply" stream={stream} />}
     {turn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
   </>;
 });
 const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
-  const title = turn.summary || turn.reply?.split('\n').find(line => line.trim()) || (turn.tools.length ? turn.tools.map(t => t.name).join(', ') : T('思考中…', 'Thinking…'));
+  const title = summaryOf(turn) || turn.reply?.split('\n').find(line => line.trim()) || (turn.tools.length ? turn.tools.map(t => t.name).join(', ') : T('思考中…', 'Thinking…'));
   return <Disclosure className={'step' + (live ? ' running' : '')} initial={live} title={<>
     <span className="no">{T('步骤 ', 'Step ')}{turn.turn}</span><span className="ttl">{title}</span>
     {!!turn.tools.length && <span className="cnt">{turn.tools.length}{T(' 个工具', ' tools')}</span>}<Tokens usage={turn.usage} />
@@ -141,11 +152,11 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
         </Fragment>;
       })}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
-        {finalTurn.summary && <span className="ttl">{finalTurn.summary}</span>}<Tokens usage={finalTurn.usage} /></div>
-        <Thinking text={finalTurn.thinking} stream={running} /><Summary text={finalTurn.summary} />
+        {summaryOf(finalTurn) && <span className="ttl">{summaryOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
+        <Thinking text={finalTurn.thinking} stream={running} /><Summary text={summaryOf(finalTurn)} />
         {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
-      </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={fin.summary} /><Markdown text={fin.reply} /></> : null}
+      </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={summaryOf(fin)} /><Markdown text={fin.reply} /></> : null}
     </> : <Markdown text={m.text || ''} stream={running} className={'body' + (running ? ' cursor' : '')} />}
     {m.role === 'assistant' && <div className="message-actions">
       <MessageStats m={m} turns={turns} />
