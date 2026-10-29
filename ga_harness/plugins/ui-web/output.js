@@ -69,9 +69,13 @@
     code: ['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'java', 'kt', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs',
       'rb', 'php', 'sh', 'bat', 'cmd', 'ps1', 'css', 'scss', 'html', 'vue', 'svelte', 'json', 'toml', 'yaml', 'yml',
       'xml', 'sql', 'swift', 'lua', 'ini', 'cfg'],
-    doc: ['md', 'markdown', 'mdx', 'txt', 'rst', 'log', 'csv', 'pdf']
+    doc: ['md', 'markdown', 'mdx', 'txt', 'rst', 'log', 'csv', 'pdf'],
+    video: ['mp4', 'webm', 'mov', 'm4v', 'ogv', 'mkv'],
+    audio: ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus']
   };
   const fileIcons = {
+    video: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor"/><path d="M6.5 5.8v4.4L10.2 8z" fill="currentColor"/></svg>',
+    audio: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 11.5V4l7-1.5V10" stroke="currentColor" stroke-linejoin="round"/><circle cx="4.5" cy="11.5" r="1.5" stroke="currentColor"/><circle cx="11.5" cy="10" r="1.5" stroke="currentColor"/></svg>',
     image: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor"/><circle cx="6" cy="6.5" r="1.2" fill="currentColor"/><path d="m3 12 3.5-3.5 2.5 2.5 1.5-1.5L13 12" stroke="currentColor" stroke-linejoin="round"/></svg>',
     code: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     doc: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 3.5 14V2a.5.5 0 0 1 .5-.5Z" stroke="currentColor"/><path d="M6 8h4.5M6 10.5h4.5" stroke="currentColor" stroke-linecap="round"/></svg>',
@@ -114,16 +118,22 @@
     for (const fn of openers.slice()) {
       try { if (await fn(ref, event)) return true; } catch (error) { console.error('[GAHFiles opener]', error); }
     }
-    if (ref.kind === 'image') { openLightbox(ref.url, ref.name, ref.path); return false; }
+    if (ref.kind === 'image' || ref.kind === 'video') { openLightbox(ref.url, ref.name, ref.path, ref.kind); return false; }
     window.open(ref.url, '_blank', 'noopener');
     return false;
   }
+  function mediaKind(raw) {
+    let name = String(raw || '');
+    try { if (/^https?:/i.test(name)) name = new URL(name).pathname; } catch (_) {}
+    const kind = fileRef(name.split(/[?#]/)[0]).kind;
+    return kind === 'video' || kind === 'audio' ? kind : '';
+  }
   let lightbox;
-  function openLightbox(src, name, path) {
+  function openLightbox(src, name, path, kind) {
     if (!src) return;
     hidePreview();
     if (!lightbox) lightbox = createLightbox();
-    lightbox.show(src, name || '', path || '');
+    lightbox.show(src, name || '', path || '', kind === 'video' ? 'video' : 'image');
   }
   function createLightbox() {
     const root = make('div', 'md-lightbox');
@@ -141,7 +151,10 @@
     const stage = make('div', 'md-lightbox-stage');
     const img = make('img');
     img.draggable = false;
-    stage.append(img);
+    const video = make('video', 'md-lightbox-video');
+    video.controls = true; video.playsInline = true; video.preload = 'metadata';
+    stage.append(img, video);
+    let mode = 'image';
     let scale = 1, x = 0, y = 0, fit = 1, src = '', drag = null, moved = false, lastFocus = null;
     const apply = () => {
       img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
@@ -158,6 +171,7 @@
       scale = next; apply();
     };
     const close = () => {
+      video.pause();
       root.remove();
       document.removeEventListener('keydown', onKey, true);
       document.documentElement.classList.remove('md-lightbox-open');
@@ -165,6 +179,7 @@
     };
     const onKey = event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
+      else if (mode === 'video') return;
       else if (event.key === '+' || event.key === '=') zoomAt(1.25);
       else if (event.key === '-') zoomAt(0.8);
       else if (event.key === '0') reset();
@@ -183,11 +198,12 @@
       reset();
     });
     stage.addEventListener('wheel', event => {
+      if (mode === 'video') return;
       event.preventDefault();
       zoomAt(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX, event.clientY);
     }, { passive: false });
     stage.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || event.target === video) return;
       drag = { px: event.clientX, py: event.clientY, x, y }; moved = false;
       stage.setPointerCapture(event.pointerId);
     });
@@ -198,6 +214,7 @@
       if (moved && scale > 1.001) { x = drag.x + dx; y = drag.y + dy; apply(); root.classList.add('dragging'); }
     });
     stage.addEventListener('pointerup', event => {
+      if (event.target === video) return;
       const wasDrag = moved; drag = null; root.classList.remove('dragging');
       if (wasDrag) return;
       if (event.target === img) { if (scale > 1.001) reset(); else zoomAt(2, event.clientX, event.clientY); }
@@ -205,13 +222,21 @@
     });
     stage.addEventListener('dblclick', event => event.preventDefault());
     return {
-      show(nextSrc, name, path) {
-        src = nextSrc; lastFocus = document.activeElement;
+      show(nextSrc, name, path, kind) {
+        src = nextSrc; lastFocus = document.activeElement; mode = kind || 'image';
+        root.classList.toggle('video', mode === 'video');
         title.textContent = name || path || '';
         title.title = path || name || '';
-        img.style.width = img.style.height = '';
-        img.alt = name;
-        if (img.getAttribute('src') !== src) img.src = src; else img.dispatchEvent(new Event('load'));
+        if (mode === 'video') {
+          img.removeAttribute('src'); reset(); zoomLabel.textContent = '';
+          if (video.getAttribute('src') !== src) video.src = src;
+          video.play().catch(() => {});
+        } else {
+          video.pause(); video.removeAttribute('src'); video.load();
+          img.style.width = img.style.height = '';
+          img.alt = name;
+          if (img.getAttribute('src') !== src) img.src = src; else img.dispatchEvent(new Event('load'));
+        }
         document.body.append(root);
         document.documentElement.classList.add('md-lightbox-open');
         document.addEventListener('keydown', onKey, true);
@@ -315,6 +340,28 @@
     node.querySelectorAll('img').forEach(image => {
       const raw = image.getAttribute('src') || '';
       const path = localPath(raw);
+      const media = mediaKind(path || raw);
+      if (media && (path || allowedURL(raw, true))) {
+        const player = make(media, 'md-' + media);
+        player.controls = true; player.preload = 'metadata';
+        if (media === 'video') player.playsInline = true;
+        player.src = path ? fileURL(path) : raw;
+        player.title = image.title || image.alt || path || raw;
+        if (image.alt) player.setAttribute('aria-label', image.alt);
+        if (media === 'video') {
+          const box = make('span', 'md-video-box');
+          const expand = make('button', 'md-video-expand');
+          expand.type = 'button'; expand.textContent = '\u2922';
+          expand.title = T('放大播放', 'Expand'); expand.setAttribute('aria-label', expand.title);
+          expand.addEventListener('click', event => {
+            event.preventDefault(); event.stopPropagation(); player.pause();
+            openLightbox(player.currentSrc || player.src, image.alt || (path ? fileRef(path).name : raw), path || raw, 'video');
+          });
+          box.append(player, expand);
+          image.replaceWith(box);
+        } else image.replaceWith(player);
+        return;
+      }
       if (path) { image.src = fileURL(path); image.loading = 'lazy'; image.title = image.title || path; }
       else if (!allowedURL(raw, true)) image.replaceWith(document.createTextNode(image.alt));
       else { image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; }

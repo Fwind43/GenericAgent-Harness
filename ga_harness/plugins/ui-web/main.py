@@ -786,18 +786,53 @@ class _Handler(BaseHTTPRequestHandler):
         if query.get("info", [""])[0]:
             return self._json(200, {"path": str(target), "name": target.name, "size": size,
                                     "mime": mime, "root": str(root)})
-        if size > self.frontend.FILE_LIMIT:
+        inline = mime.startswith(self.frontend.INLINE_TYPES)
+        media = mime.startswith(("video/", "audio/"))
+        if size > self.frontend.FILE_LIMIT and not media:   # media streams by range, any size
             return self._json(413, {"error": "file too large"})
         try:
-            body = target.read_bytes()
+            fh = target.open("rb")
         except OSError as e:
             return self._json(404, {"error": f"unreadable: {e}"})
-        inline = mime.startswith(self.frontend.INLINE_TYPES)
-        if not inline and b"\0" not in body[:8192]:
-            mime = "text/plain; charset=utf-8"     # never render HTML/JS from disk as active content
-        self.send_response(200)
-        self.send_header("Content-Type", mime)
-        self.send_header("Content-Length", str(len(body)))
+        with fh:
+            if not inline and b"\0" not in fh.read(8192):
+                mime = "text/plain; charset=utf-8"     # never render HTML/JS from disk as active content
+            start, end = 0, size - 1
+            ranged = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range", "").strip())
+            if ranged and size and (ranged.group(1) or ranged.group(2)):
+                a, b = ranged.groups()
+                if a:
+                    start, end = int(a), (min(int(b), size - 1) if b else size - 1)
+                else:
+                    start = max(0, size - int(b))
+                if start > end or start >= size:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+            else:
+                ranged = None
+            self.send_response(206 if ranged else 200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(end - start + 1 if size else 0))
+            self.send_header("Accept-Ranges", "bytes")
+            if ranged:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self._file_headers(query, target, mime, inline)
+            fh.seek(start)
+            left = end - start + 1 if size else 0
+            try:
+                while left > 0:
+                    chunk = fh.read(min(left, 1 << 20))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass                                    # players abort ranges while seeking
+
+    def _file_headers(self, query, target, mime, inline):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         if mime != "application/pdf":
@@ -808,7 +843,6 @@ class _Handler(BaseHTTPRequestHandler):
         disposition = "attachment" if query.get("download", [""])[0] or (not inline and mime.startswith("application/")) else "inline"
         self.send_header("Content-Disposition", f"{disposition}; filename*=UTF-8''{quote(target.name)}")
         self.end_headers()
-        self.wfile.write(body)
 
     def _plugin_route(self, method, path, body):
         name, _, sub = path[len("/api/p/"):].partition("/")

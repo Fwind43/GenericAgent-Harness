@@ -220,3 +220,12 @@ html.md-lightbox-open{overflow:hidden}
 .md-lightbox-btn{width:32px;height:32px;padding:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-size:16px;line-height:32px}
 .md-lightbox-btn:hover{background:rgba(255,255,255,.24)}
 .md-lightbox-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}
+/* inline media */
+.md-video-box{position:relative;display:block;width:fit-content;max-width:100%;margin:12px 0}
+.md-video{display:block;max-width:100%;max-height:480px;border-radius:7px;background:#000}
+.md-video-expand{position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;border:0;border-radius:7px;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:30px;cursor:pointer;opacity:0;transition:opacity .12s}
+.md-video-box:hover .md-video-expand,.md-video-expand:focus-visible{opacity:1}
+.md-audio{display:block;width:min(420px,100%);margin:10px 0}
+.md-lightbox-video{display:none;max-width:calc(100vw - 48px);max-height:calc(100vh - 96px);border-radius:4px;background:#000;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.md-lightbox.video .md-lightbox-video{display:block}
+.md-lightbox.video .md-lightbox-stage img,.md-lightbox.video .md-lightbox-zoom,.md-lightbox.video .md-lightbox-btn:nth-of-type(-n+3){display:none}
