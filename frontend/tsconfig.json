@@ -8,7 +8,8 @@
     "baseUrl": ".", "paths": {
       "@gah/sdk": ["src/gah-sdk.ts"],
       "react": ["node_modules/@types/react"], "react/*": ["node_modules/@types/react/*"],
-      "react-dom": ["node_modules/@types/react-dom"], "react-dom/*": ["node_modules/@types/react-dom/*"]
+      "react-dom": ["node_modules/@types/react-dom"], "react-dom/*": ["node_modules/@types/react-dom/*"],
+      "qrcode-generator": ["node_modules/qrcode-generator"]
     }
   },
   "include": ["src", "vite.config.ts", "../ga_harness/plugins/*/src"]

@@ -3,6 +3,8 @@
 GET  /api/p/web-channels/                      -> snapshot {providers, channels}
 GET  /api/p/web-channels/?logs=<id>&after=<t>  -> {logs: [...]}
 POST /api/p/web-channels/  {action: create|update|delete|start|stop|restart, ...}
+POST /api/p/web-channels/  {action: pair_begin, provider|channel, id?, name?} -> {pairing}
+POST /api/p/web-channels/  {action: pair_poll|pair_cancel, pairing}          -> {pairing}
 """
 from pathlib import Path
 
@@ -36,6 +38,15 @@ def apply(ctx, config):
     def change(req):
         body = req.get("body") or {}
         action, cid = body.get("action"), body.get("id")
+        if action in ("pair_begin", "pair_poll", "pair_cancel"):
+            try:
+                if action == "pair_begin":
+                    return {"pairing": manager.pair_begin(body)}
+                return {"pairing": getattr(manager, action)(body.get("pairing") or "")}
+            except KeyError as e:
+                return 404, {"error": f"unknown pairing or channel: {e.args[0] if e.args else ''}"}
+            except (ValueError, RuntimeError) as e:
+                return 400, {"error": str(e)}
         try:
             if action == "create":
                 manager.create(body)

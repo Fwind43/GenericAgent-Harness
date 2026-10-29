@@ -12,6 +12,8 @@ const globals = {
   'react-dom': 'GAH.ReactDOM',
   'react/jsx-runtime': 'GAH.jsxRuntime',
 };
+// Plugin sources live outside frontend/, so bundled npm deps resolve from here.
+const bundled = { 'qrcode-generator': fileURLToPath(new URL('./node_modules/qrcode-generator/qrcode.js', import.meta.url)) };
 const only = process.argv.slice(2);
 const names = readdirSync(root).filter(name => existsSync(`${root}${name}/src/index.tsx`)
   && (!only.length || only.includes(name)));
@@ -21,6 +23,7 @@ for (const name of names) {
     configFile: false,
     logLevel: 'warn',
     plugins: [react()],
+    resolve: { alias: bundled },
     define: { 'process.env.NODE_ENV': '"production"' },
     build: {
       outDir: `${root}${name}`,

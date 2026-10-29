@@ -1,0 +1,6 @@
+name = "weixin"
+category = "service"
+entry = "main:apply"
+description = "WeChat channel provider (iLink bot, QR login). Channels are created, started and stopped in Channel management. No extra packages."
+description_zh = "微信通道提供方（iLink 机器人，扫码登录）。通道在“通道管理”中创建、启停。无需额外依赖。"
+inject = ["channel_manager"]

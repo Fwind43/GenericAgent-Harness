@@ -51,12 +51,16 @@ class Provider:
     ``fields``: list of {key, label, label_zh?, secret?, required?, default?}.
     ``factory(channel_id, config, log)`` returns an Adapter named
     ``channel_id``; ``log(level, text)`` appends to the channel log.
+    ``pair(update, cancelled)`` (optional) runs a QR-code login in a worker
+    thread: call ``update(status=..., qr=..., text=...)`` to publish progress
+    (``qr`` is the string to encode), poll ``cancelled()``, and return the
+    channel config (may contain secrets) once confirmed; raise on failure.
     """
 
-    def __init__(self, kind, factory, *, label=None, label_zh=None, fields=()):
+    def __init__(self, kind, factory, *, label=None, label_zh=None, fields=(), pair=None):
         if not ID_RE.match(kind or ""):
             raise ValueError(f"invalid provider kind: {kind!r}")
-        self.kind, self.factory = kind, factory
+        self.kind, self.factory, self.pair = kind, factory, pair
         self.label, self.label_zh = label or kind, label_zh or label or kind
         self.fields = [dict(f) for f in fields]
 
@@ -67,7 +71,8 @@ class Provider:
         return {"kind": self.kind, "label": self.label, "label_zh": self.label_zh,
                 "fields": [{k: f.get(k) for k in
                             ("key", "label", "label_zh", "secret", "required", "default")}
-                           for f in self.fields]}
+                           for f in self.fields],
+                "pairable": self.pair is not None}
 
 
 def resolve(value):
@@ -90,6 +95,7 @@ class ChannelManager:
         self.runtime = {}  # id -> {"state", "error", "since", "dispose"}
         self.logs = {}
         self.closed = False
+        self.pairings = {}  # pairing id -> QR login state
 
     # -- logging -------------------------------------------------------
     def log(self, cid, level, text):
@@ -207,6 +213,107 @@ class ChannelManager:
             self.restart(cid)
         return self._view(self.channels[cid])
 
+    # -- QR pairing ----------------------------------------------------
+    PAIR_TTL = 600  # seconds a finished/abandoned pairing is kept
+
+    def pair_begin(self, body):
+        """Start a provider QR login; returns the pairing view.
+
+        ``body``: {provider, id?, name?, channel?}. With ``channel`` the
+        result updates that existing channel, otherwise a new channel is
+        created. The channel is started once the login is confirmed.
+        """
+        body = body or {}
+        kind = body.get("provider")
+        target = body.get("channel") or None
+        with self.lock:
+            if target:
+                c = self.channels.get(target)
+                if c is None:
+                    raise KeyError(target)
+                kind = c.get("provider")
+            provider = self.providers.get(kind)
+            if provider is None:
+                raise ValueError(f"unknown provider: {kind}")
+            if provider.pair is None:
+                raise ValueError(f"provider {kind} does not support QR login")
+            self._pair_gc()
+            pid = uuid.uuid4().hex
+            p = {"id": pid, "provider": kind, "channel": target, "status": "starting",
+                 "qr": "", "text": "", "error": "", "result": None,
+                 "since": time.time(), "cancel": threading.Event(),
+                 "body": {k: body.get(k) for k in ("id", "name") if body.get(k)}}
+            self.pairings[pid] = p
+        threading.Thread(target=self._pair_run, args=(p, provider),
+                         name=f"pair-{kind}", daemon=True).start()
+        return self._pair_view(p)
+
+    def pair_poll(self, pid):
+        with self.lock:
+            p = self.pairings.get(pid)
+            if p is None:
+                raise KeyError(pid)
+            return self._pair_view(p)
+
+    def pair_cancel(self, pid):
+        with self.lock:
+            p = self.pairings.get(pid)
+            if p is None:
+                raise KeyError(pid)
+            p["cancel"].set()
+            if p["status"] not in ("done", "error"):
+                p.update(status="cancelled", qr="")
+            return self._pair_view(p)
+
+    def _pair_view(self, p):
+        return {k: p[k] for k in ("id", "provider", "channel", "status", "qr",
+                                    "text", "error", "result")}
+
+    def _pair_gc(self):
+        now = time.time()
+        for pid, p in list(self.pairings.items()):
+            if now - p["since"] > self.PAIR_TTL:
+                p["cancel"].set()
+                self.pairings.pop(pid, None)
+
+    def _pair_run(self, p, provider):
+        cancel = p["cancel"]
+
+        def update(status=None, qr=None, text=None):
+            if cancel.is_set():
+                return
+            with self.lock:
+                if status is not None:
+                    p["status"] = status
+                if qr is not None:
+                    p["qr"] = qr
+                if text is not None:
+                    p["text"] = text
+
+        try:
+            config = provider.pair(update, cancel.is_set)
+            if cancel.is_set() or self.closed:
+                return
+            if not isinstance(config, dict):
+                raise RuntimeError("pairing returned no configuration")
+            if p["channel"]:
+                view = self.update(p["channel"], {"config": config})
+            else:
+                view = self.create(dict(p["body"], provider=p["provider"], config=config))
+            cid = view["id"]
+            self.log(cid, "info", "QR login confirmed")
+            with self.lock:
+                p.update(status="done", qr="", result=cid)
+            if (self.runtime.get(cid) or {}).get("state") != "running":
+                try:
+                    self.start(cid)
+                except Exception:
+                    pass  # recorded in runtime/logs by start()
+        except Exception as e:  # noqa: BLE001 - surfaced to the UI
+            with self.lock:
+                if p["status"] != "cancelled":
+                    p.update(status="error", qr="", error=str(e) or type(e).__name__)
+
     def delete(self, cid):
         self._halt(cid, "channel deleted")
         with self.lock:
@@ -292,5 +399,7 @@ class ChannelManager:
 
     def close(self):
         self.closed = True
+        for p in list(self.pairings.values()):
+            p["cancel"].set()
         for cid in list(self.runtime):
             self._halt(cid, "shutdown")

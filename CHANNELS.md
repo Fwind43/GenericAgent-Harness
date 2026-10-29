@@ -79,3 +79,18 @@ Feishu channel in Channels, fill in App ID / App Secret (optionally
 in its own `ws_worker.py` child process and replies via the REST API. Needs
 `lark-oapi`; the bot app needs the `im.message.receive_v1` event and permission
 to send messages. Text and rich-text (post) messages are handled.
+
+The New channel form also offers **QR login** for Feishu: scanning with the Feishu
+app creates a bot app through the accounts.feishu.cn device-registration flow and
+stores its App ID / App Secret (Feishu China only; Lark tenants enter credentials
+manually). The secret is never returned to the browser.
+
+## WeChat provider
+
+`ga_harness/plugins/weixin/` provides the `weixin` provider using the iLink bot
+API (`https://ilinkai.weixin.qq.com`, as used by pi-connect). No extra packages.
+Create a WeChat channel via **QR login** in Channels and scan with WeChat; the bot
+token is saved and the channel starts. Messages are long-polled with `getupdates`
+and replies are sent with `sendmessage` (text only; the per-chat `context_token`
+is kept from the last inbound message). The QR is refreshed up to 3 times when it
+expires.

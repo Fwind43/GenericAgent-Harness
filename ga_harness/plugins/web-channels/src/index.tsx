@@ -1,9 +1,11 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { type PluginAPI, useHost, T, Icon, SettingsPanel, useOperation, confirmDialog, defineReact } from '@gah/sdk';
+import qrcode from 'qrcode-generator';
 
 // Channel management UI backed by the channel_manager service (see main.py).
 type Field = { key: string; label: string; label_zh?: string; secret?: boolean; required?: boolean; default?: string };
-type Provider = { kind: string; label: string; label_zh?: string; fields: Field[] };
+type Provider = { kind: string; label: string; label_zh?: string; fields: Field[]; pairable?: boolean };
+type Pairing = { id: string; provider: string; channel?: string; status: string; qr: string; text: string; error?: string; result?: string };
 type Channel = {
   id: string; name: string; provider: string; enabled: boolean; available: boolean;
   config: Record<string, string>; secrets_set: string[];
@@ -69,21 +71,107 @@ function LogPanel({ api, id }: { api: PluginAPI; id: string }) {
   </details>;
 }
 
-function ChannelForm({ providers, channel, busy, onSave, onCancel }: {
-  providers: Provider[]; channel?: Channel; busy: boolean;
-  onSave: (body: Record<string, unknown>) => void; onCancel: () => void;
+// QR login (pi-connect style): the provider runs the login in a background
+// thread; the browser only polls the pairing view. Secrets never reach it.
+function QrCode({ value }: { value: string }) {
+  const code = qrcode(0, 'M');
+  code.addData(value); code.make();
+  const n = code.getModuleCount(), cells: string[] = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (code.isDark(y, x)) cells.push(`M${x + 2} ${y + 2}h1v1h-1z`);
+  return <svg className="channel-qr" viewBox={`0 0 ${n + 4} ${n + 4}`} role="img" aria-label={T('\u767b\u5f55\u4e8c\u7ef4\u7801', 'Login QR code')} shapeRendering="crispEdges">
+    <rect width={n + 4} height={n + 4} fill="#fff" /><path d={cells.join('')} fill="#000" />
+  </svg>;
+}
+const PAIR_STATES: Record<string, [string, string]> = {
+  starting: ['\u6b63\u5728\u83b7\u53d6\u4e8c\u7ef4\u7801\u2026', 'Fetching QR code\u2026'],
+  wait: ['\u8bf7\u7528\u624b\u673a\u626b\u7801', 'Scan with your phone'],
+  scaned: ['\u5df2\u626b\u7801\uff0c\u8bf7\u5728\u624b\u673a\u4e0a\u786e\u8ba4', 'Scanned \u2014 confirm on your phone'],
+  expired: ['\u4e8c\u7ef4\u7801\u5df2\u8fc7\u671f\uff0c\u6b63\u5728\u5237\u65b0\u2026', 'QR expired, refreshing\u2026'],
+  done: ['\u5df2\u8fde\u63a5', 'Connected'],
+  error: ['\u626b\u7801\u5931\u8d25', 'Login failed'],
+  cancelled: ['\u5df2\u53d6\u6d88', 'Cancelled'],
+};
+const PAIR_FINAL = new Set(['done', 'error', 'cancelled']);
+function PairView({ api, provider, channel, id, onDone, onCancel }: {
+  api: PluginAPI; provider: Provider; channel?: Channel; id?: string;
+  onDone: (cid: string) => void; onCancel: () => void;
+}) {
+  const [pairing, setPairing] = useState<Pairing | null>(null), [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const live = useRef<string | null>(null);
+  useEffect(() => {
+    let stop = false, timer = 0;
+    setPairing(null); setError('');
+    const body: Record<string, unknown> = channel ? { action: 'pair_begin', channel: channel.id } : { action: 'pair_begin', provider: provider.kind, ...(id ? { id } : {}) };
+    const show = (view: Pairing) => {
+      if (stop) return;
+      setPairing(view);
+      if (PAIR_FINAL.has(view.status)) {
+        live.current = null;
+        if (view.status === 'done' && view.result) onDone(view.result);
+        return;
+      }
+      timer = window.setTimeout(() => void poll(view.id), 1500);
+    };
+    const poll = async (pid: string) => {
+      try { show((await api.post<{ pairing: Pairing }>('', { action: 'pair_poll', pairing: pid })).pairing); }
+      catch (e) { if (!stop) { setError(String((e as Error)?.message || e)); live.current = null; } }
+    };
+    void (async () => {
+      try {
+        const view = (await api.post<{ pairing: Pairing }>('', body)).pairing;
+        live.current = view.id; show(view);
+      } catch (e) { if (!stop) setError(String((e as Error)?.message || e)); }
+    })();
+    return () => {
+      stop = true; window.clearTimeout(timer);
+      if (live.current) void api.post('', { action: 'pair_cancel', pairing: live.current }).catch(() => undefined);
+      live.current = null;
+    };
+  }, [api, provider.kind, channel?.id, id, attempt]);
+  const status = error ? 'error' : pairing?.status || 'starting';
+  const text = PAIR_STATES[status];
+  const failed = status === 'error' || status === 'cancelled';
+  return <div className="channel-pair">
+    <div className="channel-section-heading">
+      <h3>{T(`\u626b\u7801\u8fde\u63a5${label(provider)}`, `Connect ${label(provider)} by QR`)}</h3>
+      <p>{T('\u7528\u624b\u673a\u626b\u63cf\u4e0b\u65b9\u4e8c\u7ef4\u7801\u5e76\u786e\u8ba4\uff0c\u5b8c\u6210\u540e\u81ea\u52a8\u4fdd\u5b58\u5e76\u542f\u52a8\u901a\u9053\u3002', 'Scan the code below with your phone and confirm. The channel is saved and started automatically.')}</p>
+    </div>
+    <div className="channel-pair-body" data-status={status}>
+      <div className="channel-qr-box">{pairing?.qr && !failed ? <QrCode value={pairing.qr} />
+        : <span className="channel-qr-placeholder">{failed ? '\u00d7' : <i className="channel-spinner" aria-hidden="true" />}</span>}</div>
+      <div className="channel-pair-status" role="status" aria-live="polite">
+        <strong>{text ? T(text[0], text[1]) : status}</strong>
+        {pairing?.text && !failed && <small>{pairing.text}</small>}
+        {pairing?.qr && !failed && /^https?:/.test(pairing.qr) && <a href={pairing.qr} target="_blank" rel="noreferrer">{T('\u5728\u6d4f\u89c8\u5668\u4e2d\u6253\u5f00', 'Open in browser')}</a>}
+      </div>
+    </div>
+    {(error || pairing?.error) && <div className="channel-error" role="alert">{error || pairing?.error}</div>}
+    <div className="channel-form-actions">
+      <button type="button" className="btn" onClick={onCancel}>{T('\u8fd4\u56de', 'Back')}</button>
+      {failed && <button type="button" className="btn primary" onClick={() => setAttempt(n => n + 1)}>{T('\u91cd\u65b0\u83b7\u53d6\u4e8c\u7ef4\u7801', 'Get a new QR code')}</button>}
+    </div>
+  </div>;
+}
+
+function ChannelForm({ api, providers, channel, busy, onSave, onCancel, onPaired }: {
+  api: PluginAPI; providers: Provider[]; channel?: Channel; busy: boolean;
+  onSave: (body: Record<string, unknown>) => void; onCancel: () => void; onPaired: (cid: string) => void;
 }) {
   const [kind, setKind] = useState(channel?.provider || providers[0]?.kind || '');
   const [id, setId] = useState('');
   const provider = providers.find(p => p.kind === kind);
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...(channel?.config || {}) }));
   const set = (key: string, value: string) => setValues(prev => ({ ...prev, [key]: value }));
+  const [pairing, setPairing] = useState(false);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const config: Record<string, string> = {};
     for (const field of provider?.fields || []) config[field.key] = values[field.key] ?? '';
     onSave(channel ? { action: 'update', id: channel.id, config } : { action: 'create', provider: kind, id: id.trim(), config });
   };
+  if (pairing && provider) return <PairView api={api} provider={provider} channel={channel} id={id.trim() || undefined}
+    onDone={onPaired} onCancel={() => setPairing(false)} />;
   return <form className="channel-form" onSubmit={submit}>
     <div className="channel-section-heading">
       <h3>{channel ? T('\u7f16\u8f91\u901a\u9053', 'Edit channel') : T('\u65b0\u5efa\u901a\u9053', 'New channel')}</h3>
@@ -98,6 +186,11 @@ function ChannelForm({ providers, channel, busy, onSave, onCancel }: {
         <span><strong>{label(option)}</strong><small>{option.kind}</small></span>
       </label>)}</div>
     </fieldset>}
+    {provider?.pairable && <div className="channel-pair-offer">
+      <div><strong>{T('\u626b\u7801\u4e00\u952e\u8fde\u63a5', 'One-tap QR login')}</strong>
+        <small>{T('\u65e0\u9700\u624b\u52a8\u586b\u5199\u5bc6\u94a5\uff0c\u7528\u624b\u673a\u626b\u7801\u5373\u53ef\u81ea\u52a8\u914d\u7f6e\u3002', 'Skip the credentials: scan with your phone to configure automatically.')}</small></div>
+      <button type="button" className="btn primary" disabled={busy} onClick={() => setPairing(true)}>{channel ? T('\u91cd\u65b0\u626b\u7801', 'Scan again') : T('\u626b\u7801\u8fde\u63a5', 'Scan to connect')}</button>
+    </div>}
     <div className="channel-fields">{(provider?.fields || []).map(field => {
       const stored = !!channel?.secrets_set.includes(field.key);
       return <label key={field.key} className="channel-field"><span>{label(field)}{field.required && <em aria-hidden="true">*</em>}</span>
@@ -223,8 +316,9 @@ export function ChannelManager({ api }: { api: PluginAPI }) {
             onClick={create}><Icon name="plus" />{T('\u65b0\u5efa\u901a\u9053', 'New channel')}</button>
         </aside>}
         <section className="channel-detail" aria-label={T('\u901a\u9053\u8be6\u60c5', 'Channel details')} aria-busy={busy}>
-          {editing ? <ChannelForm key={editing.kind === 'new' ? 'new' : `edit:${editing.id}`} providers={providers}
-            channel={edited} busy={busy} onSave={save} onCancel={() => { setEditing(null); setError(''); }} />
+          {editing ? <ChannelForm key={editing.kind === 'new' ? 'new' : `edit:${editing.id}`} api={api} providers={providers}
+            channel={edited} busy={busy} onSave={save} onCancel={() => { setEditing(null); setError(''); }}
+            onPaired={cid => { setEditing(null); setSelected(cid); void load(); }} />
             : current ? <ChannelDetail api={api} channel={current} provider={providers.find(provider => provider.kind === current.provider)}
               busy={busy} onAct={action => void act({ action, id: current.id })}
               onEdit={() => { setSelected(current.id); setEditing({ kind: 'edit', id: current.id }); setError(''); }}

@@ -11,6 +11,9 @@ import re
 import subprocess
 import sys
 import threading
+import time
+import urllib.parse
+import urllib.request
 from collections import OrderedDict
 from pathlib import Path
 
@@ -152,6 +155,65 @@ FIELDS = [
 ]
 
 
+ACCOUNTS = {"feishu": "https://accounts.feishu.cn", "lark": "https://accounts.larksuite.com"}
+
+
+def _registration(base, action, params=None):
+    data = urllib.parse.urlencode(dict(params or {}, action=action)).encode()
+    req = urllib.request.Request(base + "/oauth/v1/app/registration", data=data, headers={
+        "Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read(1 << 20) or b"{}")
+
+
+def pair(update, cancelled):
+    """Scan-to-create a Feishu/Lark PersonalAgent bot (app registration)."""
+    base = ACCOUNTS["feishu"]
+    init = _registration(base, "init")
+    if init.get("error"):
+        raise RuntimeError(f"{init['error']}: {init.get('error_description', '')}")
+    methods = init.get("supported_auth_methods") or []
+    if methods and "client_secret" not in methods:
+        raise RuntimeError("this environment does not support client_secret auth")
+    begin = _registration(base, "begin", {"archetype": "PersonalAgent",
+                                          "auth_method": "client_secret",
+                                          "request_user_info": "open_id"})
+    if begin.get("error"):
+        raise RuntimeError(f"{begin['error']}: {begin.get('error_description', '')}")
+    code, url = begin.get("device_code"), begin.get("verification_uri_complete")
+    if not (code and url):
+        raise RuntimeError("incomplete onboarding response")
+    update(status="wait", qr=url, text="Scan with the Feishu/Lark app")
+    interval = int(begin.get("interval") or 5)
+    deadline = time.time() + int(begin.get("expire_in") or 600)
+    while time.time() < deadline:
+        for _ in range(interval * 10):
+            if cancelled():
+                raise RuntimeError("cancelled")
+            time.sleep(0.1)
+        res = _registration(base, "poll", {"device_code": code})
+        brand = ((res.get("user_info") or {}).get("tenant_brand") or "").strip().lower()
+        if brand == "lark" and base != ACCOUNTS["lark"]:
+            base = ACCOUNTS["lark"]  # Lark tenants finish on the Lark domain
+            continue
+        if res.get("client_id") and res.get("client_secret"):
+            owner = (res.get("user_info") or {}).get("open_id") or ""
+            return {"app_id": res["client_id"], "app_secret": res["client_secret"],
+                    "allowed_users": owner}
+        err = res.get("error") or ""
+        if err == "slow_down":
+            interval += 5
+        elif err == "access_denied":
+            raise RuntimeError("authorization denied by user")
+        elif err == "expired_token":
+            raise RuntimeError("QR code expired")
+        elif err not in ("", "authorization_pending"):
+            raise RuntimeError(f"{err}: {res.get('error_description', '')}")
+        else:
+            update(status="wait", qr=url, text="Waiting for confirmation in the app")
+    raise RuntimeError("QR login timed out")
+
+
 def apply(ctx, config):
     manager = ctx.get("channel_manager")
 
@@ -168,4 +230,5 @@ def apply(ctx, config):
                              on_dead=lambda err: manager.fail(cid, err))
 
     return manager.register_provider(Provider(
-        "feishu", factory, label="Feishu / Lark", label_zh="飞书", fields=FIELDS))
+        "feishu", factory, label="Feishu / Lark", label_zh="飞书", fields=FIELDS,
+        pair=pair))
