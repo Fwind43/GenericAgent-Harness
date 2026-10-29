@@ -565,8 +565,100 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       } })
     ] });
   }
+  function MixinForm({ entry, config, disabled, onSave, onDirtyChange, onReset }) {
+    var _a;
+    const [id, setId] = react.useState((entry == null ? void 0 : entry.key) || "mixin_config_" + Date.now());
+    const [members, setMembers] = react.useState((entry == null ? void 0 : entry.indexed) ? [] : (entry == null ? void 0 : entry.members) || []);
+    const [retries, setRetries] = react.useState(String((entry == null ? void 0 : entry.values.max_retries) ?? ""));
+    const [delay, setDelay] = react.useState(String((entry == null ? void 0 : entry.values.base_delay) ?? ""));
+    const [spring, setSpring] = react.useState(String((entry == null ? void 0 : entry.values.spring_back) ?? ""));
+    const [error, setError] = react.useState("");
+    const dirty = useDraft({ id, members, retries, delay, spring }, onDirtyChange);
+    const models = config.entries.map((item) => ({ key: item.key, name: item.values.name || item.values.model || "" }));
+    const unique = models.filter((item) => item.name && models.filter((other) => other.name === item.name).length === 1);
+    const selected = members.map((name) => unique.find((item) => item.name === name));
+    const native = (_a = selected.find((item) => item)) == null ? void 0 : _a.key.includes("native");
+    const available = unique.filter((item) => !members.includes(item.name) && (native === void 0 || item.key.includes("native") === native));
+    const invalid = selected.some((item) => !item) || new Set(members).size !== members.length || new Set(selected.filter((item) => item).map((item) => item.key.includes("native"))).size > 1;
+    const move = (index, offset) => {
+      setMembers((old) => {
+        const next = [...old];
+        [next[index], next[index + offset]] = [next[index + offset], next[index]];
+        return next;
+      });
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-form", onInvalidCapture: (event) => {
+      var _a2;
+      return (_a2 = event.target.closest("details")) == null ? void 0 : _a2.setAttribute("open", "");
+    }, onSubmit: (event) => {
+      event.preventDefault();
+      if (disabled) return;
+      if (!id.includes("mixin") || !/(api|config|cookie)/.test(id)) {
+        setError(sdk.T("标识必须包含 mixin，以及 api、config 或 cookie。", "The identifier must contain mixin and api, config or cookie."));
+        return;
+      }
+      if (invalid || members.length < 2 || members.length > 20) {
+        setError(sdk.T("请选择 2–20 个名称唯一、类型兼容的模型。", "Choose 2–20 uniquely named, compatible models."));
+        return;
+      }
+      setError("");
+      onSave("mixin_save", id, { llm_nos: members, max_retries: retries === "" ? null : Number(retries), base_delay: delay === "" ? null : Number(delay), spring_back: spring === "" ? null : Number(spring) });
+    }, children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
+        error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),
+        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("故障转移组", "Failover group"), hint: sdk.T("第一个模型优先使用，失败后依次切换到后续模型。配置直接保存到 mykey.py。", "The first model is preferred; failures fall back to later models in order. Saved directly to mykey.py."), children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Configuration identifier"), wide: true, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[A-Za-z][A-Za-z0-9_]{0,99}", value: id, disabled: disabled || !!entry, onChange: (event) => setId(event.target.value), autoComplete: "off", spellCheck: false }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("例如 mixin_config_primary；保存后标识不可修改。", "For example, mixin_config_primary; the identifier cannot be changed after saving.") })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("模型顺序", "Model order"), hint: sdk.T("使用模型名称引用，不使用易变的数字下标。Native 与非 Native 模型不能混在同一组。", "References use model names, not fragile numeric indices. Native and non-native models cannot be mixed in one group."), children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "wide mixin-members", children: [
+          (entry == null ? void 0 : entry.indexed) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("此组原来使用数字下标；请重新选择成员，保存后改用名称引用。", "This group uses numeric indices. Reselect its members to save name-based references.") }),
+          invalid && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: sdk.T("成员缺失、重名或类型不兼容，请移除后重新选择。", "Some members are missing, ambiguous or incompatible. Remove and reselect them.") }),
+          /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "mixin-member-list", children: members.map((name, index) => /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "mixin-member-name", children: [
+              /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+                index === 0 ? sdk.T("首选", "Primary") : sdk.T("备选", "Fallback"),
+                " ",
+                index + 1
+              ] }),
+              /* @__PURE__ */ jsxRuntime.jsx("strong", { children: name })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mixin-member-actions", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === 0, "aria-label": sdk.T("上移 ", "Move up ") + name, onClick: () => move(index, -1), children: "↑" }),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === members.length - 1, "aria-label": sdk.T("下移 ", "Move down ") + name, onClick: () => move(index, 1), children: "↓" }),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, "aria-label": sdk.T("移除 ", "Remove ") + name, onClick: () => setMembers((old) => old.filter((_, pos) => pos !== index)), children: sdk.T("移除", "Remove") })
+            ] })
+          ] }, index)) }),
+          !members.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("先添加首选模型，再添加至少一个备选模型。", "Add a primary model, then at least one fallback.") }),
+          /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("添加成员", "Add member"), children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("select", { value: "", disabled: disabled || members.length >= 20 || !available.length, onChange: (event) => {
+              if (event.target.value) setMembers((old) => [...old, event.target.value]);
+            }, children: [
+              /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("选择模型…", "Choose a model…") }),
+              available.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: item.name, children: [
+                item.name,
+                " · ",
+                item.key
+              ] }, item.key))
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅列出名称唯一且与当前组兼容的模型；重名模型请先在模型页改名。", "Only uniquely named, compatible models are listed. Rename duplicate models in the Models tab first.") })
+          ] })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("重试与回切参数", "Retry and return settings") }),
+          /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("可选参数", "Optional settings"), hint: sdk.T("留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。", "Leave empty for GA defaults; 0 retries the primary model on the next request."), children: [
+            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("重试次数", "Max retries"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 20, step: 1, value: retries, disabled, onChange: (event) => setRetries(event.target.value) }) }),
+            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("基础延迟（秒）", "Base delay (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 120, step: "any", value: delay, disabled, onChange: (event) => setDelay(event.target.value) }) }),
+            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("回切间隔（秒）", "Return interval (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 86400, step: 1, value: spring, disabled, onChange: (event) => setSpring(event.target.value) }) })
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, onReset, onDelete: async () => {
+        if (await sdk.confirmDialog({ title: sdk.T("删除此故障转移组？", "Delete this failover group?"), message: id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("mixin_delete", id);
+      } })
+    ] });
+  }
   function Models({ api }) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     const { state, changing } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
     const [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
@@ -619,6 +711,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const groups = config ? sections(config) : [], group = groups.find((item) => item.id === section);
     const entries = ((group == null ? void 0 : group.entries) || (config == null ? void 0 : config.entries) || []).filter((item) => sdk.matches(query, item.key, item.values.name, item.values.model, item.values.apibase));
     const providers = ((config == null ? void 0 : config.providers) || []).filter((item) => sdk.matches(query, item.id, item.values.name, item.values.apibase));
+    const mixins = ((config == null ? void 0 : config.mixins) || []).filter((item) => sdk.matches(query, item.key, ...item.members));
+    const mixin = (_a = config == null ? void 0 : config.mixins) == null ? void 0 : _a.find((item) => item.key === edit.id);
     const entry = config == null ? void 0 : config.entries.find((item) => item.key === edit.id), provider = config == null ? void 0 : config.providers.find((item) => item.id === edit.id);
     const select = (kind, id, showDetail = true) => {
       draft.current = false;
@@ -632,10 +726,10 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const switchView = (kind) => {
       if (kind === edit.kind) return;
       void navigate(() => {
-        var _a2, _b2;
+        var _a2, _b2, _c2, _d2;
         setQuery("");
         setSection("");
-        select(kind, kind === "model" ? (_a2 = config == null ? void 0 : config.entries[0]) == null ? void 0 : _a2.key : (_b2 = config == null ? void 0 : config.providers[0]) == null ? void 0 : _b2.id, false);
+        select(kind, kind === "model" ? (_a2 = config == null ? void 0 : config.entries[0]) == null ? void 0 : _a2.key : kind === "mixin" ? (_c2 = (_b2 = config == null ? void 0 : config.mixins) == null ? void 0 : _b2[0]) == null ? void 0 : _c2.key : (_d2 = config == null ? void 0 : config.providers[0]) == null ? void 0 : _d2.id, false);
       });
     };
     const filter = (id) => {
@@ -681,7 +775,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       setError("");
       const { options, ...fields } = values || {};
       void run(async () => {
-        var _a2, _b2;
+        var _a2, _b2, _c2, _d2;
         const next = await api.host.post("/api/models/config", {
           action,
           revision: config.revision,
@@ -695,12 +789,15 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         if (action.startsWith("provider_")) {
           setSection("");
           select("provider", action === "provider_save" ? id : (_a2 = next.config.providers[0]) == null ? void 0 : _a2.id, action === "provider_save");
+        } else if (action.startsWith("mixin_")) {
+          setSection("");
+          select("mixin", action === "mixin_save" ? id : (_c2 = (_b2 = next.config.mixins) == null ? void 0 : _b2[0]) == null ? void 0 : _c2.key, action === "mixin_save");
         } else {
           const saved = next.config.entries.find((item) => item.key === id);
           const candidate = saved && section ? sectionKey(saved) : section;
           const nextSection = sections(next.config).some((item) => item.id === candidate) ? candidate : "";
           setSection(nextSection);
-          select("model", (saved == null ? void 0 : saved.key) || ((_b2 = next.config.entries.find((item) => !nextSection || sectionKey(item) === nextSection)) == null ? void 0 : _b2.key), !!saved);
+          select("model", (saved == null ? void 0 : saved.key) || ((_d2 = next.config.entries.find((item) => !nextSection || sectionKey(item) === nextSection)) == null ? void 0 : _d2.key), !!saved);
         }
         api.notice(sdk.T("配置已保存并生效", "Configuration saved and applied"));
       }, setError);
@@ -737,20 +834,24 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     };
     const locked = busy || !(config == null ? void 0 : config.writable), browsing = working || changing;
     const names = config ? providerNames(config) : /* @__PURE__ */ new Map();
-    const isModel = edit.kind === "model";
-    const title = isModel ? (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || (entry == null ? void 0 : entry.key) : (provider == null ? void 0 : provider.values.name) || (provider == null ? void 0 : provider.id);
+    const isModel = edit.kind === "model", isMixin = edit.kind === "mixin";
+    const title = isModel ? (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || (entry == null ? void 0 : entry.key) : isMixin ? mixin == null ? void 0 : mixin.key : (provider == null ? void 0 : provider.values.name) || (provider == null ? void 0 : provider.id);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModelPicker, { api }),
       state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : ""), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-workspace-head", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-view-switch", role: "group", "aria-label": sdk.T("模型与服务商", "Models and providers"), children: [
-            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": !isModel, disabled: browsing, onClick: () => switchView("provider"), children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": edit.kind === "provider", disabled: browsing, onClick: () => switchView("provider"), children: [
               sdk.T("服务商", "Providers"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.providers.length) ?? 0 })
             ] }),
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isModel, disabled: browsing, onClick: () => switchView("model"), children: [
               sdk.T("模型", "Models"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.entries.length) ?? 0 })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isMixin, disabled: browsing, onClick: () => switchView("mixin"), children: [
+              sdk.T("故障转移组", "Failover groups"),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: ((_b = config == null ? void 0 : config.mixins) == null ? void 0 : _b.length) ?? 0 })
             ] })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-refresh", disabled: browsing, onClick: () => {
@@ -767,7 +868,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-layout" + (detail ? " is-detail" : ""), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("aside", { className: "model-list-pane", children: [
               /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-browser-tools", children: [
-                /* @__PURE__ */ jsxRuntime.jsx("input", { className: "model-search", type: "search", value: query, disabled: browsing, placeholder: isModel ? sdk.T("搜索模型...", "Search models...") : sdk.T("搜索服务商...", "Search providers..."), "aria-label": isModel ? sdk.T("搜索模型", "Search models") : sdk.T("搜索服务商", "Search providers"), onChange: (event) => setQuery(event.target.value) }),
+                /* @__PURE__ */ jsxRuntime.jsx("input", { className: "model-search", type: "search", value: query, disabled: browsing, placeholder: isModel ? sdk.T("搜索模型...", "Search models...") : isMixin ? sdk.T("搜索故障转移组...", "Search failover groups...") : sdk.T("搜索服务商...", "Search providers..."), "aria-label": sdk.T("搜索配置", "Search configurations"), onChange: (event) => setQuery(event.target.value) }),
                 isModel && /* @__PURE__ */ jsxRuntime.jsxs("select", { className: "model-provider-filter", value: section, disabled: browsing, "aria-label": sdk.T("按服务商筛选", "Filter by provider"), onChange: (event) => filter(event.target.value), children: [
                   /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("全部模型", "All models") }),
                   groups.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: item.id, children: [
@@ -777,7 +878,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                     ")"
                   ] }, item.id))
                 ] }),
-                !isModel && ungrouped > 0 && /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "secondary model-group", disabled: locked, title: sdk.T("按相同地址+密钥归组未归属模型", "Group unassigned models by identical URL + key"), onClick: () => {
+                edit.kind === "provider" && ungrouped > 0 && /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "secondary model-group", disabled: locked, title: sdk.T("按相同地址+密钥归组未归属模型", "Group unassigned models by identical URL + key"), onClick: () => {
                   void autoGroup();
                 }, children: [
                   sdk.T("自动归组", "Auto-group"),
@@ -785,9 +886,9 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                   ungrouped,
                   ")"
                 ] }),
-                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-add", disabled: locked, onClick: () => choose(edit.kind), children: isModel ? sdk.T("+ 新增模型", "+ Add model") : sdk.T("+ 新增服务商", "+ Add provider") })
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-add", disabled: locked, onClick: () => choose(edit.kind), children: isModel ? sdk.T("+ 新增模型", "+ Add model") : isMixin ? sdk.T("+ 新增故障转移组", "+ Add failover group") : sdk.T("+ 新增服务商", "+ Add provider") })
               ] }),
-              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-list", "aria-label": isModel ? sdk.T("模型列表", "Model list") : sdk.T("服务商列表", "Provider list"), children: [
+              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-list", "aria-label": isModel ? sdk.T("模型列表", "Model list") : isMixin ? sdk.T("故障转移组列表", "Failover group list") : sdk.T("服务商列表", "Provider list"), children: [
                 isModel ? entries.map((item) => {
                   var _a2;
                   return /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: browsing, "aria-pressed": edit.id === item.key, onClick: () => {
@@ -797,7 +898,18 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                     item.values.name && item.values.model && item.values.name !== item.values.model && /* @__PURE__ */ jsxRuntime.jsx("small", { className: "model-list-id", children: item.values.model }),
                     /* @__PURE__ */ jsxRuntime.jsx("small", { children: (_a2 = groups.find((candidate) => candidate.id === sectionKey(item))) == null ? void 0 : _a2.title })
                   ] }, item.key);
-                }) : providers.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: browsing, "aria-pressed": edit.id === item.id, onClick: () => {
+                }) : isMixin ? mixins.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: browsing, "aria-pressed": edit.id === item.key, onClick: () => {
+                  if (edit.id !== item.key || !detail) choose("mixin", item.key);
+                }, children: [
+                  /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.key }),
+                  /* @__PURE__ */ jsxRuntime.jsx("small", { children: item.members.join(" → ") }),
+                  /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+                    item.members.length,
+                    " ",
+                    sdk.T("个成员", "members"),
+                    item.indexed ? sdk.T(" · 下标引用", " · index references") : ""
+                  ] })
+                ] }, item.key)) : providers.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-list-item", disabled: browsing, "aria-pressed": edit.id === item.id, onClick: () => {
                   if (edit.id !== item.id || !detail) choose("provider", item.id);
                 }, children: [
                   /* @__PURE__ */ jsxRuntime.jsx("strong", { children: names.get(item.id) }),
@@ -808,7 +920,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                     sdk.T("个模型", "models")
                   ] })
                 ] }, item.id)),
-                !(isModel ? entries.length : providers.length) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", children: query ? sdk.T("没有匹配项，试试其他关键词。", "No matches. Try another search.") : isModel ? sdk.T("还没有模型，点击上方新增。", "No models yet. Add one above.") : sdk.T("还没有服务商。新增后可在多个模型间共用地址和密钥。", "No providers yet. Add one to share a URL and key across models.") })
+                !(isModel ? entries.length : isMixin ? mixins.length : providers.length) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", children: query ? sdk.T("没有匹配项，试试其他关键词。", "No matches. Try another search.") : isModel ? sdk.T("还没有模型，点击上方新增。", "No models yet. Add one above.") : isMixin ? sdk.T("还没有故障转移组，添加首选和备选模型以自动切换。", "No failover groups yet. Add primary and fallback models for automatic switching.") : sdk.T("还没有服务商。新增后可在多个模型间共用地址和密钥。", "No providers yet. Add one to share a URL and key across models.") })
               ] }),
               /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-source", children: [
                 /* @__PURE__ */ jsxRuntime.jsxs("summary", { children: [
@@ -819,17 +931,17 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                 /* @__PURE__ */ jsxRuntime.jsx("code", { children: config.source || sdk.T("当前运行配置", "Current runtime configuration") })
               ] })
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "model-editor", "aria-label": isModel ? sdk.T("模型编辑器", "Model editor") : sdk.T("服务商编辑器", "Provider editor"), "aria-busy": working, children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "model-editor", "aria-label": isModel ? sdk.T("模型编辑器", "Model editor") : isMixin ? sdk.T("故障转移组编辑器", "Failover group editor") : sdk.T("服务商编辑器", "Provider editor"), "aria-busy": working, children: [
               /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-editor-head", children: [
                 /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-back", disabled: browsing, onClick: () => {
                   void navigate(() => select(edit.kind, edit.id, false));
                 }, children: sdk.T("返回列表", "Back to list") }),
                 /* @__PURE__ */ jsxRuntime.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-eyebrow", children: isModel ? entry ? sdk.T("编辑模型", "Edit model") : sdk.T("新模型", "New model") : provider ? sdk.T("编辑服务商", "Edit provider") : sdk.T("新服务商", "New provider") }),
-                  /* @__PURE__ */ jsxRuntime.jsx("h3", { ref: heading, tabIndex: -1, children: title || (isModel ? sdk.T("新增模型", "Add model") : sdk.T("新增服务商", "Add provider")) })
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-eyebrow", children: isModel ? entry ? sdk.T("编辑模型", "Edit model") : sdk.T("新模型", "New model") : isMixin ? mixin ? sdk.T("编辑故障转移组", "Edit failover group") : sdk.T("新故障转移组", "New failover group") : provider ? sdk.T("编辑服务商", "Edit provider") : sdk.T("新服务商", "New provider") }),
+                  /* @__PURE__ */ jsxRuntime.jsx("h3", { ref: heading, tabIndex: -1, children: title || (isModel ? sdk.T("新增模型", "Add model") : isMixin ? sdk.T("新增故障转移组", "Add failover group") : sdk.T("新增服务商", "Add provider")) })
                 ] })
               ] }),
-              isModel ? /* @__PURE__ */ jsxRuntime.jsx(ModelForm, { entry, config, initialProvider: ((_a = group == null ? void 0 : group.provider) == null ? void 0 : _a.id) || (!section ? (_b = config.providers[0]) == null ? void 0 : _b.id : ""), disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("model", edit.id), onProvider: openProvider, fetchModels }, edit.serial) : /* @__PURE__ */ jsxRuntime.jsx(
+              isModel ? /* @__PURE__ */ jsxRuntime.jsx(ModelForm, { entry, config, initialProvider: ((_c = group == null ? void 0 : group.provider) == null ? void 0 : _c.id) || (!section ? (_d = config.providers[0]) == null ? void 0 : _d.id : ""), disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("model", edit.id), onProvider: openProvider, fetchModels }, edit.serial) : isMixin ? /* @__PURE__ */ jsxRuntime.jsx(MixinForm, { entry: mixin, config, disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("mixin", edit.id) }, edit.serial) : /* @__PURE__ */ jsxRuntime.jsx(
                 ProviderForm,
                 {
                   entry: provider,
