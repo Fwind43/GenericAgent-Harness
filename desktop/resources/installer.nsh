@@ -41,3 +41,15 @@
     RMDir "$INSTDIR"
   ${endif}
 !macroend
+
+; Creates the bundled copy's folder at install time. When the installer runs elevated
+; (install for all users, or a per-user install into a protected folder such as
+; Program Files) the app itself cannot create or write it later, so let regular users
+; modify this one folder; the rest of the install dir stays read-only.
+!macro customInstall
+  CreateDirectory "$INSTDIR\GenericAgent"
+  ${if} ${UAC_IsAdmin}
+    nsExec::Exec '"$SYSDIR\icacls.exe" "$INSTDIR\GenericAgent" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q'
+    Pop $0
+  ${endif}
+!macroend

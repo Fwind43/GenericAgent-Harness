@@ -32,8 +32,11 @@ choose it and saves the choice as `ga_root` in desktop.json. The startup-failure
 **Bundled GenericAgent copy.** Packaged builds ship GA code under `resources/py` and run a writable
 copy of it. On Windows the copy lives in the install folder, `<install dir>/GenericAgent`
 (falling back to `<userData>/GenericAgent` if that folder is not writable); macOS and Linux keep
-it in `<userData>/GenericAgent`. A copy left in `<userData>` by older versions is moved over on
-first start (if the move fails, the old location keeps being used). The copy holds `mykey.py`,
+it in `<userData>/GenericAgent`. The installer creates that folder and, when it runs elevated
+(e.g. installing under Program Files), grants regular users modify rights on it only, since the
+app itself cannot write there. A copy left in `<userData>` by older versions is moved (or, into
+the pre-created folder, copied) over on first start; if that fails the old location keeps being
+used and an interrupted copy is retried on the next start. The copy holds `mykey.py`,
 memory and sessions, so the NSIS installer (`resources/installer.nsh`) keeps it on upgrade and
 asks before deleting it on uninstall (silent uninstall keeps it).
 

@@ -157,6 +157,7 @@ function readGaRef(dir) {
 // .app bundle, replaced on update), Linux, running from source, or an install dir that is
 // not writable: <userData>/GenericAgent. A copy left in <userData> by older versions is
 // moved over once; if that fails the old location keeps being used, nothing is lost.
+// Installs under Program Files rely on the installer creating the folder (customInstall).
 function legacyGaDir(userData) { return path.join(userData, 'GenericAgent'); }
 
 function installGaDir(resourcesPath) {
@@ -195,11 +196,42 @@ function moveGaCopy(from, to) {
   return true;
 }
 
+// The installer pre-creates <install dir>/GenericAgent (writable for the user even under
+// Program Files), so the target may already exist but be empty. Copy the old copy into it;
+// a marker file makes an interrupted copy restart on the next launch.
+const MIGRATING = '.gah-migrating';
+
+function fillGaCopy(from, to) {
+  const marker = path.join(to, MIGRATING);
+  try {
+    fs.writeFileSync(marker, '');
+    fs.cpSync(from, to, { recursive: true, force: true });
+    fs.unlinkSync(marker);
+  } catch {
+    return false;   // marker stays: retried next start, the old location is used meanwhile
+  }
+  try { fs.renameSync(from, `${from}.moved`); } catch { /* both copies stay; the new one wins */ }
+  return true;
+}
+
+function needsFill(dir) {
+  try {
+    const names = fs.readdirSync(dir);
+    return names.length === 0 || names.includes(MIGRATING);
+  } catch {
+    return false;
+  }
+}
+
 function bundledGaDir(userData, resourcesPath = null) {
   const legacy = legacyGaDir(userData);
   const inst = installGaDir(resourcesPath);
   if (!inst) return legacy;
-  if (fs.existsSync(inst)) return inst;
+  if (fs.existsSync(inst)) {
+    if (!dirWritable(inst)) return legacy;
+    if (fs.existsSync(legacy) && needsFill(inst) && !fillGaCopy(legacy, inst)) return legacy;
+    return inst;
+  }
   if (!dirWritable(path.dirname(inst))) return legacy;
   if (fs.existsSync(legacy) && !moveGaCopy(legacy, inst)) return legacy;
   return inst;
