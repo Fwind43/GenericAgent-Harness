@@ -58,7 +58,7 @@ details[open]>summary>.chev{transform:none}
 .step>summary{font-size:13px;color:var(--text)}
 .step>summary:hover .ttl{color:var(--accent)}
 .step .no{color:var(--muted);font-size:11px;flex:none;font-weight:400}
-.step .ttl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.step .ttl{min-width:0;flex:1;white-space:normal;overflow-wrap:anywhere;font-weight:500}
 .step .cnt{color:var(--muted);font-size:11px;flex:none}
 .step .tok,.final-step-label .tok{display:inline-flex;flex-wrap:wrap;justify-content:flex-end;column-gap:7px;max-width:50%;color:var(--muted);font-size:11px;flex:none;font-variant-numeric:tabular-nums;line-height:1.5}
 .tok>span{white-space:nowrap}
@@ -86,7 +86,12 @@ details[open]>summary>.chev{transform:none}
 .step-usage{margin-top:7px}
 .final-step-label{display:flex;align-items:center;justify-content:space-between;gap:9px;min-width:0;margin:0;color:#19a37f;font-size:11px;font-weight:400}
 .final-step-label .no{flex:none}
-.final-step-label .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:13px;font-weight:500}
+.final-step-label .ttl{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;color:var(--text);font-size:13px;font-weight:500}
+/* Wrapped step titles: keep meta on the first line, chevron centred. */
+.step>summary,.final-step-label{align-items:flex-start}
+.step>summary .no,.step>summary .cnt,.final-step-label .no{line-height:20px}
+.step>summary .tok,.final-step-label .tok{margin-top:2px}
+.step>summary>.chev{align-self:center}
 /* Admin-style receipts: plain action / tool / target rows, not nested cards. */
 .tool{border:0;border-radius:0;background:transparent;color:var(--text)}
 .tool>summary{font-size:13px;gap:9px;border-radius:4px}

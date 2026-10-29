@@ -29,7 +29,7 @@ function Thinking({ text, stream = false }: { text?: string; stream?: boolean })
 }
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
-  // The full summary stays in the body; only step headings may ellipsize.
+  // The full summary stays in the body; step headings wrap rather than truncate.
   return <div className="turn-summary"><svg viewBox="0 0 16 16" aria-hidden="true">
     <path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
   </svg><div className="turn-summary-text">{text}</div></div>;
