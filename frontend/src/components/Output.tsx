@@ -6,6 +6,8 @@ export function Chevron() {
 }
 /** Reveal speed: the backlog drains in about this many ms, never slower than MIN_CPS. */
 const CATCH_UP_MS = 260, MIN_CPS = 40;
+/** A frame gap longer than this means rendering was paused (background tab, occluded window). */
+const STALL_MS = 250;
 /**
  * Streamed text arrives in network-sized bursts. While ``stream`` is set, the
  * rendered prefix advances every frame at a rate proportional to the backlog, so
@@ -38,11 +40,19 @@ export const Markdown = memo(function Markdown({ text, className = 'body', strea
       return;
     }
     if (!ref.current?.firstChild && !ref.current?.textContent) paint(shown.current);
+    // Frames stopped while the page was away: restore everything instead of replaying it.
+    if (frame.current && performance.now() - last.current > STALL_MS) {
+      cancelAnimationFrame(frame.current); frame.current = 0;
+      paint(text.length);
+      return;
+    }
     if (frame.current || shown.current >= text.length) return;
     last.current = performance.now();
     const tick = (now: number) => {
-      const dt = Math.min(now - last.current, 100);
+      const gap = now - last.current;
       last.current = now;
+      if (gap > STALL_MS) { frame.current = 0; paint(target.current.length); return; }
+      const dt = Math.min(gap, 100);
       const backlog = target.current.length - shown.current;
       if (backlog <= 0) { frame.current = 0; return; }
       const step = Math.max(1, Math.round(Math.max(backlog * dt / CATCH_UP_MS, MIN_CPS * dt / 1000)));
@@ -51,7 +61,23 @@ export const Markdown = memo(function Markdown({ text, className = 'body', strea
     };
     frame.current = requestAnimationFrame(tick);
   }, [text, stream]);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(() => {
+    // Coming back to the page shows the whole backlog at once.
+    const restore = () => {
+      if (document.hidden || shown.current >= target.current.length) return;
+      cancelAnimationFrame(frame.current); frame.current = 0;
+      paint(target.current.length);
+    };
+    document.addEventListener('visibilitychange', restore);
+    window.addEventListener('focus', restore);
+    window.addEventListener('pageshow', restore);
+    return () => {
+      cancelAnimationFrame(frame.current);
+      document.removeEventListener('visibilitychange', restore);
+      window.removeEventListener('focus', restore);
+      window.removeEventListener('pageshow', restore);
+    };
+  }, []);
   return <div ref={ref} className={className} />;
 });
 /** Native details whose summary mirrors the legacy DOM: the chevron leads or trails per element kind. */
