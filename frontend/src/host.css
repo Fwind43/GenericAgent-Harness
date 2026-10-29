@@ -239,15 +239,22 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .main-col{position:relative}
 .gah-msg-nav{position:absolute;right:6px;transform:translateY(-50%);z-index:5;display:flex;align-items:center}
 .gah-msg-nav-rail{display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-height:60vh;overflow-y:auto;scrollbar-width:none;padding:4px 2px}
-.gah-msg-nav-rail::-webkit-scrollbar{display:none}
+.gah-msg-nav-rail::-webkit-scrollbar,.gah-msg-nav-panel::-webkit-scrollbar{display:none}
 .gah-msg-nav-node{display:flex;align-items:center;justify-content:flex-end;width:28px;height:12px;padding:0 4px;border:0;background:none;cursor:pointer;flex:none}
 .gah-msg-nav-node span{display:block;width:12px;height:2px;border-radius:2px;background:var(--border);transition:width .15s,background .15s}
 .gah-msg-nav-node:hover span,.gah-msg-nav-node:focus-visible span{width:18px;background:var(--muted)}
-.gah-msg-nav-node.active span{width:18px;background:var(--text)}
+.gah-msg-nav-node.active span{width:18px;background:var(--accent,var(--text))}
 .gah-msg-nav-node:focus-visible{outline:none}
-.gah-msg-nav-card{position:absolute;right:34px;transform:translateY(-50%);width:300px;max-width:calc(100vw - 80px);padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 8px 28px rgba(0,0,0,.12);pointer-events:none}
-.gah-msg-nav-card .q{font-size:14px;color:var(--text);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.gah-msg-nav-card .a{margin-top:6px;font-size:12.5px;color:var(--muted);line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.gah-msg-nav.open .gah-msg-nav-rail{visibility:hidden}
+.gah-msg-nav-panel{position:absolute;right:0;top:50%;transform:translateY(-50%);width:260px;max-width:calc(100vw - 80px);max-height:60vh;overflow-y:auto;scrollbar-width:none;padding:6px;display:flex;flex-direction:column;gap:1px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 10px 32px rgba(0,0,0,.12);animation:gah-msg-nav-in .14s ease-out}
+@keyframes gah-msg-nav-in{from{opacity:0;transform:translateY(-50%) translateX(6px)}}
+.gah-msg-nav-item{display:flex;align-items:center;gap:12px;width:100%;min-height:32px;padding:6px 6px 6px 10px;border:0;border-radius:8px;background:none;color:var(--muted);font:inherit;font-size:13px;text-align:left;cursor:pointer;flex:none}
+.gah-msg-nav-item .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gah-msg-nav-item .tick{flex:none;width:12px;height:2px;border-radius:2px;background:var(--border);transition:width .15s,background .15s}
+.gah-msg-nav-item:hover,.gah-msg-nav-item:focus-visible{background:var(--hover,rgba(0,0,0,.04));color:var(--text);outline:none}
+.gah-msg-nav-item:hover .tick{background:var(--muted)}
+.gah-msg-nav-item.active{color:var(--text);font-weight:600}
+.gah-msg-nav-item.active .tick{width:20px;height:3px;background:var(--accent,var(--text))}
 @media (max-width:760px){.gah-msg-nav{display:none}}
 /* Settings > Updates (desktop shell only) */
 .gah-update-settings .dialog-content{display:flex;flex-direction:column;gap:14px}
