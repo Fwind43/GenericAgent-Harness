@@ -136,7 +136,7 @@ function isGaRoot(dir) {
 // ---- Bundled GenericAgent ---------------------------------------------------------------
 // Packaged builds (and code packages) carry GA's source at <code>/genericagent, pinned by
 // desktop/GA_REF. GA writes its state next to its code (mykey.py, memory/, temp/), so the
-// shell runs a copy in <userData>/GenericAgent rather than the read-only install dir. The
+// shell runs a writable copy (see bundledGaDir for where it lives). The
 // copy is refreshed whenever the shipped commit changes: code files are overwritten, user
 // state is kept — mykey.py is never touched, existing memory/ files are not replaced, and
 // files that only exist in the copy (temp/, sessions, user additions) are never deleted.
@@ -151,7 +151,59 @@ function readGaRef(dir) {
   try { return fs.readFileSync(path.join(dir, GA_REF_FILE), 'utf8').trim() || null; } catch { return null; }
 }
 
-function bundledGaDir(userData) { return path.join(userData, 'GenericAgent'); }
+// Where the copy lives. Windows (per-user NSIS install, user-writable): next to the app at
+// <install dir>/GenericAgent, so it is easy to find; the installer keeps that folder on
+// upgrades and asks before deleting it on uninstall (resources/installer.nsh). macOS (signed
+// .app bundle, replaced on update), Linux, running from source, or an install dir that is
+// not writable: <userData>/GenericAgent. A copy left in <userData> by older versions is
+// moved over once; if that fails the old location keeps being used, nothing is lost.
+function legacyGaDir(userData) { return path.join(userData, 'GenericAgent'); }
+
+function installGaDir(resourcesPath) {
+  if (process.platform !== 'win32' || !resourcesPath) return null;
+  return path.join(path.dirname(resourcesPath), 'GenericAgent');
+}
+
+function dirWritable(dir) {
+  const probe = path.join(dir, `.gah-write-test-${process.pid}`);
+  try {
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function moveGaCopy(from, to) {
+  try {
+    fs.renameSync(from, to);
+    return true;
+  } catch (err) {
+    if (err.code !== 'EXDEV') return false;   // busy/locked: keep using the old location
+  }
+  // Different drive: copy, then keep the old folder as a backup instead of deleting it.
+  const tmp = `${to}.${process.pid}.tmp`;
+  try {
+    fs.cpSync(from, tmp, { recursive: true, errorOnExist: true, force: false });
+    fs.renameSync(tmp, to);
+  } catch {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* leave it */ }
+    return false;
+  }
+  try { fs.renameSync(from, `${from}.moved`); } catch { /* both copies stay; the new one wins */ }
+  return true;
+}
+
+function bundledGaDir(userData, resourcesPath = null) {
+  const legacy = legacyGaDir(userData);
+  const inst = installGaDir(resourcesPath);
+  if (!inst) return legacy;
+  if (fs.existsSync(inst)) return inst;
+  if (!dirWritable(path.dirname(inst))) return legacy;
+  if (fs.existsSync(legacy) && !moveGaCopy(legacy, inst)) return legacy;
+  return inst;
+}
 
 function copyGaTree(src, dest, rel = '') {
   for (const ent of fs.readdirSync(path.join(src, rel), { withFileTypes: true })) {
@@ -170,12 +222,11 @@ function copyGaTree(src, dest, rel = '') {
   }
 }
 
-// Ensures <userData>/GenericAgent matches the GA shipped with the running code and returns
-// it; null when this code carries no GA (running from source, or an older code package).
-function syncBundledGa(codeDir, userData) {
+// Ensures the copy at `dest` matches the GA shipped with the running code and returns it;
+// null when this code carries no GA (running from source, or an older code package).
+function syncBundledGa(codeDir, dest) {
   const src = path.join(codeDir, 'genericagent');
   if (!isGaRoot(src)) return null;
-  const dest = bundledGaDir(userData);
   const ref = readGaRef(src);
   if (!(ref && readGaRef(dest) === ref && isGaRoot(dest))) {
     fs.mkdirSync(dest, { recursive: true });
@@ -253,6 +304,7 @@ class Backend {
   // builtinVersion: the shell (installer) version, which equals the code it shipped with.
   constructor(userData, resourcesPath = null, builtinVersion = null) {
     this.userData = userData;
+    this.resourcesPath = resourcesPath;
     const rt = runtime(resourcesPath, userData, builtinVersion);
     this.code = rt.code;     // {dir, version, source: 'builtin' | 'update' | 'source'}
     this.settings = loadSettings(userData, rt);
@@ -271,7 +323,7 @@ class Backend {
     if (configured.value) return configured;
     if (this.bundledGa === undefined) {
       try {
-        this.bundledGa = syncBundledGa(this.code.dir, this.userData);
+        this.bundledGa = syncBundledGa(this.code.dir, this.bundledDir());
       } catch (err) {
         this.bundledGa = null;
         this.bundledGaError = err.message;
@@ -282,11 +334,17 @@ class Backend {
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
 
+  // Resolved (and, once, migrated) on first use; see bundledGaDir.
+  bundledDir() {
+    if (!this.bundledDirPath) this.bundledDirPath = bundledGaDir(this.userData, this.resourcesPath);
+    return this.bundledDirPath;
+  }
+
   // For Settings > GenericAgent: what runs now, what the next start would use, and whether
   // the choice can be changed from the UI at all (an explicit --ga-root arg always wins).
   gaRootInfo() {
     const next = this.gaRoot();
-    const bundledDir = bundledGaDir(this.userData);
+    const bundledDir = this.bundledDir();
     return {
       running: this.runningGaRoot || null,
       next: { path: next.value, source: next.source },

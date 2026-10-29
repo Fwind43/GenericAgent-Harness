@@ -29,6 +29,14 @@ launched from the Start menu / Finder, where shell env vars are absent), a dialo
 choose it and saves the choice as `ga_root` in desktop.json. The startup-failure dialog also offers
 "Choose GenericAgent folder..." and relaunches.
 
+**Bundled GenericAgent copy.** Packaged builds ship GA code under `resources/py` and run a writable
+copy of it. On Windows the copy lives in the install folder, `<install dir>/GenericAgent`
+(falling back to `<userData>/GenericAgent` if that folder is not writable); macOS and Linux keep
+it in `<userData>/GenericAgent`. A copy left in `<userData>` by older versions is moved over on
+first start (if the move fails, the old location keeps being used). The copy holds `mykey.py`,
+memory and sessions, so the NSIS installer (`resources/installer.nsh`) keeps it on upgrade and
+asks before deleting it on uninstall (silent uninstall keeps it).
+
 Startup errors from `gah` itself (`[gah] ...`) are written to the real stderr even after
 `ga-stdout` has replaced `sys.stderr`, so they appear in `backend.log` and the failure dialog.
 
