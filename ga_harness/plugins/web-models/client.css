@@ -40,7 +40,7 @@
 /* Compact settings workspace: browse on the left, edit on the right. */
 .gah-model-dialog [hidden]{display:none!important}
 .gah-settings-panel.gah-model-dialog>.dialog-content.model-workspace{display:flex;flex-direction:column;gap:12px;padding:14px 20px 16px;overflow:hidden}
-.gah-model-dialog .model-workspace-head{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px}
+.gah-model-dialog .model-workspace-head{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;padding-right:36px}
 .gah-model-dialog .model-view-switch{display:flex;gap:4px;padding:3px;border-radius:8px;background:var(--surface-muted)}
 .gah-model-dialog .model-view-switch button{display:flex;align-items:center;gap:8px;padding:7px 12px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:13px}
 .gah-model-dialog .model-view-switch button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:0 1px 3px #0001}
