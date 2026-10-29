@@ -65,6 +65,20 @@ export function App() {
   useEffect(() => () => plugins.dispose(), []);
   useEffect(() => host.on('draft', value => { setDraft(String(value)); input.current?.focus(); }), []);
   useEffect(() => { host.emit('composer-draft', draft); }, [draft]);
+  // Paste files anywhere on the page (e.g. an empty new chat before the composer has
+  // focus); text pastes and pastes into other editable fields are left alone.
+  const addFilesRef = useRef(addFiles); addFilesRef.current = addFiles;
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const files = event.clipboardData?.files;
+      if (!files?.length || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target && target !== input.current && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault(); addFilesRef.current(files); input.current?.focus();
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
   useEffect(() => host.on('reset', () => { setDraft(''); stick.current = true; setSidebar(false); }), []);
   useEffect(() => {
     // Legacy plugins dispatch a non-bubbling input event after setting .value.

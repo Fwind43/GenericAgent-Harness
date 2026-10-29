@@ -93,7 +93,9 @@ export const Markdown = memo(function Markdown({ text, className = 'body', strea
       window.removeEventListener('pageshow', restore);
     };
   }, []);
-  return <div ref={ref} className={className} />;
+  // ``md`` is part of the React class so a later className change (e.g. the streaming
+  // cursor ending) does not strip the Markdown styles that setMarkdown added.
+  return <div ref={ref} className={className + ' md'} />;
 });
 /** Native details whose summary mirrors the legacy DOM: the chevron leads or trails per element kind. */
 export function Disclosure({ title, children, initial = false, className = '', state, chevron = 'end', label }: {
