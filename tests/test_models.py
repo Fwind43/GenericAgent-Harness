@@ -425,3 +425,110 @@ def test_mykey_source_preserves_bom_and_trailing_comment():
                         {"cfg": {"model": "new"}}, "synthetic-mykey.py")
     assert out.startswith("\ufeff# non-ASCII \u4fdd\u7559\n".encode("utf-8"))
     assert b"# retain this note" in out
+
+
+def make_mixin_models(tmp_path):
+    store = make_models(tmp_path)
+    change(store, key="native_oai_config_two", values={
+        "name": "Two", "model": "test-two", "apibase": "https://example.invalid/v1",
+        "apikey": "test-secret-two"})
+    return store
+
+
+def save_mixin(store, members=None, **options):
+    return change(store, action="mixin_save", key="mixin_config_main",
+                  values={"llm_nos": ["One", "Two"] if members is None else members, **options})
+
+
+def test_mixin_crud_order_defaults_and_unrelated_fields(tmp_path):
+    store = make_mixin_models(tmp_path)
+    result = save_mixin(store, max_retries=4, base_delay=0.5, spring_back=0)
+    assert result["mixins"] == [{"key": "mixin_config_main", "members": ["One", "Two"],
+                                 "indexed": False, "values": {
+                                     "max_retries": 4, "base_delay": 0.5, "spring_back": 0}}]
+    data = read_cfg(store.source.file)
+    assert data["native_oai_config_one"]["apikey"] == "test-secret-one"
+    data["mixin_config_main"]["custom_field"] = "keep"
+    write_mykey(store.source.file, data)
+    save_mixin(store, ["Two", "One"], max_retries=None, base_delay="", spring_back=None)
+    assert read_cfg(store.source.file)["mixin_config_main"] == {
+        "llm_nos": ["Two", "One"], "custom_field": "keep"}
+    result = change(store, action="mixin_delete", key="mixin_config_main")
+    assert result["mixins"] == []
+    assert "mixin_config_main" not in read_cfg(store.source.file)
+
+
+@pytest.mark.parametrize("values", [
+    {"llm_nos": ["One"]}, {"llm_nos": ["One", "One"]},
+    {"llm_nos": ["One", "Missing"]}, {"llm_nos": [0, 1]},
+    {"llm_nos": ["One", "Two"], "max_retries": True},
+    {"llm_nos": ["One", "Two"], "max_retries": 1.5},
+    {"llm_nos": ["One", "Two"], "max_retries": 21},
+    {"llm_nos": ["One", "Two"], "base_delay": -1},
+    {"llm_nos": ["One", "Two"], "spring_back": 86401},
+    {"llm_nos": ["One", "Two"], "unknown_option": 1},
+])
+def test_mixin_invalid_fields_do_not_write(tmp_path, values):
+    store = make_mixin_models(tmp_path)
+    original = store.source.file.read_bytes()
+    with pytest.raises(ValueError):
+        change(store, action="mixin_save", key="mixin_config_main", values=values)
+    assert store.source.file.read_bytes() == original
+
+
+def test_mixin_requires_unique_names_and_compatible_types(tmp_path):
+    store = make_mixin_models(tmp_path)
+    data = read_cfg(store.source.file)
+    data["native_oai_config_two"]["name"] = "One"
+    with pytest.raises(ValueError, match="unique"):
+        store._mixin_change(data, "mixin_save", {
+            "key": "mixin_config_main", "values": {"llm_nos": ["One", "Two"]}})
+    data["oai_config_plain"] = dict(data.pop("native_oai_config_two"), name="Plain")
+    with pytest.raises(ValueError, match="cannot mix"):
+        store._mixin_change(data, "mixin_save", {
+            "key": "mixin_config_main", "values": {"llm_nos": ["One", "Plain"]}})
+    assert "mixin_config_main" not in data
+
+
+def test_mixin_rename_references_and_delete_protection(tmp_path):
+    store = make_mixin_models(tmp_path)
+    save_mixin(store)
+    change(store, values={"name": "Renamed"})
+    assert read_cfg(store.source.file)["mixin_config_main"]["llm_nos"] == ["Renamed", "Two"]
+    original = store.source.file.read_bytes()
+    with pytest.raises(ValueError, match="used by failover"):
+        change(store, action="delete")
+    with pytest.raises(ValueError, match="ambiguous"):
+        change(store, values={"name": "Two"})
+    with pytest.raises(ValueError, match="ambiguous"):
+        change(store, key="native_oai_config_duplicate", values={
+            "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
+            "apikey": "test-duplicate"})
+    assert store.source.file.read_bytes() == original
+
+
+def test_mixin_numeric_indices_are_not_guessed_and_block_model_deletion(tmp_path):
+    store = make_mixin_models(tmp_path)
+    data = read_cfg(store.source.file)
+    data["mixin_config_main"] = {"llm_nos": [0, 9]}
+    write_mykey(store.source.file, data)
+    entry = store.config()["mixins"][0]
+    assert entry["members"] == ["#0", "#9"] and entry["indexed"]
+    original = store.source.file.read_bytes()
+    with pytest.raises(ValueError, match="by position"):
+        change(store, action="delete")
+    assert store.source.file.read_bytes() == original
+    save_mixin(store)
+    assert not store.config()["mixins"][0]["indexed"]
+    assert read_cfg(store.source.file)["mixin_config_main"]["llm_nos"] == ["One", "Two"]
+
+
+def test_mixin_reload_failure_restores_file_and_active_model(tmp_path):
+    store = make_mixin_models(tmp_path)
+    original = store.source.file.read_bytes()
+    active = store.agent.llmclient
+    store.agent.fail_reload = True
+    with pytest.raises(RuntimeError, match="restored"):
+        save_mixin(store)
+    assert store.source.file.read_bytes() == original
+    assert store.agent.llmclient is active

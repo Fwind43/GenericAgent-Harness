@@ -139,6 +139,16 @@
 .gah-model-dialog .model-field input:focus-visible,.gah-model-dialog .model-field select:focus-visible,.gah-model-dialog .model-secret-input input:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
 .gah-model-dialog .model-field small{font-size:11px;line-height:1.5;color:var(--muted)}
 .gah-model-dialog .model-list-id{font-family:var(--mono,ui-monospace,monospace)}
+/* Ordered failover members; keep all controls usable on narrow screens. */
+.gah-model-dialog .model-view-switch{flex-wrap:wrap}
+.gah-model-dialog .mixin-members{grid-column:1/-1;min-width:0}
+.gah-model-dialog .mixin-member-list{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
+.gah-model-dialog .mixin-member-list>li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px;border:1px solid var(--border);border-radius:8px}
+.gah-model-dialog .mixin-member-name{flex:1;min-width:120px;overflow-wrap:anywhere}
+.gah-model-dialog .mixin-member-name strong{display:block;font-weight:500}
+.gah-model-dialog .mixin-member-name small{font-size:11px;color:var(--muted)}
+.gah-model-dialog .mixin-member-actions{display:flex;flex-wrap:wrap;gap:4px}
+.gah-model-dialog .mixin-member-actions button{padding:5px 8px;font-size:12px;white-space:nowrap}
 .gah-model-dialog .model-provider-usage{display:flex;gap:8px;align-items:center}
 .gah-model-dialog .model-provider-usage button{font-size:12px;padding:7px 10px}
 .gah-model-dialog .model-readonly,.gah-model-dialog .model-running{flex:none;margin:0;padding:8px 12px;border-radius:7px;background:var(--surface-muted);color:var(--muted);font-size:12px;line-height:1.6}

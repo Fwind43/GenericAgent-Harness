@@ -46,8 +46,10 @@ export interface ModelValues { name?: string; model?: string; protocol?: string;
 export interface ModelEntry { key: string; protocol: string; provider?: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean;
   options?: Record<string, string | number | boolean>; options_hidden?: string[] }
 export interface ProviderEntry { id: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean }
+export interface MixinValues { llm_nos?: string[]; max_retries?: number | null; base_delay?: number | null; spring_back?: number | null }
+export interface MixinEntry { key: string; members: string[]; indexed: boolean; values: MixinValues }
 export interface ModelConfig {
-  entries: ModelEntry[]; providers: ProviderEntry[]; revision: string; writable: boolean;
+  entries: ModelEntry[]; providers: ProviderEntry[]; mixins?: MixinEntry[]; revision: string; writable: boolean;
   reason?: string; source?: string; format?: string;
 }
 export interface ModelResult { config: ModelConfig; state: HostState }

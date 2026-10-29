@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { T, confirmDialog, matches, type ModelConfig, type ModelEntry, type ModelValues } from '@gah/sdk';
+import { T, confirmDialog, matches, type ModelConfig, type ModelEntry, type ModelValues, type MixinValues } from '@gah/sdk';
 import { endpoint, providerNames } from './helpers';
 import { useModelOptions, type FetchModels } from './RemoteModels';
 import { AdvancedOptions, useOptions, type OptionValue } from './AdvancedOptions';
@@ -42,7 +42,7 @@ export function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase,
 export function Protocol({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
   return <Field label={T('\u63a5\u53e3\u534f\u8bae', 'Protocol')}><select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}><option value="oai">OpenAI compatible</option><option value="claude">Anthropic Claude</option></select></Field>;
 }
-export type SaveModel = (action: string, id: string, values?: ModelValues & { provider?: string; options?: Record<string, OptionValue | null> }) => void;
+export type SaveModel = (action: string, id: string, values?: ModelValues & MixinValues & { provider?: string; options?: Record<string, OptionValue | null> }) => void;
 export function FormActions({ dirty, existing, disabled, canDelete = true, onReset, onDelete }: {
   dirty: boolean; existing: boolean; disabled: boolean; canDelete?: boolean; onReset: () => void; onDelete: () => void;
 }) {

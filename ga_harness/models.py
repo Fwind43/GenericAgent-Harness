@@ -103,6 +103,19 @@ def _supported(key, value):
             and ("oai" in key or "claude" in key) and "mixin" not in key)
 
 
+# GA MixinSession options: name -> (min, max, integer)
+_MIXIN_OPTS = {"max_retries": (0, 20, True), "base_delay": (0, 120, False), "spring_back": (0, 86400, True)}
+
+
+def _is_mixin(key, value):
+    return isinstance(value, dict) and llmconfig.is_llm_key(key) and "mixin" in key
+
+
+def _model_name(value):
+    """GA's runtime model name (backend.name) as written in mykey.py."""
+    return str(value.get("name") or value.get("model") or "")
+
+
 def _safe_url(value):
     try:
         u = urlsplit(value)
@@ -493,7 +506,75 @@ class Models:
                 plist.append({"id": pid, "values": values, "has_key": bool(pv.get("apikey")),
                               "url_hidden": hidden, "models": count.get(pid, 0)})
             return {"writable": True, "revision": revision, "entries": entries, "providers": plist,
-                    "format": "mykey"}
+                    "mixins": self._mixins(data), "format": "mykey"}
+
+    def _mixins(self, data):
+        out = []
+        for key, value in data.items():
+            if not _is_mixin(key, value):
+                continue
+            nos = value.get("llm_nos")
+            nos = nos if isinstance(nos, list) else []
+            members = []
+            for n in nos:
+                if isinstance(n, int) and not isinstance(n, bool):
+                    # Runtime indices include sessions not exposed by this editor.
+                    # Never guess a name from dictionary order.
+                    members.append(f"#{n}")
+                else:
+                    members.append(str(n))
+            out.append({"key": key, "members": members,
+                        "indexed": any(isinstance(n, int) and not isinstance(n, bool) for n in nos),
+                        "values": {k: value[k] for k in _MIXIN_OPTS if isinstance(value.get(k), (int, float))}})
+        return out
+
+    def _mixin_change(self, data, action, body):
+        key = body.get("key")
+        if (not isinstance(key, str) or not _KEY.fullmatch(key) or "mixin" not in key
+                or not llmconfig.is_llm_key(key)):
+            raise ValueError("failover group identifier must contain 'mixin' and one of api, config or cookie")
+        if action == "mixin_delete":
+            if not _is_mixin(key, data.get(key)):
+                raise ValueError("unknown failover group")
+            del data[key]
+            return
+        if key in data and not _is_mixin(key, data[key]):
+            raise ValueError("configuration identifier already exists")
+        values = body.get("values")
+        if not isinstance(values, dict) or set(values) - set(_MIXIN_OPTS) - {"llm_nos"}:
+            raise ValueError("unsupported failover group fields")
+        members = values.get("llm_nos")
+        if (not isinstance(members, list) or not 2 <= len(members) <= 20
+                or any(not isinstance(m, str) or not m.strip() for m in members)
+                or len(set(members)) != len(members)):
+            raise ValueError("choose 2-20 different models for a failover group")
+        named = [(_model_name(v), k) for k, v in data.items() if _supported(k, v)]
+        groups = set()
+        for m in members:
+            keys = [k for n, k in named if n == m]
+            if len(keys) != 1:
+                raise ValueError(f"model {m!r} is not a unique configured model name")
+            groups.add("native" in keys[0])
+        if len(groups) != 1:
+            raise ValueError("a failover group cannot mix native and non-native models")
+        cfg = dict(data.get(key) or {})
+        cfg["llm_nos"] = list(members)
+        for opt, (lo, hi, whole) in _MIXIN_OPTS.items():
+            v = values.get(opt)
+            if v is None or v == "":
+                cfg.pop(opt, None)
+                continue
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi or (whole and v != int(v)):
+                raise ValueError(f"{opt} must be a number between {lo} and {hi}")
+            cfg[opt] = int(v) if whole else v
+        data[key] = cfg
+
+    @staticmethod
+    def _mixin_rename(data, old, new):
+        for k, v in list(data.items()):
+            nos = v.get("llm_nos") if _is_mixin(k, v) else None
+            if isinstance(nos, list) and old in nos:
+                data[k] = dict(v, llm_nos=[new if n == old else n for n in nos])
 
     def _provider_change(self, data, action, body):
         providers = self._providers(data)
@@ -599,6 +680,9 @@ class Models:
                 affects_models = self._provider_change(data, action, body)
             elif action == "provider_group":
                 affects_models = self._provider_group(data)
+            elif action in ("mixin_save", "mixin_delete"):
+                affects_models = True
+                self._mixin_change(data, action, body)
             elif action == "save_many":
                 affects_models, expanded = True, []
                 items = body.get("items")
@@ -619,8 +703,15 @@ class Models:
                 if action == "delete":
                     if key not in data or not _supported(key, data[key]):
                         raise ValueError("unknown model configuration")
-                    if any("mixin" in k for k in data):
-                        raise ValueError("remove mixin dependencies locally before deleting a model")
+                    name = _model_name(data[key])
+                    for mk, mv in data.items():
+                        nos = mv.get("llm_nos") if _is_mixin(mk, mv) else None
+                        if not isinstance(nos, list):
+                            continue
+                        if any(isinstance(n, int) and not isinstance(n, bool) for n in nos):
+                            raise ValueError(f"failover group {mk} references models by position; save it once in settings before deleting a model")
+                        if name in nos:
+                            raise ValueError(f"this model is used by failover group {mk}; remove it there first")
                     del data[key]
                 elif action == "save":
                     expanded = self._model_save(data, key, body)
@@ -702,5 +793,18 @@ class Models:
             raise ValueError("a referenced environment variable is not configured") from None
         if not _safe_url(expanded["apibase"]):
             raise ValueError("base URL must be HTTP(S), without credentials, query or fragment")
+        old = _model_name(data[key]) if _supported(key, data.get(key)) else None
+        new = _model_name(cfg)
+        if old != new:
+            refs = {n for k, v in data.items() if _is_mixin(k, v)
+                    for n in (v.get("llm_nos") if isinstance(v.get("llm_nos"), list) else [])
+                    if isinstance(n, str)}
+            others = [_model_name(v) for k, v in data.items() if k != key and _supported(k, v)]
+            if new in refs and new in others:
+                raise ValueError("this name would make an existing failover group ambiguous")
+            if old in refs:
+                if old in others or not new or new in others:
+                    raise ValueError("failover group references would be ambiguous; edit the group before renaming")
+                self._mixin_rename(data, old, new)
         data[key] = cfg
         return expanded
