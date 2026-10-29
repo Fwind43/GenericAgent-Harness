@@ -92,7 +92,7 @@ export class HostStore {
     });
     es.onopen = () => this.update({ connected: true });
     es.onerror = () => this.update({ connected: false });
-    listen<HostState>('snapshot', state => { this.setState(state); this.emit('snapshot', state); });
+    listen<HostState>('snapshot', state => { this.update({ connected: true }); this.setState(state); this.emit('snapshot', state); });
     for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
     listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
     listen<unknown>('plugin', data => this.emit('plugin', data));

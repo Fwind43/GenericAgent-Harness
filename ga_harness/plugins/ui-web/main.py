@@ -1039,16 +1039,26 @@ class _Handler(BaseHTTPRequestHandler):
     def _sse(self):
         fe = self.frontend
         q = queue.Queue()
-        with fe.lock:  # snapshot + subscribe atomically: no chunk lost or duplicated
-            first = f"event: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
-            fe.clients.add(q)
+        try:
+            with fe.lock:  # snapshot + subscribe atomically: no chunk lost or duplicated
+                first = f"event: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
+                fe.clients.add(q)
+        except Exception as e:
+            # Previously this escaped as a dropped connection, leaving the page stuck on "Connecting".
+            import traceback
+            fe.log(f"[web] /api/events snapshot failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+            return self._json(500, {"error": f"snapshot failed: {type(e).__name__}: {e}"})
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-store, no-transform")
+            self.send_header("X-Accel-Buffering", "no")
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
+            # 2 KiB comment padding: some proxies / AV web shields (common on Windows Server)
+            # buffer small streamed responses, so the browser never sees the first event.
+            self.wfile.write(b":" + b" " * 2048 + b"\n\n")
             self.wfile.write(first.encode("utf-8"))
             self.wfile.flush()
             while True:
