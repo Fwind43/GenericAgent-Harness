@@ -79,6 +79,7 @@
   };
   function localPath(raw) {
     raw = String(raw || '').trim();
+    if (raw.startsWith('api/file?')) return new URLSearchParams(raw.slice(9)).get('path') || '';
     if (!raw || raw.startsWith('#') || raw.startsWith('//')) return '';
     let path = raw;
     if (/^file:/i.test(raw)) {
@@ -172,6 +173,14 @@
       node.classList.add('md-plain');
       return;
     }
+    // DOMPurify treats "E:/x" and "file://" as unsafe schemes and drops them, so rewrite local
+    // references to the same-origin file endpoint before its URI check runs.
+    const keepLocal = (_node, data) => {
+      if (data.attrName !== 'href' && data.attrName !== 'src') return;
+      const path = localPath(data.attrValue);
+      if (path) data.attrValue = fileURL(path);
+    };
+    window.DOMPurify.addHook('uponSanitizeAttribute', keepLocal);
     try {
       node.replaceChildren(window.DOMPurify.sanitize(parser.parse(text), {
         ALLOWED_TAGS: tags,
@@ -182,6 +191,8 @@
       node.textContent = text;
       node.classList.add('md-plain');
       return;
+    } finally {
+      window.DOMPurify.removeHook('uponSanitizeAttribute', keepLocal);
     }
     node.querySelectorAll('a').forEach(link => {
       const raw = link.getAttribute('href') || '';
