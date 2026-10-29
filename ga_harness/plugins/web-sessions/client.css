@@ -56,7 +56,9 @@
 .gah-sess-section{display:flex;flex-direction:column}
 .gah-sess-label{position:relative;padding-left:2px}
 .gah-sess-label-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:28px;padding:0 6px;background:transparent;border:0;border-radius:6px;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.gah-sess-label-toggle:hover:not(:disabled){color:var(--text);background:var(--hover)}
+.gah-sess-label{border-radius:6px}
+.gah-sess-label:hover,.gah-sess-label:has(.gah-sess-edit.on){background:var(--hover)}
+.gah-sess-label-toggle:hover:not(:disabled){color:var(--text)}
 .gah-sess-label-toggle:disabled{cursor:default}
 .gah-sess-chevron{flex:none;width:6px;height:6px;margin:0 3px 0 1px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translate(-1px,-1px);transition:transform .15s}
 .gah-sess-label-toggle[aria-expanded=false] .gah-sess-chevron{transform:rotate(-45deg)}
