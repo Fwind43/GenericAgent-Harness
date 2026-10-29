@@ -46,6 +46,10 @@ class Manifest:
     category: str = "other"
     settings: dict[str, dict] = field(default_factory=dict)
     packages: list[str] = field(default_factory=list)  # pip requirement strings
+    # Loaded only inside run workers (requested by a host plugin); never a user-facing toggle.
+    worker_only: bool = False
+    # Worker-only plugins this plugin requests (display metadata; loading stays in code).
+    workers: list[str] = field(default_factory=list)
 
     def load_apply(self) -> Callable:
         mod_name, _, attr = self.entry.partition(":")
@@ -78,7 +82,9 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
                          description=data.get("description", ""),
                          description_zh=data.get("description_zh", ""), settings=data.get("settings", {}),
                          category=data.get("category") if data.get("category") in CATEGORIES else "other",
-                         packages=[str(x) for x in data.get("packages", []) or []])
+                         packages=[str(x) for x in data.get("packages", []) or []],
+                         worker_only=data.get("worker_only") is True,
+                         workers=[str(x) for x in data.get("workers", []) or []])
             found[m.name] = m  # later dirs override earlier ones
     return found
 

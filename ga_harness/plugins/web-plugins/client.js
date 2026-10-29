@@ -26,7 +26,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     ] });
   }
   function PluginDetails({ plugin, busy, running, error, onChange, onInstall }) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const [enabled, setEnabled] = react.useState(plugin.enabled);
     const [values, setValues] = react.useState({ ...plugin.config });
     const locked = busy || running || plugin.protected;
@@ -65,8 +65,9 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsx("dd", { children: ((_a2 = plugin[key]) == null ? void 0 : _a2.join(sdk.T("、", ", "))) || sdk.T("无", "None") })
         ] }, key);
       }) }),
+      !!((_c = plugin.workers) == null ? void 0 : _c.length) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-workers", children: sdk.T("依赖 ", "Depends on ") + plugin.workers.join(sdk.T("、", ", ")) + sdk.T("（任务进程内自动加载）", " (loaded automatically inside task workers)") }),
       warning && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-warning", children: warning }),
-      !!((_c = plugin.missing_packages) == null ? void 0 : _c.length) && onInstall && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-actions plugin-install", children: [
+      !!((_d = plugin.missing_packages) == null ? void 0 : _d.length) && onInstall && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-actions plugin-install", children: [
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-install-button", disabled: busy || running, onClick: onInstall, children: sdk.T("安装依赖（pip）", "Install packages (pip)") }),
         /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("安装到当前 Python 环境，下次启动生效", "Installs into the current Python environment; applies on next start") })
       ] }),
@@ -111,7 +112,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     const selected = config == null ? void 0 : config.items.find((plugin) => plugin.name === editing);
     const shown = ((config == null ? void 0 : config.items) || []).filter((plugin) => {
       var _a, _b;
-      return inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
+      return !plugin.worker_only && inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
     });
     const toGrid = () => {
       if (working) return;

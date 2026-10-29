@@ -4,3 +4,4 @@ entry = "main:apply"
 description = "Worker side of steering: inject user messages into a running task at the next turn boundary, without interrupting it."
 description_zh = "\u5f15\u5bfc\u7684 worker \u7aef\uff1a\u5728\u4e0b\u4e00\u4e2a\u8f6e\u6b21\u8fb9\u754c\u628a\u7528\u6237\u6d88\u606f\u6ce8\u5165\u6b63\u5728\u8fd0\u884c\u7684\u4efb\u52a1\uff0c\u4e0d\u6253\u65ad\u5b83\u3002"
 inject = ["ga.hooks"]
+worker_only = true

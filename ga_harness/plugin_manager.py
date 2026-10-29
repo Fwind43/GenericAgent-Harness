@@ -239,6 +239,8 @@ class PluginManager:
                 items.append({"name": name, "description": m.description,
                               "description_zh": getattr(m, "description_zh", ""),
                               "category": getattr(m, "category", "other"),
+                              "worker_only": getattr(m, "worker_only", False),
+                              "workers": list(getattr(m, "workers", [])),
                               "state": h.state if h else ("missing_packages" if lack and not current["disabled"]
                                                           else "disabled"),
                               "packages": list(getattr(m, "packages", [])), "missing_packages": lack,
@@ -286,6 +288,8 @@ class PluginManager:
                 raise ValueError("unknown plugin")
             if protected(p.manifests[name]):
                 raise ValueError("this plugin is protected; use startup configuration")
+            if getattr(p.manifests[name], "worker_only", False):
+                raise ValueError("worker-only plugin; it is loaded automatically inside task workers")
             action = body.get("action", "save")
             if action not in {"save", "reset"}:
                 raise ValueError("unknown plugin action")
@@ -379,6 +383,8 @@ class PluginManager:
             m = self.preferences.manifests.get(name) if isinstance(name, str) else None
             if m is None:
                 raise ValueError("unknown plugin")
+            if getattr(m, "worker_only", False):
+                raise ValueError("worker-only plugin; it is loaded automatically inside task workers")
             if not hot_capable(m):
                 raise ValueError("only plugins in ~/.ga-harness/plugins can be toggled at runtime")
             current = next(i for i in self.catalog()["items"] if i["name"] == name)
@@ -389,7 +395,8 @@ class PluginManager:
         else:
             raise ValueError("unknown action; use list, enable, disable or rescan")
         items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "restart_required",
-                                    "description", "missing_packages")} for i in catalog["items"]]
+                                    "description", "missing_packages")} for i in catalog["items"]
+                 if not i.get("worker_only")]
         out = {"items": items, "issues": catalog["issues"]}
         for k in ("applied", "hot_error"):
             if k in catalog:

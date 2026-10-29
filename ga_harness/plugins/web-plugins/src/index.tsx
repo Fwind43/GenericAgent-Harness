@@ -11,7 +11,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all');
   const cards = useRef<HTMLDivElement>(null), back = useRef<HTMLButtonElement>(null);
   const selected = config?.items.find(plugin => plugin.name === editing);
-  const shown = (config?.items || []).filter(plugin => inFilter(plugin, filter) && matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], plugin.requires?.join(' '), plugin.provides?.join(' ')));
+  const shown = (config?.items || []).filter(plugin => !plugin.worker_only && inFilter(plugin, filter) && matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], plugin.requires?.join(' '), plugin.provides?.join(' ')));
   const toGrid = () => {
     if (working) return;
     setEditing(null); setError('');

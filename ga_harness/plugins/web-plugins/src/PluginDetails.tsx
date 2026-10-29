@@ -29,6 +29,7 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onInstal
     <dl className="plugin-deps">{([
       ['requires', T('\u4f9d\u8d56\u80fd\u529b', 'Requires')], ['provides', T('\u63d0\u4f9b\u80fd\u529b', 'Provides')], ['dependents', T('\u88ab\u63d2\u4ef6\u4f9d\u8d56', 'Required by')], ['packages', T('Python \u4f9d\u8d56', 'Python packages')],
     ] as const).map(([key, label]) => <Fragment key={key}><dt>{label}</dt><dd>{plugin[key]?.join(T('\u3001', ', ')) || T('\u65e0', 'None')}</dd></Fragment>)}</dl>
+    {!!plugin.workers?.length && <p className="plugin-note plugin-workers">{T('\u4f9d\u8d56 ', 'Depends on ') + plugin.workers.join(T('\u3001', ', ')) + T('\uff08\u4efb\u52a1\u8fdb\u7a0b\u5185\u81ea\u52a8\u52a0\u8f7d\uff09', ' (loaded automatically inside task workers)')}</p>}
     {warning && <p className="plugin-note plugin-warning">{warning}</p>}
     {!!plugin.missing_packages?.length && onInstall && <div className="plugin-actions plugin-install"><button type="button" className="secondary plugin-install-button" disabled={busy || running} onClick={onInstall}>{T('\u5b89\u88c5\u4f9d\u8d56\uff08pip\uff09', 'Install packages (pip)')}</button><small>{T('\u5b89\u88c5\u5230\u5f53\u524d Python \u73af\u5883\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Installs into the current Python environment; applies on next start')}</small></div>}
     <form onSubmit={event => { event.preventDefault(); submit(); }}>
