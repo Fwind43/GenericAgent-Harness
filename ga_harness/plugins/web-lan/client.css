@@ -26,3 +26,5 @@
 .ts-dialog .ts-links small{color:var(--muted);font-size:12px;line-height:1.5}
 @media (max-width:560px){.ts-dialog .ts-entry{flex-direction:column;align-items:center}.ts-dialog .ts-head{padding:18px}.ts-dialog .ts-body{padding:0 18px 18px}}
 .ts-dialog .ts-select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)}
+.ts-dialog .ts-note{color:var(--muted);margin-left:4px}
+.ts-dialog .ts-hint{margin:8px 0 0;font-size:12px;color:var(--muted)}

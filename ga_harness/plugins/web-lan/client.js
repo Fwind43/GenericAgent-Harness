@@ -1689,6 +1689,7 @@ var GAHPlugin_web_lan = (function(exports, jsxRuntime, react, sdk) {
   }
   var qrcodeExports = requireQrcode();
   const qrcode = /* @__PURE__ */ getDefaultExportFromCjs(qrcodeExports);
+  const ANY = "0.0.0.0";
   function QrCode({ value }) {
     const code = qrcode(0, "M");
     code.addData(value);
@@ -1744,7 +1745,7 @@ var GAHPlugin_web_lan = (function(exports, jsxRuntime, react, sdk) {
       void act("reset_token");
     };
     const lan = data == null ? void 0 : data.lan;
-    const chosen = (lan == null ? void 0 : lan.fixed) ? lan.binds[0] || "" : bind && (lan == null ? void 0 : lan.ips.includes(bind)) ? bind : (lan == null ? void 0 : lan.binds[0]) || "";
+    const chosen = (lan == null ? void 0 : lan.fixed) ? lan.binds[0] || "" : bind && (bind === ANY || (lan == null ? void 0 : lan.ips.includes(bind))) ? bind : (lan == null ? void 0 : lan.binds[0]) || "";
     const entries = (data == null ? void 0 : data.entries) || [], urls = (data == null ? void 0 : data.urls) || [];
     const index = Math.min(pick, Math.max(entries.length - 1, 0));
     const entry = entries[index] || "";
@@ -1775,7 +1776,13 @@ var GAHPlugin_web_lan = (function(exports, jsxRuntime, react, sdk) {
             ] }),
             lan.ips.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
               /* @__PURE__ */ jsxRuntime.jsx("dt", { children: sdk.T("局域网 IP", "LAN IP") }),
-              /* @__PURE__ */ jsxRuntime.jsx("dd", { children: (data == null ? void 0 : data.active) || lan.fixed || lan.ips.length < 2 ? (data == null ? void 0 : data.active) ? urls.map((u) => u.replace(/^http:\/\/|:\d+\/?$/g, "")).join(" · ") : chosen || lan.ips.join(" · ") : /* @__PURE__ */ jsxRuntime.jsx("select", { className: "ts-select", value: chosen, disabled: busy, onChange: (e) => setBind(e.target.value), children: lan.ips.map((ip) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: ip, children: ip }, ip)) }) })
+              /* @__PURE__ */ jsxRuntime.jsx("dd", { children: (data == null ? void 0 : data.active) || lan.fixed ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+                ((data == null ? void 0 : data.active) ? urls.map((u) => u.replace(/^http:\/\/|:\d+\/?$/g, "")) : lan.hosts).join(" · "),
+                lan.binds[0] === ANY && /* @__PURE__ */ jsxRuntime.jsx("small", { className: "ts-note", children: sdk.T("（监听 0.0.0.0，所有网卡）", " (listening on 0.0.0.0, all interfaces)") })
+              ] }) : /* @__PURE__ */ jsxRuntime.jsxs("select", { className: "ts-select", value: chosen, disabled: busy, onChange: (e) => setBind(e.target.value), children: [
+                lan.ips.map((ip) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: ip, children: ip }, ip)),
+                /* @__PURE__ */ jsxRuntime.jsx("option", { value: ANY, children: sdk.T("0.0.0.0（所有网卡）", "0.0.0.0 (all interfaces)") })
+              ] }) })
             ] }),
             (data == null ? void 0 : data.port) && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
               /* @__PURE__ */ jsxRuntime.jsx("dt", { children: sdk.T("端口", "Port") }),
@@ -1785,6 +1792,10 @@ var GAHPlugin_web_lan = (function(exports, jsxRuntime, react, sdk) {
               ] })
             ] })
           ] }),
+          chosen === ANY && !(data == null ? void 0 : data.active) && !(lan == null ? void 0 : lan.fixed) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "ts-hint", children: sdk.T(
+            "监听所有网卡（含虚拟网卡）；仍只放行内网来源。端口设为 0 时将使用网页端口 +1，因为本机回环已占用网页端口。",
+            "Listens on every interface (virtual ones included); only private peers are still admitted. With port 0 it uses the web UI port + 1, since the loopback already holds the web port."
+          ) }),
           (error || (data == null ? void 0 : data.error) || (lan == null ? void 0 : lan.error)) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "ts-error", children: error || (data == null ? void 0 : data.error) || (lan == null ? void 0 : lan.error) })
         ] }),
         (data == null ? void 0 : data.active) && entry && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "ts-card ts-entry", children: [

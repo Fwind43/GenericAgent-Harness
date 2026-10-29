@@ -3,7 +3,8 @@ import { type PluginAPI, useHost, T, SettingsPanel, useOperation, confirmDialog,
 import qrcode from 'qrcode-generator';
 
 // LAN access panel backed by main.py (TCP forwarder on a LAN IPv4, private peers only).
-type LanInfo = { ips: string[]; binds: string[]; fixed: boolean; hostname?: string; error?: string };
+const ANY = '0.0.0.0';
+type LanInfo = { ips: string[]; binds: string[]; hosts: string[]; fixed: boolean; hostname?: string; error?: string };
 type Status = {
   active: boolean; enabled: boolean; urls: string[]; entries: string[]; error: string;
   token_required: boolean; web_port?: number; port?: number; lan: LanInfo;
@@ -45,7 +46,7 @@ export function LanPanel({ api }: { api: PluginAPI }) {
     void act('reset_token');
   };
   const lan = data?.lan;
-  const chosen = lan?.fixed ? lan.binds[0] || '' : (bind && lan?.ips.includes(bind) ? bind : lan?.binds[0] || '');
+  const chosen = lan?.fixed ? lan.binds[0] || '' : (bind && (bind === ANY || lan?.ips.includes(bind)) ? bind : lan?.binds[0] || '');
   const entries = data?.entries || [], urls = data?.urls || [];
   const index = Math.min(pick, Math.max(entries.length - 1, 0));
   const entry = entries[index] || '';
@@ -70,12 +71,16 @@ export function LanPanel({ api }: { api: PluginAPI }) {
         {lan && <dl className="ts-meta">
           {lan.hostname && <><dt>{T('设备', 'Device')}</dt><dd>{lan.hostname}</dd></>}
           {lan.ips.length > 0 && <><dt>{T('局域网 IP', 'LAN IP')}</dt><dd>
-            {data?.active || lan.fixed || lan.ips.length < 2 ? (data?.active ? urls.map(u => u.replace(/^http:\/\/|:\d+\/?$/g, '')).join(' · ') : chosen || lan.ips.join(' · '))
+            {data?.active || lan.fixed ? <>{(data?.active ? urls.map(u => u.replace(/^http:\/\/|:\d+\/?$/g, '')) : lan.hosts).join(' · ')}
+                {lan.binds[0] === ANY && <small className="ts-note">{T('（监听 0.0.0.0，所有网卡）', ' (listening on 0.0.0.0, all interfaces)')}</small>}</>
               : <select className="ts-select" value={chosen} disabled={busy} onChange={e => setBind(e.target.value)}>
-                {lan.ips.map(ip => <option key={ip} value={ip}>{ip}</option>)}</select>}
+                {lan.ips.map(ip => <option key={ip} value={ip}>{ip}</option>)}
+                <option value={ANY}>{T('0.0.0.0（所有网卡）', '0.0.0.0 (all interfaces)')}</option></select>}
           </dd></>}
           {data?.port && <><dt>{T('端口', 'Port')}</dt><dd>{data.port}{data.web_port && data.port !== data.web_port ? ` → 127.0.0.1:${data.web_port}` : ''}</dd></>}
         </dl>}
+        {chosen === ANY && !data?.active && !lan?.fixed && <p className="ts-hint">{T('监听所有网卡（含虚拟网卡）；仍只放行内网来源。端口设为 0 时将使用网页端口 +1，因为本机回环已占用网页端口。',
+          'Listens on every interface (virtual ones included); only private peers are still admitted. With port 0 it uses the web UI port + 1, since the loopback already holds the web port.')}</p>}
         {(error || data?.error || lan?.error) && <p className="ts-error">{error || data?.error || lan?.error}</p>}
       </section>
       {data?.active && entry && <section className="ts-card ts-entry">

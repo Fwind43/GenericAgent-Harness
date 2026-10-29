@@ -49,6 +49,9 @@ def _addr(ip):
     return addr
 
 
+ANY = "0.0.0.0"  # all interfaces; peers are still filtered by _lan_peer
+
+
 def _lan_ip(ip):
     """Usable LAN IPv4 of this machine: private, not loopback/link-local/tailnet/fake-IP."""
     a = _addr(ip)
@@ -189,6 +192,7 @@ class Lan:
         self.forwarder = None
         self.undo = []
         self.urls = []
+        self.listen_port = 0
         self.error = ""
         self.stopped = False
 
@@ -212,15 +216,17 @@ class Lan:
     def net_status(self):
         ips = lan_ips()
         saved = self._load().get("bind")
-        pick = self.bind_setting or (saved if saved in ips else "")
+        pick = self.bind_setting or (saved if saved in ips or saved == ANY else "")
         binds = [pick] if pick else ips[:1]
         error = ""
-        if self.bind_setting and not _lan_ip(self.bind_setting):
-            error = f"bind address {self.bind_setting} is not a private LAN IPv4"
-        elif not binds:
+        if self.bind_setting and not (_lan_ip(self.bind_setting) or self.bind_setting == ANY):
+            error = f"bind address {self.bind_setting} is not a private LAN IPv4 or {ANY}"
+        elif not binds or not ips:
             error = "no LAN IPv4 address found"
-        return {"ips": ips, "binds": [] if error else binds, "fixed": bool(self.bind_setting),
-                "hostname": socket.gethostname(), "error": error}
+        # Hosts for entry links: every LAN IP when listening on all interfaces.
+        hosts = ips if binds == [ANY] else binds
+        return {"ips": ips, "binds": [] if error else binds, "hosts": [] if error else hosts,
+                "fixed": bool(self.bind_setting), "hostname": socket.gethostname(), "error": error}
 
     # ---- lifecycle ----
     def ensure_token(self):
@@ -237,7 +243,7 @@ class Lan:
             if self.forwarder:
                 return self.snapshot()
             if bind and not self.bind_setting:
-                if bind not in lan_ips():
+                if bind != ANY and bind not in lan_ips():
                     raise ValueError(f"{bind} is not a LAN address of this machine")
                 self._save(bind=bind)
             target = self.host.access().get("port")
@@ -248,13 +254,17 @@ class Lan:
                 raise RuntimeError(st["error"])
             self.ensure_token()
             port = self.port_setting or target
+            if st["binds"] == [ANY] and port == target:
+                # A wildcard bind cannot share the port the web UI holds on 127.0.0.1
+                # (exclusive bind on Windows, EADDRINUSE on Linux), so step aside by one.
+                port = target + 1
             fwd = Forwarder(st["binds"], port, target)
             try:
                 fwd.start()
             except OSError as e:
                 raise RuntimeError(f"cannot listen on LAN port {port}: {e}") from e
-            self.forwarder, self.error = fwd, ""
-            self.urls = [f"http://{ip}:{port}/" for ip in st["binds"]]
+            self.forwarder, self.error, self.listen_port = fwd, "", port
+            self.urls = [f"http://{ip}:{port}/" for ip in st["hosts"]]
             self.undo = [self.host.allow_origin(u) for u in self.urls]
             self._save(enabled=True)
             _log(f"[lan] forwarding {', '.join(self.urls)} -> 127.0.0.1:{target}")
@@ -300,11 +310,11 @@ class Lan:
     def snapshot(self):
         acc = self.host.access()
         with self.lock:
-            active, urls = bool(self.forwarder), list(self.urls)
+            active, urls, listen = bool(self.forwarder), list(self.urls), self.listen_port
         token = bool(acc.get("token_required"))
         return {"active": active, "urls": urls, "entries": [self.host.entry_url(u) for u in urls] if token else [],
                 "error": self.error, "token_required": token, "web_port": acc.get("port"),
-                "port": self.port_setting or acc.get("port"), "enabled": bool(self._load().get("enabled"))}
+                "port": (listen if active else 0) or self.port_setting or acc.get("port"), "enabled": bool(self._load().get("enabled"))}
 
     def status(self, req=None):
         return {**self.snapshot(), "lan": self.net_status()}
