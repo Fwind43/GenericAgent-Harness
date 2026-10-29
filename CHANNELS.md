@@ -14,6 +14,12 @@ Code: `ga_harness/channels.py` (hub) and `ga_harness/plugins/channels/`
 - On `run.finished` takes the final reply, splits it to the adapter's
   `max_len`, and sends it from one ordered delivery thread.
 - Built-in commands: `/new`, `/stop`, `/status`, `/help`.
+- Media: inbound files/images passed as `files=` are stored as uploads and
+  attached to the run (images reach the model as vision input). Each task
+  carries a short hint asking the model to write `[FILE:<absolute path>]` to
+  return a file (GA's chat-frontend convention); the hub strips those tags from
+  the reply and calls the adapter's `send_file(chat_id, path)` in order after the
+  text (max 50 MB). If sending fails, a `[file not sent: ...]` line is sent instead.
 
 ## Writing an adapter
 
@@ -35,7 +41,9 @@ def apply(ctx, config):
     return ctx.get("channels").register(EchoAdapter())  # disposer
 ```
 
-Inbound messages: `self.hub.receive(self.name, chat_id, text, user=...)`.
+Inbound messages: `self.hub.receive(self.name, chat_id, text, user=..., files=[{"name", "data", "mime"}])`
+(`data` is bytes; `files` optional). Override `send_file(chat_id, path)` to
+support outbound files.
 Your plugin's `plugin.toml` should `inject = ["channels"]`.
 Keep tokens in plugin settings or environment variables, never in code.
 
@@ -78,7 +86,11 @@ Feishu channel in Channels, fill in App ID / App Secret (optionally
 `allowed_users`, open_ids), then start it. Each running channel receives events
 in its own `ws_worker.py` child process and replies via the REST API. Needs
 `lark-oapi`; the bot app needs the `im.message.receive_v1` event and permission
-to send messages. Text and rich-text (post) messages are handled.
+to send messages. Text, rich-text (post, including embedded images), image and file messages are
+handled; inbound media is downloaded with `im/v1/messages/{id}/resources`.
+Outbound images are uploaded with `im/v1/images` and other files with
+`im/v1/files`. The bot also needs the permissions to read message resources and
+upload images/files.
 
 The New channel form also offers **QR login** for Feishu: scanning with the Feishu
 app creates a bot app through the accounts.feishu.cn device-registration flow and
@@ -88,9 +100,13 @@ manually). The secret is never returned to the browser.
 ## WeChat provider
 
 `ga_harness/plugins/weixin/` provides the `weixin` provider using the iLink bot
-API (`https://ilinkai.weixin.qq.com`, as used by pi-connect). No extra packages.
+API (`https://ilinkai.weixin.qq.com`, as used by pi-connect).
 Create a WeChat channel via **QR login** in Channels and scan with WeChat; the bot
 token is saved and the channel starts. Messages are long-polled with `getupdates`
-and replies are sent with `sendmessage` (text only; the per-chat `context_token`
-is kept from the last inbound message). The QR is refreshed up to 3 times when it
+and replies are sent with `sendmessage` (the per-chat `context_token` is kept from
+the last inbound message). Images, files and videos go through the WeChat CDN
+(`novac2c.cdn.weixin.qq.com/c2c`), AES-128-ECB encrypted: inbound media is
+downloaded and decrypted; outbound files get an upload URL from `getuploadurl`,
+are encrypted with a fresh key and uploaded, then sent as image/video/file items.
+This needs `pycryptodome` or `cryptography`; text works without either. The QR is refreshed up to 3 times when it
 expires.

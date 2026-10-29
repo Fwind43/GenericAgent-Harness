@@ -45,6 +45,34 @@ def message_text(msg_type, content):
     return ""
 
 
+def message_media(msg_type, content):
+    """Resources attached to a Feishu message: [(file_key, kind, file_name)]."""
+    try:
+        data = json.loads(content or "{}")
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    if msg_type == "image" and data.get("image_key"):
+        return [(data["image_key"], "image", "image.png")]
+    if msg_type in ("file", "audio", "media") and data.get("file_key"):
+        default = {"audio": "audio.opus", "media": "video.mp4"}.get(msg_type, "file")
+        return [(data["file_key"], "file", data.get("file_name") or default)]
+    if msg_type == "post":
+        body = data.get("content")
+        if body is None:
+            body = next((v.get("content") for v in data.values() if isinstance(v, dict)), [])
+        segs = [s for row in body or [] if isinstance(row, list) for s in row
+                if isinstance(s, dict) and s.get("tag") == "img" and s.get("image_key")]
+        return [(s["image_key"], "image", f"image_{i + 1}.png") for i, s in enumerate(segs)]
+    return []
+
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tif", ".tiff", ".heic"}
+FILE_TYPES = {".opus": "opus", ".mp4": "mp4", ".pdf": "pdf", ".doc": "doc", ".docx": "doc",
+              ".xls": "xls", ".xlsx": "xls", ".csv": "xls", ".ppt": "ppt", ".pptx": "ppt"}
+
+
 class FeishuAdapter(Adapter):
     max_len = 4000
 
@@ -78,9 +106,26 @@ class FeishuAdapter(Adapter):
             return
         text = re.sub(r"@_user_\d+\s*", "",
                       message_text(ev.get("msg_type"), ev.get("content"))).strip()
-        if text:
-            self.log("info", f"message from {user} in {ev.get('chat_id')}")
-            self.hub.receive(self.name, ev.get("chat_id"), text, user=user)
+        files = []
+        for key, kind, name in message_media(ev.get("msg_type"), ev.get("content")):
+            try:
+                files.append(self.download(ev.get("message_id", ""), key, kind, name))
+            except Exception as e:
+                self.log("error", f"download {kind} failed: {e}")
+        if text or files:
+            self.log("info", f"message from {user} in {ev.get('chat_id')}"
+                             + (f" with {len(files)} file(s)" if files else ""))
+            self.hub.receive(self.name, ev.get("chat_id"), text, user=user, files=files)
+
+    def download(self, message_id, key, kind, name):
+        from lark_oapi.api.im.v1 import GetMessageResourceRequest
+        req = GetMessageResourceRequest.builder().message_id(message_id).file_key(key) \
+            .type(kind).build()
+        resp = self.client.im.v1.message_resource.get(req)
+        if not resp.success():
+            raise RuntimeError(f"{resp.code} {resp.msg}")
+        data = resp.file.read() if hasattr(resp.file, "read") else resp.file
+        return {"name": getattr(resp, "file_name", None) or name, "data": data}
 
     def start(self, hub):
         super().start(hub)
@@ -124,9 +169,33 @@ class FeishuAdapter(Adapter):
                 self.on_dead(f"receiver exited (code {code})")
 
     def send(self, chat_id, text):
+        self._create(chat_id, "text", {"text": text})
+
+    def send_file(self, chat_id, path):
+        ext = os.path.splitext(path)[1].lower()
+        if ext in IMAGE_EXTS and os.path.getsize(path) <= 10 << 20:
+            from lark_oapi.api.im.v1 import CreateImageRequest, CreateImageRequestBody
+            with open(path, "rb") as f:
+                req = CreateImageRequest.builder().request_body(
+                    CreateImageRequestBody.builder().image_type("message").image(f).build()).build()
+                resp = self.client.im.v1.image.create(req)
+            if not resp.success():
+                raise RuntimeError(f"feishu image upload failed: {resp.code} {resp.msg}")
+            return self._create(chat_id, "image", {"image_key": resp.data.image_key})
+        from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
+        with open(path, "rb") as f:
+            req = CreateFileRequest.builder().request_body(
+                CreateFileRequestBody.builder().file_type(FILE_TYPES.get(ext, "stream"))
+                .file_name(os.path.basename(path)).file(f).build()).build()
+            resp = self.client.im.v1.file.create(req)
+        if not resp.success():
+            raise RuntimeError(f"feishu file upload failed: {resp.code} {resp.msg}")
+        self._create(chat_id, "file", {"file_key": resp.data.file_key})
+
+    def _create(self, chat_id, msg_type, content):
         from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
-        body = CreateMessageRequestBody.builder().receive_id(chat_id).msg_type("text") \
-            .content(json.dumps({"text": text}, ensure_ascii=False)).build()
+        body = CreateMessageRequestBody.builder().receive_id(chat_id).msg_type(msg_type) \
+            .content(json.dumps(content, ensure_ascii=False)).build()
         req = CreateMessageRequest.builder().receive_id_type("chat_id") \
             .request_body(body).build()
         resp = self.client.im.v1.message.create(req)

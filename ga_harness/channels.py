@@ -6,12 +6,17 @@ reply extraction, splitting and ordered delivery. See CHANNELS.md.
 """
 from __future__ import annotations
 
+import io
+import os
 import queue
+import re
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
+
+from . import uploads
 
 HELP = ("/new  start a fresh conversation\n"
         "/stop  cancel the running task\n"
@@ -33,6 +38,18 @@ def final_text(message):
     return text
 
 
+# GA's chat-frontend convention for returning files (see GA frontends/chatapp_common.py).
+FILE_HINT = "If you need to send a file or image to the user, put [FILE:<absolute path>] in your reply."
+_FILE_TAG = re.compile(r"\[FILE:([^\]]+)\]")
+MAX_SEND_FILE = 50 << 20
+
+
+def extract_files(text):
+    """Split ``[FILE:path]`` tags out of a reply: (clean text, [paths])."""
+    paths = [p.strip().strip('"\'') for p in _FILE_TAG.findall(text or "")]
+    return _FILE_TAG.sub("", text or "").strip(), [p for p in paths if p]
+
+
 def split_text(text, limit):
     """Split on line boundaries where possible; never exceed ``limit``."""
     text, out = text or "", []
@@ -50,9 +67,11 @@ class Adapter:
     """Base class for one chat platform. Subclass and override.
 
     Lifecycle: the hub calls ``start(hub)`` once, then ``stop()`` on unload.
-    Inbound: call ``hub.receive(self.name, chat_id, text, user=...)`` for each
-    platform message. Outbound: the hub calls ``send(chat_id, text)`` from
-    its delivery thread, already split to ``max_len``.
+    Inbound: call ``hub.receive(self.name, chat_id, text, user=..., files=...)``
+    for each platform message; ``files`` is a list of ``{"name", "data", "mime"}``
+    (``data`` = bytes). Outbound: the hub calls ``send(chat_id, text)`` from
+    its delivery thread, already split to ``max_len``, and ``send_file(chat_id,
+    path)`` for each ``[FILE:path]`` in a reply (override to support files).
     """
     name = "adapter"
     max_len = 4000
@@ -65,6 +84,9 @@ class Adapter:
 
     def send(self, chat_id, text):
         raise NotImplementedError
+
+    def send_file(self, chat_id, path):
+        raise NotImplementedError("this channel cannot send files")
 
 
 class Bindings:
@@ -166,14 +188,15 @@ class Hub:
             return sid
         return self._new_session(channel, chat)
 
-    def receive(self, channel, chat, text, *, user=None):
+    def receive(self, channel, chat, text, *, user=None, files=None):
         """Handle one inbound message. Never raises; problems are replied."""
         chat = str(chat)
         text = (text or "").strip()
-        if not text:
+        files = [f for f in files or [] if isinstance(f, dict) and f.get("data")]
+        if not text and not files:
             return None
         try:
-            if text.startswith("/"):
+            if text.startswith("/") and not files:
                 reply = self.command(channel, chat, text)
                 if reply is not None:
                     self.reply(channel, chat, reply)
@@ -182,7 +205,10 @@ class Hub:
             if self.runs.active_for(sid):
                 self.reply(channel, chat, "Still working on the previous task. Send /stop to cancel it.")
                 return None
-            run = self.runs.start(text, session_id=sid, source=f"channel:{channel}")
+            attachments = [self._store(f) for f in files[:uploads.MAX_FILES]]
+            task = (text + "\n\n" if text else "") + f"({FILE_HINT})"
+            run = self.runs.start(task, session_id=sid, source=f"channel:{channel}",
+                                  attachments=attachments)
             return run["id"]
         except Exception as e:  # adapters must not crash on hub errors
             self.reply(channel, chat, f"[error] {e}")
@@ -212,6 +238,12 @@ class Hub:
         return None
 
     # -- outbound ---------------------------------------------------------
+    @staticmethod
+    def _store(f):
+        data = bytes(f["data"])
+        d = uploads.save(io.BytesIO(data), len(data), f.get("name") or "file", f.get("mime"))
+        return {"url": d["url"], "mime": d["mime"]}
+
     def on_run_finished(self, envelope):
         """Kernel ``run.finished`` subscriber: deliver the answer to its chat."""
         run = (envelope or {}).get("run") or {}
@@ -219,32 +251,58 @@ class Hub:
         if not source.startswith("channel:"):
             return
         channel = source.split(":", 1)[1]
-        text = final_text(envelope.get("message"))
+        text, paths = extract_files(final_text(envelope.get("message")))
         status = run.get("status")
-        if not text:
+        if not text and not paths:
             text = "(cancelled)" if status == "aborted" else "(no reply)"
         for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
-            self.reply(channel, chat, text)
+            if text:
+                self.reply(channel, chat, text)
+            for path in paths:
+                self.reply_file(channel, chat, path)
 
     def reply(self, channel, chat, text):
         """Queue text for a chat; delivery is ordered and off the caller thread."""
         if not self.closed:
-            self.outbox.put((channel, str(chat), text))
+            self.outbox.put((channel, str(chat), "text", text))
+
+    def reply_file(self, channel, chat, path):
+        """Queue a local file for a chat (sent in order with text replies)."""
+        if not self.closed:
+            self.outbox.put((channel, str(chat), "file", str(path)))
 
     def _deliver(self):
         while True:
             item = self.outbox.get()
             if item is None:
                 return
-            channel, chat, text = item
+            channel, chat, kind, text = item
             adapter = self.adapters.get(channel)
             if adapter is None:
+                continue
+            if kind == "file":
+                self._send_file(adapter, chat, text)
                 continue
             for part in split_text(text, max(1, int(getattr(adapter, "max_len", 4000)))):
                 try:
                     adapter.send(chat, part)
                 except Exception:
                     break  # one failed delivery must not kill the sender thread
+
+    @staticmethod
+    def _send_file(adapter, chat, path):
+        name = os.path.basename(path) or path
+        try:
+            if not os.path.isfile(path):
+                raise FileNotFoundError("file not found")
+            if os.path.getsize(path) > MAX_SEND_FILE:
+                raise OverflowError("file too large")
+            adapter.send_file(chat, path)
+        except Exception as e:
+            try:
+                adapter.send(chat, f"[file not sent: {name}: {e}]")
+            except Exception:
+                pass
 
     def status(self):
         with self.lock:

@@ -4,9 +4,12 @@ Login is a QR scan (``pair``): the confirmed scan yields a bot token that is
 stored in the channel config. A running channel long-polls ``getupdates`` and
 replies with ``sendmessage``; replies need the latest ``context_token`` seen
 from that user, so only users who have messaged the bot can be answered.
-Protocol follows tasercake/pi-connect (platform/weixin). Text only.
+Protocol follows tasercake/pi-connect (platform/weixin). Images, files and
+videos travel through the WeChat CDN, AES-128-ECB encrypted (needs
+``pycryptodome`` or ``cryptography``).
 """
 import base64
+import hashlib
 import json
 import os
 import threading
@@ -23,7 +26,12 @@ API = "https://ilinkai.weixin.qq.com/"
 VERSION = "ga-harness-weixin/1.0"
 BOT_TYPE = "3"
 SESSION_EXPIRED = -14
-ITEM_TEXT, ITEM_VOICE = 1, 3
+ITEM_TEXT, ITEM_IMAGE, ITEM_VOICE, ITEM_FILE, ITEM_VIDEO = 1, 2, 3, 4, 5
+CDN = "https://novac2c.cdn.weixin.qq.com/c2c"
+MEDIA_IMAGE, MEDIA_VIDEO, MEDIA_FILE = 1, 2, 3
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+VIDEO_EXTS = {".mp4", ".mov", ".m4v"}
+MAX_MEDIA = 100 << 20
 TYPE_USER, TYPE_BOT, STATE_FINISH = 1, 2, 2
 
 FIELDS = [
@@ -48,6 +56,54 @@ def _uin():
     return base64.b64encode(str(n).encode()).decode()
 
 
+def _aes(key, data, encrypt):
+    try:
+        from Crypto.Cipher import AES
+        c = AES.new(key, AES.MODE_ECB)
+        return c.encrypt(data) if encrypt else c.decrypt(data)
+    except ImportError:
+        pass
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    except ImportError:
+        raise RuntimeError("WeChat media needs pycryptodome or cryptography installed") from None
+    c = Cipher(algorithms.AES(key), modes.ECB())
+    op = c.encryptor() if encrypt else c.decryptor()
+    return op.update(data) + op.finalize()
+
+
+def encrypt(key, raw):
+    n = 16 - len(raw) % 16
+    return _aes(key, raw + bytes([n]) * n, True)
+
+
+def decrypt(key, data):
+    raw = _aes(key, data, False)
+    n = raw[-1] if raw else 0
+    if not 1 <= n <= 16 or raw[-n:] != bytes([n]) * n:
+        raise ValueError("bad padding (wrong AES key?)")
+    return raw[:-n]
+
+
+def parse_key(media, hex_key=""):
+    """AES key of an inbound item: ``aeskey`` hex, or ``aes_key`` base64 of the
+    16 raw bytes or of their 32-char hex text."""
+    if hex_key:
+        return bytes.fromhex(hex_key)
+    raw = base64.b64decode((media or {}).get("aes_key") or "")
+    if len(raw) == 32:
+        raw = bytes.fromhex(raw.decode("ascii"))
+    if len(raw) != 16:
+        raise ValueError("missing or invalid AES key")
+    return raw
+
+
+def _http(url, data=None, timeout=60):
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET",
+                                 headers={"Content-Type": "application/octet-stream"} if data else {})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _get(url, timeout):
     req = urllib.request.Request(url, headers={"iLink-App-ClientVersion": "1"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -67,6 +123,46 @@ class Api:
             raw = resp.read(4 << 20)
         return json.loads(raw) if raw.strip() else {}
 
+    def download(self, media, hex_key=""):
+        """Fetch and decrypt one CDN media blob."""
+        q = (media or {}).get("encrypt_query_param")
+        if not q:
+            raise ValueError("media has no download parameter")
+        url = CDN + "/download?encrypted_query_param=" + urllib.parse.quote(q, safe="")
+        with _http(url) as resp:
+            data = resp.read(MAX_MEDIA + 1024)
+        return decrypt(parse_key(media, hex_key), data)
+
+    def upload(self, raw, to, media_type):
+        """Encrypt + upload a blob; returns (media dict, cipher size)."""
+        key, filekey = os.urandom(16), os.urandom(16).hex()
+        cipher = encrypt(key, raw)
+        res = self.post("ilink/bot/getuploadurl", {
+            "filekey": filekey, "media_type": media_type, "to_user_id": to,
+            "rawsize": len(raw), "rawfilemd5": hashlib.md5(raw).hexdigest(),
+            "filesize": len(cipher), "no_need_thumb": True, "aeskey": key.hex()})
+        if res.get("ret") or res.get("errcode"):
+            raise RuntimeError(f"getuploadurl failed: {res.get('errcode') or res.get('ret')} "
+                               f"{res.get('errmsg', '')}")
+        url = res.get("upload_full_url")
+        if not url:
+            if not res.get("upload_param"):
+                raise RuntimeError("getuploadurl returned no upload url")
+            url = (CDN + "/upload?encrypted_query_param="
+                   + urllib.parse.quote(res["upload_param"], safe="")
+                   + "&filekey=" + urllib.parse.quote(filekey, safe=""))
+        with _http(url, cipher, timeout=120) as resp:
+            param = resp.headers.get("x-encrypted-param")
+        if not param:
+            raise RuntimeError("CDN upload returned no download parameter")
+        media = {"encrypt_query_param": param,
+                 "aes_key": base64.b64encode(key.hex().encode()).decode(), "encrypt_type": 1}
+        return media, len(cipher)
+
+    def send_items(self, to, items, context_token):
+        for item in items:
+            self._send(to, [item], context_token)
+
     def get_updates(self, buf, timeout=40):
         return self.post("ilink/bot/getupdates", {"get_updates_buf": buf}, timeout)
 
@@ -75,6 +171,14 @@ class Api:
                "message_type": TYPE_BOT, "message_state": STATE_FINISH,
                "item_list": [{"type": ITEM_TEXT, "text_item": {"text": text}}],
                "context_token": context_token}
+        self._post_msg(msg)
+
+    def _send(self, to, items, context_token):
+        self._post_msg({"from_user_id": "", "to_user_id": to, "client_id": "gah-" + uuid.uuid4().hex,
+                        "message_type": TYPE_BOT, "message_state": STATE_FINISH,
+                        "item_list": items, "context_token": context_token})
+
+    def _post_msg(self, msg):
         res = self.post("ilink/bot/sendmessage", {"msg": msg})
         if res.get("ret") or res.get("errcode"):
             raise RuntimeError(f"sendmessage failed: {res.get('errcode') or res.get('ret')} "
@@ -119,6 +223,22 @@ def pair(update, cancelled):
         if refreshes > 3:
             raise RuntimeError("QR code expired")
         update(status="wait", text="QR code expired, refreshed")
+
+
+def _media_items(msg):
+    """[(media, hex_key, file name)] for image/file/video items."""
+    out = []
+    for item in msg.get("item_list") or []:
+        t = item.get("type")
+        if t == ITEM_IMAGE:
+            img = item.get("image_item") or {}
+            out.append((img.get("media"), img.get("aeskey") or "", "image.jpg"))
+        elif t == ITEM_FILE:
+            f = item.get("file_item") or {}
+            out.append((f.get("media"), "", f.get("file_name") or "file"))
+        elif t == ITEM_VIDEO:
+            out.append(((item.get("video_item") or {}).get("media"), "", "video.mp4"))
+    return out
 
 
 def _text(msg):
@@ -193,17 +313,46 @@ class WeixinAdapter(Adapter):
         if self.allowed and user not in self.allowed:
             self.log("info", f"ignored message from {user} (not allowed)")
             return
-        text = _text(msg)
-        if text:
-            self.log("info", f"message from {user}")
-            self.hub.receive(self.name, user, text, user=user)
+        text, files = _text(msg), []
+        for media, hex_key, name in _media_items(msg):
+            try:
+                files.append({"name": name, "data": self.api.download(media, hex_key)})
+            except Exception as e:  # noqa: BLE001
+                self.log("error", f"media download failed ({name}): {e}")
+        if text or files:
+            self.log("info", f"message from {user}"
+                             + (f" with {len(files)} file(s)" if files else ""))
+            self.hub.receive(self.name, user, text, user=user, files=files)
 
-    def send(self, chat_id, text):
+    def _token(self, chat_id):
         with self.lock:
             token = self.contexts.get(chat_id)
         if not token:
             raise RuntimeError(f"no context token for {chat_id}; the user must message first")
+        return token
+
+    def send(self, chat_id, text):
+        token = self._token(chat_id)
         self.api.send_text(chat_id, text, token)
+
+    def send_file(self, chat_id, path):
+        token = self._token(chat_id)
+        with open(path, "rb") as f:
+            raw = f.read(MAX_MEDIA + 1)
+        if len(raw) > MAX_MEDIA:
+            raise RuntimeError("file too large")
+        ext, name = os.path.splitext(path)[1].lower(), os.path.basename(path)
+        if ext in IMAGE_EXTS:
+            media, size = self.api.upload(raw, chat_id, MEDIA_IMAGE)
+            item = {"type": ITEM_IMAGE, "image_item": {"media": media, "mid_size": size}}
+        elif ext in VIDEO_EXTS:
+            media, size = self.api.upload(raw, chat_id, MEDIA_VIDEO)
+            item = {"type": ITEM_VIDEO, "video_item": {"media": media, "video_size": size}}
+        else:
+            media, _ = self.api.upload(raw, chat_id, MEDIA_FILE)
+            item = {"type": ITEM_FILE, "file_item": {"media": media, "file_name": name,
+                                                     "len": str(len(raw))}}
+        self.api.send_items(chat_id, [item], token)
 
 
 def _allowed(cfg):
