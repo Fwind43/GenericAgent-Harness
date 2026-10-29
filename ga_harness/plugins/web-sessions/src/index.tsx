@@ -1,10 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, useOperation, defineReact } from '@gah/sdk';
 
 // Sidebar layout: projects first (each a collapsible group of its chats), then the
 // chats that belong to no project. A project is a durable identity; the workspace is
 // only a per-chat directory, shown as a tag when it differs from the group default.
-const RECENT = 5, NEW = '\u65b0\u4f1a\u8bdd';
+const NEW = '\u65b0\u4f1a\u8bdd';
+// Customizable sections (GA Admin style): each can be hidden, reordered, collapsed and
+// capped to a display count. The Projects count caps both the project groups and the
+// chats inside each group; the Recent count caps its chats. Stored per browser.
+export const SECTION_COUNTS = [5, 10, 15, 20, 50, 100];
+const SECTION_KEYS = ['projects', 'recent'] as const;
+type SectionKey = typeof SECTION_KEYS[number];
+type SectionPref = { show: boolean; open: boolean; count: number };
+type Layout = { order: SectionKey[]; sections: Record<SectionKey, SectionPref> };
+const LAYOUT_KEY = 'gah.sessions.layout', DEFAULT_COUNT: Record<SectionKey, number> = { projects: 5, recent: 10 };
+const sectionName = (key: SectionKey) => key === 'projects' ? T('\u9879\u76ee', 'Projects') : T('\u6700\u8fd1', 'Recent');
+export function normalizeLayout(value?: unknown): Layout {
+  const raw = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as { order?: unknown; sections?: Record<string, Partial<SectionPref> | undefined> };
+  const valid = Array.isArray(raw.order) ? [...new Set(raw.order.filter((k): k is SectionKey => SECTION_KEYS.includes(k as SectionKey)))] : [];
+  const order = [...valid, ...SECTION_KEYS.filter(k => !valid.includes(k))];
+  const sections = Object.fromEntries(SECTION_KEYS.map(k => {
+    const old = raw.sections && typeof raw.sections === 'object' ? raw.sections[k] ?? {} : {};
+    return [k, { show: typeof old.show === 'boolean' ? old.show : true, open: typeof old.open === 'boolean' ? old.open : true,
+      count: SECTION_COUNTS.includes(Number(old.count)) ? Number(old.count) : DEFAULT_COUNT[k] }];
+  })) as Record<SectionKey, SectionPref>;
+  return { order, sections };
+}
+const loadLayout = (): Layout => { try { return normalizeLayout(JSON.parse(saved(LAYOUT_KEY) ?? '{}')); } catch { return normalizeLayout(); } };
 const base = (path = '') => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
 const label = (s: Session) => !s.title || s.title === NEW ? T(NEW, 'New chat') : s.title;
 // Compact relative age for the row ("3m", "2h", "5d", then a date) so chats with the
@@ -36,6 +58,14 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState(''), [moving, setMoving] = useState('');
+  const [layout, setLayout] = useState(loadLayout), [customizing, setCustomizing] = useState(false);
+  const updateLayout = (edit: (old: Layout) => Layout) => setLayout(old => { const next = normalizeLayout(edit(old)); save(LAYOUT_KEY, JSON.stringify(next)); return next; });
+  const setSection = (key: SectionKey, patch: Partial<SectionPref>) => updateLayout(old => ({ ...old, sections: { ...old.sections, [key]: { ...old.sections[key], ...patch } } }));
+  const moveSection = (key: SectionKey, delta: number) => updateLayout(old => {
+    const order = [...old.order], from = order.indexOf(key), to = from + delta;
+    if (to < 0 || to >= order.length) return old;
+    [order[from], order[to]] = [order[to], order[from]]; return { ...old, order };
+  });
   const scope = state.scope, projects = scope?.projects ?? [];
   const current = scope?.project_id ? `p:${scope.project_id}` : 'recent', previous = useRef(current);
   useEffect(() => {
@@ -75,35 +105,73 @@ export function Sessions({ api }: { api: PluginAPI }) {
     </div>;
   };
   // Long groups show the latest few (plus the open chat); searching always shows every match.
-  const list = (key: string, items: Session[], home?: string) => {
+  const list = (key: string, items: Session[], home: string | undefined, limit: number) => {
     const rows = nest(items), all = !!q || !!expanded[key];
-    const shown = all ? rows : rows.filter((r, i) => i < RECENT || r.session.id === state.session_id);
+    const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id);
     return <div className="gah-sess-items" role="list">
       {rows.length ? shown.map(r => row(r.session, r.depth, home)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
-      {!q && rows.length > RECENT && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, [key]: !all }))}>{all ? T('\u6536\u8d77', 'Show less') : `${T('\u663e\u793a\u5168\u90e8', 'Show all')} (${rows.length})`}</button>}
+      {!q && rows.length > limit && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, [key]: !all }))}>{all ? T('\u6536\u8d77', 'Show less') : `${T('\u663e\u793a\u5168\u90e8', 'Show all')} (${rows.length})`}</button>}
     </div>;
   };
-  const projectGroups = projects.map(p => {
+  // Projects matching the search; the Projects count caps how many groups render (the open project always stays).
+  const projectCap = layout.sections.projects.count, allProjects = !!q || !!expanded['projects:all'];
+  const matchedProjects = projects.filter(p => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
+  const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
+  const projectGroups = cappedProjects.map(p => {
     const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
-    if (q && !items.length && !p.name.toLowerCase().includes(q)) return null;
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
     return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}`} data-key={key}>
       <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span><span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}: ${p.name}`} onClick={() => dialog('update', p.id)}><Icon name="pencil" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u5220\u9664\u9879\u76ee', 'Delete project')}: ${p.name}`} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u9879\u76ee', 'Delete project'), danger: true, confirm: T('\u5220\u9664', 'Delete'), message: T('\u5220\u9664\u9879\u76ee\u201c', 'Delete project "') + p.name + T('\u201d\uff1f\u5176\u4e2d\u7684\u4f1a\u8bdd\u4f1a\u79fb\u5230\u201c\u6700\u8fd1\u201d\uff0c\u9879\u76ee\u8bb0\u5fc6\u6587\u4ef6\u4fdd\u7559\u5728\u78c1\u76d8\u4e0a\u3002', '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: 'delete', id: p.id }, isCurrent); }}><Icon name="trash" /></button></div>
-      {open && list(key, items, p.workspace || scope?.default_workspace)}
+      {open && list(key, items, p.workspace || scope?.default_workspace, projectCap)}
     </section>;
   });
+  const sectionHead = (key: SectionKey, open: boolean, action: ReactNode) => <div className="gah-sess-label">
+    <button type="button" className="gah-sess-label-toggle" aria-expanded={open} disabled={!!q} title={open ? T('\u6536\u8d77\u5206\u533a', 'Collapse section') : T('\u5c55\u5f00\u5206\u533a', 'Expand section')} onClick={() => setSection(key, { open: !open })}>
+      <span className="gah-sess-chevron" aria-hidden="true" /><span>{sectionName(key)}</span></button>{action}</div>;
+  const sections: Record<SectionKey, () => ReactNode> = {
+    projects: () => {
+      const open = !!q || layout.sections.projects.open;
+      return <div key="projects" className="gah-sess-section" data-section="projects">
+        {sectionHead('projects', open, <button type="button" className="gah-sess-head-btn" disabled={busy} aria-label={T('\u65b0\u5efa\u9879\u76ee', 'New project')} onClick={() => dialog('create')}><Icon name="folder-plus" /></button>)}
+        {open && (projects.length ? <>{projectGroups}
+          {!q && matchedProjects.length > projectCap && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, 'projects:all': !allProjects }))}>{allProjects ? T('\u6536\u8d77\u9879\u76ee', 'Show fewer projects') : `${T('\u663e\u793a\u5168\u90e8\u9879\u76ee', 'Show all projects')} (${matchedProjects.length})`}</button>}</>
+          : <div className="gah-sess-empty">{T('\u8fd8\u6ca1\u6709\u9879\u76ee', 'No projects yet')}</div>)}
+      </div>;
+    },
+    recent: () => {
+      const open = !!q || layout.sections.recent.open;
+      return <div key="recent" className="gah-sess-section" data-section="recent">
+        {sectionHead('recent', open, <button type="button" className="gah-sess-head-btn" disabled={busy} data-gah-close="" aria-label={T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')} onClick={() => void (current === 'recent' ? act('new') : scoped({ action: 'enter' }))}><Icon name="plus" /></button>)}
+        {open && <section className={`gah-group recent${current === 'recent' ? ' current' : ''}`} data-key="recent">{list('recent', loose, scope?.project_id ? undefined : scope?.workspace, layout.sections.recent.count)}</section>}
+      </div>;
+    },
+  };
+  const shownSections = layout.order.filter(key => layout.sections[key].show);
+  const customizeLabel = T('\u81ea\u5b9a\u4e49\u4fa7\u8fb9\u680f', 'Customize sidebar');
+  const customizer = customizing && <div className="gah-sess-custom" role="group" aria-label={customizeLabel} onKeyDown={event => { if (event.key === 'Escape') setCustomizing(false); }}>
+    <div className="gah-sess-custom-title">{customizeLabel}</div>
+    {layout.order.map((key, index) => { const pref = layout.sections[key], name = sectionName(key); return <div key={key} className="gah-sess-custom-row" data-section={key}>
+      <label className="gah-sess-custom-show"><input type="checkbox" checked={pref.show} onChange={event => setSection(key, { show: event.target.checked })} /><span>{name}</span></label>
+      <select className="gah-sess-custom-count" value={pref.count} aria-label={`${name}: ${T('\u663e\u793a\u4e2a\u6570', 'Display count')}`} onChange={event => setSection(key, { count: Number(event.target.value) })}>
+        {SECTION_COUNTS.map(n => <option key={n} value={n}>{T(`${n} \u9879`, `${n} items`)}</option>)}</select>
+      <button type="button" className="gah-sess-custom-move" disabled={index === 0} aria-label={`${name}: ${T('\u4e0a\u79fb', 'Move up')}`} onClick={() => moveSection(key, -1)}>{'\u2191'}</button>
+      <button type="button" className="gah-sess-custom-move" disabled={index === layout.order.length - 1} aria-label={`${name}: ${T('\u4e0b\u79fb', 'Move down')}`} onClick={() => moveSection(key, 1)}>{'\u2193'}</button>
+    </div>; })}
+    <div className="gah-sess-custom-foot"><button type="button" className="gah-sess-more" onClick={() => updateLayout(() => normalizeLayout())}>{T('\u6062\u590d\u9ed8\u8ba4', 'Restore defaults')}</button>
+      <button type="button" className="gah-sess-more" onClick={() => setCustomizing(false)}>{T('\u5b8c\u6210', 'Done')}</button></div>
+  </div>;
   return <PluginSlot api={api} name="sidebar"><div className="gah-sessions" hidden={!state.sessions}>
     <button type="button" className="side-item gah-sess-new" disabled={busy} title={scope?.project ? `${T('\u5728\u9879\u76ee\u4e2d\u65b0\u5efa', 'New chat in')}: ${scope.project.name}` : T('\u65b0\u5efa\u672a\u7ed1\u5b9a\u9879\u76ee\u7684\u5bf9\u8bdd', 'New chat without a project')} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button>
-    <input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
+    <div className="gah-sess-tools"><input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
+      {scope && <button type="button" className="gah-sess-head-btn gah-sess-customize" aria-label={customizeLabel} title={customizeLabel} aria-expanded={customizing} onClick={() => setCustomizing(v => !v)}><Icon name="settings" /></button>}</div>
+    {scope && customizer}
     <div className="gah-sess-list" aria-label={T('\u4f1a\u8bdd\u5217\u8868', 'Chats')}>
       {scope ? <>
-        <div className="gah-sess-label"><span>{T('\u9879\u76ee', 'Projects')}</span><button type="button" className="gah-sess-head-btn" disabled={busy} aria-label={T('\u65b0\u5efa\u9879\u76ee', 'New project')} onClick={() => dialog('create')}><Icon name="folder-plus" /></button></div>
-        {projects.length ? projectGroups : <div className="gah-sess-empty">{T('\u8fd8\u6ca1\u6709\u9879\u76ee', 'No projects yet')}</div>}
-        <div className="gah-sess-label"><span>{T('\u6700\u8fd1', 'Recent')}</span><button type="button" className="gah-sess-head-btn" disabled={busy} data-gah-close="" aria-label={T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')} onClick={() => void (current === 'recent' ? act('new') : scoped({ action: 'enter' }))}><Icon name="plus" /></button></div>
-        <section className={`gah-group recent${current === 'recent' ? ' current' : ''}`} data-key="recent">{list('recent', loose, scope.project_id ? undefined : scope.workspace)}</section>
+        {shownSections.map(key => sections[key]())}
+        {!shownSections.length && <div className="gah-sess-empty">{T('\u6240\u6709\u5206\u533a\u5df2\u9690\u85cf', 'All sections are hidden')} <button type="button" className="gah-sess-more" onClick={() => setCustomizing(true)}>{T('\u81ea\u5b9a\u4e49', 'Customize')}</button></div>}
       </> : <div className="gah-sess-items flat" role="list">{(state.sessions ?? []).filter(s => !q || label(s).toLowerCase().includes(q)).map(s => row(s, 0))}</div>}
     </div></div></PluginSlot>;
 }
