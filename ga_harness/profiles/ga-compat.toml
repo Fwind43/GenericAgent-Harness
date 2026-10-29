@@ -47,6 +47,13 @@ name = "project-memory"
 [[plugins]]
 name = "model-store"
 
+# chat-platform bridge (bind external chats to sessions) + Feishu/Lark provider (needs lark-oapi)
+[[plugins]]
+name = "channels"
+
+[[plugins]]
+name = "feishu"
+
 # web page themes; an add-on for ui-web (dormant under other frontends)
 [[plugins]]
 name = "web-theme"
@@ -63,6 +70,10 @@ name = "web-plugins"
 
 [[plugins]]
 name = "web-workspaces"
+
+# channel management dialog; add-on for ui-web
+[[plugins]]
+name = "web-channels"
 
 # session "Trace" view: timeline of inputs, model calls, tool calls and timings
 [[plugins]]
