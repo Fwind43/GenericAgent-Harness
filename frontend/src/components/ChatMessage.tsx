@@ -48,7 +48,7 @@ function titleOf(turn?: { summary?: string; thinking?: string } | null) {
 }
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
-  // The full summary stays in the body; step headings wrap rather than truncate.
+  // The full summary stays in the body; step headings truncate and show the full text on hover.
   return <div className="turn-summary"><svg viewBox="0 0 16 16" aria-hidden="true">
     <path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
   </svg><div className="turn-summary-text">{text}</div></div>;
@@ -93,7 +93,7 @@ const TurnBody = memo(function TurnBody({ turn, awaiting = false, stream = false
 const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
   const title = titleOf(turn) || turn.reply?.split('\n').find(line => line.trim()) || (turn.tools.length ? turn.tools.map(t => t.name).join(', ') : T('思考中…', 'Thinking…'));
   return <Disclosure className={'step' + (live ? ' running' : '')} initial={live} title={<>
-    <span className="no">{T('步骤 ', 'Step ')}{turn.turn}</span><span className="ttl">{title}</span>
+    <span className="no">{T('步骤 ', 'Step ')}{turn.turn}</span><span className="ttl" title={title}>{title}</span>
     {!!turn.tools.length && <span className="cnt">{turn.tools.length}{T(' 个工具', ' tools')}</span>}<Tokens usage={turn.usage} />
   </>}><div className="step-body"><TurnBody turn={turn} stream={live} /></div></Disclosure>;
 });
@@ -160,7 +160,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
         </Fragment>;
       })}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
-        {titleOf(finalTurn) && <span className="ttl">{titleOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
+        {titleOf(finalTurn) && <span className="ttl" title={titleOf(finalTurn)}>{titleOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
         <Thinking text={finalTurn.thinking} stream={running} /><Summary text={summaryOf(finalTurn)} />
         {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
