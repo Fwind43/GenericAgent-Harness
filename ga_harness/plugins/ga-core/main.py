@@ -45,6 +45,15 @@ class AgentHandle:
                     pass
         if not getattr(self.raw, "llmclients", None):
             raise RuntimeError(NO_MODEL)
+        # GA's run loop drops task["images"]; deliver them on the first LLM call instead.
+        restore = _inject_images(getattr(self.raw, "llmclient", None), images) if images else None
+        try:
+            return self._stream(query, source, images, timeout)
+        finally:
+            if restore:
+                restore()
+
+    def _stream(self, query, source, images, timeout):
         dq = self.raw.put_task(query, source=source, images=images)
         printed = ""
         while True:
@@ -67,6 +76,56 @@ class AgentHandle:
 
     def abort(self) -> None:
         self.raw.abort()
+
+
+VISION_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+
+def image_blocks(paths) -> list[dict]:
+    """Anthropic-style base64 image blocks; llmcore converts them for OpenAI/Responses."""
+    import base64
+    import mimetypes
+    blocks = []
+    for p in paths or ():
+        mime = mimetypes.guess_type(str(p))[0] or "image/png"
+        if mime not in VISION_MIMES:
+            continue
+        try:
+            with open(p, "rb") as f:
+                data = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}})
+    return blocks
+
+
+def _inject_images(client, paths):
+    """One-shot wrap of the native backend's ask() that appends the images to the
+    first user message (mirrors GA's desktop bridge). Returns an undo callable."""
+    backend = getattr(client, "backend", None)
+    original = getattr(backend, "ask", None)
+    if not callable(original):
+        return None
+    blocks = image_blocks(paths)
+    if not blocks:
+        return None
+    had_own = "ask" in vars(backend)
+
+    def undo():
+        if vars(backend).get("ask") is patched:
+            if had_own:
+                backend.ask = original
+            else:
+                del backend.ask
+
+    def patched(msg, *args, **kwargs):
+        undo()
+        if isinstance(msg, dict) and isinstance(msg.get("content"), list):
+            msg["content"].extend(blocks)
+        return (yield from original(msg, *args, **kwargs))
+
+    backend.ask = patched
+    return undo
 
 
 def load_module(ga_root: str | None, module: str):

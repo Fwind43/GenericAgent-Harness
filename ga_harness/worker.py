@@ -266,7 +266,8 @@ def run_worker(connection, recipe, payload):
         })
         send("ready")
         started = True
-        result = agent.run(payload["task"], source=payload.get("source", "user"), timeout=payload.get("timeout"))
+        result = agent.run(payload["task"], source=payload.get("source", "user"),
+                           images=payload.get("images") or None, timeout=payload.get("timeout"))
         send("done", text=str(result or ""), state=capture(raw))
     except Exception as error:
         # Once the agent has run, its history already contains this partial turn.

@@ -215,3 +215,20 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-starter{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s}
 .gah-starter:hover{background:var(--surface-muted);border-color:color-mix(in srgb,var(--text) 30%,var(--border))}
 @media (max-width:760px){.empty{margin-top:12vh;padding:0 16px}}
+
+/* Composer attachments */
+#form.dragging{outline:2px dashed var(--accent,#3b82f6);outline-offset:-2px}
+.gah-attach-strip{display:flex;flex-wrap:wrap;gap:8px;padding:8px 10px 0}
+.gah-attach{position:relative;display:flex;align-items:center;gap:8px;height:56px;max-width:220px;padding:0 26px 0 8px;border:1px solid rgba(0,0,0,.11);border-radius:10px;background:var(--surface-muted,#f6f6f6);font-size:12px}
+.gah-attach.image{width:56px;padding:0;overflow:hidden}
+.gah-attach.image img{width:100%;height:100%;object-fit:cover}
+.gah-attach.uploading{opacity:.6}
+.gah-attach.error{border-color:#e5484d;color:#c62a2f}
+.gah-attach-ico{font-size:20px}
+.gah-attach-name{display:flex;flex-direction:column;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.gah-attach-name small{opacity:.65}
+.gah-attach-x{position:absolute;top:3px;right:3px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:12px;line-height:18px;cursor:pointer}
+.gah-attach-btn{font-size:16px}
+.gah-msg-attach{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-bottom:6px}
+.gah-msg-img img{display:block;max-width:220px;max-height:220px;border-radius:10px;object-fit:cover}
+.gah-msg-file{display:flex;align-items:center;gap:8px;max-width:240px;padding:8px 10px;border:1px solid rgba(0,0,0,.11);border-radius:10px;color:inherit;text-decoration:none;font-size:12px}

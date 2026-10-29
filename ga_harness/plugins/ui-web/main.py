@@ -39,7 +39,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from ga_harness import presets
+from ga_harness import presets, uploads
 from ga_harness.sessions import EFFORTS, apply_effort
 
 DIST = Path(__file__).with_name("dist")
@@ -441,13 +441,14 @@ class WebFrontend:
         except Exception:
             return 503, {"error": "run storage could not be read"}
 
-    def submit(self, task, *, session_id=None, source="user"):
+    def submit(self, task, *, session_id=None, source="user", attachments=None):
         if self.runs:
             if not isinstance(session_id, str) or not session_id:
                 return 400, {"error": "session_id is required"}
             try:
                 # No frontend lock here: start emits committed run events.
-                run = self.runs.start(task, session_id=session_id, source=source, timeout=self._timeout)
+                run = self.runs.start(task, session_id=session_id, source=source, timeout=self._timeout,
+                                      attachments=attachments)
                 return 202, {"ok": True, "run": run, "session_id": run["session_id"], "run_id": run["id"]}
             except ValueError as e:
                 return 400, {"error": str(e)}
@@ -456,6 +457,11 @@ class WebFrontend:
             except Exception:
                 return 503, {"error": "run could not be started"}
         task = (task or "").strip() if isinstance(task, str) else ""
+        try:
+            # The legacy single-agent path has no image channel; it gets the file paths.
+            task = uploads.task_text(task, uploads.resolve(attachments))
+        except ValueError as e:
+            return 400, {"error": str(e)}
         if not task:
             return 400, {"error": "empty task"}
         with self.lock:
@@ -789,8 +795,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.model_config())
         elif path == "/api/events":
             self._sse()
+        elif path.startswith("/api/upload/"):
+            found = uploads.locate(path.removeprefix("/api/upload/"))
+            if found is None:
+                return self._json(404, {"error": "not found"})
+            info = uploads.describe(found)
+            # Only vision formats render inline; anything else is a download (no HTML/SVG sniffing).
+            ctype = info["mime"] if info["image"] else "application/octet-stream"
+            self._bytes(200, found.read_bytes(), ctype)
         else:
             self._json(404, {"error": "not found"})
+
+    def _upload(self, n):
+        """Raw-body upload: file name in X-File-Name (URL-encoded), type in Content-Type."""
+        from urllib.parse import unquote
+        if n > uploads.MAX_FILE:
+            self.close_connection = True
+            return self._json(413, {"error": f"file exceeds {uploads.MAX_FILE >> 20} MB"})
+        if n <= 0:
+            return self._json(400, {"error": "empty file"})
+        name = unquote(self.headers.get("X-File-Name") or "")
+        try:
+            info = uploads.save(self.rfile, n, name, self.headers.get("Content-Type"))
+        except (ValueError, OSError) as e:
+            self.close_connection = True
+            return self._json(400, {"error": str(e)})
+        self._json(200, {"ok": True, "file": info})
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
@@ -802,6 +832,8 @@ class _Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return self._json(400, {"error": "invalid content length"})
+        if path == "/api/upload":
+            return self._upload(n)
         if n < 0 or n > MAX_BODY:
             return self._json(413, {"error": "body too large"})
         raw = self.rfile.read(n) if n else b""
@@ -814,7 +846,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/p/"):
             return self._plugin_route("POST", path, body)
         if path == "/api/run":
-            self._json(*self.frontend.submit(body.get("task"), session_id=body.get("session_id"), source=body.get("source", "user")))
+            self._json(*self.frontend.submit(body.get("task"), session_id=body.get("session_id"), source=body.get("source", "user"),
+                                          attachments=body.get("attachments")))
         elif path == "/api/sessions":
             self._json(*self.frontend.session_action(body))
         elif path == "/api/plugins":

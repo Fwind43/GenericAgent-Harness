@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 
-from . import presets
+from . import presets, uploads
 from .run_output import apply_event
 from .sessions import settle
 from .worker import run_worker
@@ -260,8 +260,9 @@ class Runs:
             state["effort"] = getattr(agent, "gah_reasoning_effort", None)
         return state
 
-    def start(self, task, *, session_id=None, source="user", timeout=None):
-        if not isinstance(task, str) or not task.strip():
+    def start(self, task, *, session_id=None, source="user", timeout=None, attachments=None):
+        files = uploads.resolve(attachments)
+        if not isinstance(task, str) or not (task.strip() or files):
             raise ValueError("empty task")
         if not isinstance(source, str) or not source.strip() or len(source) > 100:
             raise ValueError("invalid source")
@@ -291,11 +292,15 @@ class Runs:
             # UI shows (the host agent's), not the worker's config default.
             session["state"] = self._seed_selection(session["state"])
             messages = copy.deepcopy(session["messages"])
-            messages.extend([{"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at},
+            user = {"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at}
+            if files:
+                user["attachments"] = [{k: a[k] for k in ("name", "mime", "size", "image", "url")} for a in files]
+            messages.extend([user,
                              {"role": "assistant", "text": "", "status": "running", "turns": [],
                               "run_id": rid, "created_at": created_at}])
             payload = {"session_id": sid, "run_id": rid, "state": copy.deepcopy(session["state"]),
-                       "scope": scope, "task": task.strip(), "source": source, "timeout": timeout}
+                       "scope": scope, "task": uploads.task_text(task.strip(), files), "source": source,
+                       "images": uploads.image_paths(files), "timeout": timeout}
             # Prepare the process before reserving storage; starting it comes only
             # after the durable reservation and initial messages have committed.
             parent, child = self.process_context.Pipe(duplex=True)

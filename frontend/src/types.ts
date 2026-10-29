@@ -14,7 +14,10 @@ export interface Message {
   created_at?: number;
   /** Plugin-provided transcript notes, e.g. steered user messages, placed after ``turn``. */
   notes?: MessageNote[];
+  /** Files sent with a user message. */
+  attachments?: Attachment[];
 }
+export interface Attachment { id?: string; name: string; mime: string; size: number; image: boolean; url: string; path?: string }
 export interface MessageNote { kind: string; text: string; turn: number; created_at?: number }
 export interface Project { id: string; name: string; workspace: string; updated?: number }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; default_workspace?: string; projects: Project[] }

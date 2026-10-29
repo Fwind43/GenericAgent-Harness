@@ -4,6 +4,7 @@ import { host } from '../store';
 import type { Message, MessageNote, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
 import { MessageStats } from './MessageStats';
+import { MessageAttachments } from './Attachments';
 
 // DOM and class names intentionally mirror the legacy ui-web renderer so output.css applies unchanged.
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
@@ -149,7 +150,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       {m.reasoning_effort?.trim() && <span className="reasoning-effort" title={T('本条回复的思考强度：', 'Reasoning effort for this reply: ') + m.reasoning_effort.trim()}>{m.reasoning_effort.trim()}</span>}
       <MessageTime message={m} />
     </div>}
-    {m.role === 'user' ? <><div className="body">{m.text}</div><MessageTime message={m} /></> : turns.length ? <>
+    {m.role === 'user' ? <><MessageAttachments items={m.attachments} />{m.text ? <div className="body">{m.text}</div> : null}<MessageTime message={m} /></> : turns.length ? <>
       {groups.map((group, g) => {
         const tail = g === groups.length - 1, active = running && tail;
         return <Fragment key={g}>

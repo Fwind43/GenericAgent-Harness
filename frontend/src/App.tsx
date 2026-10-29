@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { request } from './api';
+import { MAX_FILES, PendingStrip, pendingOf, upload, type Pending } from './components/Attachments';
 import { save, saved, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
@@ -31,6 +32,27 @@ export function App() {
   const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
   const stick = useRef(true), submitting = useRef(false);
+  const [files, setFiles] = useState<Pending[]>([]), [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const uploading = files.some(p => !p.file && !p.error);
+  const ready = files.filter(p => p.file);
+  function addFiles(list: FileList | File[] | null | undefined) {
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    const room = MAX_FILES - files.length;
+    if (picked.length > room) host.notice(T(`每条消息最多 ${MAX_FILES} 个附件`, `At most ${MAX_FILES} attachments per message`));
+    for (const file of picked.slice(0, Math.max(0, room))) {
+      const item = pendingOf(file);
+      setFiles(list => [...list, item]);
+      if (item.error) continue;
+      upload(file).then(
+        done => setFiles(list => list.map(p => p.key === item.key ? { ...p, file: done } : p)),
+        error => setFiles(list => list.map(p => p.key === item.key ? { ...p, error: String(error?.message || error) } : p)));
+    }
+  }
+  function removeFile(key: string) {
+    setFiles(list => { const gone = list.find(p => p.key === key); if (gone?.preview) URL.revokeObjectURL(gone.preview); return list.filter(p => p.key !== key); });
+  }
   const { active: view } = useViews();
   const busy = state.running || changing || sending;
   const stats = sessionStats(state.messages ?? []);
@@ -126,16 +148,17 @@ export function App() {
   }
   async function send(event: FormEvent) {
     event.preventDefault();
-    const task = draft.trim();
+    const task = draft.trim(), attachments = ready.map(p => p.file!);
     // While a task runs, plugins (e.g. run-queue) may claim the message; otherwise it is refused.
-    if (!task || changing || sending || submitting.current) return;
+    if ((!task && !attachments.length) || uploading || changing || sending || submitting.current) return;
     submitting.current = true; setSending(true); host.notice();
     try {
-      if (!(await plugins.claim(task))) {
+      // Plugins only carry text, so a message with attachments always goes to /api/run.
+      if (attachments.length || !(await plugins.claim(task))) {
         if (state.running) { host.notice(T('任务运行中，请稍候', 'A task is running; please wait')); return; }
-        await request('/api/run', { task, session_id: state.session_id });
+        await request('/api/run', { task, session_id: state.session_id, attachments });
       }
-      setDraft(''); stick.current = true;
+      setDraft(''); files.forEach(p => p.preview && URL.revokeObjectURL(p.preview)); setFiles([]); stick.current = true;
     } catch (error) { host.report(error); }
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
   }
@@ -163,16 +186,23 @@ export function App() {
         <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <EmptyState />}</div>
       </main>
       <div className="gah-view-area" hidden={view === CHAT_VIEW}><Slot name="view" /></div>
-      <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" onSubmit={send}>
+      <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
+        onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
+        onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
+        onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); input.current?.focus(); }}>
         <Slot name="composer-top" />
-        <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onFocus={() => host.emit('composer-focus', true)} onBlur={() => host.emit('composer-focus', false)} onKeyDown={event => {
+        <PendingStrip items={files} onRemove={removeFile} />
+        <textarea id="input" ref={input} rows={1} autoFocus value={draft} placeholder={T('给 GenericAgent 发消息…', 'Message GenericAgent…')} aria-label={T('消息', 'Message')} onChange={event => setDraft(event.target.value)} onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addFiles(event.clipboardData.files); } }} onFocus={() => host.emit('composer-focus', true)} onBlur={() => host.emit('composer-focus', false)} onKeyDown={event => {
           host.emit('composer-key', event);
           if (event.defaultPrevented) return;
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
         }} />
-        <div className="composer-row"><Slot name="composer" /><span className="spacer" />
+        <div className="composer-row">
+          <input ref={picker} type="file" multiple hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+          <button type="button" className="icon-btn gah-attach-btn" aria-label={T('添加图片或文件', 'Attach images or files')} title={T('添加图片或文件（也可粘贴或拖入）', 'Attach images or files (or paste / drop)')} onClick={() => picker.current?.click()}>📎</button>
+          <Slot name="composer" /><span className="spacer" />
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
-          <button type="submit" id="send" disabled={changing || sending || !draft.trim()}>{T('发送', 'Send')}</button>
+          <button type="submit" id="send" disabled={changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>
         </div>
       </form>{stats.length ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />
