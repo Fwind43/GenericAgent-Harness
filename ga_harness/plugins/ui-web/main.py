@@ -15,7 +15,8 @@ Web plugins: ordinary plugins that inject ``web.host`` and call
 ``/web/<name>/`` and their routes under ``/api/p/<name>/<path>``; the page loads them at
 runtime (``GAH.define`` in the browser) and drops them again when they are withdrawn.
 
-Config: host (127.0.0.1), port (8765; 0 = any free port), open_browser (true), token, ready_file,
+Config: host (127.0.0.1), port (0 = any free port, the default; external access goes through
+plugins such as web-lan/web-tailscale on their own user-chosen ports), open_browser (true), token, ready_file,
 allowed_origins (extra browser origins allowed to POST, e.g. a tunnel/reverse-proxy URL),
 allow_no_token (false; binding a non-loopback host without a token is refused unless true).
 Environment overrides for embedding (the desktop shell sets these):
@@ -29,6 +30,7 @@ External access: plugins use ``web.host.allow_origin(url)`` (returns an undo cal
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
 import copy
+import hashlib
 import hmac
 import ipaddress
 import os
@@ -260,7 +262,7 @@ class WebFrontend:
         self.ctx = ctx
         self.host = config.get("host", "127.0.0.1")
         env = os.environ
-        self.port = int(env.get("GAH_WEB_PORT") or config.get("port", 8765))
+        self.port = int(env.get("GAH_WEB_PORT") or config.get("port", 0))
         flag = env.get("GAH_WEB_OPEN_BROWSER")
         self.open_browser = (bool(config.get("open_browser", True)) if flag is None
                              else flag.strip().lower() not in ("", "0", "false", "no"))
@@ -755,7 +757,6 @@ class WebFrontend:
             host = "127.0.0.1"                 # a wildcard is not browsable; open the loopback alias
         self.bound_port = port
         self.url = f"http://{f'[{host}]' if ':' in host else host}:{port}/"
-        self.cookie_name = f"gah_token_{port}"   # cookies ignore ports; keep instances apart
         threading.Thread(target=self.server.serve_forever, name="ui-web-http", daemon=True).start()
         return self.url
 
@@ -782,6 +783,12 @@ class WebFrontend:
                 if self._runtime_origins[norm] <= 0:
                     del self._runtime_origins[norm]
         return undo
+
+    @property
+    def cookie_name(self):
+        """Keyed by the token, not the port: cookies ignore ports, the port is random per start,
+        and a stable name keeps phones signed in across restarts while instances stay apart."""
+        return "gah_token_" + hashlib.sha256((self.token or "").encode()).hexdigest()[:12]
 
     def set_token(self, token):
         token = (token or "").strip() or None

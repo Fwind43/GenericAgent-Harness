@@ -1793,8 +1793,8 @@ var GAHPlugin_web_lan = (function(exports, jsxRuntime, react, sdk) {
             ] })
           ] }),
           chosen === ANY && !(data == null ? void 0 : data.active) && !(lan == null ? void 0 : lan.fixed) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "ts-hint", children: sdk.T(
-            "监听所有网卡（含虚拟网卡）；仍只放行内网来源。端口设为 0 时将使用网页端口 +1，因为本机回环已占用网页端口。",
-            "Listens on every interface (virtual ones included); only private peers are still admitted. With port 0 it uses the web UI port + 1, since the loopback already holds the web port."
+            "监听所有网卡（含虚拟网卡）；仍只放行内网来源。",
+            "Listens on every interface (virtual ones included); only private peers are still admitted."
           ) }),
           (error || (data == null ? void 0 : data.error) || (lan == null ? void 0 : lan.error)) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "ts-error", children: error || (data == null ? void 0 : data.error) || (lan == null ? void 0 : lan.error) })
         ] }),

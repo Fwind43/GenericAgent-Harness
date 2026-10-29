@@ -31,7 +31,7 @@ cd ..
 gah.cmd run --ui web --ga-root D:\path\to\GenericAgent
 ```
 
-默认访问 `http://127.0.0.1:8765/`。前端源码更新后需重新构建；缺少构建产物时，Web 首页会返回 503 并提示构建，不会回退到旧版界面。前端开发与插件 SDK 说明见 [frontend/MIGRATION.md](frontend/MIGRATION.md)。
+默认只监听 `127.0.0.1` 的随机空闲端口（启动日志会打印实际地址，`GAH_WEB_PORT` 或配置 `port` 可固定）；手机等外部设备通过 `web-lan` / `web-tailscale` 插件在其自定义端口上访问。前端源码更新后需重新构建；缺少构建产物时，Web 首页会返回 503 并提示构建，不会回退到旧版界面。前端开发与插件 SDK 说明见 [frontend/MIGRATION.md](frontend/MIGRATION.md)。
 
 GA 目录查找顺序：`--ga-root` → 环境变量 `GA_ROOT` → `$GAH_HOME/config.toml` 中的 `ga_root`。
 
@@ -71,7 +71,7 @@ ga-harness 自身的数据（配置、插件设置、上传文件、聊天记录
 | `run-queue` | 运行中发送的消息进入队列，可编辑、取消，或“引导”在下一轮非打断注入当前任务（worker 侧由 `ga-steer` 实现） |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
-| `ui-web` | React + TypeScript 浏览器界面，Python 标准库提供 HTTP + SSE；默认 `http://127.0.0.1:8765/`，只接受同源请求 |
+| `ui-web` | React + TypeScript 浏览器界面，Python 标准库提供 HTTP + SSE；默认 `http://127.0.0.1:<随机端口>/`，只接受同源请求 |
 
 ## 会话与模型管理（Web）
 

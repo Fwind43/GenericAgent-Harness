@@ -52,6 +52,9 @@ def _tailnet(ip):
     return addr in (TAILNET_V4 if addr.version == 4 else TAILNET_V6)
 
 
+DEFAULT_PORT = 8766  # user-facing tailnet port; the web UI itself stays on 127.0.0.1:<random>
+
+
 class Forwarder:
     """Accept on ``binds`` (tailnet IPs) and pipe each connection to 127.0.0.1:target."""
 
@@ -145,7 +148,7 @@ class Forwarder:
 class Tailscale:
     def __init__(self, host, config):
         self.host = host
-        self.port_setting = int(config.get("port") or 0)
+        self.port_setting = int(config.get("port") or DEFAULT_PORT)
         self.exe_setting = str(config.get("tailscale_path") or "").strip()
         self.state_file = paths.home() / "web-tailscale.json"
         self.lock = threading.RLock()
@@ -218,7 +221,11 @@ class Tailscale:
             if not st.get("running"):
                 raise RuntimeError(st.get("error") or "tailscale is not running")
             self.ensure_token()
-            port = self.port_setting or target
+            port = self.port_setting
+            if not 0 < port < 65536:
+                raise ValueError("set the tailnet port (1-65535) in the plugin settings")
+            if port == target:
+                raise ValueError(f"port {port} is the local web UI port; choose another one")
             v4 = [ip for ip in st["ips"] if ":" not in ip]
             v6 = [ip for ip in st["ips"] if ":" in ip]
             fwd = Forwarder(v4 + v6, port, target)
@@ -285,7 +292,7 @@ class Tailscale:
         token = bool(acc.get("token_required"))
         return {"active": active, "urls": urls, "entries": [self.host.entry_url(u) for u in urls] if token else [],
                 "error": self.error, "token_required": token, "web_port": acc.get("port"),
-                "port": self.port_setting or acc.get("port"), "enabled": bool(self._load().get("enabled"))}
+                "port": self.port_setting, "enabled": bool(self._load().get("enabled"))}
 
     def status(self, req=None):
         return {**self.snapshot(), "tailscale": self.ts_status()}

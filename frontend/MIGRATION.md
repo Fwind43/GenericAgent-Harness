@@ -56,7 +56,8 @@ npm run build
 ```
 
 Vite proxies `/api`, `/web` and `/ui-web-assets` to the existing Python service
-at `http://127.0.0.1:8765`. Start that service separately using the established
+at `GAH_WEB_URL` (default `http://127.0.0.1:8765`; the web UI port is random
+unless pinned, so start it with `GAH_WEB_PORT=8765` or set `GAH_WEB_URL`). Start that service separately using the established
 launcher/configuration; Vite does not replace the backend. The Vite dev server
 binds to localhost. A dependency lockfile should be generated and committed with
 the first authorized dependency installation.

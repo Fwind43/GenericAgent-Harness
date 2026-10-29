@@ -13,7 +13,8 @@ export default defineConfig({
   },
   server: {
     proxy: Object.fromEntries(['/api', '/web', '/ui-web-assets'].map(path => [path, {
-      target: 'http://127.0.0.1:8765', changeOrigin: true,
+      target: (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.GAH_WEB_URL
+        || 'http://127.0.0.1:8765', changeOrigin: true,
     }])),
   },
 });

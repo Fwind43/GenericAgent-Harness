@@ -7,11 +7,11 @@ inject = ["web.host"]
 
 [settings.port]
 type = "integer"
-default = 0
+default = 8766
 label = "Tailnet port"
 label_zh = "Tailnet 端口"
-description = "Port opened on the tailnet IP; 0 = same as the web UI port."
-description_zh = "在 tailnet IP 上监听的端口；0 表示与网页界面端口相同。"
+description = "Port opened on the tailnet IP and forwarded to the web UI, which itself stays on 127.0.0.1 with a random port."
+description_zh = "在 tailnet IP 上监听并转发到网页界面的端口；网页界面本身只在 127.0.0.1 的随机端口上监听。"
 
 [settings.tailscale_path]
 type = "string"

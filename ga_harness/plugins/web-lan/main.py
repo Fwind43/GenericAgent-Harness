@@ -49,6 +49,7 @@ def _addr(ip):
     return addr
 
 
+DEFAULT_PORT = 8765  # user-facing LAN port; the web UI itself stays on 127.0.0.1:<random>
 ANY = "0.0.0.0"  # all interfaces; peers are still filtered by _lan_peer
 
 
@@ -185,7 +186,7 @@ class Forwarder:
 class Lan:
     def __init__(self, host, config):
         self.host = host
-        self.port_setting = int(config.get("port") or 0)
+        self.port_setting = int(config.get("port") or DEFAULT_PORT)
         self.bind_setting = str(config.get("bind") or "").strip()
         self.state_file = paths.home() / "web-lan.json"
         self.lock = threading.RLock()
@@ -253,11 +254,11 @@ class Lan:
             if st["error"]:
                 raise RuntimeError(st["error"])
             self.ensure_token()
-            port = self.port_setting or target
-            if st["binds"] == [ANY] and port == target:
-                # A wildcard bind cannot share the port the web UI holds on 127.0.0.1
-                # (exclusive bind on Windows, EADDRINUSE on Linux), so step aside by one.
-                port = target + 1
+            port = self.port_setting
+            if not 0 < port < 65536:
+                raise ValueError("set the LAN port (1-65535) in the plugin settings")
+            if port == target:
+                raise ValueError(f"port {port} is the local web UI port; choose another one")
             fwd = Forwarder(st["binds"], port, target)
             try:
                 fwd.start()
@@ -314,7 +315,7 @@ class Lan:
         token = bool(acc.get("token_required"))
         return {"active": active, "urls": urls, "entries": [self.host.entry_url(u) for u in urls] if token else [],
                 "error": self.error, "token_required": token, "web_port": acc.get("port"),
-                "port": (listen if active else 0) or self.port_setting or acc.get("port"), "enabled": bool(self._load().get("enabled"))}
+                "port": (listen if active else 0) or self.port_setting, "enabled": bool(self._load().get("enabled"))}
 
     def status(self, req=None):
         return {**self.snapshot(), "lan": self.net_status()}

@@ -7,16 +7,16 @@ inject = ["web.host"]
 
 [settings.port]
 type = "integer"
-default = 0
+default = 8765
 label = "LAN port"
 label_zh = "局域网端口"
-description = "Port opened on the LAN IP; 0 = same as the web UI port."
-description_zh = "在局域网 IP 上监听的端口；0 表示与网页界面端口相同。"
+description = "Port opened on the LAN IP and forwarded to the web UI, which itself stays on 127.0.0.1 with a random port."
+description_zh = "在局域网 IP 上监听并转发到网页界面的端口；网页界面本身只在 127.0.0.1 的随机端口上监听。"
 
 [settings.bind]
 type = "string"
 default = ""
 label = "Bind address"
 label_zh = "绑定地址"
-description = "Fixed LAN IPv4 to listen on, or 0.0.0.0 for all interfaces (peers are still limited to private addresses; with port 0 it uses the web UI port + 1); empty = pick in the panel."
-description_zh = "固定监听的局域网 IPv4，或 0.0.0.0 表示所有网卡（仍只放行内网地址；端口为 0 时使用网页端口 +1）；留空则在面板中选择。"
+description = "Fixed LAN IPv4 to listen on, or 0.0.0.0 for all interfaces (peers are still limited to private addresses); empty = pick in the panel."
+description_zh = "固定监听的局域网 IPv4，或 0.0.0.0 表示所有网卡（仍只放行内网地址）；留空则在面板中选择。"

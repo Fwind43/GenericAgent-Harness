@@ -79,8 +79,8 @@ export function LanPanel({ api }: { api: PluginAPI }) {
           </dd></>}
           {data?.port && <><dt>{T('端口', 'Port')}</dt><dd>{data.port}{data.web_port && data.port !== data.web_port ? ` → 127.0.0.1:${data.web_port}` : ''}</dd></>}
         </dl>}
-        {chosen === ANY && !data?.active && !lan?.fixed && <p className="ts-hint">{T('监听所有网卡（含虚拟网卡）；仍只放行内网来源。端口设为 0 时将使用网页端口 +1，因为本机回环已占用网页端口。',
-          'Listens on every interface (virtual ones included); only private peers are still admitted. With port 0 it uses the web UI port + 1, since the loopback already holds the web port.')}</p>}
+        {chosen === ANY && !data?.active && !lan?.fixed && <p className="ts-hint">{T('监听所有网卡（含虚拟网卡）；仍只放行内网来源。',
+          'Listens on every interface (virtual ones included); only private peers are still admitted.')}</p>}
         {(error || data?.error || lan?.error) && <p className="ts-error">{error || data?.error || lan?.error}</p>}
       </section>
       {data?.active && entry && <section className="ts-card ts-entry">
