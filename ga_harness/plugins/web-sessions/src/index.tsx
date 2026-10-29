@@ -69,7 +69,24 @@ export function Sessions({ api }: { api: PluginAPI }) {
     document.addEventListener('pointerdown', close, true); document.addEventListener('keydown', esc);
     return () => { document.removeEventListener('pointerdown', close, true); document.removeEventListener('keydown', esc); };
   }, [menu]);
-  const updateLayout = (edit: (old: Layout) => Layout) => setLayout(old => { const next = normalizeLayout(edit(old)); save(LAYOUT_KEY, JSON.stringify(next)); return next; });
+  // Layout and group toggles are persisted on the host (shared by every client, incl. remote);
+  // localStorage is only a first-paint cache. A local edit made before the fetch lands wins.
+  const edited = useRef(false);
+  const persist = (key: 'sidebar.layout' | 'sidebar.groups', value: unknown) => {
+    edited.current = true; void api.post('', { key, value }).catch(() => undefined);
+  };
+  useEffect(() => {
+    void api.get<{ prefs?: Record<string, unknown> }>('').then(res => {
+      if (edited.current) return;
+      const prefs = res?.prefs ?? {};
+      if (prefs['sidebar.layout'] !== undefined) { const next = normalizeLayout(prefs['sidebar.layout']); setLayout(next); save(LAYOUT_KEY, JSON.stringify(next)); }
+      else if (saved(LAYOUT_KEY)) void api.post('', { key: 'sidebar.layout', value: loadLayout() }).catch(() => undefined);
+      const groups = prefs['sidebar.groups'];
+      if (groups && typeof groups === 'object' && !Array.isArray(groups)) { setToggled(groups as Record<string, boolean>); save('gah.sessions.groups', JSON.stringify(groups)); }
+      else if (saved('gah.sessions.groups')) void api.post('', { key: 'sidebar.groups', value: loadToggles() }).catch(() => undefined);
+    }).catch(() => undefined);
+  }, []);
+  const updateLayout = (edit: (old: Layout) => Layout) => setLayout(old => { const next = normalizeLayout(edit(old)); if (JSON.stringify(next) !== JSON.stringify(old)) { save(LAYOUT_KEY, JSON.stringify(next)); persist('sidebar.layout', next); } return next; });
   const setSection = (key: SectionKey, patch: Partial<SectionPref>) => updateLayout(old => ({ ...old, sections: { ...old.sections, [key]: { ...old.sections[key], ...patch } } }));
   const moveSection = (key: SectionKey, delta: number) => updateLayout(old => {
     const order = [...old.order], from = order.indexOf(key), to = from + delta;
@@ -87,7 +104,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const act = (action: string, extra: object = {}) => change('/api/sessions', { action, id: state.session_id, ...extra }, ['new', 'select', 'delete', 'clear'].includes(action));
   const scoped = (body: object, reset = true) => change('/api/p/web-workspaces/', body, reset);
   const dialog = (action: string, id?: string) => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action, id } }));
-  const toggle = (key: string, open: boolean) => setToggled(old => { const next = { ...old, [key]: !open }; save('gah.sessions.groups', JSON.stringify(next)); return next; });
+  const toggle = (key: string, open: boolean) => setToggled(old => { const next = { ...old, [key]: !open }; save('gah.sessions.groups', JSON.stringify(next)); persist('sidebar.groups', next); return next; });
   const activity = new Map<string, string>();
   for (const item of state.runs ?? []) if (item.status === 'running' || item.status === 'cancelling') activity.set(item.session_id, item.status);
   if (state.running && state.session_id && !activity.has(state.session_id)) activity.set(state.session_id, 'running');

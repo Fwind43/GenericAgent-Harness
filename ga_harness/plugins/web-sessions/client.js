@@ -84,9 +84,33 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         document.removeEventListener("keydown", esc);
       };
     }, [menu]);
+    const edited = react.useRef(false);
+    const persist = (key, value) => {
+      edited.current = true;
+      void api.post("", { key, value }).catch(() => void 0);
+    };
+    react.useEffect(() => {
+      void api.get("").then((res) => {
+        if (edited.current) return;
+        const prefs = (res == null ? void 0 : res.prefs) ?? {};
+        if (prefs["sidebar.layout"] !== void 0) {
+          const next = normalizeLayout(prefs["sidebar.layout"]);
+          setLayout(next);
+          sdk.save(LAYOUT_KEY, JSON.stringify(next));
+        } else if (sdk.saved(LAYOUT_KEY)) void api.post("", { key: "sidebar.layout", value: loadLayout() }).catch(() => void 0);
+        const groups = prefs["sidebar.groups"];
+        if (groups && typeof groups === "object" && !Array.isArray(groups)) {
+          setToggled(groups);
+          sdk.save("gah.sessions.groups", JSON.stringify(groups));
+        } else if (sdk.saved("gah.sessions.groups")) void api.post("", { key: "sidebar.groups", value: loadToggles() }).catch(() => void 0);
+      }).catch(() => void 0);
+    }, []);
     const updateLayout = (edit) => setLayout((old) => {
       const next = normalizeLayout(edit(old));
-      sdk.save(LAYOUT_KEY, JSON.stringify(next));
+      if (JSON.stringify(next) !== JSON.stringify(old)) {
+        sdk.save(LAYOUT_KEY, JSON.stringify(next));
+        persist("sidebar.layout", next);
+      }
       return next;
     });
     const setSection = (key, patch) => updateLayout((old) => ({ ...old, sections: { ...old.sections, [key]: { ...old.sections[key], ...patch } } }));
@@ -118,6 +142,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const toggle = (key, open) => setToggled((old) => {
       const next = { ...old, [key]: !open };
       sdk.save("gah.sessions.groups", JSON.stringify(next));
+      persist("sidebar.groups", next);
       return next;
     });
     const activity = /* @__PURE__ */ new Map();

@@ -169,6 +169,32 @@ class Sessions:
             with self._db() as db:
                 return self._decode(db.execute("SELECT * FROM sessions WHERE id=(SELECT value FROM meta WHERE key='current') AND deleted=0").fetchone())
 
+    # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
+    # client of this host -- local or remote -- sees the same state. Values are JSON.
+    PREF_KEYS = ("sidebar.layout", "sidebar.groups")
+
+    def prefs(self):
+        with self.lock, self._db() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            rows = db.execute("SELECT key,value FROM meta WHERE key LIKE 'pref:%'").fetchall()
+        out = {}
+        for key, value in rows:
+            try:
+                out[key[5:]] = json.loads(value)
+            except ValueError:
+                pass
+        return out
+
+    def set_pref(self, key, value):
+        if key not in self.PREF_KEYS:
+            raise ValueError(f"unknown preference: {key}")
+        text = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        if len(text) > 65536:
+            raise ValueError("preference too large")
+        with self.lock, self._db() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", ("pref:" + key, text))
+
     def get(self, sid):
         with self.lock:
             self._init()
