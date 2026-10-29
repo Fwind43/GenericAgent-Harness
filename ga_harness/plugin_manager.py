@@ -1,9 +1,8 @@
 """Local plugin preferences, independent of any frontend.
 
-Only manifest-declared public fields are exposed. Changes are staged for the
-next launch, except for "hot" plugins (installed in the user plugin directory and
-not hosting core capabilities), which are unmounted/remounted in place after a
-successful save. Inspection never imports or unloads a plugin.
+Only manifest-declared public fields are exposed. "Hot" plugins (built-in or
+user, see ``hot_capable``) are unmounted/remounted in place after a successful
+save; changes to host-bound plugins are staged for the next launch. Inspection never imports or unloads a plugin.
 """
 from __future__ import annotations
 
@@ -46,14 +45,43 @@ def user_plugin_dir():
     return (paths.home() / "plugins").resolve()
 
 
-def hot_capable(manifest):
-    """True if the plugin can be (un)mounted at runtime without a restart."""
-    if protected(manifest) or set(manifest.provides) & HOST_ONLY:
-        return False
+def user_plugin(manifest):
+    """True if the plugin lives in the user plugin directory (agent-managed)."""
     try:
         return Path(manifest.path).resolve().is_relative_to(user_plugin_dir())
     except (OSError, TypeError, ValueError):
         return False
+
+
+def _host_bound(manifest):
+    return protected(manifest) or bool(set(manifest.provides) & HOST_ONLY)
+
+
+def hot_capable(manifest, manifests=None):
+    """True if the plugin can be (un)mounted at runtime without a restart.
+
+    Built-in and user plugins alike, unless the plugin hosts a core capability or
+    remounting it would suspend one that does: withdrawing a capability suspends
+    every plugin that requires it (transitively), so a capability required by a
+    host-bound plugin (e.g. ``ga.hooks`` for ``workspace-store``) is not hot.
+    """
+    if _host_bound(manifest):
+        return False
+    if not manifests:
+        return True
+    seen, caps = {manifest.name}, set(manifest.provides)
+    while caps:
+        nxt = set()
+        for other in manifests.values():
+            if other.name in seen:
+                continue
+            if {c for c in other.inject if not c.endswith("?")} & caps:
+                if _host_bound(other):
+                    return False
+                seen.add(other.name)
+                nxt |= set(other.provides)
+        caps = nxt
+    return True
 
 
 def purge_modules(name):
@@ -247,7 +275,7 @@ class PluginManager:
                               "packages": list(getattr(m, "packages", [])), "missing_packages": lack,
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,
-                              "protected": protected(m), "hot": hot_capable(m),
+                              "protected": protected(m), "hot": hot_capable(m, p.manifests),
                               "fields": fields, "config": values,
                               "requires": m.inject, "provides": m.provides,
                               "missing": [c for c in m.inject if not c.endswith("?") and not self.ctx.has(c)],
@@ -264,7 +292,7 @@ class PluginManager:
     def install(self, body):
         """Install a plugin's declared ``packages`` (explicit user action).
 
-        Takes effect on the next start, like every other plugin change.
+        A hot plugin can then be re-enabled/saved to activate without a restart.
         """
         name = body.get("name") if isinstance(body, dict) else None
         m = self.preferences.manifests.get(name) if isinstance(name, str) else None
@@ -320,7 +348,7 @@ class PluginManager:
             finally:
                 lock_path.unlink()
             result = {}
-            if hot_capable(p.manifests[name]):
+            if hot_capable(p.manifests[name], p.manifests):
                 entry = next((e for e in p.resolve(data) if e["name"] == name),
                              {"name": name, "disabled": True, "config": {}})
                 try:
@@ -365,7 +393,7 @@ class PluginManager:
         with p.lock:
             for name, m in discover([user_plugin_dir()]).items():
                 old = p.manifests.get(name)
-                if old is None or hot_capable(old):
+                if old is None or (user_plugin(old) and hot_capable(old, p.manifests)):
                     p.manifests[name] = m
         return self.catalog()
 
@@ -386,7 +414,7 @@ class PluginManager:
                 raise ValueError("unknown plugin")
             if getattr(m, "worker_only", False):
                 raise ValueError("worker-only plugin; it is loaded automatically inside task workers")
-            if not hot_capable(m):
+            if not (user_plugin(m) and hot_capable(m, self.preferences.manifests)):
                 raise ValueError("only plugins in ~/.ga-harness/plugins can be toggled at runtime")
             current = next(i for i in self.catalog()["items"] if i["name"] == name)
             catalog = self.change({"name": name, "action": "save", "enabled": action == "enable",

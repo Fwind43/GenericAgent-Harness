@@ -135,8 +135,11 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       if (action === "reset" && !await sdk.confirmDialog({ title: sdk.T("恢复启动配置", "Restore startup settings"), danger: true, message: sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start.") })) return;
       setError("");
       void run(async () => {
-        setConfig(await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values } : {} }));
-        api.notice(sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));
+        var _a;
+        const next = await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values } : {} });
+        setConfig(next);
+        const live = !((_a = next.items.find((plugin) => plugin.name === selected.name)) == null ? void 0 : _a.restart_required);
+        api.notice(live ? sdk.T("插件配置已保存并已即时生效", "Plugin settings saved and applied") : sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));
       }, setError);
     };
     const install = () => {
@@ -155,7 +158,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
         (config == null ? void 0 : config.restart_required) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", role: "status", children: sdk.T("已保存，下次启动生效", "Saved; applies on next start") }),
         /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-catalog", hidden: !!selected, children: [
-          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改仅保存到本地，下次启动生效，不中断当前插件。", ". Changes are saved locally and apply on next start without interrupting running plugins.") : "" }),
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改保存到本地；支持热插拔的插件立即生效，其余下次启动生效。", ". Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.") : "" }),
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
             /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") })

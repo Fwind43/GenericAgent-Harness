@@ -27,8 +27,10 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     if (action === 'reset' && !(await confirmDialog({ title: T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings'), danger: true, message: T('\u6e05\u9664\u7f51\u9875\u8986\u76d6\u5e76\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', 'Clear web overrides and restore startup settings? Applies on next start.') }))) return;
     setError('');
     void run(async () => {
-      setConfig(await api.host.post<PluginCatalog>('/api/plugins', { action, name: selected.name, revision: config.revision, ...(action === 'save' ? { enabled, config: values } : {}) }));
-      api.notice(T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Plugin settings saved; they apply on next start'));
+      const next = await api.host.post<PluginCatalog>('/api/plugins', { action, name: selected.name, revision: config.revision, ...(action === 'save' ? { enabled, config: values } : {}) });
+      setConfig(next);
+      const live = !next.items.find(plugin => plugin.name === selected.name)?.restart_required;
+      api.notice(live ? T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u5df2\u5373\u65f6\u751f\u6548', 'Plugin settings saved and applied') : T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Plugin settings saved; they apply on next start'));
     }, setError);
   };
   const install = () => {
@@ -47,7 +49,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
       <div className="dialog-content">
         {config?.restart_required && <p className="plugin-note" role="status">{T('\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Saved; applies on next start')}</p>}
         <section className="plugin-catalog" hidden={!!selected}>
-          <p className="plugin-note plugin-profile" hidden={!config}>{config ? T('\u914d\u7f6e\u65b9\u6848\uff1a', 'Profile: ') + config.profile + T('\u3002\u66f4\u6539\u4ec5\u4fdd\u5b58\u5230\u672c\u5730\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548\uff0c\u4e0d\u4e2d\u65ad\u5f53\u524d\u63d2\u4ef6\u3002', '. Changes are saved locally and apply on next start without interrupting running plugins.') : ''}</p>
+          <p className="plugin-note plugin-profile" hidden={!config}>{config ? T('\u914d\u7f6e\u65b9\u6848\uff1a', 'Profile: ') + config.profile + T('\u3002\u66f4\u6539\u4fdd\u5b58\u5230\u672c\u5730\uff1b\u652f\u6301\u70ed\u63d2\u62d4\u7684\u63d2\u4ef6\u7acb\u5373\u751f\u6548\uff0c\u5176\u4f59\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', '. Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.') : ''}</p>
           <div className="plugin-toolbar"><input className="plugin-search" type="search" value={query} placeholder={T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'Search plugin names or descriptions')} aria-label={T('\u641c\u7d22\u63d2\u4ef6', 'Search plugins')} disabled={working} onChange={event => setQuery(event.target.value)} /><button type="button" className="secondary" disabled={working || changing} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button></div>
           <div className="plugin-filters" role="tablist" aria-label={T('\u6309\u72b6\u6001\u7b5b\u9009', 'Filter by status')}>{filters.map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-filter" data-filter={key} aria-selected={filter === key} onClick={() => setFilter(key)}>{label}<span className="plugin-count">{visible.filter(plugin => inFilter(plugin, key)).length}</span></button>)}</div>
           {error && !selected && <p className="gah-error" role="status">{error}</p>}
