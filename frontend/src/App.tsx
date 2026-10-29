@@ -7,6 +7,7 @@ import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
 import { GeneralSettings } from './components/GeneralSettings';
 import { ChatMessage } from './components/ChatMessage';
+import { MessageNav } from './components/MessageNav';
 import { ModeBadge, ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
@@ -199,6 +200,7 @@ export function App() {
       <main id="scroll" ref={scroll} hidden={view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <EmptyState />}</div>
       </main>
+      {view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} />}
       <div className="gah-view-area" hidden={view === CHAT_VIEW}><Slot name="view" /></div>
       <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
         onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
