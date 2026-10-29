@@ -28,6 +28,8 @@ class Workspaces:
                 db.execute("""CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace TEXT NOT NULL,
                     rules TEXT NOT NULL, memory TEXT NOT NULL, updated REAL NOT NULL)""")
+                # Folders under projects_root whose project was deleted here; not re-listed.
+                db.execute("CREATE TABLE IF NOT EXISTS project_ignored (name TEXT PRIMARY KEY COLLATE NOCASE)")
                 db.execute("UPDATE sessions SET workspace=? WHERE workspace=''",
                            (self.default_workspace,))
 
@@ -88,6 +90,34 @@ class Workspaces:
             raise ValueError("memory folder for this name already exists: " + str(dst))
         src.rename(dst)
 
+    def _discover(self, db):
+        """List folders under projects_root (GA's temp/projects) as projects.
+
+        A folder made outside ga-harness (GA's own project_mode, a copy from another
+        machine) becomes a project with the default workspace. Folders whose project was
+        deleted here stay hidden until a project with that name is created again.
+        """
+        if self.projects_root is None:
+            return
+        try:
+            folders = [d for d in self.projects_root.iterdir() if d.is_dir()]
+        except OSError:
+            return
+        known = {r[0].lower() for r in db.execute("SELECT name FROM projects")}
+        known |= {r[0].lower() for r in db.execute("SELECT name FROM project_ignored")}
+        for folder in folders:
+            name = folder.name
+            if name.startswith(".") or name.lower() in known:
+                continue
+            try:
+                self.project_name(name)
+                updated = folder.stat().st_mtime
+            except (ValueError, OSError):
+                continue
+            db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
+                       (uuid.uuid4().hex, name, "", "", "", updated))
+            known.add(name.lower())
+
     def projects(self):
         with self.sessions.lock, self.sessions._db() as db:
             return [{k: r[k] for k in ("id", "name", "workspace", "updated")}
@@ -108,6 +138,9 @@ class Workspaces:
 
     def snapshot(self):
         with self.sessions.lock:
+            # Own connection, before any other: projects() may run inside open transactions.
+            with self.sessions._db() as db:
+                self._discover(db)
             return {**self.current(), "projects": self.projects(), "default_workspace": self.default_workspace}
 
     def _enter(self, db, workspace, project_id):
@@ -141,6 +174,7 @@ class Workspaces:
                 workspace = self.directory(given) if isinstance(given, str) and given.strip() else ""
                 with store._db() as db:
                     self._unique_name(db, name, pid)
+                    db.execute("DELETE FROM project_ignored WHERE name=?", (name,))
                     if action == "create":
                         db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
                                    (pid, name, workspace, "", "", time.time()))
@@ -189,7 +223,10 @@ class Workspaces:
                     if db.execute("SELECT 1 FROM projects WHERE id=?", (pid,)).fetchone() is None:
                         raise ValueError("project not found")
                     db.execute("UPDATE sessions SET project_id='' WHERE project_id=?", (pid,))
+                    name = db.execute("SELECT name FROM projects WHERE id=?", (pid,)).fetchone()[0]
                     db.execute("DELETE FROM projects WHERE id=?", (pid,))
+                    # Its memory folder is kept; don't let discovery list it again.
+                    db.execute("INSERT OR IGNORE INTO project_ignored VALUES (?)", (name,))
             elif action == "move":
                 # Re-file one chat under another project (or none); its workspace and
                 # history stay, only future turns use the new project's memory.
