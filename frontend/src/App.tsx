@@ -7,6 +7,7 @@ import { plugins } from './plugin-runtime';
 import { Settings } from './components/Settings';
 import { GeneralSettings } from './components/GeneralSettings';
 import { UpdateSettings } from './components/UpdateSettings';
+import { GaRootSettings } from './components/GaRootSettings';
 import { ChatMessage } from './components/ChatMessage';
 import { MessageNav } from './components/MessageNav';
 import { ModeBadge, ModePicker } from './components/ModePicker';
@@ -188,7 +189,7 @@ export function App() {
       <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>GenericAgent-Harness</h1><button type="button" className="icon-btn side-close" data-gah-close onClick={() => { if (!narrow()) setCollapsed(true); }} title={T('收起侧边栏', 'Collapse sidebar')} aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
       <div className="side-body"><Slot name="sidebar" /></div>
       <div className="side-resize" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin={SIDE_MIN} aria-valuemax={SIDE_MAX} aria-valuenow={sideWidth} aria-label={T('拖动调整侧边栏宽度', 'Resize sidebar')} title={T('拖动调整宽度，双击恢复默认', 'Drag to resize, double-click to reset')} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => setSideWidth(SIDE_DEFAULT)} />
-      <div className="side-foot"><Slot name="sidebar-foot" /><Settings><GeneralSettings /><UpdateSettings /><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
+      <div className="side-foot"><Slot name="sidebar-foot" /><Settings><GeneralSettings /><GaRootSettings /><UpdateSettings /><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>
     <div className="scrim" data-gah-close />
     <div className="main-col">

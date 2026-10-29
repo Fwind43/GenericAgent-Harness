@@ -79,6 +79,76 @@ function registerBridge() {
     refreshTrayMenu();
     return updater.snapshot();
   });
+  // Settings > GenericAgent: inspect / change the GA checkout. Changes apply on restart.
+  ipcMain.handle('gah:ga-root-info', (event) => {
+    if (!fromBackend(event) || !backend) throw new Error('forbidden');
+    return backend.gaRootInfo();
+  });
+  ipcMain.handle('gah:ga-root-choose', async (event) => {
+    if (!fromBackend(event) || !backend) throw new Error('forbidden');
+    if (backend.gaRootInfo().locked) throw new Error('--ga-root is set in desktop.json args');
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choose the GenericAgent folder (contains agentmain.py)',
+      defaultPath: backend.gaRoot().value || undefined,
+      properties: ['openDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { canceled: true, info: backend.gaRootInfo() };
+    const dir = res.filePaths[0];
+    if (!isGaRoot(dir)) return { error: `${dir} does not contain agentmain.py`, info: backend.gaRootInfo() };
+    backend.setGaRoot(dir);
+    return { info: backend.gaRootInfo() };
+  });
+  ipcMain.handle('gah:ga-root-set', (event, mode) => {
+    if (!fromBackend(event) || !backend) throw new Error('forbidden');
+    if (mode !== 'bundled' && mode !== 'auto') throw new Error('bad mode');
+    if (backend.gaRootInfo().locked) throw new Error('--ga-root is set in desktop.json args');
+    backend.setGaRoot(mode === 'bundled' ? 'bundled' : null);
+    return { info: backend.gaRootInfo() };
+  });
+  ipcMain.handle('gah:ga-root-restart', async (event, force) => {
+    if (!fromBackend(event) || !backend) throw new Error('forbidden');
+    if (!force && updater && await updater.runningTasks()) return { busy: true };
+    await prepareQuit();
+    relaunch();
+    return { ok: true };
+  });
+}
+
+// Tray "GenericAgent folder...": pick a checkout and offer a restart (same as Settings).
+async function changeGaRootFromTray() {
+  if (backend.gaRootInfo().locked) {
+    await dialog.showMessageBox({ type: 'info', title: 'GenericAgent-Harness', noLink: true, buttons: ['OK'],
+      message: 'The GenericAgent folder is fixed by --ga-root', detail: `Edit "args" in:\n${backend.settings.file}` });
+    return;
+  }
+  const current = backend.gaRoot();
+  const { response } = await dialog.showMessageBox({
+    type: 'question', title: 'GenericAgent-Harness', noLink: true,
+    message: 'GenericAgent folder',
+    detail: `Current: ${current.value || '(none)'}\nSource: ${current.source || '-'}\n\nUse an existing GenericAgent checkout (contains agentmain.py), or the copy shipped with the app.`,
+    buttons: ['Choose folder...', 'Use bundled copy', 'Cancel'], defaultId: 0, cancelId: 2,
+  });
+  if (response === 2) return;
+  if (response === 0) {
+    const res = await dialog.showOpenDialog({ title: 'Choose the GenericAgent folder (contains agentmain.py)',
+      defaultPath: current.value || undefined, properties: ['openDirectory'] });
+    if (res.canceled || !res.filePaths[0]) return;
+    if (!isGaRoot(res.filePaths[0])) {
+      dialog.showErrorBox('GenericAgent-Harness', `${res.filePaths[0]} does not contain agentmain.py.`);
+      return;
+    }
+    backend.setGaRoot(res.filePaths[0]);
+  } else {
+    backend.setGaRoot('bundled');
+  }
+  const busy = updater ? await updater.runningTasks() : false;
+  const ask = await dialog.showMessageBox({
+    type: 'question', title: 'GenericAgent-Harness', noLink: true,
+    message: 'Restart to use the new GenericAgent folder?',
+    detail: busy ? 'Tasks are still running; restarting stops them.' : 'The change takes effect after a restart.',
+    buttons: ['Restart now', 'Later'], defaultId: busy ? 1 : 0, cancelId: 1,
+  });
+  if (ask.response === 0) { await prepareQuit(); relaunch(); }
 }
 
 // Push updater progress to the page (Settings > Updates listens for it).
@@ -152,6 +222,7 @@ function refreshTrayMenu() {
       ],
     }, { type: 'separator' });
   }
+  if (backend) items.push({ label: 'GenericAgent folder...', click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
   items.push({ label: 'Quit', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }

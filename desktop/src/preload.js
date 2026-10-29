@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
   pickDirectory: (opts) => ipcRenderer.invoke('gah:pick-directory', opts || {}),
   openPath: (target) => ipcRenderer.invoke('gah:open-path', target),
   openExternal: (url) => ipcRenderer.invoke('gah:open-external', url),
+  gaRoot: Object.freeze({
+    info: () => ipcRenderer.invoke('gah:ga-root-info'),
+    choose: () => ipcRenderer.invoke('gah:ga-root-choose'),
+    set: (mode) => ipcRenderer.invoke('gah:ga-root-set', mode),
+    restart: (force) => ipcRenderer.invoke('gah:ga-root-restart', !!force),
+  }),
   updates: Object.freeze({
     status: () => ipcRenderer.invoke('gah:update-status'),
     state: () => ipcRenderer.invoke('gah:update-state'),

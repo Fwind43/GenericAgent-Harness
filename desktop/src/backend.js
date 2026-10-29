@@ -142,6 +142,7 @@ function isGaRoot(dir) {
 // files that only exist in the copy (temp/, sessions, user additions) are never deleted.
 
 const GA_REF_FILE = '.gah-ga-ref';
+const BUNDLED = 'bundled';   // desktop.json ga_root value that selects the shipped copy
 const EMPTY_MYKEY = `# GenericAgent model configuration.
 # Add models in GenericAgent-Harness: Settings > Models (they are written to this file).
 `;
@@ -216,6 +217,8 @@ function configuredGaRoot(settings) {
   if (i >= 0 && settings.args[i + 1]) return { value: path.resolve(settings.args[i + 1]), source: `${settings.file} (args)` };
   const eq = settings.args.find((a) => a.startsWith('--ga-root='));
   if (eq) return { value: path.resolve(eq.slice('--ga-root='.length)), source: `${settings.file} (args)` };
+  // "bundled" pins the shipped copy even when $GA_ROOT / config.toml point elsewhere.
+  if (settings.gaRoot === BUNDLED) return { value: null, source: null };
   if (settings.gaRoot) return { value: path.resolve(expandHome(settings.gaRoot)), source: settings.file };
   const env = { ...process.env, ...settings.env }.GA_ROOT;
   if (env) return { value: path.resolve(env), source: 'GA_ROOT' };
@@ -235,10 +238,14 @@ function editSettingsFile(file, mutate) {
   return data;
 }
 
-// Persist the chosen folder in desktop.json.
+// Persist the chosen folder in desktop.json ("bundled" = the shipped copy, null = automatic).
 function saveGaRoot(settings, dir) {
-  editSettingsFile(settings.file, (data) => { data.ga_root = dir; });
-  settings.gaRoot = dir;
+  editSettingsFile(settings.file, (data) => { if (dir) data.ga_root = dir; else delete data.ga_root; });
+  settings.gaRoot = dir || null;
+}
+
+function hasGaRootArg(settings) {
+  return settings.args.some((a) => a === '--ga-root' || a.startsWith('--ga-root='));
 }
 
 class Backend {
@@ -274,6 +281,22 @@ class Backend {
   }
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
+
+  // For Settings > GenericAgent: what runs now, what the next start would use, and whether
+  // the choice can be changed from the UI at all (an explicit --ga-root arg always wins).
+  gaRootInfo() {
+    const next = this.gaRoot();
+    const bundledDir = bundledGaDir(this.userData);
+    return {
+      running: this.runningGaRoot || null,
+      next: { path: next.value, source: next.source },
+      choice: this.settings.gaRoot === BUNDLED ? 'bundled' : this.settings.gaRoot ? 'custom' : 'auto',
+      bundledDir,
+      bundledAvailable: isGaRoot(path.join(this.code.dir, 'genericagent')) || isGaRoot(bundledDir),
+      locked: hasGaRootArg(this.settings),
+      settingsFile: this.settings.file,
+    };
+  }
 
   // The updated code failed to start: never pick it again. Returns true when another
   // start attempt makes sense (an older update or the built-in code is left to try).
@@ -311,12 +334,9 @@ class Backend {
     }
     const args = ['-m', 'ga_harness.cli', 'run', '--ui', 'web', ...this.settings.args];
     // desktop.json ga_root wins over $GA_ROOT / config.toml; an explicit --ga-root arg wins over both.
-    const hasArg = this.settings.args.some((a) => a === '--ga-root' || a.startsWith('--ga-root='));
-    if (this.settings.gaRoot && !hasArg) args.push('--ga-root', path.resolve(expandHome(this.settings.gaRoot)));
-    else if (!hasArg) {
-      const ga = this.gaRoot();
-      if (ga.source === 'bundled') args.push('--ga-root', ga.value);
-    }
+    const ga = this.gaRoot();
+    if (!hasGaRootArg(this.settings) && ga.value) args.push('--ga-root', ga.value);
+    this.runningGaRoot = { path: ga.value, source: ga.source };
     this.child = spawn(this.settings.python, args, {
       cwd: this.settings.cwd,
       env,

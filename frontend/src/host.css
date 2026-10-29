@@ -275,6 +275,7 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 @keyframes gah-update-slide{from{left:-35%}to{left:100%}}
 .gah-update-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .gah-update-actions:empty{display:none}
+.gah-setting-text span.gah-ga-path{color:var(--text);font-family:var(--mono,ui-monospace,Consolas,monospace);word-break:break-all}
 .gah-update-error{color:var(--danger);font-size:12px;word-break:break-word}
 .gah-update-select{flex:none;max-width:220px;border:1px solid var(--border);border-radius:8px;padding:5px 8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
 .gah-switch{position:relative;flex:none;width:36px;height:20px;cursor:pointer}
