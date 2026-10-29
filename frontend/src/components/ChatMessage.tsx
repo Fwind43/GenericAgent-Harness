@@ -29,14 +29,22 @@ function Thinking({ text, stream = false }: { text?: string; stream?: boolean })
 }
 /**
  * GA core synthesises a missing summary from the first thinking line (clipped to 60 chars + '...').
- * Such a summary was not written by the model, so it is hidden rather than shown as one.
+ * Such a summary was not written by the model: the turn body hides it, while headings still
+ * use it as a title, restored to the full first thinking line.
  */
-function summaryOf(turn?: { summary?: string; thinking?: string } | null) {
+function synthetic(turn?: { summary?: string; thinking?: string } | null) {
   const summary = turn?.summary?.trim();
-  if (!summary || !turn?.thinking) return summary;
-  const line = turn.thinking.trim().split('\n', 1)[0];
-  const synthetic = summary === line || (summary.endsWith('...') && line.length > 60 && line.startsWith(summary.slice(0, -3)));
-  return synthetic ? undefined : summary;
+  if (!summary || !turn?.thinking) return undefined;
+  const line = turn.thinking.trim().split('\n', 1)[0].trim();
+  return summary === line || (summary.endsWith('...') && line.length > 60 && line.startsWith(summary.slice(0, -3))) ? line : undefined;
+}
+/** Summary shown inside the turn body; undefined when GA synthesised it. */
+function summaryOf(turn?: { summary?: string; thinking?: string } | null) {
+  return synthetic(turn) ? undefined : turn?.summary?.trim() || undefined;
+}
+/** Heading title: the model's summary, or the full thinking line GA clipped into one. */
+function titleOf(turn?: { summary?: string; thinking?: string } | null) {
+  return synthetic(turn) || turn?.summary?.trim() || undefined;
 }
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
@@ -83,7 +91,7 @@ const TurnBody = memo(function TurnBody({ turn, awaiting = false, stream = false
   </>;
 });
 const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
-  const title = summaryOf(turn) || turn.reply?.split('\n').find(line => line.trim()) || (turn.tools.length ? turn.tools.map(t => t.name).join(', ') : T('思考中…', 'Thinking…'));
+  const title = titleOf(turn) || turn.reply?.split('\n').find(line => line.trim()) || (turn.tools.length ? turn.tools.map(t => t.name).join(', ') : T('思考中…', 'Thinking…'));
   return <Disclosure className={'step' + (live ? ' running' : '')} initial={live} title={<>
     <span className="no">{T('步骤 ', 'Step ')}{turn.turn}</span><span className="ttl">{title}</span>
     {!!turn.tools.length && <span className="cnt">{turn.tools.length}{T(' 个工具', ' tools')}</span>}<Tokens usage={turn.usage} />
@@ -152,7 +160,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
         </Fragment>;
       })}
       {finalTurn ? <><div className="final-step-label"><span className="no">{T('步骤 ', 'Step ')}{finalTurn.turn ?? turns.length}</span>
-        {summaryOf(finalTurn) && <span className="ttl">{summaryOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
+        {titleOf(finalTurn) && <span className="ttl">{titleOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
         <Thinking text={finalTurn.thinking} stream={running} /><Summary text={summaryOf(finalTurn)} />
         {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
