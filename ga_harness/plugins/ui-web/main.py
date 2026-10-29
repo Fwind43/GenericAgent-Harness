@@ -330,6 +330,8 @@ class WebFrontend:
         if self.models:
             data["models"] = self.models.catalog()
         data["plugins_enabled"] = self.plugins is not None
+        if self.bound_port:
+            data["local"] = {"url": self.url, "host": self.host, "port": self.bound_port}
         agent = self.ctx.get("ga.agent")
         if self.sessions and agent is not None:
             data["effort"] = {"current": getattr(agent, "gah_reasoning_effort", None), "options": list(EFFORTS)}

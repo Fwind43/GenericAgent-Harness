@@ -39,7 +39,8 @@ export interface WebManifest { name: string; rev: number; script?: string; style
 export interface HostState {
   running: boolean; messages: Message[]; session_id?: string; sessions?: Session[];
   web_plugins?: WebManifest[]; scope?: Scope; plugins_enabled?: boolean;
-  models?: RuntimeCatalog; effort?: Effort; presets?: PresetCatalog; parallel_runs?: boolean; run_id?: string | null; runs?: Run[]; [key: string]: unknown;
+  models?: RuntimeCatalog; effort?: Effort; presets?: PresetCatalog; parallel_runs?: boolean; run_id?: string | null; runs?: Run[];
+  local?: { url: string; host: string; port: number }; [key: string]: unknown;
 }
 export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string }
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }
