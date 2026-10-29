@@ -58,7 +58,15 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState(''), [moving, setMoving] = useState('');
-  const [layout, setLayout] = useState(loadLayout), [customizing, setCustomizing] = useState(false);
+  const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<SectionKey | ''>('');
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: Event) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(''); };
+    const esc = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(''); };
+    document.addEventListener('pointerdown', close, true); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', close, true); document.removeEventListener('keydown', esc); };
+  }, [menu]);
   const updateLayout = (edit: (old: Layout) => Layout) => setLayout(old => { const next = normalizeLayout(edit(old)); save(LAYOUT_KEY, JSON.stringify(next)); return next; });
   const setSection = (key: SectionKey, patch: Partial<SectionPref>) => updateLayout(old => ({ ...old, sections: { ...old.sections, [key]: { ...old.sections[key], ...patch } } }));
   const moveSection = (key: SectionKey, delta: number) => updateLayout(old => {
@@ -128,9 +136,28 @@ export function Sessions({ api }: { api: PluginAPI }) {
       {open && list(key, items, p.workspace || scope?.default_workspace, projectCap)}
     </section>;
   });
-  const sectionHead = (key: SectionKey, open: boolean, action: ReactNode) => <div className="gah-sess-label">
+  const sectionMenu = (key: SectionKey, open: boolean) => {
+    const pref = layout.sections[key], name = sectionName(key), index = layout.order.indexOf(key);
+    const pick = (fn: () => void) => () => { fn(); setMenu(''); };
+    const hidden = layout.order.filter(k => k !== key && !layout.sections[k].show);
+    return <div className="gah-sess-menu" role="menu" aria-label={`${name}: ${T('\u7f16\u8f91\u5206\u533a', 'Edit section')}`}>
+      <div className="gah-sess-menu-title">{T('\u663e\u793a\u4e2a\u6570', 'Display count')}</div>
+      <div className="gah-sess-menu-counts">{SECTION_COUNTS.map(n => <button key={n} type="button" role="menuitemradio" aria-checked={pref.count === n} className={`gah-sess-menu-count${pref.count === n ? ' on' : ''}`} onClick={pick(() => setSection(key, { count: n }))}>{n}</button>)}</div>
+      <div className="gah-sess-menu-sep" />
+      <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={!!q} onClick={pick(() => setSection(key, { open: !open }))}>{open ? T('\u6536\u8d77\u5206\u533a', 'Collapse section') : T('\u5c55\u5f00\u5206\u533a', 'Expand section')}</button>
+      <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={index <= 0} onClick={pick(() => moveSection(key, -1))}>{T('\u4e0a\u79fb', 'Move up')}</button>
+      <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={index >= layout.order.length - 1} onClick={pick(() => moveSection(key, 1))}>{T('\u4e0b\u79fb', 'Move down')}</button>
+      <button type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => setSection(key, { show: false }))}>{T('\u9690\u85cf\u6b64\u5206\u533a', 'Hide this section')}</button>
+      {hidden.map(k => <button key={k} type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => setSection(k, { show: true }))}>{T('\u663e\u793a\u201c', 'Show "') + sectionName(k) + T('\u201d', '"')}</button>)}
+      <div className="gah-sess-menu-sep" />
+      <button type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => updateLayout(() => normalizeLayout()))}>{T('\u6062\u590d\u9ed8\u8ba4', 'Restore defaults')}</button>
+    </div>;
+  };
+  const sectionHead = (key: SectionKey, open: boolean, action: ReactNode) => <div className="gah-sess-label" ref={menu === key ? menuRef : undefined}>
     <button type="button" className="gah-sess-label-toggle" aria-expanded={open} disabled={!!q} title={open ? T('\u6536\u8d77\u5206\u533a', 'Collapse section') : T('\u5c55\u5f00\u5206\u533a', 'Expand section')} onClick={() => setSection(key, { open: !open })}>
-      <span className="gah-sess-chevron" aria-hidden="true" /><span>{sectionName(key)}</span></button>{action}</div>;
+      <span className="gah-sess-chevron" aria-hidden="true" /><span>{sectionName(key)}</span></button>
+    <button type="button" className={`gah-sess-head-btn gah-sess-edit${menu === key ? ' on' : ''}`} aria-haspopup="menu" aria-expanded={menu === key} aria-label={`${sectionName(key)}: ${T('\u7f16\u8f91\u5206\u533a', 'Edit section')}`} title={T('\u7f16\u8f91\u5206\u533a', 'Edit section')} onClick={() => setMenu(m => m === key ? '' : key)}><Icon name="pencil" /></button>
+    {action}{menu === key && sectionMenu(key, open)}</div>;
   const sections: Record<SectionKey, () => ReactNode> = {
     projects: () => {
       const open = !!q || layout.sections.projects.open;
@@ -150,28 +177,13 @@ export function Sessions({ api }: { api: PluginAPI }) {
     },
   };
   const shownSections = layout.order.filter(key => layout.sections[key].show);
-  const customizeLabel = T('\u81ea\u5b9a\u4e49\u4fa7\u8fb9\u680f', 'Customize sidebar');
-  const customizer = customizing && <div className="gah-sess-custom" role="group" aria-label={customizeLabel} onKeyDown={event => { if (event.key === 'Escape') setCustomizing(false); }}>
-    <div className="gah-sess-custom-title">{customizeLabel}</div>
-    {layout.order.map((key, index) => { const pref = layout.sections[key], name = sectionName(key); return <div key={key} className="gah-sess-custom-row" data-section={key}>
-      <label className="gah-sess-custom-show"><input type="checkbox" checked={pref.show} onChange={event => setSection(key, { show: event.target.checked })} /><span>{name}</span></label>
-      <select className="gah-sess-custom-count" value={pref.count} aria-label={`${name}: ${T('\u663e\u793a\u4e2a\u6570', 'Display count')}`} onChange={event => setSection(key, { count: Number(event.target.value) })}>
-        {SECTION_COUNTS.map(n => <option key={n} value={n}>{T(`${n} \u9879`, `${n} items`)}</option>)}</select>
-      <button type="button" className="gah-sess-custom-move" disabled={index === 0} aria-label={`${name}: ${T('\u4e0a\u79fb', 'Move up')}`} onClick={() => moveSection(key, -1)}>{'\u2191'}</button>
-      <button type="button" className="gah-sess-custom-move" disabled={index === layout.order.length - 1} aria-label={`${name}: ${T('\u4e0b\u79fb', 'Move down')}`} onClick={() => moveSection(key, 1)}>{'\u2193'}</button>
-    </div>; })}
-    <div className="gah-sess-custom-foot"><button type="button" className="gah-sess-more" onClick={() => updateLayout(() => normalizeLayout())}>{T('\u6062\u590d\u9ed8\u8ba4', 'Restore defaults')}</button>
-      <button type="button" className="gah-sess-more" onClick={() => setCustomizing(false)}>{T('\u5b8c\u6210', 'Done')}</button></div>
-  </div>;
   return <PluginSlot api={api} name="sidebar"><div className="gah-sessions" hidden={!state.sessions}>
     <button type="button" className="side-item gah-sess-new" disabled={busy} title={scope?.project ? `${T('\u5728\u9879\u76ee\u4e2d\u65b0\u5efa', 'New chat in')}: ${scope.project.name}` : T('\u65b0\u5efa\u672a\u7ed1\u5b9a\u9879\u76ee\u7684\u5bf9\u8bdd', 'New chat without a project')} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button>
-    <div className="gah-sess-tools"><input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
-      {scope && <button type="button" className="gah-sess-head-btn gah-sess-customize" aria-label={customizeLabel} title={customizeLabel} aria-expanded={customizing} onClick={() => setCustomizing(v => !v)}><Icon name="settings" /></button>}</div>
-    {scope && customizer}
+    <input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
     <div className="gah-sess-list" aria-label={T('\u4f1a\u8bdd\u5217\u8868', 'Chats')}>
       {scope ? <>
         {shownSections.map(key => sections[key]())}
-        {!shownSections.length && <div className="gah-sess-empty">{T('\u6240\u6709\u5206\u533a\u5df2\u9690\u85cf', 'All sections are hidden')} <button type="button" className="gah-sess-more" onClick={() => setCustomizing(true)}>{T('\u81ea\u5b9a\u4e49', 'Customize')}</button></div>}
+        {!shownSections.length && <div className="gah-sess-empty">{T('\u6240\u6709\u5206\u533a\u5df2\u9690\u85cf', 'All sections are hidden')} <button type="button" className="gah-sess-more" onClick={() => updateLayout(old => ({ ...old, sections: Object.fromEntries(SECTION_KEYS.map(k => [k, { ...old.sections[k], show: true }])) as Layout['sections'] }))}>{T('\u5168\u90e8\u663e\u793a', 'Show all')}</button></div>}
       </> : <div className="gah-sess-items flat" role="list">{(state.sessions ?? []).filter(s => !q || label(s).toLowerCase().includes(q)).map(s => row(s, 0))}</div>}
     </div></div></PluginSlot>;
 }

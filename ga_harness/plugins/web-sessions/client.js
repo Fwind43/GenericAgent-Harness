@@ -65,7 +65,24 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api, !!state.parallel_runs);
     const [toggled, setToggled] = react.useState(loadToggles), [expanded, setExpanded] = react.useState({});
     const [query, setQuery] = react.useState(""), [moving, setMoving] = react.useState("");
-    const [layout, setLayout] = react.useState(loadLayout), [customizing, setCustomizing] = react.useState(false);
+    const [layout, setLayout] = react.useState(loadLayout), [menu, setMenu] = react.useState("");
+    const menuRef = react.useRef(null);
+    react.useEffect(() => {
+      if (!menu) return;
+      const close = (event) => {
+        var _a;
+        if (!((_a = menuRef.current) == null ? void 0 : _a.contains(event.target))) setMenu("");
+      };
+      const esc = (event) => {
+        if (event.key === "Escape") setMenu("");
+      };
+      document.addEventListener("pointerdown", close, true);
+      document.addEventListener("keydown", esc);
+      return () => {
+        document.removeEventListener("pointerdown", close, true);
+        document.removeEventListener("keydown", esc);
+      };
+    }, [menu]);
     const updateLayout = (edit) => setLayout((old) => {
       const next = normalizeLayout(edit(old));
       sdk.save(LAYOUT_KEY, JSON.stringify(next));
@@ -186,12 +203,34 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         open && list(key, items, p.workspace || (scope == null ? void 0 : scope.default_workspace), projectCap)
       ] }, key);
     });
-    const sectionHead = (key, open, action) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-label", children: [
+    const sectionMenu = (key, open) => {
+      const pref = layout.sections[key], name = sectionName(key), index = layout.order.indexOf(key);
+      const pick = (fn) => () => {
+        fn();
+        setMenu("");
+      };
+      const hidden = layout.order.filter((k) => k !== key && !layout.sections[k].show);
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-menu", role: "menu", "aria-label": `${name}: ${sdk.T("编辑分区", "Edit section")}`, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-title", children: sdk.T("显示个数", "Display count") }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-counts", children: SECTION_COUNTS.map((n) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitemradio", "aria-checked": pref.count === n, className: `gah-sess-menu-count${pref.count === n ? " on" : ""}`, onClick: pick(() => setSection(key, { count: n })), children: n }, n)) }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: !!q, onClick: pick(() => setSection(key, { open: !open })), children: open ? sdk.T("收起分区", "Collapse section") : sdk.T("展开分区", "Expand section") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: index <= 0, onClick: pick(() => moveSection(key, -1)), children: sdk.T("上移", "Move up") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: index >= layout.order.length - 1, onClick: pick(() => moveSection(key, 1)), children: sdk.T("下移", "Move down") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => setSection(key, { show: false })), children: sdk.T("隐藏此分区", "Hide this section") }),
+        hidden.map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => setSection(k, { show: true })), children: sdk.T("显示“", 'Show "') + sectionName(k) + sdk.T("”", '"') }, k)),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => updateLayout(() => normalizeLayout())), children: sdk.T("恢复默认", "Restore defaults") })
+      ] });
+    };
+    const sectionHead = (key, open, action) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-label", ref: menu === key ? menuRef : void 0, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-label-toggle", "aria-expanded": open, disabled: !!q, title: open ? sdk.T("收起分区", "Collapse section") : sdk.T("展开分区", "Expand section"), onClick: () => setSection(key, { open: !open }), children: [
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-chevron", "aria-hidden": "true" }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { children: sectionName(key) })
       ] }),
-      action
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sess-head-btn gah-sess-edit${menu === key ? " on" : ""}`, "aria-haspopup": "menu", "aria-expanded": menu === key, "aria-label": `${sectionName(key)}: ${sdk.T("编辑分区", "Edit section")}`, title: sdk.T("编辑分区", "Edit section"), onClick: () => setMenu((m) => m === key ? "" : key), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
+      action,
+      menu === key && sectionMenu(key, open)
     ] });
     const sections = {
       projects: () => {
@@ -213,46 +252,20 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       }
     };
     const shownSections = layout.order.filter((key) => layout.sections[key].show);
-    const customizeLabel = sdk.T("自定义侧边栏", "Customize sidebar");
-    const customizer = customizing && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-custom", role: "group", "aria-label": customizeLabel, onKeyDown: (event) => {
-      if (event.key === "Escape") setCustomizing(false);
-    }, children: [
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-custom-title", children: customizeLabel }),
-      layout.order.map((key, index) => {
-        const pref = layout.sections[key], name = sectionName(key);
-        return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-custom-row", "data-section": key, children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "gah-sess-custom-show", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", checked: pref.show, onChange: (event) => setSection(key, { show: event.target.checked }) }),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: name })
-          ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("select", { className: "gah-sess-custom-count", value: pref.count, "aria-label": `${name}: ${sdk.T("显示个数", "Display count")}`, onChange: (event) => setSection(key, { count: Number(event.target.value) }), children: SECTION_COUNTS.map((n) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: n, children: sdk.T(`${n} 项`, `${n} items`) }, n)) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-custom-move", disabled: index === 0, "aria-label": `${name}: ${sdk.T("上移", "Move up")}`, onClick: () => moveSection(key, -1), children: "↑" }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-custom-move", disabled: index === layout.order.length - 1, "aria-label": `${name}: ${sdk.T("下移", "Move down")}`, onClick: () => moveSection(key, 1), children: "↓" })
-        ] }, key);
-      }),
-      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-custom-foot", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => updateLayout(() => normalizeLayout()), children: sdk.T("恢复默认", "Restore defaults") }),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setCustomizing(false), children: sdk.T("完成", "Done") })
-      ] })
-    ] });
     return /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "sidebar", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sessions", hidden: !state.sessions, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "side-item gah-sess-new", disabled: busy, title: (scope == null ? void 0 : scope.project) ? `${sdk.T("在项目中新建", "New chat in")}: ${scope.project.name}` : sdk.T("新建未绑定项目的对话", "New chat without a project"), "data-gah-close": "", onClick: () => void act("new"), children: [
         /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pen" }),
         sdk.T("新会话", "New chat")
       ] }),
-      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-tools", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "search", className: "gah-sess-search", value: query, placeholder: sdk.T("搜索会话", "Search chats"), "aria-label": sdk.T("搜索会话", "Search chats"), onChange: (event) => setQuery(event.target.value), onKeyDown: (event) => {
-          if (event.key === "Escape") setQuery("");
-        } }),
-        scope && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn gah-sess-customize", "aria-label": customizeLabel, title: customizeLabel, "aria-expanded": customizing, onClick: () => setCustomizing((v) => !v), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "settings" }) })
-      ] }),
-      scope && customizer,
+      /* @__PURE__ */ jsxRuntime.jsx("input", { type: "search", className: "gah-sess-search", value: query, placeholder: sdk.T("搜索会话", "Search chats"), "aria-label": sdk.T("搜索会话", "Search chats"), onChange: (event) => setQuery(event.target.value), onKeyDown: (event) => {
+        if (event.key === "Escape") setQuery("");
+      } }),
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-list", "aria-label": sdk.T("会话列表", "Chats"), children: scope ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
         shownSections.map((key) => sections[key]()),
         !shownSections.length && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-empty", children: [
           sdk.T("所有分区已隐藏", "All sections are hidden"),
           " ",
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setCustomizing(true), children: sdk.T("自定义", "Customize") })
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => updateLayout((old) => ({ ...old, sections: Object.fromEntries(SECTION_KEYS.map((k) => [k, { ...old.sections[k], show: true }])) })), children: sdk.T("全部显示", "Show all") })
         ] })
       ] }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-items flat", role: "list", children: (state.sessions ?? []).filter((s) => !q || label(s).toLowerCase().includes(q)).map((s) => row(s, 0)) }) })
     ] }) });

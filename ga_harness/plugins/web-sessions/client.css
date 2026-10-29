@@ -52,23 +52,23 @@
 .gah-sess-age{flex:none;margin-left:auto;padding:0 6px 0 4px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .gah-sess-row:hover .gah-sess-age,.gah-sess-row:focus-within .gah-sess-age{display:none}
 @media (hover:none){.gah-sess-row.current .gah-sess-age{display:none}}
-/* Customizable sections: collapsible headers, display counts, show/order panel. */
-.gah-sess-tools{display:flex;align-items:center;gap:2px}
-.gah-sess-tools .gah-sess-search{flex:1}
+/* Customizable sections: collapsible headers; each header has an edit button opening a menu. */
 .gah-sess-section{display:flex;flex-direction:column}
-.gah-sess-label{padding-left:2px}
+.gah-sess-label{position:relative;padding-left:2px}
 .gah-sess-label-toggle{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:28px;padding:0 6px;background:transparent;border:0;border-radius:6px;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .gah-sess-label-toggle:hover:not(:disabled){color:var(--text);background:var(--hover)}
 .gah-sess-label-toggle:disabled{cursor:default}
 .gah-sess-chevron{flex:none;width:6px;height:6px;margin:0 3px 0 1px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translate(-1px,-1px);transition:transform .15s}
 .gah-sess-label-toggle[aria-expanded=false] .gah-sess-chevron{transform:rotate(-45deg)}
 .gah-sess-label-toggle:disabled .gah-sess-chevron{opacity:.4}
-.gah-sess-custom{margin:2px 0 6px;padding:8px;border:1px solid var(--border,rgba(127,127,127,.25));border-radius:8px;display:flex;flex-direction:column;gap:4px;font-size:12px}
-.gah-sess-custom-title{font-weight:500;color:var(--muted);padding:0 2px 2px}
-.gah-sess-custom-row{display:flex;align-items:center;gap:4px}
-.gah-sess-custom-show{flex:1;min-width:0;display:flex;align-items:center;gap:6px;color:var(--text);cursor:pointer}
-.gah-sess-custom-count{height:26px;border-radius:6px;border:1px solid var(--border,rgba(127,127,127,.25));background:var(--bg,transparent);color:var(--text);font:inherit;font-size:12px}
-.gah-sess-custom-move{width:24px;height:26px;background:transparent;border:0;border-radius:6px;color:var(--muted);font:inherit}
-.gah-sess-custom-move:hover:not(:disabled){color:var(--text);background:var(--hover)}
-.gah-sess-custom-move:disabled{opacity:.35}
-.gah-sess-custom-foot{display:flex;justify-content:space-between;padding-top:2px}
+.gah-sess-edit.on{color:var(--text);background:var(--hover)}
+.gah-sess-menu{position:absolute;top:100%;right:2px;z-index:30;min-width:184px;margin-top:2px;padding:6px;display:flex;flex-direction:column;gap:1px;background:var(--panel,var(--bg,#fff));color:var(--text);border:1px solid var(--border,rgba(127,127,127,.25));border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);font-size:13px;font-weight:400}
+.gah-sess-menu-title{padding:2px 6px 4px;font-size:12px;color:var(--muted)}
+.gah-sess-menu-counts{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;padding:0 2px}
+.gah-sess-menu-count{height:26px;padding:0;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--muted);font:inherit;font-size:12px;font-variant-numeric:tabular-nums;cursor:pointer}
+.gah-sess-menu-count:hover{color:var(--text);background:var(--hover)}
+.gah-sess-menu-count.on{color:var(--text);border-color:var(--border,rgba(127,127,127,.35));background:var(--hover);font-weight:600}
+.gah-sess-menu-sep{height:1px;margin:5px 2px;background:var(--border,rgba(127,127,127,.2))}
+.gah-sess-menu-item{display:block;width:100%;height:30px;padding:0 8px;background:transparent;border:0;border-radius:6px;color:var(--text);font:inherit;text-align:left;cursor:pointer;white-space:nowrap}
+.gah-sess-menu-item:hover:not(:disabled){background:var(--hover)}
+.gah-sess-menu-item:disabled{opacity:.4;cursor:default}
