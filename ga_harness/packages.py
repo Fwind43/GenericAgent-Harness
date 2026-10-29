@@ -7,10 +7,16 @@ an explicit user action from the plugin manager.
 from __future__ import annotations
 
 import importlib.metadata as md
+import logging
+import os
 import re
 import shutil
 import subprocess
 import sys
+import sysconfig
+from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
@@ -59,15 +65,36 @@ def install(specs, timeout: int = 600) -> dict:
         return {"ok": True, "command": [], "output": ""}
     uv = shutil.which("uv")
     cmd = ([uv, "pip", "install", "--python", sys.executable] if uv
-           else [sys.executable, "-m", "pip", "install"]) + specs
+           else [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input"])
+    if externally_managed():
+        # The desktop build bundles a uv-managed standalone CPython that carries a PEP 668
+        # EXTERNALLY-MANAGED marker; it is the app's private, writable runtime, so both uv
+        # and pip must be told to override it or every plugin package install fails.
+        cmd.append("--break-system-packages")
+    cmd += specs
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1")
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout)
-        ok, out = r.returncode == 0, (r.stdout or "") + (r.stderr or "")
+                           errors="replace", timeout=timeout, env=env)
+        rc, out = r.returncode, (r.stdout or "") + (r.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as e:
-        ok, out = False, repr(e)
+        rc, out = None, repr(e)
     importlib_invalidate()
-    return {"ok": ok and not missing(specs), "command": cmd, "output": out[-4000:]}
+    ok = rc == 0 and not missing(specs)
+    log.log(logging.INFO if ok else logging.WARNING, "package install rc=%s ok=%s cmd=%s\n%s",
+            rc, ok, subprocess.list2cmdline(cmd), out[-1500:])
+    return {"ok": ok, "command": cmd, "output": out[-4000:]}
+
+
+def externally_managed() -> bool:
+    """True when the running interpreter carries a PEP 668 EXTERNALLY-MANAGED marker
+    (ignored inside a virtual environment, as PEP 668 specifies)."""
+    if sys.prefix != sys.base_prefix:
+        return False
+    try:
+        return (Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").is_file()
+    except (TypeError, OSError):
+        return False
 
 
 def importlib_invalidate() -> None:

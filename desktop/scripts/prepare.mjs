@@ -51,7 +51,8 @@ fs.rmSync(installDir, { recursive: true, force: true });
 // Trim the bundled stdlib test suite (~30% of the runtime); nothing imports it.
 const lib = process.platform === 'win32' ? path.join(pyDir, 'Lib') : path.join(pyDir, 'lib', `python${version}`);
 for (const name of ['test', 'idlelib', 'turtledemo']) fs.rmSync(path.join(lib, name), { recursive: true, force: true });
-// uv marks managed interpreters EXTERNALLY-MANAGED; plugins install into their own venvs anyway.
+// uv marks managed interpreters EXTERNALLY-MANAGED; the marker is kept, so build-time installs
+// here and runtime plugin installs (ga_harness/packages.py) both pass --break-system-packages.
 
 // 3. Bundled GenericAgent source + its core dependencies in the bundled interpreter, so a
 //    fresh install runs without the user downloading GA or creating a venv.
