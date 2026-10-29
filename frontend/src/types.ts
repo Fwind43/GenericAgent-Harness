@@ -75,5 +75,12 @@ declare global {
       askUserPayload(name: string, args?: Json, data?: Json): { question: string; candidates: string[] } | null;
       copyButton(getText: () => string, label?: string): HTMLButtonElement;
     };
+    GAHFiles: {
+      ref(path: string): import('./sdk').FileRef;
+      url(path: string, opts?: { download?: boolean; info?: boolean }): string;
+      localPath(raw: string): string;
+      open(ref: import('./sdk').FileRef | string, event?: MouseEvent): Promise<boolean>;
+      addOpener(fn: import('./sdk').FileOpener): () => void;
+    };
   }
 }

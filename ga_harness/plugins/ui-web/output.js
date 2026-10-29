@@ -63,6 +63,104 @@
       return (image ? ['http:', 'https:'] : ['http:', 'https:', 'mailto:', 'tel:']).includes(url.protocol);
     } catch (_) { return false; }
   }
+  // ---- local file references: [name](E:/a/b.png), ./src/x.ts, file:///... ----
+  const fileKinds = {
+    image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'],
+    code: ['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'java', 'kt', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs',
+      'rb', 'php', 'sh', 'bat', 'cmd', 'ps1', 'css', 'scss', 'html', 'vue', 'svelte', 'json', 'toml', 'yaml', 'yml',
+      'xml', 'sql', 'swift', 'lua', 'ini', 'cfg'],
+    doc: ['md', 'markdown', 'mdx', 'txt', 'rst', 'log', 'csv', 'pdf']
+  };
+  const fileIcons = {
+    image: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor"/><circle cx="6" cy="6.5" r="1.2" fill="currentColor"/><path d="m3 12 3.5-3.5 2.5 2.5 1.5-1.5L13 12" stroke="currentColor" stroke-linejoin="round"/></svg>',
+    code: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    doc: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 3.5 14V2a.5.5 0 0 1 .5-.5Z" stroke="currentColor"/><path d="M6 8h4.5M6 10.5h4.5" stroke="currentColor" stroke-linecap="round"/></svg>',
+    file: '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 3.5 14V2a.5.5 0 0 1 .5-.5Z" stroke="currentColor"/><path d="M9.5 1.5V5H13" stroke="currentColor"/></svg>'
+  };
+  function localPath(raw) {
+    raw = String(raw || '').trim();
+    if (!raw || raw.startsWith('#') || raw.startsWith('//')) return '';
+    let path = raw;
+    if (/^file:/i.test(raw)) {
+      try { path = decodeURIComponent(new URL(raw).pathname).replace(/^\/([A-Za-z]:[\\/])/, '$1'); } catch (_) { return ''; }
+    } else if (!/^[A-Za-z]:[\\/]/.test(raw) && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return '';
+    else { try { path = decodeURI(raw); } catch (_) { /* keep raw */ } }
+    path = path.replace(/#L\d+(?:-L?\d+)?$/i, '').replace(/[?#].*$/, '');
+    return path;
+  }
+  function fileRef(path) {
+    const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
+    const dot = name.lastIndexOf('.');
+    const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+    const kind = Object.keys(fileKinds).find(k => fileKinds[k].includes(ext)) || 'file';
+    return Object.freeze({ path, name, ext, kind, url: fileURL(path) });
+  }
+  function fileURL(path, opts = {}) {
+    const query = new URLSearchParams({ path });
+    if (opts.download) query.set('download', '1');
+    if (opts.info) query.set('info', '1');
+    return 'api/file?' + query;
+  }
+  // Click handling is a plugin hook: the newest opener that returns true wins, else open in a new tab.
+  const openers = [];
+  function addOpener(fn) {
+    if (typeof fn !== 'function') throw new TypeError('opener must be a function');
+    openers.unshift(fn);
+    return () => { const i = openers.indexOf(fn); if (i >= 0) openers.splice(i, 1); };
+  }
+  async function openFile(ref, event) {
+    if (typeof ref === 'string') ref = fileRef(ref);
+    for (const fn of openers.slice()) {
+      try { if (await fn(ref, event)) return true; } catch (error) { console.error('[GAHFiles opener]', error); }
+    }
+    window.open(ref.url, '_blank', 'noopener');
+    return false;
+  }
+  let preview;
+  function showPreview(link, ref) {
+    if (!preview) {
+      preview = make('div', 'md-file-preview');
+      preview.setAttribute('role', 'tooltip');
+      preview.append(make('img'), make('div', 'md-file-preview-name'));
+      preview.firstChild.addEventListener('error', () => preview.classList.add('failed'));
+    }
+    const [img, label] = preview.children;
+    preview.classList.remove('failed');
+    if (img.getAttribute('src') !== ref.url) img.src = ref.url;
+    img.alt = ref.name;
+    label.textContent = ref.name;
+    document.body.append(preview);
+    const box = link.getBoundingClientRect();
+    const width = 260, below = box.bottom + 8 + 220 < innerHeight;
+    preview.style.left = Math.max(8, Math.min(box.left, innerWidth - width - 8)) + 'px';
+    preview.style.top = (below ? box.bottom + 6 : Math.max(8, box.top - 226)) + 'px';
+  }
+  function hidePreview() { if (preview) preview.remove(); }
+  function decorateFileLink(link, path) {
+    const ref = fileRef(path);
+    const raw = link.getAttribute('href') || '';
+    const text = link.textContent.trim();
+    if (!text || text === raw || text === path) link.textContent = ref.name;
+    const glyph = make('span', 'md-file-icon');
+    glyph.innerHTML = fileIcons[ref.kind];
+    link.prepend(glyph);
+    link.classList.add('md-file', 'md-file-' + ref.kind);
+    link.href = ref.url;
+    link.title = ref.path;
+    link.removeAttribute('target');
+    link.addEventListener('click', event => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      event.preventDefault();
+      hidePreview();
+      openFile(ref, event);
+    });
+    if (ref.kind === 'image') {
+      link.addEventListener('mouseenter', () => showPreview(link, ref));
+      link.addEventListener('focus', () => showPreview(link, ref));
+      link.addEventListener('mouseleave', hidePreview);
+      link.addEventListener('blur', hidePreview);
+    }
+  }
   function setMarkdown(node, text) {
     text = String(text || '');
     if (node._markdown === text) return;
@@ -86,11 +184,17 @@
       return;
     }
     node.querySelectorAll('a').forEach(link => {
-      if (!allowedURL(link.getAttribute('href') || '', false)) link.removeAttribute('href');
+      const raw = link.getAttribute('href') || '';
+      const path = localPath(raw);
+      if (path) decorateFileLink(link, path);
+      else if (!allowedURL(raw, false)) link.removeAttribute('href');
       else { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
     });
     node.querySelectorAll('img').forEach(image => {
-      if (!allowedURL(image.getAttribute('src') || '', true)) image.replaceWith(document.createTextNode(image.alt));
+      const raw = image.getAttribute('src') || '';
+      const path = localPath(raw);
+      if (path) { image.src = fileURL(path); image.loading = 'lazy'; image.title = image.title || path; }
+      else if (!allowedURL(raw, true)) image.replaceWith(document.createTextNode(image.alt));
       else { image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; }
     });
     node.querySelectorAll('input').forEach(input => { input.type = 'checkbox'; input.disabled = true; });
@@ -197,5 +301,6 @@
     } else if (!target) target = detail = text(args.query || args.pattern || args.url || args.command);
     return { kind, tool, target, detail };
   }
+  window.GAHFiles = Object.freeze({ ref: fileRef, url: fileURL, localPath, open: openFile, addOpener });
   window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton, toolSummary, isAskUser, askUserPayload });
 })();

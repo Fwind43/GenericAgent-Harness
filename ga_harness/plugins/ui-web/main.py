@@ -29,6 +29,7 @@ import os
 import sys
 import html
 import json
+import mimetypes
 import queue
 import re
 import threading
@@ -241,6 +242,60 @@ class WebFrontend:
         data = copy.deepcopy(data)
         data["web_plugins"] = self.web.manifest()
         return self.ctx.waterfall("web.snapshot", data)
+
+    # ---- local file references (read-only; workspaces + GA root) ----
+    FILE_LIMIT = 50 << 20
+    INLINE_TYPES = ("image/", "audio/", "video/", "application/pdf")
+
+    def file_roots(self):
+        """Directories a chat file reference may read from: every known workspace plus the GA root."""
+        with self.lock:
+            scope = self.snapshot().get("scope") or {}
+        found = [scope.get("workspace")] + [p.get("workspace") for p in scope.get("projects") or []
+                                            if isinstance(p, dict)]
+        found.append(os.environ.get("GA_ROOT"))
+        agent = self.ctx.get("ga.agent")
+        module = sys.modules.get(type(agent).__module__) if agent is not None else None
+        if getattr(module, "__file__", None):
+            found.append(os.path.dirname(module.__file__))
+        roots = []
+        for raw in found:
+            if not raw or not isinstance(raw, str):
+                continue
+            try:
+                root = Path(raw).expanduser().resolve()
+            except (OSError, RuntimeError):
+                continue
+            if root.is_dir() and root not in roots:
+                roots.append(root)
+        return roots, scope.get("workspace")
+
+    def resolve_file(self, raw):
+        """-> (Path, root) for an existing regular file under an allowed root, else raise LookupError."""
+        raw = str(raw or "").strip()
+        if raw.lower().startswith("file:"):
+            from urllib.parse import unquote
+            raw = unquote(urlsplit(raw).path)
+            if re.match(r"^/[A-Za-z]:[/\\]", raw):
+                raw = raw[1:]
+        if not raw or "\0" in raw:
+            raise LookupError("no path")
+        roots, workspace = self.file_roots()
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            if not workspace:
+                raise LookupError("relative path without a workspace")
+            target = Path(workspace) / target
+        try:
+            target = target.resolve()
+        except (OSError, RuntimeError):
+            raise LookupError("unresolvable path")
+        root = next((r for r in roots if target.is_relative_to(r)), None)
+        if root is None:
+            raise PermissionError("outside workspaces and GA root")
+        if not target.is_file():
+            raise LookupError("not a file")
+        return target, root
 
     def session_action(self, body):
         if not self.sessions:
@@ -717,6 +772,44 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _file(self):
+        """GET /api/file?path=P[&info=1][&download=1]: read a referenced local file."""
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            target, root = self.frontend.resolve_file(query.get("path", [""])[0])
+        except PermissionError as e:
+            return self._json(403, {"error": str(e)})
+        except LookupError as e:
+            return self._json(404, {"error": str(e)})
+        size = target.stat().st_size
+        mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        if query.get("info", [""])[0]:
+            return self._json(200, {"path": str(target), "name": target.name, "size": size,
+                                    "mime": mime, "root": str(root)})
+        if size > self.frontend.FILE_LIMIT:
+            return self._json(413, {"error": "file too large"})
+        try:
+            body = target.read_bytes()
+        except OSError as e:
+            return self._json(404, {"error": f"unreadable: {e}"})
+        inline = mime.startswith(self.frontend.INLINE_TYPES)
+        if not inline and b"\0" not in body[:8192]:
+            mime = "text/plain; charset=utf-8"     # never render HTML/JS from disk as active content
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if mime != "application/pdf":
+            # Opaque origin, no scripts: an SVG or text file opened in a tab cannot reach the API.
+            self.send_header("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; "
+                                                        "style-src 'unsafe-inline'; media-src 'self'")
+        from urllib.parse import quote
+        disposition = "attachment" if query.get("download", [""])[0] or (not inline and mime.startswith("application/")) else "inline"
+        self.send_header("Content-Disposition", f"{disposition}; filename*=UTF-8''{quote(target.name)}")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _plugin_route(self, method, path, body):
         name, _, sub = path[len("/api/p/"):].partition("/")
         fn = self.frontend.web.route(name, method, sub)
@@ -823,6 +916,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._plugin_route("GET", path, None)
         elif path == "/api/web/plugins":
             self._json(200, self.frontend.web.manifest())
+        elif path == "/api/file":
+            self._file()
         elif path == "/api/state":
             with self.frontend.lock:
                 snap = self.frontend.snapshot()

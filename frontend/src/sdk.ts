@@ -5,6 +5,9 @@ export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'comp
 export type Cleanup = () => void;
 export type Interceptor = (text: string) => boolean | Promise<boolean>;
 export type DomChild = Node | string | number | boolean | null | undefined | DomChild[];
+export interface FileRef { readonly path: string; readonly name: string; readonly ext: string; readonly kind: 'image' | 'code' | 'doc' | 'file'; readonly url: string }
+/** Return true (or a promise of true) to claim the click; otherwise the next opener / default new tab runs. */
+export type FileOpener = (ref: FileRef, event?: MouseEvent) => boolean | void | Promise<boolean | void>;
 export interface PluginAPI {
   readonly name: string;
   readonly signal: AbortSignal;
@@ -19,6 +22,10 @@ export interface PluginAPI {
   setState(state: HostState, reset?: boolean): void;
   notice(text?: string): void;
   lock(on: boolean): void;
+  /** Handle clicks on local file references in rendered Markdown. Newest registration runs first. */
+  openFile(fn: FileOpener): Cleanup;
+  /** Same-origin read-only URL for a local file inside a workspace or the GA root. */
+  fileURL(path: string, opts?: { download?: boolean; info?: boolean }): string;
   cleanup(fn: Cleanup): Cleanup;
   listen(target: EventTarget, type: string, fn: EventListener, options?: AddEventListenerOptions | boolean): Cleanup;
   every(ms: number, fn: () => void): Cleanup;

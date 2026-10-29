@@ -84,6 +84,8 @@ export class PluginRuntime {
         if (on && !unlock) unlock = host.lock();
         else if (!on && unlock) { const release = unlock; unlock = undefined; release(); }
       },
+      openFile: fn => own(window.GAHFiles.addOpener((ref, event) => controller.signal.aborted ? false : fn(ref, event))),
+      fileURL: (path, opts) => window.GAHFiles.url(path, opts),
       cleanup: own,
       listen: (target, type, fn, options) => {
         const listener: EventListener = event => { try { fn(event); } catch (error) { this.report(m.name, error); } };
