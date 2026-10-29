@@ -23,10 +23,7 @@ export function Settings({ children }: { children: ReactNode }) {
       event.preventDefault(); if (!changing) settings.close();
     }} onClose={settings.close}>
       <nav className="gah-settings-nav">
-      <div className="gah-settings-head"><h2 id="gah-settings-title">{T('\u8bbe\u7f6e', 'Settings')}</h2>
-        <button type="button" className="gah-icon-btn gah-settings-close" disabled={changing} onClick={settings.close}
-          aria-label={T('\u5173\u95ed', 'Close')} title={T('\u5173\u95ed (Esc)', 'Close (Esc)')}><Icon name="x" /></button>
-      </div>
+      <div className="gah-settings-head"><h2 id="gah-settings-title">{T('\u8bbe\u7f6e', 'Settings')}</h2></div>
       <div className="gah-settings-tabs" aria-orientation="vertical" role="tablist" aria-label={T('\u8bbe\u7f6e\u5206\u7c7b', 'Settings sections')} onKeyDown={event => {
         if (changing || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -44,6 +41,8 @@ export function Settings({ children }: { children: ReactNode }) {
       </div>
       </nav>
       <div className="gah-settings-body">{children}</div>
+      <button type="button" className="gah-icon-btn gah-settings-close" disabled={changing} onClick={settings.close}
+        aria-label={T('\u5173\u95ed', 'Close')} title={T('\u5173\u95ed (Esc)', 'Close (Esc)')}><Icon name="x" /></button>
     </dialog>, document.body)}
   </>;
 }

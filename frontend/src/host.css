@@ -131,7 +131,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-ico[data-i="settings"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6'/%3E%3C/svg%3E")}
 .gah-ico[data-i="channels"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='6' rx='1'/%3E%3Crect x='2' y='15' width='6' height='6' rx='1'/%3E%3Crect x='16' y='15' width='6' height='6' rx='1'/%3E%3Cpath d='M12 9v3M5 15v-3h14v3'/%3E%3C/svg%3E")}
 .gah-settings-dialog{width:min(1080px,calc(100vw - 32px));max-width:none;height:min(760px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);overflow:hidden}
-.gah-settings-dialog[open]{display:flex;flex-direction:row}
+.gah-settings-dialog[open]{display:flex;flex-direction:row;position:fixed}
+/* close sits at the dialog's top-right corner, over the panel header */
+.gah-settings-close{position:absolute;top:12px;right:12px;z-index:2}
 .gah-settings-dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
 .gah-icon-btn:hover:not(:disabled){background:var(--surface-muted);color:var(--text)}
@@ -152,7 +154,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-settings-panel{display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
 .gah-settings-panel[hidden]{display:none!important}
 .gah-settings-panel>.dialog-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-.gah-settings-panel>.dialog-head{flex:none;min-height:57px;box-sizing:border-box}
+.gah-settings-panel>.dialog-head{flex:none;min-height:57px;box-sizing:border-box;padding-right:56px}
 .gah-settings-panel.gah-model-dialog>.dialog-content,.gah-settings-panel.gah-plugin-dialog>.dialog-content{padding:20px 24px 24px}
 .gah-settings-panel.channel-dialog .channel-heading h2{margin:0}
 /* General: a readable, centred column of rows instead of a 900px-wide strip */
