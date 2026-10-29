@@ -205,3 +205,18 @@ footer .hint{padding-bottom:2px}
 .md-file-preview-name{margin-top:5px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .md-file-preview.failed img{display:none}
 .md-file-preview.failed .md-file-preview-name::before{content:"\26A0  "}
+/* image lightbox */
+.md img{cursor:zoom-in}
+html.md-lightbox-open{overflow:hidden}
+.md-lightbox{position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;background:rgba(10,10,12,.86);color:#fff;animation:md-lb-in .14s ease-out}
+@keyframes md-lb-in{from{opacity:0}to{opacity:1}}
+.md-lightbox-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:zoom-out;touch-action:none}
+.md-lightbox-stage img{max-width:none;max-height:none;cursor:zoom-in;user-select:none;transform-origin:center center;transition:transform .12s ease-out;box-shadow:0 10px 40px rgba(0,0,0,.4);border-radius:4px;background:#fff}
+.md-lightbox.zoomed .md-lightbox-stage img{cursor:grab}
+.md-lightbox.dragging .md-lightbox-stage img{cursor:grabbing;transition:none}
+.md-lightbox-bar{flex:none;display:flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(0,0,0,.35)}
+.md-lightbox-title{flex:1;min-width:0;font-size:13px;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md-lightbox-zoom{font-size:12px;opacity:.7;min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.md-lightbox-btn{width:32px;height:32px;padding:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-size:16px;line-height:32px}
+.md-lightbox-btn:hover{background:rgba(255,255,255,.24)}
+.md-lightbox-btn:focus-visible{outline:2px solid #fff;outline-offset:1px}

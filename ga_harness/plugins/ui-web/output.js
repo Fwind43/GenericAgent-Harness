@@ -114,9 +114,120 @@
     for (const fn of openers.slice()) {
       try { if (await fn(ref, event)) return true; } catch (error) { console.error('[GAHFiles opener]', error); }
     }
+    if (ref.kind === 'image') { openLightbox(ref.url, ref.name, ref.path); return false; }
     window.open(ref.url, '_blank', 'noopener');
     return false;
   }
+  let lightbox;
+  function openLightbox(src, name, path) {
+    if (!src) return;
+    hidePreview();
+    if (!lightbox) lightbox = createLightbox();
+    lightbox.show(src, name || '', path || '');
+  }
+  function createLightbox() {
+    const root = make('div', 'md-lightbox');
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    const bar = make('div', 'md-lightbox-bar');
+    const title = make('span', 'md-lightbox-title');
+    const zoomLabel = make('span', 'md-lightbox-zoom');
+    const button = (label, glyph, fn) => {
+      const b = make('button', 'md-lightbox-btn');
+      b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.textContent = glyph;
+      b.addEventListener('click', event => { event.stopPropagation(); fn(); });
+      return b;
+    };
+    const stage = make('div', 'md-lightbox-stage');
+    const img = make('img');
+    img.draggable = false;
+    stage.append(img);
+    let scale = 1, x = 0, y = 0, fit = 1, src = '', drag = null, moved = false, lastFocus = null;
+    const apply = () => {
+      img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+      zoomLabel.textContent = Math.round(scale * fit * 100) + '%';
+      root.classList.toggle('zoomed', scale > 1.001);
+    };
+    const reset = () => { scale = 1; x = 0; y = 0; apply(); };
+    const zoomAt = (factor, cx, cy) => {
+      const next = Math.min(Math.max(scale * factor, 0.2), 20 / fit);
+      const box = stage.getBoundingClientRect();
+      const ox = (cx ?? box.left + box.width / 2) - (box.left + box.width / 2);
+      const oy = (cy ?? box.top + box.height / 2) - (box.top + box.height / 2);
+      x = ox - (ox - x) * next / scale; y = oy - (oy - y) * next / scale;
+      scale = next; apply();
+    };
+    const close = () => {
+      root.remove();
+      document.removeEventListener('keydown', onKey, true);
+      document.documentElement.classList.remove('md-lightbox-open');
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
+      else if (event.key === '+' || event.key === '=') zoomAt(1.25);
+      else if (event.key === '-') zoomAt(0.8);
+      else if (event.key === '0') reset();
+    };
+    bar.append(title, zoomLabel,
+      button(T('缩小', 'Zoom out'), '\u2212', () => zoomAt(0.8)),
+      button(T('放大', 'Zoom in'), '+', () => zoomAt(1.25)),
+      button(T('适应窗口', 'Fit'), '\u2922', reset),
+      button(T('新标签页打开', 'Open in new tab'), '\u2197', () => window.open(src, '_blank', 'noopener')),
+      button(T('关闭 (Esc)', 'Close (Esc)'), '\u2715', () => close()));
+    root.append(stage, bar);
+    img.addEventListener('load', () => {
+      const w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+      fit = Math.min(1, (innerWidth - 48) / w, (innerHeight - 96) / h);
+      img.style.width = w * fit + 'px'; img.style.height = h * fit + 'px';
+      reset();
+    });
+    stage.addEventListener('wheel', event => {
+      event.preventDefault();
+      zoomAt(event.deltaY < 0 ? 1.15 : 1 / 1.15, event.clientX, event.clientY);
+    }, { passive: false });
+    stage.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      drag = { px: event.clientX, py: event.clientY, x, y }; moved = false;
+      stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener('pointermove', event => {
+      if (!drag) return;
+      const dx = event.clientX - drag.px, dy = event.clientY - drag.py;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (moved && scale > 1.001) { x = drag.x + dx; y = drag.y + dy; apply(); root.classList.add('dragging'); }
+    });
+    stage.addEventListener('pointerup', event => {
+      const wasDrag = moved; drag = null; root.classList.remove('dragging');
+      if (wasDrag) return;
+      if (event.target === img) { if (scale > 1.001) reset(); else zoomAt(2, event.clientX, event.clientY); }
+      else close();
+    });
+    stage.addEventListener('dblclick', event => event.preventDefault());
+    return {
+      show(nextSrc, name, path) {
+        src = nextSrc; lastFocus = document.activeElement;
+        title.textContent = name || path || '';
+        title.title = path || name || '';
+        img.style.width = img.style.height = '';
+        img.alt = name;
+        if (img.getAttribute('src') !== src) img.src = src; else img.dispatchEvent(new Event('load'));
+        document.body.append(root);
+        document.documentElement.classList.add('md-lightbox-open');
+        document.addEventListener('keydown', onKey, true);
+        root.querySelector('.md-lightbox-btn:last-child').focus({ preventScroll: true });
+      },
+    };
+  }
+  document.addEventListener('click', event => {
+    const image = event.target && event.target.closest ? event.target.closest('.md img') : null;
+    if (!image || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const src = image.currentSrc || image.src;
+    if (!src || !image.naturalWidth) return;
+    event.preventDefault(); event.stopPropagation();
+    const path = localPath(image.getAttribute('src') || '');
+    openLightbox(src, image.alt || (path ? fileRef(path).name : ''), path || src);
+  });
   let preview;
   function showPreview(link, ref) {
     if (!preview) {
@@ -312,6 +423,6 @@
     } else if (!target) target = detail = text(args.query || args.pattern || args.url || args.command);
     return { kind, tool, target, detail };
   }
-  window.GAHFiles = Object.freeze({ ref: fileRef, url: fileURL, localPath, open: openFile, addOpener });
+  window.GAHFiles = Object.freeze({ ref: fileRef, url: fileURL, localPath, open: openFile, addOpener, preview: openLightbox });
   window.GAHOutput = Object.freeze({ markdown, setMarkdown, copyButton, toolSummary, isAskUser, askUserPayload });
 })();
