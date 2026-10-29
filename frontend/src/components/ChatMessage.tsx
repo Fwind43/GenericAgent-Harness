@@ -28,15 +28,15 @@ function Thinking({ text, stream = false }: { text?: string; stream?: boolean })
     <Markdown text={text} className="thinking-body" stream={stream} /></Disclosure> : null;
 }
 /**
- * GA core synthesises a missing summary from the first thinking line, clipped to 60 chars + '...'.
- * Restore the full line for display when the clipped prefix matches the thinking we already have.
+ * GA core synthesises a missing summary from the first thinking line (clipped to 60 chars + '...').
+ * Such a summary was not written by the model, so it is hidden rather than shown as one.
  */
 function summaryOf(turn?: { summary?: string; thinking?: string } | null) {
-  const summary = turn?.summary;
-  if (!summary?.endsWith('...') || !turn?.thinking) return summary;
+  const summary = turn?.summary?.trim();
+  if (!summary || !turn?.thinking) return summary;
   const line = turn.thinking.trim().split('\n', 1)[0];
-  const prefix = summary.slice(0, -3);
-  return line.length > prefix.length && line.startsWith(prefix) ? line : summary;
+  const synthetic = summary === line || (summary.endsWith('...') && line.length > 60 && line.startsWith(summary.slice(0, -3)));
+  return synthetic ? undefined : summary;
 }
 function Summary({ text }: { text?: string }) {
   if (!text?.trim()) return null;
