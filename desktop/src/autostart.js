@@ -32,7 +32,13 @@ function isEnabled() {
   if (!supported()) return false;
   try {
     if (process.platform === 'linux') return fs.existsSync(linuxFile());
-    if (process.platform === 'win32') return app.getLoginItemSettings({ name: WIN_NAME, path: process.execPath, args: [HIDDEN_ARG] }).openAtLogin;
+    if (process.platform === 'win32') {
+      // openAtLogin is looked up under the AppUserModelID value, not our custom name, so it
+      // stays false after setEnabled(true); match our Run value in launchItems instead.
+      const s = app.getLoginItemSettings({ path: process.execPath, args: [HIDDEN_ARG] });
+      const mine = (s.launchItems || []).find(it => String(it.name).toLowerCase() === WIN_NAME.toLowerCase());
+      return mine ? mine.enabled !== false : Boolean(s.openAtLogin);
+    }
     return app.getLoginItemSettings().openAtLogin;
   } catch { return false; }
 }

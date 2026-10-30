@@ -34,7 +34,10 @@ export function GeneralSettings() {
   const toggleAutostart = (on: boolean) => {
     if (!autostartApi) return;
     setAutostartError(''); setAutostartBusy(true);
-    autostartApi.set(on).then(setAutostart)
+    autostartApi.set(on).then(s => {
+      setAutostart(s);
+      if (s.enabled !== on) setAutostartError(T('\u7cfb\u7edf\u672a\u5e94\u7528\u8be5\u8bbe\u7f6e', 'The system did not apply this setting'));
+    })
       .catch((e: Error) => setAutostartError(e?.message || String(e)))
       .finally(() => setAutostartBusy(false));
   };
