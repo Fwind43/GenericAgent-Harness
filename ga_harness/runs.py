@@ -244,6 +244,19 @@ class Runs:
             row = db.execute("SELECT * FROM runs WHERE session_id=? AND status IN ('running','cancelling')", (session_id,)).fetchone()
             return dict(row) if row else None
 
+    def live_snapshot(self, session_id):
+        """In-memory transcript and stream position of the session's active run.
+
+        The stored transcript lags stream fragments by up to one flush interval,
+        so a client that resumes incremental events must start from this copy.
+        """
+        with self.lock:
+            for rid, live in self.live.items():
+                if live["session_id"] == session_id:
+                    return {"run_id": rid, "seq": live["seq"],
+                            "messages": copy.deepcopy(live["messages"])}
+        return None
+
     @property
     def busy(self):
         with self.lock:
@@ -390,12 +403,35 @@ class Runs:
                         self._checkpoint(db, live)
                 else:
                     live["dirty"] = True
+                patch = None
             else:
                 with self.sessions._db() as db:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
                     self._checkpoint(db, live)
+                patch = self._patch(messages, name, data)
             record = {"id": rid, "session_id": live["session_id"], "seq": seq}
-        self._notify("run.event", record, name=name, data=data, message=messages[-1])
+        # Never ship the whole (often hundreds of KB) message per event: stream
+        # fragments carry only their delta and durable events carry the one turn
+        # they touched. Clients fold them in order and resync on a seq gap.
+        if patch is None:
+            self._notify("run.event", record, name=name, data=data)
+        else:
+            self._notify("run.event", record, name=name, data=data, patch=patch)
+
+    @staticmethod
+    def _patch(messages, name, data):
+        if not messages:
+            return {}
+        message = messages[-1]
+        head = {k: copy.deepcopy(v) for k, v in message.items() if k not in ("turns", "notes")}
+        patch = {"head": head}
+        if name not in ("assistant.metadata", "usage.total", "agent.chunk"):
+            number = data.get("turn", 0) if isinstance(data, dict) else 0
+            turns = message.get("turns") or []
+            turn = next((t for t in reversed(turns) if t["turn"] == number), None)
+            if turn is not None:
+                patch["turn"] = copy.deepcopy(turn)
+        return patch
 
     @staticmethod
     def _fold_notes(messages, data):

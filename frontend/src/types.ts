@@ -31,6 +31,8 @@ export interface Run {
 export interface RunEvent {
   run_id: string; session_id: string; seq: number; run?: Run;
   messages?: Message[]; message?: Message; name?: string; data?: Json;
+  /** Durable run events: message fields (``head``) and the one turn they changed. */
+  patch?: { head?: Partial<Message>; turn?: Turn };
 }
 export interface RuntimeModel { id: string; name?: string; model?: string; provider?: string; provider_id?: string }
 export interface RuntimeCatalog { current: string; items: RuntimeModel[] }

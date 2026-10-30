@@ -3,6 +3,31 @@ import { request } from './api';
 import { T, errorText } from './i18n';
 import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest, RunEvent } from './types';
 
+const PARTS = ['summary', 'reply', 'thinking'] as const;
+type Part = typeof PARTS[number];
+/** Mirror of ``ga_harness.run_output.apply_event`` for streamed fragments, plus turn patches. */
+function fold(message: Message, event: RunEvent): Message {
+  const { patch, name, data } = event;
+  if (patch) {
+    const next: Message = { ...message, ...(patch.head ?? {}) };
+    const turn = patch.turn;
+    if (turn) {
+      const turns = message.turns ?? [], at = turns.findLastIndex(item => item.turn === turn.turn);
+      next.turns = at < 0 ? [...turns, turn] : turns.map((item, i) => i === at ? turn : item);
+    }
+    return next;
+  }
+  if (message.status !== 'running') return message;
+  if (name === 'agent.chunk') return { ...message, text: (message.text ?? '') + String(data ?? '') };
+  if (name !== 'assistant.delta' || !data || typeof data !== 'object' || Array.isArray(data)) return message;
+  const { turn: number = 0, part, text } = data as { turn?: number; part?: string; text?: unknown };
+  if (!PARTS.includes(part as Part) || typeof text !== 'string' || !text) return message;
+  const key = part as Part, turns = message.turns ?? [], at = turns.findLastIndex(item => item.turn === number);
+  const turn: Turn = at < 0 ? { turn: number, summary: '', reply: '', thinking: '', status: 'running', tools: [] } : turns[at];
+  const updated = { ...turn, [key]: (turn[key] ?? '') + text };
+  return { ...message, turns: at < 0 ? [...turns, updated] : turns.map((item, i) => i === at ? updated : item) };
+}
+
 type Listener = () => void;
 type HostListener = (data: unknown) => void;
 export class HostStore {
@@ -15,6 +40,8 @@ export class HostStore {
   private publishedState = this.snapshot.state;
   private runSeq = new Map<string, number>();
   private refreshVersion = 0;
+  private resyncing = false;
+  private pending: [string, RunEvent][] = [];
   getSnapshot = () => this.snapshot;
   subscribe = (listener: Listener) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   on(type: string, listener: HostListener) {
@@ -60,28 +87,49 @@ export class HostStore {
     this.update({ state: { ...state, messages: [...messages.slice(0, -1), update(old)] } }, batch);
   }
   private acceptRun(kind: string, event: RunEvent) {
+    if (this.resyncing) { this.pending.push([kind, event]); return; }
     const state = this.snapshot.state;
-    if (!state.parallel_runs || event.seq <= (this.runSeq.get(event.run_id) ?? 0)) return;
+    const last = this.runSeq.get(event.run_id);
+    if (!state.parallel_runs || event.seq <= (last ?? 0)) return;
+    const current = event.session_id === state.session_id;
+    // Run events carry a delta (stream fragment) or a one-turn patch, not the
+    // whole message; fold them into the local copy so unchanged turns keep
+    // their identity and memoized rendering.
+    const folds = current && !event.messages && (kind === 'run.event' || !!event.message);
+    const index = folds ? state.messages.findLastIndex(item => item.role === 'assistant' && item.run_id === event.run_id) : -1;
+    // A missed initial event or fragment cannot be folded: reload the live transcript.
+    if (folds && (index < 0 || (kind === 'run.event' && last !== undefined && event.seq !== last + 1))) {
+      this.resync(kind, event); return;
+    }
     this.runSeq.set(event.run_id, event.seq);
     ++this.refreshVersion;
     const previous = state.runs?.find(run => run.id === event.run_id);
     const record = event.run ?? (previous ? { ...previous, seq: event.seq } : undefined);
     const runs = record ? [record, ...(state.runs ?? []).filter(run => run.id !== record.id)] : state.runs;
     let next: HostState = { ...state, runs };
-    if (event.session_id === state.session_id) {
+    if (current) {
       if (event.messages) next = { ...next, messages: event.messages };
-      else if (event.message) {
-        const message = event.message;
-        const index = state.messages.findLastIndex(item => item.role === 'assistant' && item.run_id === event.run_id);
-        // If the initial event was missed, recover from the authoritative snapshot.
-        if (index < 0) { void this.refresh().catch(error => this.report(error)); return; }
-        next.messages = state.messages.map((item, i) => i === index ? message : item);
+      else if (folds) {
+        const old = state.messages[index], message = event.message ?? fold(old, event);
+        if (message !== old) next.messages = state.messages.map((item, i) => i === index ? message : item);
       }
       if (kind === 'run.started' || kind === 'run.cancelling') next = { ...next, running: true, run_id: event.run_id };
       if (kind === 'run.finished' && state.run_id === event.run_id) next = { ...next, running: false, run_id: null };
     }
     this.update({ state: next }, kind === 'run.event');
     this.emit(kind, event);
+  }
+  /** Replace state with the server snapshot, then replay events received meanwhile. */
+  private resync(kind: string, event: RunEvent) {
+    this.resyncing = true; this.pending.push([kind, event]);
+    const done = (state?: HostState) => {
+      this.resyncing = false;
+      const pending = this.pending; this.pending = [];
+      if (!state) return;
+      this.setState(state);
+      for (const [k, e] of pending) this.acceptRun(k, e);
+    };
+    request<HostState>('/api/state').then(done, error => { done(); this.report(error); });
   }
   connect() {
     if (this.source) return () => {};

@@ -329,6 +329,13 @@ class WebFrontend:
                 data.update(session_id=selected["id"], messages=selected["messages"],
                             running=active is not None, run_id=active["id"] if active else None,
                             runs=self.runs.listing(), parallel_runs=True)
+                # Incremental run events resume from the live transcript; pair it
+                # with its own stream position so no fragment is lost or doubled.
+                live = self.runs.live_snapshot(selected["id"]) if active else None
+                if live:
+                    data["messages"] = live["messages"]
+                    data["runs"] = [dict(run, seq=live["seq"]) if run["id"] == live["run_id"] else run
+                                    for run in data["runs"]]
         if self.models:
             data["models"] = self.models.catalog()
         data["plugins_enabled"] = self.plugins is not None
