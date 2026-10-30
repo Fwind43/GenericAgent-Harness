@@ -283,7 +283,9 @@ class WebFrontend:
         console = ctx.get("console")    # ga-stdout captures sys.stdout; talk to the real one
         self.log = config.get("log") or (lambda *m: print(*m, file=console.out, flush=True) if console
                                          else print(*m, flush=True))
-        self.lock = threading.Lock()
+        # Re-entrant: a hot plugin change runs under this lock and its web
+        # (un)registration broadcasts ``web.plugins`` from the same thread.
+        self.lock = threading.RLock()
         self.sessions = ctx.get("sessions")
         self.runs = ctx.get("runs")
         self.models = ctx.get("models")
