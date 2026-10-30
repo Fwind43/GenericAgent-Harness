@@ -1,12 +1,21 @@
-.gah-cd{display:flex;flex-direction:column;margin:2px 4px 6px;border-radius:12px;background:var(--surface-muted);font-size:12.5px;overflow:hidden}
-.gah-cd-bar{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 8px 7px 12px}
+.gah-cd-anchor{position:relative;display:inline-flex}
+.gah-cd-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--muted);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;white-space:nowrap}
+.gah-cd-chip:hover,.gah-cd-chip.open{color:var(--text);background:var(--surface-muted)}
+.gah-cd-chip.on{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
+.gah-cd-chip.child{cursor:default}
+.gah-cd-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.gah-cd-caret{opacity:.7;transition:transform .15s}.gah-cd-chip.open .gah-cd-caret{transform:rotate(180deg)}
+.gah-cd{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:min(420px,calc(100vw - 24px));display:flex;flex-direction:column;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 10px 32px rgba(0,0,0,.12);font-size:12.5px}
+.gah-cd-list{display:flex;flex-direction:column;gap:2px;max-height:min(60vh,480px);overflow:auto}
+.gah-cd-empty{padding:10px 12px 12px;color:var(--muted)}
+.gah-cd-bar{display:flex;align-items:center;gap:8px;min-width:0;padding:6px 6px 8px 8px;margin-bottom:2px;border-bottom:1px solid var(--border)}
 .gah-cd-badge{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap;color:var(--accent)}
 .gah-cd-icon{flex:none}
 .gah-cd-hint{color:var(--muted);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gah-cd-off{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:2px 8px;border-radius:6px}
 .gah-cd-off:hover:not(:disabled){color:var(--text);background:var(--border)}
 .gah-cd-off:focus-visible{outline:2px solid var(--accent)}
-.gah-cd-task{margin:0 4px 4px;border-radius:8px;background:var(--surface)}
+.gah-cd-task{border-radius:8px}
 .gah-cd-task.resolved{opacity:.55}
 .gah-cd-head{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;cursor:pointer;border-radius:8px}
 .gah-cd-head:hover{background:color-mix(in srgb,var(--border) 45%,transparent)}

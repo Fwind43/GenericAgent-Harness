@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHost, T, defineReact, type PluginAPI } from '@gah/sdk';
 
 type Task = {
@@ -73,35 +73,54 @@ function TaskRow({ task, busy, act }: { task: Task; busy: boolean; act: (path: s
 
 function Panel({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run } = useConductor(api);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (event: MouseEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [open]);
+  useEffect(() => { setOpen(false); }, [sid]);
   if (!data || !sid) return null;
   if (data.children?.[sid]) {
     return (
-      <div className="gah-cd gah-cd-child">
-        <div className="gah-cd-bar">
-          <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u5b50\u4efb\u52a1', 'Conductor task')}</span>
-          <span className="gah-cd-hint">{T('\u672c\u4f1a\u8bdd\u7531\u6307\u6325\u5bb6\u6d3e\u53d1\uff0c\u7ed3\u679c\u4f1a\u81ea\u52a8\u56de\u62a5\u7236\u4f1a\u8bdd', 'Dispatched by a conductor; the result is reported back to the parent session')}</span>
-        </div>
-      </div>
+      <span className="gah-cd-chip child" title={T('\u672c\u4f1a\u8bdd\u7531\u6307\u6325\u5bb6\u6d3e\u53d1\uff0c\u7ed3\u679c\u4f1a\u81ea\u52a8\u56de\u62a5\u7236\u4f1a\u8bdd', 'Dispatched by a conductor; the result is reported back to the parent session')}>
+        <Icon /><span>{T('\u5b50\u4efb\u52a1', 'Subtask')}</span>
+      </span>
     );
   }
   const on = data.enabled.includes(sid);
   const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid);
   if (!on && !tasks.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
+  const done = tasks.filter(t => t.status !== 'running').length;
   return (
-    <div className="gah-cd" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
-      <div className="gah-cd-bar">
-        <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
-        <span className="gah-cd-hint">
-          {tasks.length
-            ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
-            : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself')}
-        </span>
-        {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
-      </div>
-      {tasks.map(task => (
-        <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} />
-      ))}
+    <div className="gah-cd-anchor" ref={box}>
+      <button type="button" className={`gah-cd-chip${on ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} aria-haspopup="dialog"
+        onClick={() => setOpen(!open)} title={T('\u6307\u6325\u5bb6\u4efb\u52a1', 'Conductor tasks')}>
+        {running ? <span className="gah-cd-dot running" /> : <Icon />}
+        <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
+        <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" /></svg>
+      </button>
+      {open ? (
+        <div className="gah-cd" role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
+          <div className="gah-cd-bar">
+            <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
+            <span className="gah-cd-hint">
+              {tasks.length
+                ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
+                : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself')}
+            </span>
+            {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
+          </div>
+          {tasks.length ? <div className="gah-cd-list">{tasks.map(task => (
+            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} />
+          ))}</div> : <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -128,7 +147,7 @@ function Toggle({ api }: { api: PluginAPI }) {
 
 function ConductorPlugin({ api }: { api: PluginAPI }) {
   useEffect(() => api.mount('composer', <Toggle api={api} />), [api]);
-  useEffect(() => api.mount('composer-top', <Panel api={api} />), [api]);
+  useEffect(() => api.mount('header', <Panel api={api} />), [api]);
   return null;
 }
 
