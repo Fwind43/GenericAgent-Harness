@@ -37,6 +37,7 @@ RESULT_LIMIT = 4_000
 TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
 SOURCE = "conductor"
+WAKE_COALESCE = 1.5  # seconds to gather children finishing together into one wake-up
 
 
 def _store_path(sessions):
@@ -100,6 +101,7 @@ def apply(ctx, config):
     frontend = host.frontend
     lock = threading.RLock()
     changed = threading.Condition(lock)
+    scheduled, waking = set(), set()  # parents with a pending / in-flight wake-up
     store = Store(_store_path(sessions))
     tasks, enabled = store.data["tasks"], store.data["enabled"]
 
@@ -332,9 +334,25 @@ def apply(ctx, config):
         return op(body)
 
     # ---- wake the parent when children finish ----------------------------
+    def _schedule_wake(parent):
+        # Children that finish close together are reported in one wake-up: the
+        # first finish opens a short window, later ones join the same message.
+        with lock:
+            if parent in scheduled:
+                return
+            scheduled.add(parent)
+
+        def fire():
+            with lock:
+                scheduled.discard(parent)
+            _wake(parent)
+        timer = threading.Timer(WAKE_COALESCE, fire)
+        timer.name, timer.daemon = "conductor-wake", True
+        timer.start()
+
     def _wake(parent):
         with lock:
-            if not enabled.get(parent):
+            if not enabled.get(parent) or parent in waking:
                 return
             pending = [t for t in _children(parent)
                        if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
@@ -342,6 +360,7 @@ def apply(ctx, config):
                 return
             for task in pending:
                 task["notified"] = True
+            waking.add(parent)  # until the run is registered, so no second wake races in
             lines = [f"- {t['id']} \u00b7 {t['title']} \u00b7 {t['status']}" for t in pending]
             still = sum(t["status"] == "running" for t in _children(parent))
         text = ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
@@ -356,6 +375,9 @@ def apply(ctx, config):
             with lock:
                 for task in pending:
                     task["notified"] = False
+        finally:
+            with lock:
+                waking.discard(parent)
         _publish()
 
     def on_finished(data, nxt=None):
@@ -378,7 +400,7 @@ def apply(ctx, config):
                 elif sid and enabled.get(sid):
                     parent = sid  # the parent went idle: deliver anything that finished meanwhile
             if parent:
-                threading.Thread(target=_wake, args=(parent,), name="conductor-wake", daemon=True).start()
+                _schedule_wake(parent)
         except Exception as error:
             log.warning("conductor: run.finished handling failed: %s", error)
         return nxt(data) if nxt else None

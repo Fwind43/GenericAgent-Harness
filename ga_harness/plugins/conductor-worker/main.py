@@ -31,7 +31,9 @@ delegate to child tasks, review their results and decide.
 - After dispatching, do not wait, sleep or poll. End your turn with a short status
   for the user (what was dispatched, what happens next). When a child finishes you
   are woken automatically with a `[Conductor]` message; then call
-  `conductor_collect` to read the results. Only keep working in the same turn if
+  `conductor_collect` to read the results. Tasks that finish close together
+  arrive in one wake-up and `conductor_collect` returns all of them: review and
+  resolve them together in that turn, not one per turn. Only keep working in the same turn if
   there is other planning you can do without the results.
 - Use `conductor_inspect` for details, `conductor_instruct` to steer or continue a
   task, `conductor_cancel` to stop one.
