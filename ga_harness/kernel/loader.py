@@ -48,6 +48,7 @@ class Manifest:
     packages: list[str] = field(default_factory=list)  # pip requirement strings
     # Loaded only inside run workers (requested by a host plugin); never a user-facing toggle.
     worker_only: bool = False
+    isolated: bool = False  # packages live in <home>/plugin-envs/<name>, used by a child process
     # Worker-only plugins this plugin requests (display metadata; loading stays in code).
     workers: list[str] = field(default_factory=list)
 
@@ -84,6 +85,7 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
                          category=data.get("category") if data.get("category") in CATEGORIES else "other",
                          packages=[str(x) for x in data.get("packages", []) or []],
                          worker_only=data.get("worker_only") is True,
+                         isolated=data.get("isolated") is True,
                          workers=[str(x) for x in data.get("workers", []) or []])
             found[m.name] = m  # later dirs override earlier ones
     return found
@@ -176,7 +178,7 @@ def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest]) ->
     Entries whose declared ``packages`` are not installed are skipped (never
     installed here) and recorded in ``runtime.unmet_packages``.
     """
-    from ..packages import missing
+    from ..packages import missing_for
     mounted = []
     unmet = getattr(runtime, "unmet_packages", None)
     if unmet is None:
@@ -186,7 +188,7 @@ def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest]) ->
             continue
         if e["name"] not in manifests:
             raise KeyError(f"plugin {e['name']!r} has no manifest")
-        lack = missing(manifests[e["name"]].packages)
+        lack = missing_for(manifests[e["name"]])
         if lack:
             unmet[e["name"]] = lack
             continue

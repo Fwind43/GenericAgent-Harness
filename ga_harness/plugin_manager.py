@@ -17,7 +17,7 @@ import threading
 from pathlib import Path
 from . import paths
 
-from .packages import install as install_packages, missing as missing_packages
+from .packages import install_for as install_packages, missing_for as missing_packages
 
 HOST_CAPABILITIES = {"plugin.catalog"}
 PROTECTED = {"plugin-manager", "ga-core"}
@@ -264,7 +264,7 @@ class PluginManager:
                 pending = (target["disabled"] != current["disabled"] or target["config"] != current["config"]
                            or (not current["disabled"] and h is None and name in getattr(
                                self.ctx.runtime, "unmet_packages", {})))
-                lack = missing_packages(getattr(m, "packages", []))
+                lack = missing_packages(m)
                 items.append({"name": name, "description": m.description,
                               "description_zh": getattr(m, "description_zh", ""),
                               "category": getattr(m, "category", "other"),
@@ -299,13 +299,13 @@ class PluginManager:
         m = self.preferences.manifests.get(name) if isinstance(name, str) else None
         if m is None:
             raise ValueError("unknown plugin")
-        lack = missing_packages(getattr(m, "packages", []))
+        lack = missing_packages(m)
         if not lack:
             return {"ok": True, "output": "", "catalog": self.catalog()}
         if not self._install_lock.acquire(blocking=False):
             raise RuntimeError("another package installation is running")
         try:
-            result = install_packages(lack)
+            result = install_packages(m, lack)
         finally:
             self._install_lock.release()
         return {"ok": result["ok"], "output": result["output"], "catalog": self.catalog()}
@@ -374,7 +374,7 @@ class PluginManager:
         running = {"name": name, "disabled": entry["disabled"], "config": copy.deepcopy(entry["config"])}
         try:
             if not entry["disabled"]:
-                lack = missing_packages(getattr(m, "packages", []))
+                lack = missing_packages(m)
                 if lack:
                     unmet[name] = lack
                 else:

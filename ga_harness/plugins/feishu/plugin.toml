@@ -5,3 +5,4 @@ description = "Feishu/Lark channel provider (long-connection bot). Channels are 
 description_zh = "飞书通道提供方（长连接机器人）。通道在“通道管理”中创建、启停。需要安装 lark-oapi。"
 inject = ["channel_manager"]
 packages = ["lark-oapi"]
+isolated = true

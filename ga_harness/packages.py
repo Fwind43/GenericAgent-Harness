@@ -3,6 +3,13 @@
 ``missing`` checks the running interpreter; ``install`` installs into it with
 uv when available, else pip. Nothing here runs automatically: installing is
 an explicit user action from the plugin manager.
+
+A plugin that declares ``isolated = true`` gets its own virtual environment at
+``<home>/plugin-envs/<plugin>`` instead (``env=<plugin>``). Its packages are never
+imported by the app process -- the plugin runs them in a child process started
+with ``python_for(...)`` -- so they can pin versions that conflict with the app
+(e.g. lark-oapi needs websockets<16 while GenericAgent pins websockets 17) and
+installing them can never replace a file the running app has loaded.
 """
 from __future__ import annotations
 
@@ -21,7 +28,7 @@ log = logging.getLogger(__name__)
 _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
-def _satisfied(spec: str) -> bool:
+def _satisfied(spec: str, version=md.version) -> bool:
     try:
         from packaging.requirements import Requirement
     except ImportError:
@@ -31,7 +38,7 @@ def _satisfied(spec: str) -> bool:
         if not m:
             return False
         try:
-            md.version(m.group(1))
+            version(m.group(1))
             return True
         except md.PackageNotFoundError:
             return False
@@ -39,10 +46,10 @@ def _satisfied(spec: str) -> bool:
     if req.marker is not None and not req.marker.evaluate():
         return True
     try:
-        version = md.version(req.name)
+        have = version(req.name)
     except md.PackageNotFoundError:
         return False
-    return not req.specifier or req.specifier.contains(version, prereleases=True)
+    return not req.specifier or req.specifier.contains(have, prereleases=True)
 
 
 def valid(spec) -> bool:
@@ -51,18 +58,127 @@ def valid(spec) -> bool:
             and not any(c in spec for c in "/\\@") and "\n" not in spec)
 
 
-def missing(specs) -> list[str]:
-    return [s for s in specs or () if not valid(s) or not _satisfied(s)]
+_ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
-def install(specs, timeout: int = 600) -> dict:
-    """Install ``specs`` into the running interpreter. Returns ok/command/output."""
+def env_dir(env: str) -> Path:
+    """Private virtual environment of plugin ``env``."""
+    if not isinstance(env, str) or not _ENV_NAME.match(env):
+        raise ValueError(f"invalid plugin environment name: {env!r}")
+    from .paths import home
+    return home() / "plugin-envs" / env
+
+
+def env_python(env: str) -> Path:
+    d = env_dir(env)
+    return d / "Scripts" / "python.exe" if os.name == "nt" else d / "bin" / "python"
+
+
+def _env_versions(env: str):
+    """``md.version``-like lookup restricted to the plugin environment."""
+    d = env_dir(env)
+    sites = [d / "Lib" / "site-packages", *sorted(d.glob("lib/python*/site-packages"))]
+    found = {}
+    if env_python(env).is_file():
+        for dist in md.distributions(path=[str(x) for x in sites if x.is_dir()]):
+            name = dist.metadata["Name"] if dist.metadata else None
+            if name:
+                found.setdefault(_norm(name), dist.version)
+
+    def lookup(name):
+        try:
+            return found[_norm(name)]
+        except KeyError:
+            raise md.PackageNotFoundError(name) from None
+    return lookup
+
+
+def missing(specs, env: str | None = None) -> list[str]:
+    """Unmet requirements in the running interpreter, or in plugin ``env``."""
+    version = _env_versions(env) if env else md.version
+    return [s for s in specs or () if not valid(s) or not _satisfied(s, version)]
+
+
+def isolated_env(manifest) -> str | None:
+    return manifest.name if getattr(manifest, "isolated", False) else None
+
+
+def missing_for(manifest) -> list[str]:
+    """Unmet ``packages`` of a plugin manifest. An isolated plugin is also satisfied
+    when the app interpreter already provides everything (e.g. an installed extra)."""
+    specs = list(getattr(manifest, "packages", None) or ())
+    env = isolated_env(manifest)
+    lack = missing(specs, env=env)
+    if lack and env and not missing(specs):
+        return []
+    return lack
+
+
+def python_for(env: str, specs=()) -> str:
+    """Interpreter a plugin's child process should use: its own environment when that
+    satisfies ``specs``, else the running interpreter (packages installed alongside
+    the app, e.g. as an extra)."""
+    py = env_python(env)
+    if py.is_file() and not missing(specs, env=env):
+        return str(py)
+    return sys.executable
+
+
+def install_for(manifest, specs=None, timeout: int = 600) -> dict:
+    specs = missing_for(manifest) if specs is None else specs
+    return install(specs, timeout=timeout, env=isolated_env(manifest))
+
+
+def _run(cmd, timeout, env):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout, env=env)
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, repr(e)
+
+
+def _install_env(env: str, specs: list[str], timeout: int) -> dict:
+    """Create plugin ``env`` if needed and install ``specs`` into it. The app's own
+    interpreter is never touched, so no in-use file can be replaced."""
+    target, py = env_dir(env), env_python(env)
+    uv = shutil.which("uv")
+    run_env = dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1")
+    run_env.pop("VIRTUAL_ENV", None)
+    out = ""
+    if not py.is_file():
+        if target.exists():
+            shutil.rmtree(target)  # half-created environment we own
+        target.parent.mkdir(parents=True, exist_ok=True)
+        make = ([uv, "venv", "--python", sys.executable, str(target)] if uv
+                else [sys.executable, "-m", "venv", str(target)])
+        rc, out = _run(make, timeout, run_env)
+        if rc != 0 or not py.is_file():
+            log.warning("plugin env create failed rc=%s cmd=%s\n%s", rc,
+                        subprocess.list2cmdline(make), out[-1500:])
+            return {"ok": False, "command": make, "output": out[-4000:]}
+    cmd = ([uv, "pip", "install", "--python", str(py)] if uv
+           else [str(py), "-m", "pip", "install", "--disable-pip-version-check", "--no-input"])
+    cmd += specs
+    rc, more = _run(cmd, timeout, run_env)
+    out += more
+    ok = rc == 0 and not missing(specs, env=env)
+    log.log(logging.INFO if ok else logging.WARNING, "plugin env %s install rc=%s ok=%s cmd=%s\n%s",
+            env, rc, ok, subprocess.list2cmdline(cmd), out[-1500:])
+    return {"ok": ok, "command": cmd, "output": out[-4000:], "env": str(target)}
+
+
+def install(specs, timeout: int = 600, env: str | None = None) -> dict:
+    """Install ``specs`` into the running interpreter, or into plugin ``env``.
+    Returns ok/command/output."""
     specs = list(specs or ())
     bad = [s for s in specs if not valid(s)]
     if bad:
         raise ValueError("invalid package requirement: " + ", ".join(map(str, bad)))
     if not specs:
         return {"ok": True, "command": [], "output": ""}
+    if env:
+        return _install_env(env, specs, timeout)
     uv = shutil.which("uv")
     cmd = ([uv, "pip", "install", "--python", sys.executable] if uv
            else [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input"])

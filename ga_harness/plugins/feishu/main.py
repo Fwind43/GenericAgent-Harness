@@ -3,7 +3,8 @@
 This plugin only provides the ``feishu`` provider; channels are created,
 started and stopped by the channel manager (channels plugin). Each running
 channel receives messages through its own ``ws_worker.py`` child process and
-replies through the REST API. ``lark-oapi`` is imported lazily.
+replies through the REST API (plain urllib). ``lark-oapi`` is only needed by
+the receiver, which runs in the plugin's own environment when one is installed.
 """
 import json
 import os
@@ -22,6 +23,89 @@ from ga_harness.channel_manager import Provider
 from ga_harness.channels import Adapter
 
 WORKER = Path(__file__).with_name("ws_worker.py")
+API = "https://open.feishu.cn/open-apis"
+PACKAGES = ["lark-oapi"]
+
+
+class FeishuApi:
+    """Minimal Feishu Open API client (tenant token, messages, media)."""
+
+    def __init__(self, app_id, app_secret, base=API):
+        self.app_id, self.app_secret, self.base = app_id, app_secret, base
+        self._token, self._expires = "", 0.0
+        self._lock = threading.Lock()
+
+    def token(self):
+        with self._lock:
+            if self._token and time.time() < self._expires:
+                return self._token
+            data = self._call("POST", "/auth/v3/tenant_access_token/internal",
+                              {"app_id": self.app_id, "app_secret": self.app_secret}, auth=False)
+            self._token = data.get("tenant_access_token") or ""
+            self._expires = time.time() + max(60, int(data.get("expire") or 0) - 300)
+            return self._token
+
+    def _open(self, method, path, body=None, headers=None, auth=True):
+        h = dict(headers or {})
+        if auth:
+            h["Authorization"] = "Bearer " + self.token()
+        req = urllib.request.Request(self.base + path, data=body, headers=h, method=method)
+        try:
+            return urllib.request.urlopen(req, timeout=60)
+        except urllib.error.HTTPError as e:
+            raw = e.read(1 << 20)
+            try:
+                data = json.loads(raw or b"{}")
+            except ValueError:
+                data = {}
+            raise RuntimeError(f"{data.get('code', e.code)} {data.get('msg') or e.reason}") from None
+
+    def _call(self, method, path, payload=None, auth=True, body=None, ctype=None):
+        if payload is not None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            ctype = "application/json; charset=utf-8"
+        with self._open(method, path, body, {"Content-Type": ctype} if ctype else None,
+                        auth=auth) as resp:
+            data = json.loads(resp.read() or b"{}")
+        if data.get("code", 0) != 0:
+            raise RuntimeError(f"{data.get('code')} {data.get('msg')}")
+        return data
+
+    def upload(self, path, fields, file_field, filename, content):
+        boundary = "gah" + os.urandom(12).hex()
+        parts = []
+        for k, v in fields.items():
+            parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"'
+                          f"\r\n\r\n{v}\r\n").encode("utf-8"))
+        quoted = filename.replace('"', "%22").replace("\r", "").replace("\n", "")
+        parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+                      f'filename="{quoted}"\r\nContent-Type: application/octet-stream'
+                      "\r\n\r\n").encode("utf-8") + content + b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode())
+        return self._call("POST", path, body=b"".join(parts),
+                          ctype="multipart/form-data; boundary=" + boundary).get("data") or {}
+
+    def send(self, chat_id, msg_type, content):
+        self._call("POST", "/im/v1/messages?receive_id_type=chat_id", {
+            "receive_id": chat_id, "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False)})
+
+    def resource(self, message_id, key, kind):
+        path = (f"/im/v1/messages/{urllib.parse.quote(message_id, safe='')}/resources/"
+                f"{urllib.parse.quote(key, safe='')}?type={urllib.parse.quote(kind)}")
+        with self._open("GET", path) as resp:
+            data = resp.read()
+            ctype = resp.headers.get("Content-Type", "")
+            disp = resp.headers.get("Content-Disposition", "")
+        if ctype.startswith("application/json"):
+            try:
+                err = json.loads(data)
+            except ValueError:
+                err = None
+            if isinstance(err, dict) and err.get("code"):
+                raise RuntimeError(f"{err.get('code')} {err.get('msg')}")
+        m = re.search(r"filename\*=(?:UTF-8'')?([^;]+)", disp) or re.search(r'filename="?([^";]+)', disp)
+        return data, (urllib.parse.unquote(m.group(1).strip()) if m else None)
 
 
 def _allowed(config):
@@ -119,25 +203,18 @@ class FeishuAdapter(Adapter):
             self.hub.receive(self.name, ev.get("chat_id"), text, user=user, files=files)
 
     def download(self, message_id, key, kind, name):
-        from lark_oapi.api.im.v1 import GetMessageResourceRequest
-        req = GetMessageResourceRequest.builder().message_id(message_id).file_key(key) \
-            .type(kind).build()
-        resp = self.client.im.v1.message_resource.get(req)
-        if not resp.success():
-            raise RuntimeError(f"{resp.code} {resp.msg}")
-        data = resp.file.read() if hasattr(resp.file, "read") else resp.file
-        return {"name": getattr(resp, "file_name", None) or name, "data": data}
+        data, fname = self.client.resource(message_id, key, kind)
+        return {"name": fname or name, "data": data}
 
     def start(self, hub):
         super().start(hub)
-        import lark_oapi as lark
-        self.client = lark.Client.builder().app_id(self.app_id) \
-            .app_secret(self.app_secret).build()
+        from ga_harness.packages import python_for
+        self.client = FeishuApi(self.app_id, self.app_secret)
         env = dict(os.environ, GAH_FEISHU_APP_ID=self.app_id,
                    GAH_FEISHU_APP_SECRET=self.app_secret, PYTHONIOENCODING="utf-8")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen(
-            [sys.executable, "-u", str(WORKER)], env=env, stdin=subprocess.DEVNULL,
+            [python_for("feishu", PACKAGES), "-u", str(WORKER)], env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=flags)
         self.reader = threading.Thread(target=self._read, name=f"gah-{self.name}",
                                        daemon=True)
@@ -175,33 +252,29 @@ class FeishuAdapter(Adapter):
     def send_file(self, chat_id, path):
         ext = os.path.splitext(path)[1].lower()
         if ext in IMAGE_EXTS and os.path.getsize(path) <= 10 << 20:
-            from lark_oapi.api.im.v1 import CreateImageRequest, CreateImageRequestBody
             with open(path, "rb") as f:
-                req = CreateImageRequest.builder().request_body(
-                    CreateImageRequestBody.builder().image_type("message").image(f).build()).build()
-                resp = self.client.im.v1.image.create(req)
-            if not resp.success():
-                raise RuntimeError(f"feishu image upload failed: {resp.code} {resp.msg}")
-            return self._create(chat_id, "image", {"image_key": resp.data.image_key})
-        from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
+                content = f.read()
+            try:
+                data = self.client.upload("/im/v1/images", {"image_type": "message"}, "image",
+                                          os.path.basename(path), content)
+            except RuntimeError as e:
+                raise RuntimeError(f"feishu image upload failed: {e}") from None
+            return self._create(chat_id, "image", {"image_key": data.get("image_key")})
         with open(path, "rb") as f:
-            req = CreateFileRequest.builder().request_body(
-                CreateFileRequestBody.builder().file_type(FILE_TYPES.get(ext, "stream"))
-                .file_name(os.path.basename(path)).file(f).build()).build()
-            resp = self.client.im.v1.file.create(req)
-        if not resp.success():
-            raise RuntimeError(f"feishu file upload failed: {resp.code} {resp.msg}")
-        self._create(chat_id, "file", {"file_key": resp.data.file_key})
+            content = f.read()
+        name = os.path.basename(path)
+        try:
+            data = self.client.upload("/im/v1/files", {
+                "file_type": FILE_TYPES.get(ext, "stream"), "file_name": name}, "file", name, content)
+        except RuntimeError as e:
+            raise RuntimeError(f"feishu file upload failed: {e}") from None
+        self._create(chat_id, "file", {"file_key": data.get("file_key")})
 
     def _create(self, chat_id, msg_type, content):
-        from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
-        body = CreateMessageRequestBody.builder().receive_id(chat_id).msg_type(msg_type) \
-            .content(json.dumps(content, ensure_ascii=False)).build()
-        req = CreateMessageRequest.builder().receive_id_type("chat_id") \
-            .request_body(body).build()
-        resp = self.client.im.v1.message.create(req)
-        if not resp.success():
-            raise RuntimeError(f"feishu send failed: {resp.code} {resp.msg}")
+        try:
+            self.client.send(chat_id, msg_type, content)
+        except RuntimeError as e:
+            raise RuntimeError(f"feishu send failed: {e}") from None
 
     def stop(self):
         self.stopping = True
@@ -296,6 +369,10 @@ def pair(update, cancelled):
     raise RuntimeError("QR login timed out")
 
 
+class _Manifest:
+    name, isolated, packages = "feishu", True, PACKAGES
+
+
 def apply(ctx, config):
     manager = ctx.get("channel_manager")
 
@@ -304,10 +381,9 @@ def apply(ctx, config):
         app_secret = (cfg.get("app_secret") or "").strip()
         if not (app_id and app_secret):
             raise RuntimeError("App ID / App Secret are required")
-        try:
-            import lark_oapi  # noqa: F401
-        except ImportError as e:
-            raise RuntimeError("pip install lark-oapi") from e
+        from ga_harness.packages import missing_for
+        if missing_for(ctx.get("manifest") or _Manifest()):
+            raise RuntimeError("lark-oapi is not installed; install it from the plugin manager")
         return FeishuAdapter(cid, app_id, app_secret, _allowed(cfg), log=log,
                              on_dead=lambda err: manager.fail(cid, err))
 
