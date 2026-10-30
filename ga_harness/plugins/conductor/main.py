@@ -198,7 +198,7 @@ def apply(ctx, config):
             if counts["running"] >= MAX_RUNNING:
                 raise RuntimeError(f"{MAX_RUNNING} tasks are already running; end your turn and "
                                    "dispatch more after you are woken by a finished task")
-            child = sessions.create(parent_id=parent, title="\u25b8 " + title)
+            child = sessions.create(parent_id=parent, title=title)
             task = {"id": "t" + uuid.uuid4().hex[:8], "parent": parent, "child": child["id"],
                     "title": title, "objective": objective, "created": time.time(), "runs": 0}
             tasks[task["id"]] = task

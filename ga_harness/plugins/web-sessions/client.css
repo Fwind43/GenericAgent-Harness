@@ -46,7 +46,11 @@
 .gah-group-count{flex:none;font-size:11px;color:var(--muted);font-weight:400}
 .gah-sess-tag{flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);padding:0 5px;border-radius:4px;background:var(--hover)}
 .gah-sess-row{flex-wrap:wrap}
-.gah-sess-row.child .gah-sess-open::before{content:"";flex:none;width:8px;height:1px;background:var(--muted);opacity:.5}
+.gah-sess-row.child{position:relative;padding-left:calc(var(--gah-depth,1) * 14px + 4px)}
+.gah-sess-row.child::before{content:"";position:absolute;left:calc(var(--gah-depth,1) * 14px - 4px);top:4px;bottom:4px;width:2px;border-radius:1px;background:var(--border,rgba(128,128,128,.25))}
+.gah-sess-row.child .gah-sess-open{font-size:12.5px;color:var(--muted)}
+.gah-sess-row.child:hover .gah-sess-open,.gah-sess-row.child.current .gah-sess-open,.gah-sess-row.child.unread .gah-sess-open{color:var(--text,inherit)}
+.gah-sess-row.child.current::before{background:var(--accent,#2f80ed)}
 .gah-sess-move{flex-basis:100%;margin:0 6px 6px 10px;height:28px;border-radius:6px;border:1px solid var(--border,rgba(127,127,127,.25));background:var(--bg,transparent);color:var(--text);font:inherit;font-size:12px}
 .gah-sess-more{align-self:flex-start;background:transparent;border:0;color:var(--muted);font:inherit;font-size:12px;padding:3px 10px;border-radius:6px}
 .gah-sess-more:hover{color:var(--text);background:var(--hover)}

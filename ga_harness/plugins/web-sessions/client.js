@@ -159,10 +159,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const row = (session, depth, home) => {
       const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : "";
       const unread = !status && !!session.unread && session.id !== state.session_id;
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}`, style: depth ? { paddingLeft: depth * 14 } : void 0, role: "listitem", children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: label(session) }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: depth ? label(session).replace(/^\u25b8\s*/, "") : label(session) }),
           tag && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-tag", children: tag }),
           unread && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-unread", role: "status", title: sdk.T("未读", "Unread"), "aria-label": sdk.T("未读", "Unread") }),
           !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
