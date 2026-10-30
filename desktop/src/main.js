@@ -319,9 +319,28 @@ function createWindow(url) {
   // Login launch with a tray: keep the window hidden (the tray icon brings it back).
   win.once('ready-to-show', () => { if (!(startHidden && tray)) win.show(); });
   // Stay on the backend origin; everything else opens in the system browser.
+  // Same-origin popups (e.g. referenced files via api/file) need the session cookie, which the
+  // system browser does not have, so they open in an in-app child window instead.
+  const sameOrigin = (target) => { try { return new URL(target).origin === origin; } catch { return false; } };
   win.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (sameOrigin(target)) {
+      return { action: 'allow', overrideBrowserWindowOptions: {
+        width: 1000, height: 760, icon: ICON, autoHideMenuBar: true,
+        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
+      } };
+    }
     if (/^https?:\/\//i.test(target)) shell.openExternal(target);
     return { action: 'deny' };
+  });
+  win.webContents.on('did-create-window', (child) => {
+    child.webContents.setWindowOpenHandler(({ url: target }) => {
+      if (/^https?:\/\//i.test(target)) shell.openExternal(target);
+      return { action: 'deny' };
+    });
+    child.webContents.on('will-navigate', (event, target) => {
+      if (!sameOrigin(target)) { event.preventDefault(); if (/^https?:\/\//i.test(target)) shell.openExternal(target); }
+    });
+    child.webContents.on('context-menu', (_event, params) => showContextMenu(params));
   });
   win.webContents.on('will-navigate', (event, target) => {
     let same = false;
