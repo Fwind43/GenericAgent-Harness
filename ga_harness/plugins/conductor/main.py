@@ -34,6 +34,7 @@ MAX_OPEN = 12
 MAX_TOTAL = 48
 MAX_TEXT = 20_000
 RESULT_LIMIT = 4_000
+WAKE_RESULT_LIMIT = 1_500  # per task in the wake-up message; full text via collect/inspect
 TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
 SOURCE = "conductor"
@@ -152,7 +153,10 @@ def apply(ctx, config):
         return {"running": sum(t["status"] == "running" for t in items),
                 "open": sum(not t["resolved"] for t in items),
                 "total": len(items),
-                "limits": {"running": MAX_RUNNING, "open": MAX_OPEN, "total": MAX_TOTAL}}
+                "limits": {"running": MAX_RUNNING, "open": MAX_OPEN, "total": MAX_TOTAL},
+                "awaiting_review": [t["id"] for t in items
+                                    if t["status"] in TERMINAL and not t["resolved"]
+                                    and t.get("review") == "pending"]}
 
     def _publish():
         with lock:
@@ -192,7 +196,8 @@ def apply(ctx, config):
             if counts["open"] >= MAX_OPEN:
                 raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
             if counts["running"] >= MAX_RUNNING:
-                raise RuntimeError(f"{MAX_RUNNING} tasks are already running; collect results first")
+                raise RuntimeError(f"{MAX_RUNNING} tasks are already running; end your turn and "
+                                   "dispatch more after you are woken by a finished task")
             child = sessions.create(parent_id=parent, title="\u25b8 " + title)
             task = {"id": "t" + uuid.uuid4().hex[:8], "parent": parent, "child": child["id"],
                     "title": title, "objective": objective, "created": time.time(), "runs": 0}
@@ -246,20 +251,26 @@ def apply(ctx, config):
         text = _text(body, "instruction")
         with lock:
             task = _owned(parent, body.get("task_id"))
-            if task["resolved"]:
-                raise RuntimeError("task is resolved; dispatch a new task instead")
-            if task["status"] == "running":
-                try:
-                    ok = runs.push(task["run_id"], "steer", {"id": "c" + uuid.uuid4().hex[:10], "text": text})
-                except Exception:
-                    ok = False
-                if ok:
-                    return {"delivered": "steered into the running task at its next turn boundary"}
-                raise RuntimeError("the running task could not take the instruction; retry after it finishes")
-            if sum(t["status"] == "running" for t in _children(parent)) >= MAX_RUNNING:
-                raise RuntimeError(f"{MAX_RUNNING} tasks are already running")
-            _start(task, text)
+            out = _instruct(parent, task, text)
         _publish()
+        return out
+
+    def _instruct(parent, task, text):
+        # Caller holds the lock and publishes.
+        if task["resolved"]:
+            raise RuntimeError("task is resolved; dispatch a new task instead")
+        if task["status"] == "running":
+            try:
+                ok = runs.push(task["run_id"], "steer", {"id": "c" + uuid.uuid4().hex[:10], "text": text})
+            except Exception:
+                ok = False
+            if ok:
+                return {"delivered": "steered into the running task at its next turn boundary"}
+            raise RuntimeError("the running task could not take the instruction; retry after it finishes")
+        if sum(t["status"] == "running" for t in _children(parent)) >= MAX_RUNNING:
+            raise RuntimeError(f"{MAX_RUNNING} tasks are already running; send this "
+                               "instruction after you are woken by a finished task")
+        _start(task, text)
         return {"delivered": "started a follow-up run in the task session", "task": _public(task)}
 
     def cancel(body):
@@ -271,33 +282,78 @@ def apply(ctx, config):
             runs.cancel(run_id)
         return {"task": _public(task), "cancelling": bool(run_id)}
 
+    def _task_ids(body):
+        ids = body.get("task_ids")
+        if ids is None:
+            ids = [body.get("task_id")]
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
+            raise ValueError("task_id or a non-empty task_ids list is required")
+        return list(dict.fromkeys(ids))
+
+    def _close(task):
+        if task["status"] not in TERMINAL:
+            raise RuntimeError("task is still running")
+        if task.get("review") == "pending":
+            raise RuntimeError("review the task first (conductor_review with a basis)")
+        if task["status"] == "done" and task.get("review") != "verified":
+            raise RuntimeError("a finished task must be reviewed as 'verified' before resolving "
+                               "(or continue it with needs_work + instruction)")
+        task["resolved"] = task["acked"] = task["notified"] = True
+
     def review(body):
+        """Record one verdict for one or more finished tasks. Optional follow-ups in the
+        same call: ``resolve`` closes them, ``instruction`` (needs_work only) continues them."""
         parent = _sid(body)
         verdict = body.get("verdict")
         if verdict not in VERDICTS:
             raise ValueError("verdict must be 'verified' or 'needs_work'")
         basis = _text(body, "basis", limit=4000)
+        ids = _task_ids(body)
+        close = body.get("resolve") is True
+        instruction = _text(body, "instruction", required=False)
+        if instruction and verdict != "needs_work":
+            raise ValueError("instruction is only allowed with verdict 'needs_work'")
+        if close and instruction:
+            raise ValueError("a task cannot be resolved and continued at once")
+        results = []
         with lock:
-            task = _owned(parent, body.get("task_id"))
-            if task["status"] not in TERMINAL:
-                raise RuntimeError("task is still running; review it after it finishes")
-            task["review"], task["basis"] = verdict, basis
-            task["acked"] = task["notified"] = True
+            owned = [_owned(parent, i) for i in ids]
+            for task in owned:
+                if task["status"] not in TERMINAL:
+                    raise RuntimeError(f"task {task['id']} is still running; review it after it finishes")
+                if task["resolved"]:
+                    raise RuntimeError(f"task {task['id']} is already resolved")
+            for task in owned:
+                task["review"], task["basis"] = verdict, basis
+                task["acked"] = task["notified"] = True
+                item = {"id": task["id"], "review": verdict}
+                try:
+                    if close:
+                        _close(task)
+                        item["resolved"] = True
+                    elif instruction:
+                        item["delivered"] = _instruct(parent, task, instruction)["delivered"]
+                except Exception as error:
+                    item["error"] = str(error)
+                item["status"] = task["status"]
+                results.append(item)
+            counts = _counts(parent)
         _publish()
-        return {"task": _public(task)}
+        return {"reviewed": results, **counts}
 
     def resolve(body):
         parent = _sid(body)
+        ids = _task_ids(body)
         with lock:
-            task = _owned(parent, body.get("task_id"))
-            if task["status"] not in TERMINAL:
-                raise RuntimeError("task is still running")
-            if task["status"] == "done" and task.get("review") != "verified":
-                raise RuntimeError("review the task as 'verified' before resolving it "
-                                   "(or send needs_work instructions)")
-            task["resolved"] = task["acked"] = task["notified"] = True
+            owned = [_owned(parent, i) for i in ids]
+            for task in owned:
+                try:
+                    _close(task)
+                except RuntimeError as error:
+                    raise RuntimeError(f"task {task['id']}: {error}") from None
+            counts = _counts(parent)
         _publish()
-        return {"task": _public(task), **_counts(parent)}
+        return {"resolved": [t["id"] for t in owned], **counts}
 
     def toggle(body):
         sid = _sid(body)
@@ -365,13 +421,27 @@ def apply(ctx, config):
             if queued is not None and queued < min(t.get("finished") or 0 for t in pending):
                 return
             for task in pending:
-                task["notified"] = True
+                task["notified"] = task["acked"] = True  # results travel in this message
             waking.add(parent)  # until the run is registered, so no second wake races in
+            # The "- id \u00b7 title \u00b7 status" lines and "N task(s) still running" are
+            # parsed by the web UI (ChatMessage.tsx); keep their format.
             lines = [f"- {t['id']} \u00b7 {t['title']} \u00b7 {t['status']}" for t in pending]
             still = sum(t["status"] == "running" for t in _children(parent))
+            other = [i for i in _counts(parent)["awaiting_review"] if i not in {t["id"] for t in pending}]
+            details = []
+            for t in pending:
+                body = _clip(t.get("result", ""), WAKE_RESULT_LIMIT).strip() or "(no result text)"
+                if t.get("error"):
+                    body = f"error: {t['error']}\n{body}"
+                # Quote the body so result text can never look like a task line to the UI.
+                details.append(f"=== {t['id']} result ===\n" + "\n".join("> " + x for x in body.splitlines()))
         text = ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
-                + f"\n{still} task(s) still running. Call conductor_collect to read the results, "
-                  "then review (verified / needs_work with a basis) and resolve each task.")
+                + f"\n{still} task(s) still running."
+                + (f" Also awaiting review from earlier: {', '.join(other)}." if other else "")
+                + "\n\n" + "\n\n".join(details)
+                + "\n\nReview these in this turn with conductor_review (task_ids for several at once; "
+                  "resolve=true to close verified ones, or needs_work + instruction to continue). "
+                  "Use conductor_inspect only if a clipped result is not enough.")
         try:
             code, reply = frontend.submit(text, session_id=parent, source=SOURCE)
             if code >= 400:
@@ -380,7 +450,7 @@ def apply(ctx, config):
             log.warning("conductor: could not wake %s: %s", parent, error)
             with lock:
                 for task in pending:
-                    task["notified"] = False
+                    task["notified"] = task["acked"] = False
         finally:
             with lock:
                 waking.discard(parent)
