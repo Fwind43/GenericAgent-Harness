@@ -11,7 +11,8 @@ Events (emit, payload is one dict):
   assistant.text  {turn, text, reply, thinking, summary}   reply = text minus leading protocol blocks
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
-  llm.timed       {turn, seconds, ttft}   one LLM call: wall time and time to first chunk (None if not streamed)
+  llm.timed       {turn, seconds, ttft}   one LLM call: wall time and time to first chunk (None if not streamed;
+                  prefers llmcore's own first-SSE-line time for the last attempt, else first visible chunk)
   turn.end        {turn, exit}
   run.end         {exit}
 
@@ -29,6 +30,7 @@ config:
 from __future__ import annotations
 import json
 import re
+import sys
 import time
 
 _PRIVATE = ("_index", "_tool_num")
@@ -113,6 +115,26 @@ class _Split:
             out.append((self.part, text))
 
 
+def _core_ttft(w0):
+    """TTFT as GA's llmcore measured it for the last attempt of this call.
+
+    ``llmcore.STATS`` is process-global: ``t_start`` is reset before every
+    attempt (so retries/backoff are excluded) and ``t_ttft`` is stamped on the
+    first SSE line. Our own timer runs from llm_before to the first *visible*
+    chunk, so it also counts request building, retries and hidden reasoning.
+    None when missing, not streamed (t_ttft == t_start) or older than ``w0``.
+    """
+    stats = getattr(sys.modules.get("llmcore"), "STATS", None)
+    if w0 is None or not isinstance(stats, dict):
+        return None
+    start, first = stats.get("t_start"), stats.get("t_ttft")
+    if not all(isinstance(v, (int, float)) for v in (start, first)):
+        return None
+    if start < w0 or first <= start:
+        return None
+    return first - start
+
+
 def apply(ctx, config):
     limit = int(config.get("max_data", 20000) or 0)
     started: dict[int, float] = {}
@@ -139,11 +161,13 @@ def apply(ctx, config):
         if d is not None and getattr(d.get("chat"), "_ga_events_tap", False):
             del d["chat"]
 
-    llm = {"t0": None, "first": None}
+    # t0/first: our own timer (llm_before -> first visible chunk); w0: wall-clock
+    # start, used to tell whether llmcore.STATS belongs to this call.
+    llm = {"t0": None, "w0": None, "first": None}
 
     def on_llm_before(g, nxt):
         client, turn = g.get("client"), g.get("turn")
-        llm.update(t0=time.monotonic(), first=None)
+        llm.update(t0=time.monotonic(), w0=time.time(), first=None)
         orig = getattr(client, "chat", None)
         if callable(orig) and not getattr(orig, "_ga_events_tap", False):
             def chat(*a, **k):
@@ -182,12 +206,17 @@ def apply(ctx, config):
 
     def on_llm_after(g, nxt):
         unwrap(g.get("client"))
-        t0, first = llm["t0"], llm["first"]
-        llm.update(t0=None, first=None)
+        t0, w0, first = llm["t0"], llm["w0"], llm["first"]
+        llm.update(t0=None, w0=None, first=None)
         if t0 is not None:
             now = time.monotonic()
+            ttft = _core_ttft(w0)
+            if ttft is not None and first is not None and ttft > first - t0 + 0.05:
+                ttft = None  # impossible for this call: STATS was overwritten by another call
+            if ttft is None and first is not None:
+                ttft = first - t0
             ctx.emit("llm.timed", {"turn": g.get("turn"), "seconds": round(now - t0, 3),
-                                   "ttft": None if first is None else round(first - t0, 3)})
+                                   "ttft": None if ttft is None else round(ttft, 3)})
         r = g.get("response")
         text = getattr(r, "content", None) or ""
         split = _Split()
