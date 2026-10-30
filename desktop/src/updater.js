@@ -27,6 +27,7 @@ const {
   readSettingsFile, writeAppState,
 } = require('./backend');
 const { t } = require('./i18n');
+const { openExternalQuiet } = require('./external');
 
 const REPO = 'Fwind43/GenericAgent-Harness';
 const LATEST = `https://github.com/${REPO}/releases/latest/download`;
@@ -232,7 +233,7 @@ class Updater {
       return;
     }
     const shellOk = compareVersions(info.min_shell || '0.0.0', app.getVersion()) <= 0;
-    const kind = shellOk ? 'code' : (this.loadShellUpdater() ? 'shell' : 'manual');
+    const kind = shellOk ? 'code' : (process.platform === 'darwin' || this.loadShellUpdater() ? 'shell' : 'manual');
     this.pending = { info, kind };
     const what = { code: `code update, ${mb(info.app.size)}`, shell: `needs desktop app ${info.min_shell}+, installer update`, manual: `needs desktop app ${info.min_shell}+, download it from the release page` }[kind];
     this.set({ phase: 'available', version: info.version, kind, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
@@ -257,11 +258,11 @@ class Updater {
       buttons, defaultId: 0, cancelId: buttons.length - 1, noLink: true,
     });
     if (kind === 'manual') {
-      if (response === 0) shell.openExternal(RELEASES_PAGE);
+      if (response === 0) openExternalQuiet(RELEASES_PAGE);
       else this.dismissed = info.version;
       return;
     }
-    if (response === 1) shell.openExternal(RELEASES_PAGE);
+    if (response === 1) openExternalQuiet(RELEASES_PAGE);
     if (response !== 0) { this.dismissed = info.version; this.note(`Postponed ${info.version}`); this.emit(true); return; }
     await this.installInner(this.pending);
     await this.offerRestart();
@@ -272,7 +273,7 @@ class Updater {
     if (this.busy) return this.snapshot();
     const p = this.pending;
     if (!p) throw new Error('no update available; check first');
-    if (p.kind === 'manual') { shell.openExternal(RELEASES_PAGE); this.note('Opened the release page'); this.emit(true); return this.snapshot(); }
+    if (p.kind === 'manual') { openExternalQuiet(RELEASES_PAGE); this.note('Opened the release page'); this.emit(true); return this.snapshot(); }
     this.busy = true;
     try {
       await this.installInner(p);
@@ -287,6 +288,7 @@ class Updater {
 
   async installInner(p) {
     if (p.kind === 'code') await this.installCode(p.info);
+    else if (process.platform === 'darwin') await this.downloadMacShell(p.info);
     else await this.downloadShell(p.info);
     this.pending = null;
   }
@@ -396,6 +398,66 @@ class Updater {
     });
     if (response === 0) { await this.restart(); return; }
     this.dismissed = version;
+  }
+
+  // ---- macOS app update (no electron-updater: builds are ad-hoc signed, both arches share
+  // one release, and Squirrel.Mac refuses unsigned updates) -----------------------------------
+
+  macBundle() {
+    const bundle = path.resolve(process.execPath, '..', '..', '..');
+    if (!bundle.endsWith('.app')) throw new Error(`not running from an .app bundle (${bundle})`);
+    if (bundle.includes('/AppTranslocation/')) {
+      throw new Error(t('应用在只读的隔离位置运行，请先把它拖到“应用程序”文件夹再更新',
+        'the app runs from a translocated read-only location; move it to Applications first'));
+    }
+    try { fs.accessSync(path.dirname(bundle), fs.constants.W_OK); } catch {
+      throw new Error(`no write access to ${path.dirname(bundle)}`);
+    }
+    return bundle;
+  }
+
+  async downloadMacShell(info) {
+    const bundle = this.macBundle();
+    const version = info.version;
+    const file = `GenericAgent-Harness-${version}-mac-${process.arch}.zip`;
+    const work = path.join(this.backend.userData, 'shell-update');
+    fs.rmSync(work, { recursive: true, force: true });
+    fs.mkdirSync(work, { recursive: true });
+    const buf = await this.download(this.url(file), 0);
+    this.set({ phase: 'installing' }, `Downloaded ${mb(buf.length)}; extracting ${file}`);
+    const zip = path.join(work, file);
+    const out = path.join(work, 'app');
+    fs.writeFileSync(zip, buf);
+    await run('/usr/bin/ditto', ['-x', '-k', zip, out]);
+    fs.rmSync(zip, { force: true });
+    const name = fs.readdirSync(out).find((n) => n.endsWith('.app'));
+    if (!name || !fs.existsSync(path.join(out, name, 'Contents', 'Info.plist'))) throw new Error(`${file} contains no app bundle`);
+    const fresh = path.join(out, name);
+    await run('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', fresh]).catch(() => {});
+    // Swap the bundle after this process exits, then start the new one; roll back on failure.
+    const script = path.join(work, 'swap.sh');
+    fs.writeFileSync(script, [
+      '#!/bin/sh',
+      'pid="$1"; old="$2"; new="$3"; work="$4"',
+      'while kill -0 "$pid" 2>/dev/null; do sleep 0.3; done',
+      'rm -rf "$old.old"',
+      'if mv "$old" "$old.old" && mv "$new" "$old"; then',
+      '  rm -rf "$old.old" "$work"',
+      'else',
+      '  [ -d "$old" ] || mv "$old.old" "$old"',
+      'fi',
+      'open "$old"',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    this.ready = {
+      version, kind: 'shell',
+      restart: async () => {
+        await this.opts.prepareQuit();
+        spawn('/bin/sh', [script, String(process.pid), bundle, fresh, work], { detached: true, stdio: 'ignore' }).unref();
+        app.exit(0);
+      },
+    };
+    this.set({ phase: 'ready', version, kind: 'shell' }, `App ${version} downloaded; restart to install it`);
   }
 
   // ---- shell (installer) update -----------------------------------------------------------

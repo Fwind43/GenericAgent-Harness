@@ -8,6 +8,7 @@ const { Backend, isGaRoot } = require('./backend');
 const { Updater } = require('./updater');
 const { t, setLanguage, initLanguage } = require('./i18n');
 const autostart = require('./autostart');
+const { openExternal, openExternalQuiet } = require('./external');
 
 let backend = null;
 let win = null;
@@ -55,9 +56,8 @@ function registerBridge() {
     return true;
   });
   ipcMain.handle('gah:open-external', async (event, url) => {
-    if (!fromBackend(event) || !/^https?:\/\//i.test(String(url))) throw new Error('forbidden');
-    await shell.openExternal(String(url));
-    return true;
+    if (!fromBackend(event)) throw new Error('forbidden');
+    return openExternal(url);
   });
   ipcMain.handle('gah:autostart-get', (event) => {
     if (!fromBackend(event)) throw new Error('forbidden');
@@ -279,7 +279,7 @@ function showContextMenu(params) {
   if (linkURL && /^https?:\/\//i.test(linkURL)) {
     sep();
     items.push(
-      { label: t('在浏览器中打开链接', 'Open link in browser'), click: () => shell.openExternal(linkURL) },
+      { label: t('在浏览器中打开链接', 'Open link in browser'), click: () => openExternalQuiet(linkURL) },
       { label: t('复制链接地址', 'Copy link address'), click: () => clipboard.writeText(linkURL) },
     );
   }
@@ -329,16 +329,16 @@ function createWindow(url) {
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
       } };
     }
-    if (/^https?:\/\//i.test(target)) shell.openExternal(target);
+    openExternalQuiet(target);
     return { action: 'deny' };
   });
   win.webContents.on('did-create-window', (child) => {
     child.webContents.setWindowOpenHandler(({ url: target }) => {
-      if (/^https?:\/\//i.test(target)) shell.openExternal(target);
+      openExternalQuiet(target);
       return { action: 'deny' };
     });
     child.webContents.on('will-navigate', (event, target) => {
-      if (!sameOrigin(target)) { event.preventDefault(); if (/^https?:\/\//i.test(target)) shell.openExternal(target); }
+      if (!sameOrigin(target)) { event.preventDefault(); openExternalQuiet(target); }
     });
     child.webContents.on('context-menu', (_event, params) => showContextMenu(params));
   });
@@ -347,7 +347,7 @@ function createWindow(url) {
     try { same = new URL(target).origin === origin; } catch { /* invalid */ }
     if (!same) {
       event.preventDefault();
-      if (/^https?:\/\//i.test(target)) shell.openExternal(target);
+      openExternalQuiet(target);
     }
   });
   // Electron has no built-in context menu: offer copy/paste like a browser would.
