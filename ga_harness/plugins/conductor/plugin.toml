@@ -1,0 +1,6 @@
+name = "conductor"
+category = "extension"
+entry = "main:apply"
+description = "Conductor mode: the session plans and delegates work to child task sessions, then reviews and resolves their results (modelled on GA Admin)."
+description_zh = "指挥家模式：会话只负责规划与委派，子任务在独立会话中执行，再由指挥家审核与结案（逻辑同 GA Admin）。"
+inject = ["web.host", "runs", "sessions"]
