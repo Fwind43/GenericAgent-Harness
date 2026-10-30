@@ -51,14 +51,15 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const ids = new Set(items.map((s) => s.id)), kids = /* @__PURE__ */ new Map(), seen = /* @__PURE__ */ new Set();
     for (const s of items) if (s.parent_id && s.parent_id !== s.id && ids.has(s.parent_id)) kids.set(s.parent_id, [...kids.get(s.parent_id) ?? [], s]);
     const out = [];
-    const walk = (s, depth) => {
+    const walk = (s, depth, up) => {
       if (seen.has(s.id)) return;
       seen.add(s.id);
-      out.push({ session: s, depth });
-      for (const k of kids.get(s.id) ?? []) walk(k, Math.min(depth + 1, 3));
+      const mine = (kids.get(s.id) ?? []).filter((k) => !seen.has(k.id));
+      out.push({ session: s, depth, kids: mine.length, up });
+      for (const k of mine) walk(k, Math.min(depth + 1, 3), [...up, s.id]);
     };
-    for (const s of items) if (!s.parent_id || !ids.has(s.parent_id)) walk(s, 0);
-    for (const s of items) walk(s, 0);
+    for (const s of items) if (!s.parent_id || !ids.has(s.parent_id)) walk(s, 0, []);
+    for (const s of items) walk(s, 0, []);
     return out;
   }
   const pinFirst = (items) => [...items].sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
@@ -157,11 +158,15 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       recentAll.push(s);
       if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...byProject.get(s.project_id) ?? [], s]);
     }
-    const row = (session, depth, home, recent = false) => {
+    const byId = new Map((state.sessions ?? []).map((s) => [s.id, s])), lineage = /* @__PURE__ */ new Set();
+    for (let s = byId.get(state.session_id ?? ""); (s == null ? void 0 : s.parent_id) && !lineage.has(s.parent_id); s = byId.get(s.parent_id)) lineage.add(s.parent_id);
+    const kidsOpen = (id) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
+    const row = (session, depth, home, recent = false, kids = 0) => {
+      const kidsShown = kids > 0 && kidsOpen(session.id);
       const owner = recent && session.project_id ? projectName.get(session.project_id) : void 0;
       const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : "");
       const unread = !status && !!session.unread && session.id !== state.session_id;
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: depth ? label(session).replace(/^\u25b8\s*/, "") : label(session) }),
@@ -170,6 +175,22 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
           !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
           status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })
         ] }),
+        kids > 0 && /* @__PURE__ */ jsxRuntime.jsxs(
+          "button",
+          {
+            type: "button",
+            className: `gah-sess-kids${kidsShown ? " open" : ""}`,
+            "aria-expanded": kidsShown,
+            disabled: !!q,
+            title: kidsShown ? sdk.T("收起子会话", "Collapse sub-chats") : sdk.T("展开子会话", "Expand sub-chats"),
+            "aria-label": kidsShown ? sdk.T("收起子会话", "Collapse sub-chats") : sdk.T("展开子会话", "Expand sub-chats"),
+            onClick: () => toggle(`c:${session.id}`, kidsShown),
+            children: [
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-kids-n", children: kids }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-caret", "aria-hidden": "true" })
+            ]
+          }
+        ),
         /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sess-act${session.pinned ? " on" : ""}`, disabled: busy, "aria-pressed": !!session.pinned, "aria-label": session.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), title: session.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), onClick: () => void act(session.pinned ? "unpin" : "pin", { id: session.id }), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: async () => {
@@ -206,10 +227,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       ] }, session.id);
     };
     const list = (key, items, home, limit, recent = false) => {
-      const rows = nest(pinFirst(items)), all = !!q || !!expanded[key];
+      const rows = nest(pinFirst(items)).filter((r) => r.up.every(kidsOpen)), all = !!q || !!expanded[key];
       const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id || !!r.session.pinned);
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-items", role: "list", children: [
-        rows.length ? shown.map((r) => row(r.session, r.depth, home, recent)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: q ? sdk.T("无匹配会话", "No matching chats") : sdk.T("暂无会话", "No chats yet") }),
+        rows.length ? shown.map((r) => row(r.session, r.depth, home, recent, r.kids)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: q ? sdk.T("无匹配会话", "No matching chats") : sdk.T("暂无会话", "No chats yet") }),
         !q && rows.length > limit && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, [key]: !all })), children: all ? sdk.T("收起", "Show less") : `${sdk.T("显示全部", "Show all")} (${rows.length})` })
       ] });
     };

@@ -48,10 +48,15 @@ const loadToggles = (): Record<string, boolean> => {
 function nest(items: Session[]) {
   const ids = new Set(items.map(s => s.id)), kids = new Map<string, Session[]>(), seen = new Set<string>();
   for (const s of items) if (s.parent_id && s.parent_id !== s.id && ids.has(s.parent_id)) kids.set(s.parent_id, [...(kids.get(s.parent_id) ?? []), s]);
-  const out: { session: Session; depth: number }[] = [];
-  const walk = (s: Session, depth: number) => { if (seen.has(s.id)) return; seen.add(s.id); out.push({ session: s, depth }); for (const k of kids.get(s.id) ?? []) walk(k, Math.min(depth + 1, 3)); };
-  for (const s of items) if (!s.parent_id || !ids.has(s.parent_id)) walk(s, 0);
-  for (const s of items) walk(s, 0); // cycle safety: nothing is ever dropped
+  const out: { session: Session; depth: number; kids: number; up: string[] }[] = [];
+  const walk = (s: Session, depth: number, up: string[]) => {
+    if (seen.has(s.id)) return; seen.add(s.id);
+    const mine = (kids.get(s.id) ?? []).filter(k => !seen.has(k.id));
+    out.push({ session: s, depth, kids: mine.length, up });
+    for (const k of mine) walk(k, Math.min(depth + 1, 3), [...up, s.id]);
+  };
+  for (const s of items) if (!s.parent_id || !ids.has(s.parent_id)) walk(s, 0, []);
+  for (const s of items) walk(s, 0, []); // cycle safety: nothing is ever dropped
   return out;
 }
 // Pinned chats lead each list (most recently pinned first); the rest keep their order.
@@ -118,17 +123,26 @@ export function Sessions({ api }: { api: PluginAPI }) {
     recentAll.push(s);
     if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...(byProject.get(s.project_id) ?? []), s]);
   }
-  const row = (session: Session, depth: number, home?: string, recent = false) => {
+  // Sub-chats start collapsed under their parent; the open chat's ancestors stay expanded and search shows all.
+  const byId = new Map((state.sessions ?? []).map(s => [s.id, s] as const)), lineage = new Set<string>();
+  for (let s = byId.get(state.session_id ?? ''); s?.parent_id && !lineage.has(s.parent_id); s = byId.get(s.parent_id)) lineage.add(s.parent_id);
+  const kidsOpen = (id: string) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
+  const row = (session: Session, depth: number, home?: string, recent = false, kids = 0) => {
+    const kidsShown = kids > 0 && kidsOpen(session.id);
     // In Recent, a project chat is tagged with its project name instead of the workspace.
     const owner = recent && session.project_id ? projectName.get(session.project_id) : undefined;
     const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : '');
     const unread = !status && !!session.unread && session.id !== state.session_id;
-    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
+    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
         {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
         {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>
+      {kids > 0 && <button type="button" className={`gah-sess-kids${kidsShown ? ' open' : ''}`} aria-expanded={kidsShown} disabled={!!q}
+        title={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
+        aria-label={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
+        onClick={() => toggle(`c:${session.id}`, kidsShown)}><span className="gah-sess-kids-n">{kids}</span><span className="gah-sess-caret" aria-hidden="true" /></button>}
       <span className="gah-sess-acts">
         <button type="button" className={`gah-sess-act${session.pinned ? ' on' : ''}`} disabled={busy} aria-pressed={!!session.pinned} aria-label={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} title={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} onClick={() => void act(session.pinned ? 'unpin' : 'pin', { id: session.id })}><Icon name="pin" /></button>
         <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u91cd\u547d\u540d', 'Rename')} onClick={async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); }}><Icon name="pencil" /></button>
@@ -142,10 +156,10 @@ export function Sessions({ api }: { api: PluginAPI }) {
   };
   // Long groups show the latest few (plus the open chat); searching always shows every match.
   const list = (key: string, items: Session[], home: string | undefined, limit: number, recent = false) => {
-    const rows = nest(pinFirst(items)), all = !!q || !!expanded[key];
+    const rows = nest(pinFirst(items)).filter(r => r.up.every(kidsOpen)), all = !!q || !!expanded[key];
     const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id || !!r.session.pinned);
     return <div className="gah-sess-items" role="list">
-      {rows.length ? shown.map(r => row(r.session, r.depth, home, recent)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
+      {rows.length ? shown.map(r => row(r.session, r.depth, home, recent, r.kids)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
       {!q && rows.length > limit && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, [key]: !all }))}>{all ? T('\u6536\u8d77', 'Show less') : `${T('\u663e\u793a\u5168\u90e8', 'Show all')} (${rows.length})`}</button>}
     </div>;
   };
