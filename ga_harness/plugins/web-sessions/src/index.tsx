@@ -131,12 +131,12 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const kidsShown = kids > 0 && kidsOpen(session.id);
     const menuKey = `s:${session.id}`, menuOpen = menu === menuKey;
     const pick = (fn: () => void) => () => { setMenu(''); fn(); };
-    // In Recent, a project chat is tagged with its project name instead of the workspace.
-    const owner = recent && session.project_id ? projectName.get(session.project_id) : undefined;
-    const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : '');
+    // Rows are tagged with the project name only (Recent; inside a project group it is implied); the workspace lives in the tooltip.
+    const project = session.project_id ? projectName.get(session.project_id) : undefined;
+    const status = activity.get(session.id), tag = recent ? project ?? '' : '';
     const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
-      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
+      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
         {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
