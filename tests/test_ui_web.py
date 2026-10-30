@@ -1,7 +1,9 @@
 import json
+import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from tests.test_frontend import _mount_with
@@ -66,6 +68,17 @@ def _wait_idle(base):
     raise AssertionError("still running")
 
 
+def _open_sse(base):
+    """Open /api/events; return (stream, first event line), skipping the comment/blank prelude."""
+    sse = urllib.request.urlopen(base + "api/events", timeout=5)
+    while True:
+        line = sse.readline()
+        if not line:
+            raise AssertionError("SSE stream closed before the first event")
+        if line.strip() and not line.startswith(b":"):
+            return sse, line.strip()
+
+
 def _start(tmp_path):
     rt = _mount_with(tmp_path, WebAgent, "ui-web", {"port": 0, "open_browser": False, "log": lambda m: None})
     fe = rt.ctx.get("frontend")
@@ -84,7 +97,12 @@ def test_ui_web_page_run_state_and_errors(tmp_path):
         assert base.startswith("http://127.0.0.1:")
         with urllib.request.urlopen(base, timeout=5) as r:
             page = r.read().decode("utf-8")
-        assert r.headers["Content-Type"].startswith("text/html") and "/api/events" in page
+        assert r.headers["Content-Type"].startswith("text/html") and '<div id="root">' in page
+        # the React host bundle, not the HTML shell, opens the event stream
+        m = re.search(r'<script type="module"[^>]*\bsrc="(/assets/[^"]+\.js)"', page)
+        assert m, "host bundle script missing from the page"
+        status, _, js = _get(base + m.group(1).lstrip("/"))
+        assert status == 200 and "/api/events" in js
         assert _req(base + "api/run", {"task": "  "})[0] == 400
         assert _req(base + "api/run", {"task": "hi"}) == (202, {"ok": True})
         s = _wait_idle(base)
@@ -105,9 +123,12 @@ def test_ui_web_page_run_state_and_errors(tmp_path):
 def test_ui_web_busy_abort_and_sse(tmp_path):
     rt, fe, off, base = _start(tmp_path)
     try:
-        sse = urllib.request.urlopen(base + "api/events", timeout=5)
-        assert sse.readline().strip() == b"event: snapshot"
-        assert json.loads(sse.readline()[len(b"data: "):]) == {
+        sse, first = _open_sse(base)
+        assert first == b"event: snapshot"
+        snap = json.loads(sse.readline()[len(b"data: "):])
+        port = urllib.parse.urlsplit(base).port
+        assert snap.pop("local") == {"url": base, "host": "127.0.0.1", "port": port}
+        assert snap == {
             "running": False, "messages": [], "plugins_enabled": False, "web_plugins": [],
         }
         sse.readline()
@@ -270,8 +291,9 @@ def test_ui_web_host_assets_routes_and_isolation(tmp_path):
 def test_ui_web_host_changes_reach_sse(tmp_path):
     rt, fe, off, base = _start(tmp_path)
     try:
-        sse = urllib.request.urlopen(base + "api/events", timeout=5)
-        for _ in range(3):
+        sse, first = _open_sse(base)
+        assert first == b"event: snapshot"
+        for _ in range(2):  # snapshot data + blank separator
             sse.readline()
         f = tmp_path / "a.css"
         f.write_text("")
@@ -306,7 +328,6 @@ def test_web_theme_plugin_registers_and_is_dormant_elsewhere(tmp_path):
         rt.dispose()
 
 def test_ui_web_bundled_web_plugins_mount_and_host_css_scope(tmp_path):
-    import re
     import sys
     from tests.test_frontend import PLUGINS, Runtime, _e, discover, mount
     d = tmp_path / "fake-agent"
@@ -327,11 +348,17 @@ def test_ui_web_bundled_web_plugins_mount_and_host_css_scope(tmp_path):
         page = _get(base)[2]
         for x in m:
             st, ct, body = _get(base + x["script"].lstrip("/"))
-            assert st == 200 and ct.startswith("text/javascript") and "GAH.define" in body
+            # React plugin bundles are IIFEs that register through the host SDK global
+            assert st == 200 and ct.startswith("text/javascript") and ('defineReact("%s",' % x["name"]) in body
             if "style" in x:
                 assert 'href="%s"' % x["style"] in page and _get(base + x["style"].lstrip("/"))[0] == 200
-        # host chat-form pill styles must not leak into plugin dialogs' forms
-        css = page[page.find("<style"):page.find("</style>")]
-        assert not re.search(r"(?m)(^|[},])\s*form\s*[{:,]", css)  # bare `form` selector
+        # host chat-form pill styles must not leak into plugin dialogs' forms; the React host links
+        # its CSS as stylesheets without data-gah-plugin (that attribute marks plugin assets)
+        hrefs = [re.search(r'\bhref="([^"]+)"', tag).group(1) for tag in re.findall(r"<link\b[^>]*>", page)
+                 if 'rel="stylesheet"' in tag and "data-gah-plugin" not in tag]
+        assert hrefs, "host stylesheets missing from the page"
+        css = "".join(_get(base + h.lstrip("/"))[2] for h in hrefs)
+        assert css.strip()
+        assert not re.search(r"(?m)(^|[{},])\s*form\s*[{:,]", css)  # bare `form` selector, incl. in @media
     finally:
         rt.dispose()

@@ -26,7 +26,8 @@ def _mount():
 
 def test_profile_has_events_after_hooks():
     names = [e["name"] for e in build_tree("ga-compat", [ROOT / "ga_harness" / "profiles"], [])]
-    assert names.index("ga-events") == names.index("ga-hooks") + 1
+    # after, not necessarily adjacent: other hook consumers (ga-timing) load in between
+    assert names.index("ga-hooks") < names.index("ga-events")
 
 
 def test_full_turn_sequence():
