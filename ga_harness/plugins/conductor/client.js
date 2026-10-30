@@ -71,7 +71,10 @@
     if (!data || !sid) return null;
     if ((_a = data.children) == null ? void 0 : _a[sid]) {
       return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd gah-cd-child", children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-badge", children: sdk.T("指挥家子任务", "Conductor task") }),
+        /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+          sdk.T("指挥家子任务", "Conductor task")
+        ] }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: sdk.T("本会话由指挥家派发，结果会自动回报父会话", "Dispatched by a conductor; the result is reported back to the parent session") })
       ] }) });
     }
@@ -84,36 +87,44 @@
     const running = tasks.filter((t) => t.status === "running").length;
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", "aria-label": sdk.T("指挥家", "Conductor"), children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-badge", children: sdk.T("指挥家模式", "Conductor mode") }),
+        /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+          sdk.T("指挥家模式", "Conductor mode")
+        ] }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
-        on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
+        on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
       ] }),
       tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }) }, task.id))
     ] });
   }
+  const Icon = () => /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-cd-icon", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M3 3.5h4M3 8h10M3 12.5h6", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", fill: "none" }),
+    /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "11", cy: "3.5", r: "1.6", fill: "currentColor" }),
+    /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "12", cy: "12.5", r: "1.6", fill: "currentColor" })
+  ] });
   function Toggle({ api }) {
     var _a;
     const { data, sid, busy, run } = useConductor(api);
     if (!data || !sid || ((_a = data.children) == null ? void 0 : _a[sid])) return null;
     const on = data.enabled.includes(sid);
-    return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-group gah-cd-toggle", children: /* @__PURE__ */ jsxRuntime.jsxs(
+    return /* @__PURE__ */ jsxRuntime.jsxs(
       "button",
       {
         type: "button",
-        className: on ? "on" : "",
+        className: `gah-cd-pill${on ? " on" : ""}`,
         "aria-pressed": on,
         disabled: busy,
         onClick: () => run("toggle", { enabled: !on }),
         title: sdk.T("指挥家模式：本会话只拆分并分派子任务，每个子任务在独立会话中执行", "Conductor mode: this session only splits and dispatches tasks; each task runs in its own session"),
         children: [
-          sdk.T("指挥家", "Conductor"),
-          on ? " · ON" : ""
+          /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("指挥家", "Conductor") })
         ]
       }
-    ) });
+    );
   }
   function ConductorPlugin({ api }) {
-    react.useEffect(() => api.mount("toolbar", /* @__PURE__ */ jsxRuntime.jsx(Toggle, { api })), [api]);
+    react.useEffect(() => api.mount("composer", /* @__PURE__ */ jsxRuntime.jsx(Toggle, { api })), [api]);
     react.useEffect(() => api.mount("composer-top", /* @__PURE__ */ jsxRuntime.jsx(Panel, { api })), [api]);
     return null;
   }
