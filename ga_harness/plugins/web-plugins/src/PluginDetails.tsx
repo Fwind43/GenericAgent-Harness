@@ -33,7 +33,7 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onInstal
     {warning && <p className="plugin-note plugin-warning">{warning}</p>}
     {!!plugin.missing_packages?.length && onInstall && <div className="plugin-actions plugin-install"><button type="button" className="secondary plugin-install-button" disabled={busy || running} onClick={onInstall}>{T('\u5b89\u88c5\u4f9d\u8d56\uff08pip\uff09', 'Install packages (pip)')}</button><small>{T('\u5b89\u88c5\u5230\u5f53\u524d Python \u73af\u5883\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Installs into the current Python environment; applies on next start')}</small></div>}
     <form onSubmit={event => { event.preventDefault(); submit(); }}>
-      <label className="plugin-toggle plugin-enable"><input type="checkbox" role="switch" checked={enabled} disabled={locked} onChange={event => setEnabled(event.target.checked)} /><span>{T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528', 'Enable on next start')}</span></label>
+      <label className="plugin-toggle plugin-enable"><input type="checkbox" role="switch" checked={enabled} disabled={locked} onChange={event => setEnabled(event.target.checked)} /><span>{plugin.hot ? T('\u542f\u7528', 'Enabled') : T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528', 'Enable on next start')}</span></label>
       <div className="model-grid plugin-fields" hidden={!Object.keys(plugin.fields).length}>{Object.entries(plugin.fields).map(([key, spec]) => {
         const label = T(spec.label_zh || spec.label || key, spec.label || key);
         const common = { 'data-plugin-field': key, disabled: locked };
@@ -49,7 +49,7 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onInstal
       })}</div>
       <p className="plugin-note">{running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\u3002', 'A task is running; view only.') : plugin.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002', 'Core and frontend plugins are protected; change them in the startup config.') : T('\u4ec5\u663e\u793a\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002', 'Only public settings are shown; manage keys in Models.')}</p>
       {error && <p className="gah-error" role="status">{error}</p>}
-      <div className="model-actions plugin-actions"><button type="button" className="secondary plugin-reset" disabled={locked || !plugin.overridden} onClick={() => onChange('reset')}>{T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings')}</button><button type="submit" disabled={locked}>{T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Save (applies on next start)')}</button></div>
+      <div className="model-actions plugin-actions"><button type="button" className="secondary plugin-reset" disabled={locked || !plugin.overridden} onClick={() => onChange('reset')}>{T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings')}</button><button type="submit" disabled={locked}>{plugin.hot ? T('\u4fdd\u5b58\u5e76\u7acb\u5373\u751f\u6548', 'Save and apply now') : T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Save (applies on next start)')}</button></div>
     </form>
   </div>;
 }

@@ -20,6 +20,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
   function PluginTags({ plugin }) {
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "protected", children: sdk.T("受保护", "Protected") }),
+      plugin.hot && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "hot", children: sdk.T("热插拔", "Hot-pluggable") }),
       plugin.restart_required && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("待重启", "Restart pending") }),
       plugin.overridden && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "override", children: sdk.T("网页覆盖", "Web override") }),
       !plugin.enabled && plugin.state === "active" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("下次停用", "Off next start") })
@@ -77,7 +78,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       }, children: [
         /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-toggle plugin-enable", children: [
           /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", role: "switch", checked: enabled, disabled: locked, onChange: (event) => setEnabled(event.target.checked) }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("下次启动时启用", "Enable on next start") })
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: plugin.hot ? sdk.T("启用", "Enabled") : sdk.T("下次启动时启用", "Enable on next start") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid plugin-fields", hidden: !Object.keys(plugin.fields).length, children: Object.entries(plugin.fields).map(([key, spec]) => {
           var _a2;
@@ -97,7 +98,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions plugin-actions", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-reset", disabled: locked || !plugin.overridden, onClick: () => onChange("reset"), children: sdk.T("恢复启动配置", "Restore startup settings") }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: locked, children: sdk.T("保存，下次启动生效", "Save (applies on next start)") })
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: locked, children: plugin.hot ? sdk.T("保存并立即生效", "Save and apply now") : sdk.T("保存，下次启动生效", "Save (applies on next start)") })
         ] })
       ] })
     ] });

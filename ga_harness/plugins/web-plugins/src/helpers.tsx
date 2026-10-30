@@ -14,6 +14,7 @@ export const inFilter = (plugin: PluginInfo, filter: string) => filter === 'all'
 export function PluginTags({ plugin }: { plugin: PluginInfo }) {
   return <>
     {plugin.protected && <span className="plugin-tag" data-tag="protected">{T('\u53d7\u4fdd\u62a4', 'Protected')}</span>}
+    {plugin.hot && <span className="plugin-tag" data-tag="hot">{T('\u70ed\u63d2\u62d4', 'Hot-pluggable')}</span>}
     {plugin.restart_required && <span className="plugin-tag" data-tag="pending">{T('\u5f85\u91cd\u542f', 'Restart pending')}</span>}
     {plugin.overridden && <span className="plugin-tag" data-tag="override">{T('\u7f51\u9875\u8986\u76d6', 'Web override')}</span>}
     {!plugin.enabled && plugin.state === 'active' && <span className="plugin-tag" data-tag="pending">{T('\u4e0b\u6b21\u505c\u7528', 'Off next start')}</span>}
