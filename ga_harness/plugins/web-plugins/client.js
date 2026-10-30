@@ -10,6 +10,8 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
   ];
   const filters = [["all", sdk.T("全部", "All")], ["active", sdk.T("运行中", "Running")], ["off", sdk.T("未加载", "Not loaded")], ["issue", sdk.T("需处理", "Needs attention")]];
   const states = { active: sdk.T("运行中", "Running"), pending: sdk.T("等待依赖", "Waiting for dependencies"), disabled: sdk.T("未加载", "Not loaded"), error: sdk.T("加载失败", "Failed to load"), removed: sdk.T("已移除", "Removed"), missing_packages: sdk.T("缺少 Python 依赖", "Missing Python packages") };
+  const sources = [["all", sdk.T("全部来源", "All sources")], ["user", sdk.T("我的插件", "My plugins")], ["builtin", sdk.T("内置", "Built-in")]];
+  const inSource = (plugin, source) => source === "all" || (plugin.source || "builtin") === source;
   const stateLabel = (plugin) => states[plugin.state] || plugin.state;
   const categoryOf = (plugin) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
   const descriptionOf = (item) => sdk.T(item.description_zh || item.description || "", item.description || "");
@@ -38,6 +40,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
   }
   function PluginTags({ plugin }) {
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      plugin.source === "user" ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "user", children: sdk.T("我的插件", "My plugin") }) : /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "builtin", children: sdk.T("内置", "Built-in") }),
       plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "protected", children: sdk.T("受保护", "Protected") }),
       plugin.hot && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "hot", children: sdk.T("热插拔", "Hot-pluggable") }),
       plugin.restart_required && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("待重启", "Restart pending") }),
@@ -130,13 +133,13 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     const { busy, working, run } = sdk.useOperation(api);
     const [config, setConfig] = react.useState(null);
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
-    const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all");
+    const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all"), [source, setSource] = react.useState("all");
     const cards = react.useRef(null), back = react.useRef(null);
     const selected = config == null ? void 0 : config.items.find((plugin) => plugin.name === editing);
     const visible = ((config == null ? void 0 : config.items) || []).filter((plugin) => !plugin.worker_only);
     const shown = visible.filter((plugin) => {
       var _a, _b;
-      return inFilter(plugin, filter) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
+      return inFilter(plugin, filter) && inSource(plugin, source) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
     });
     const toGrid = () => {
       if (working) return;
@@ -200,6 +203,10 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
             label,
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inFilter(plugin, key)).length })
+          ] }, key)) }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters plugin-sources", role: "tablist", "aria-label": sdk.T("按来源筛选", "Filter by source"), children: sources.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-source": key, "aria-selected": source === key, onClick: () => setSource(key), children: [
+            label,
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inSource(plugin, key)).length })
           ] }, key)) }),
           error && !selected && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-groups", ref: cards, "aria-label": sdk.T("插件列表", "Plugin list"), children: categories.map(([key, label]) => {

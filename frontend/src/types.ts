@@ -61,7 +61,7 @@ export interface PluginField {
 }
 export interface PluginInfo {
   name: string; state: string; category?: string; description?: string; description_zh?: string;
-  enabled: boolean; protected?: boolean; overridden?: boolean; restart_required?: boolean; hot?: boolean;
+  enabled: boolean; protected?: boolean; overridden?: boolean; restart_required?: boolean; hot?: boolean; source?: 'user' | 'builtin';
   requires?: string[]; provides?: string[]; dependents?: string[]; missing?: string[];
   packages?: string[]; missing_packages?: string[]; worker_only?: boolean; workers?: string[];
   error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;

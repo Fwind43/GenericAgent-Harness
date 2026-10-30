@@ -62,3 +62,5 @@
 .gah-plugin-dialog .plugin-switch:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 .gah-plugin-dialog .plugin-switch-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
 .gah-plugin-dialog .plugin-switch[aria-checked="true"] .plugin-switch-knob{transform:translateX(16px)}
+.gah-plugin-dialog .plugin-sources{margin-top:-4px}
+.gah-plugin-dialog .plugin-tag[data-tag="user"]{color:var(--accent);border-color:var(--accent)}

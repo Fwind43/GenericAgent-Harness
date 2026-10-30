@@ -1,18 +1,18 @@
 import { useRef, useState } from 'react';
 import { type PluginAPI, type PluginCatalog, type PluginInfo, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
-import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel, Switch } from './helpers';
+import { categories, categoryOf, descriptionOf, filters, inFilter, inSource, PluginTags, sources, stateLabel, Switch } from './helpers';
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
   const { busy, working, run } = useOperation(api);
   const [config, setConfig] = useState<PluginCatalog | null>(null);
   const [editing, setEditing] = useState<string | null>(null), [error, setError] = useState('');
-  const [query, setQuery] = useState(''), [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [source, setSource] = useState('all');
   const cards = useRef<HTMLDivElement>(null), back = useRef<HTMLButtonElement>(null);
   const selected = config?.items.find(plugin => plugin.name === editing);
   const visible = (config?.items || []).filter(plugin => !plugin.worker_only);
-  const shown = visible.filter(plugin => inFilter(plugin, filter) && matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], plugin.requires?.join(' '), plugin.provides?.join(' ')));
+  const shown = visible.filter(plugin => inFilter(plugin, filter) && inSource(plugin, source) && matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], plugin.requires?.join(' '), plugin.provides?.join(' ')));
   const toGrid = () => {
     if (working) return;
     setEditing(null); setError('');
@@ -63,6 +63,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
           <p className="plugin-note plugin-profile" hidden={!config}>{config ? T('\u914d\u7f6e\u65b9\u6848\uff1a', 'Profile: ') + config.profile + T('\u3002\u66f4\u6539\u4fdd\u5b58\u5230\u672c\u5730\uff1b\u652f\u6301\u70ed\u63d2\u62d4\u7684\u63d2\u4ef6\u7acb\u5373\u751f\u6548\uff0c\u5176\u4f59\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', '. Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.') : ''}</p>
           <div className="plugin-toolbar"><input className="plugin-search" type="search" value={query} placeholder={T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'Search plugin names or descriptions')} aria-label={T('\u641c\u7d22\u63d2\u4ef6', 'Search plugins')} disabled={working} onChange={event => setQuery(event.target.value)} /><button type="button" className="secondary" disabled={working || changing} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button></div>
           <div className="plugin-filters" role="tablist" aria-label={T('\u6309\u72b6\u6001\u7b5b\u9009', 'Filter by status')}>{filters.map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-filter" data-filter={key} aria-selected={filter === key} onClick={() => setFilter(key)}>{label}<span className="plugin-count">{visible.filter(plugin => inFilter(plugin, key)).length}</span></button>)}</div>
+          <div className="plugin-filters plugin-sources" role="tablist" aria-label={T('\u6309\u6765\u6e90\u7b5b\u9009', 'Filter by source')}>{sources.map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-filter" data-source={key} aria-selected={source === key} onClick={() => setSource(key)}>{label}<span className="plugin-count">{visible.filter(plugin => inSource(plugin, key)).length}</span></button>)}</div>
           {error && !selected && <p className="gah-error" role="status">{error}</p>}
           <div className="plugin-groups" ref={cards} aria-label={T('\u63d2\u4ef6\u5217\u8868', 'Plugin list')}>{categories.map(([key, label]) => {
             const items = shown.filter(plugin => categoryOf(plugin)[0] === key);

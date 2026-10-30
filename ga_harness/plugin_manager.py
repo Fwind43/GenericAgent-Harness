@@ -276,6 +276,7 @@ class PluginManager:
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,
                               "protected": protected(m), "hot": hot_capable(m, p.manifests),
+                              "source": "user" if user_plugin(m) else "builtin",
                               "fields": fields, "config": values,
                               "requires": m.inject, "provides": m.provides,
                               "missing": [c for c in m.inject if not c.endswith("?") and not self.ctx.has(c)],
@@ -423,7 +424,7 @@ class PluginManager:
             catalog = self.catalog()
         else:
             raise ValueError("unknown action; use list, enable, disable or rescan")
-        items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "restart_required",
+        items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "source", "restart_required",
                                     "description", "missing_packages")} for i in catalog["items"]
                  if not i.get("worker_only")]
         out = {"items": items, "issues": catalog["issues"]}

@@ -7,6 +7,8 @@ export const categories = [
 ] as const;
 export const filters = [['all', T('\u5168\u90e8', 'All')], ['active', T('\u8fd0\u884c\u4e2d', 'Running')], ['off', T('\u672a\u52a0\u8f7d', 'Not loaded')], ['issue', T('\u9700\u5904\u7406', 'Needs attention')]] as const;
 const states: Record<string, string> = { active: T('\u8fd0\u884c\u4e2d', 'Running'), pending: T('\u7b49\u5f85\u4f9d\u8d56', 'Waiting for dependencies'), disabled: T('\u672a\u52a0\u8f7d', 'Not loaded'), error: T('\u52a0\u8f7d\u5931\u8d25', 'Failed to load'), removed: T('\u5df2\u79fb\u9664', 'Removed'), missing_packages: T('\u7f3a\u5c11 Python \u4f9d\u8d56', 'Missing Python packages') };
+export const sources = [['all', T('\u5168\u90e8\u6765\u6e90', 'All sources')], ['user', T('\u6211\u7684\u63d2\u4ef6', 'My plugins')], ['builtin', T('\u5185\u7f6e', 'Built-in')]] as const;
+export const inSource = (plugin: PluginInfo, source: string) => source === 'all' || (plugin.source || 'builtin') === source;
 export const stateLabel = (plugin: PluginInfo) => states[plugin.state] || plugin.state;
 export const categoryOf = (plugin: PluginInfo) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
 export const descriptionOf = (item: { description?: string; description_zh?: string }) => T(item.description_zh || item.description || '', item.description || '');
@@ -17,6 +19,7 @@ export function Switch({ checked, disabled, label, onToggle }: { checked: boolea
 }
 export function PluginTags({ plugin }: { plugin: PluginInfo }) {
   return <>
+    {plugin.source === 'user' ? <span className="plugin-tag" data-tag="user">{T('\u6211\u7684\u63d2\u4ef6', 'My plugin')}</span> : <span className="plugin-tag" data-tag="builtin">{T('\u5185\u7f6e', 'Built-in')}</span>}
     {plugin.protected && <span className="plugin-tag" data-tag="protected">{T('\u53d7\u4fdd\u62a4', 'Protected')}</span>}
     {plugin.hot && <span className="plugin-tag" data-tag="hot">{T('\u70ed\u63d2\u62d4', 'Hot-pluggable')}</span>}
     {plugin.restart_required && <span className="plugin-tag" data-tag="pending">{T('\u5f85\u91cd\u542f', 'Restart pending')}</span>}
