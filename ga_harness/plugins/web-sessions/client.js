@@ -163,10 +163,15 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const kidsOpen = (id) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
     const row = (session, depth, home, recent = false, kids = 0) => {
       const kidsShown = kids > 0 && kidsOpen(session.id);
+      const menuKey = `s:${session.id}`, menuOpen = menu === menuKey;
+      const pick = (fn) => () => {
+        setMenu("");
+        fn();
+      };
       const owner = recent && session.project_id ? projectName.get(session.project_id) : void 0;
       const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : "");
       const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: depth ? label(session).replace(/^\u25b8\s*/, "") : label(session) }),
@@ -191,16 +196,32 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             ]
           }
         ),
-        /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sess-act${session.pinned ? " on" : ""}`, disabled: busy, "aria-pressed": !!session.pinned, "aria-label": session.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), title: session.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), onClick: () => void act(session.pinned ? "unpin" : "pin", { id: session.id }), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("重命名", "Rename"), onClick: async () => {
-            const title = await sdk.promptDialog({ title: sdk.T("重命名会话", "Rename chat"), placeholder: sdk.T("会话名称", "Chat name"), value: session.title, confirm: sdk.T("保存", "Save") });
-            if (title == null ? void 0 : title.trim()) void act("rename", { id: session.id, title: title.trim() });
-          }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy || !!status, "aria-label": sdk.T("移动到项目", "Move to project"), "aria-expanded": moving === session.id, onClick: () => setMoving(moving === session.id ? "" : session.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-act", disabled: busy, "aria-label": sdk.T("删除", "Remove"), onClick: async () => {
-            if (await sdk.confirmDialog({ title: sdk.T("删除会话", "Remove chat"), danger: true, confirm: sdk.T("删除", "Remove"), message: sdk.T("从列表删除此会话？历史记录保留在本地数据库。", "Remove this chat from the list? History stays in the local database.") })) void act("delete", { id: session.id });
-          }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }) })
+        /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sess-acts", ref: menuOpen ? menuRef : void 0, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sess-act gah-sess-more-btn${menuOpen ? " on" : ""}`, "aria-haspopup": "menu", "aria-expanded": menuOpen, "aria-label": sdk.T("更多操作", "More actions"), title: sdk.T("更多操作", "More actions"), onClick: () => setMenu((m) => m === menuKey ? "" : menuKey), children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-dots", "aria-hidden": "true", children: "⋯" }) }),
+          menuOpen && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-menu gah-sess-row-menu", role: "menu", "aria-label": sdk.T("更多操作", "More actions"), children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy, onClick: pick(() => void act(session.pinned ? "unpin" : "pin", { id: session.id })), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }),
+              session.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy, onClick: pick(async () => {
+              const title = await sdk.promptDialog({ title: sdk.T("重命名会话", "Rename chat"), placeholder: sdk.T("会话名称", "Chat name"), value: session.title, confirm: sdk.T("保存", "Save") });
+              if (title == null ? void 0 : title.trim()) void act("rename", { id: session.id, title: title.trim() });
+            }), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }),
+              sdk.T("重命名", "Rename")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy || !!status, onClick: pick(() => setMoving(session.id)), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder" }),
+              sdk.T("移动到项目", "Move to project")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item danger", disabled: busy, onClick: pick(async () => {
+              if (await sdk.confirmDialog({ title: sdk.T("删除会话", "Remove chat"), danger: true, confirm: sdk.T("删除", "Remove"), message: sdk.T("从列表删除此会话？历史记录保留在本地数据库。", "Remove this chat from the list? History stays in the local database.") })) void act("delete", { id: session.id });
+            }), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }),
+              sdk.T("删除", "Remove")
+            ] })
+          ] })
         ] }),
         moving === session.id && /* @__PURE__ */ jsxRuntime.jsxs(
           "select",

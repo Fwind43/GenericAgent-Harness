@@ -65,7 +65,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState(''), [moving, setMoving] = useState('');
-  const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<SectionKey | ''>('');
+  const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<string>('');
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!menu) return;
@@ -129,11 +129,13 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const kidsOpen = (id: string) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
   const row = (session: Session, depth: number, home?: string, recent = false, kids = 0) => {
     const kidsShown = kids > 0 && kidsOpen(session.id);
+    const menuKey = `s:${session.id}`, menuOpen = menu === menuKey;
+    const pick = (fn: () => void) => () => { setMenu(''); fn(); };
     // In Recent, a project chat is tagged with its project name instead of the workspace.
     const owner = recent && session.project_id ? projectName.get(session.project_id) : undefined;
     const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : '');
     const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
-    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
+    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
@@ -143,11 +145,15 @@ export function Sessions({ api }: { api: PluginAPI }) {
         title={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
         aria-label={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
         onClick={() => toggle(`c:${session.id}`, kidsShown)}><span className="gah-sess-kids-n">{kids}</span><span className="gah-sess-caret" aria-hidden="true" /></button>}
-      <span className="gah-sess-acts">
-        <button type="button" className={`gah-sess-act${session.pinned ? ' on' : ''}`} disabled={busy} aria-pressed={!!session.pinned} aria-label={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} title={session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} onClick={() => void act(session.pinned ? 'unpin' : 'pin', { id: session.id })}><Icon name="pin" /></button>
-        <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u91cd\u547d\u540d', 'Rename')} onClick={async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); }}><Icon name="pencil" /></button>
-        <button type="button" className="gah-sess-act" disabled={busy || !!status} aria-label={T('\u79fb\u52a8\u5230\u9879\u76ee', 'Move to project')} aria-expanded={moving === session.id} onClick={() => setMoving(moving === session.id ? '' : session.id)}><Icon name="folder" /></button>
-        <button type="button" className="gah-sess-act" disabled={busy} aria-label={T('\u5220\u9664', 'Remove')} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u4f1a\u8bdd', 'Remove chat'), danger: true, confirm: T('\u5220\u9664', 'Remove'), message: T('\u4ece\u5217\u8868\u5220\u9664\u6b64\u4f1a\u8bdd\uff1f\u5386\u53f2\u8bb0\u5f55\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u3002', 'Remove this chat from the list? History stays in the local database.') })) void act('delete', { id: session.id }); }}><Icon name="trash" /></button></span>
+      <span className="gah-sess-acts" ref={menuOpen ? menuRef : undefined}>
+        <button type="button" className={`gah-sess-act gah-sess-more-btn${menuOpen ? ' on' : ''}`} aria-haspopup="menu" aria-expanded={menuOpen} aria-label={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} title={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} onClick={() => setMenu(m => m === menuKey ? '' : menuKey)}><span className="gah-sess-dots" aria-hidden="true">{'\u22ef'}</span></button>
+        {menuOpen && <div className="gah-sess-menu gah-sess-row-menu" role="menu" aria-label={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')}>
+          <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy} onClick={pick(() => void act(session.pinned ? 'unpin' : 'pin', { id: session.id }))}><Icon name="pin" />{session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')}</button>
+          <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy} onClick={pick(async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); })}><Icon name="pencil" />{T('\u91cd\u547d\u540d', 'Rename')}</button>
+          <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy || !!status} onClick={pick(() => setMoving(session.id))}><Icon name="folder" />{T('\u79fb\u52a8\u5230\u9879\u76ee', 'Move to project')}</button>
+          <div className="gah-sess-menu-sep" />
+          <button type="button" role="menuitem" className="gah-sess-menu-item danger" disabled={busy} onClick={pick(async () => { if (await confirmDialog({ title: T('\u5220\u9664\u4f1a\u8bdd', 'Remove chat'), danger: true, confirm: T('\u5220\u9664', 'Remove'), message: T('\u4ece\u5217\u8868\u5220\u9664\u6b64\u4f1a\u8bdd\uff1f\u5386\u53f2\u8bb0\u5f55\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u3002', 'Remove this chat from the list? History stays in the local database.') })) void act('delete', { id: session.id }); })}><Icon name="trash" />{T('\u5220\u9664', 'Remove')}</button>
+        </div>}</span>
       {moving === session.id && <select className="gah-sess-move" autoFocus aria-label={T('\u79fb\u52a8\u5230\u9879\u76ee', 'Move to project')} value={session.project_id && known.has(session.project_id) ? session.project_id : ''}
         onKeyDown={event => { if (event.key === 'Escape') setMoving(''); }} onBlur={() => setMoving('')}
         onChange={event => { const target = event.target.value; setMoving(''); void scoped({ action: 'move', session_id: session.id, project_id: target }, false); }}>

@@ -96,3 +96,14 @@
 .gah-sess-pin{flex:none;display:inline-flex;color:var(--muted);margin-right:4px}
 .gah-sess-pin .gah-ico{width:12px;height:12px}
 .gah-sess-act.on{color:var(--text)}
+
+/* Row actions live in one overflow menu. */
+.gah-sess-row.menu-open{background:var(--hover)}
+.gah-sess-row.menu-open .gah-sess-acts{display:flex}
+.gah-sess-row.menu-open .gah-sess-age{display:none}
+.gah-sess-dots{font-size:16px;line-height:1;letter-spacing:0}
+.gah-sess-more-btn.on{color:var(--text);background:var(--hover)}
+.gah-sess-row-menu{min-width:160px}
+.gah-sess-row-menu .gah-sess-menu-item{display:flex;align-items:center;gap:8px}
+.gah-sess-row-menu .gah-sess-menu-item .gah-ico{width:15px;height:15px;color:var(--muted)}
+.gah-sess-menu-item.danger,.gah-sess-menu-item.danger .gah-ico{color:var(--danger,#d93025)}
