@@ -15,6 +15,8 @@ import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
 import { ViewTabs } from './components/ViewTabs';
 import { CHAT_VIEW, useViews } from './views';
+import { pages, usePages } from './pages';
+import { PageNav } from './plugin-kit';
 
 // React never reconciles the children owned by a plugin.
 const Slot = memo(function Slot({ name }: { name: SlotName }) {
@@ -57,6 +59,8 @@ export function App() {
     setFiles(list => { const gone = list.find(p => p.key === key); if (gone?.preview) URL.revokeObjectURL(gone.preview); return list.filter(p => p.key !== key); });
   }
   const { active: view } = useViews();
+  // A plugin page route replaces the whole chat column; slots stay mounted (hidden) for plugins.
+  const page = pages.current(usePages());
   const busy = state.running || changing || sending;
   const stats = sessionStats(state.messages ?? []);
   const currentSession = state.sessions?.find((session) => session.id === state.session_id);
@@ -187,24 +191,27 @@ export function App() {
   return <>
     <aside className="sidebar" id="sidebar" style={{ '--side-w': `${sideWidth}px` } as CSSProperties}>
       <div className="side-head"><img className="side-logo" src="/ui-web-assets/ga-logo.png" width={28} height={28} alt="" /><h1>GenericAgent-Harness</h1><button type="button" className="icon-btn side-close" data-gah-close onClick={() => { if (!narrow()) setCollapsed(true); }} title={T('收起侧边栏', 'Collapse sidebar')} aria-label={T('收起侧边栏', 'Close sidebar')}>×</button></div>
-      <div className="side-body"><Slot name="sidebar" /></div>
+      <div className="side-body"><PageNav fallback /><Slot name="sidebar" /></div>
       <div className="side-resize" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin={SIDE_MIN} aria-valuemax={SIDE_MAX} aria-valuenow={sideWidth} aria-label={T('拖动调整侧边栏宽度', 'Resize sidebar')} title={T('拖动调整宽度，双击恢复默认', 'Drag to resize, double-click to reset')} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => setSideWidth(SIDE_DEFAULT)} />
       <div className="side-foot"><Slot name="sidebar-foot" /><Settings><GeneralSettings /><GaRootSettings /><UpdateSettings /><Slot name="settings" /></Settings><div className="side-conn"><span id="dot" className={'dot' + (connected ? ' live' : '')} /><span id="conn">{connected ? T('已连接', 'Connected') : T('连接中…', 'Connecting…')}</span></div></div>
     </aside>
     <div className="scrim" data-gah-close />
-    <div className="main-col">
+    <div className={'main-col' + (page ? ' gah-on-page' : '')}>
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
-        {sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}<span className="spacer" /><Slot name="header" />
+        {page ? <h2 className="session-title gah-page-title" title={page.label}>{page.label}</h2> : null}
+        <span className="gah-chat-head" hidden={!!page}>{sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}</span><span className="spacer" />
+        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<span className="gah-chat-head" hidden={!!page}><Slot name="header" /></span>
       </header>
-      <ViewTabs />
-      <nav className="toolbar gah-bar" aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
+      <div className="gah-chat-only" hidden={!!page}><ViewTabs /></div>
+      <nav className="toolbar gah-bar" hidden={!!page} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
-      <main id="scroll" ref={scroll} hidden={view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
+      <main id="scroll" ref={scroll} hidden={!!page || view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <EmptyState />}</div>
       </main>
-      {view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} />}
-      <div className="gah-view-area" hidden={view === CHAT_VIEW}><Slot name="view" /></div>
-      <footer>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
+      {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} />}
+      <div className="gah-view-area" hidden={!!page || view === CHAT_VIEW}><Slot name="view" /></div>
+      <div className="gah-page-area" hidden={!page}><Slot name="page" /></div>
+      <footer hidden={!!page}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
         onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); input.current?.focus(); }}>

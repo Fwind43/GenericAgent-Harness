@@ -76,7 +76,14 @@ bundle.
 ## Plugin API
 
 Slots: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`,
-`overlay` and `settings`. The host does not reconcile plugin-owned children inside slots.
+`overlay`, `settings`, `view` and `page`. The host does not reconcile plugin-owned children inside slots.
+
+Plugin pages: `PagePanel({ api, label, icon, order })` from `@gah/sdk` registers a full
+main-area page listed under "New chat" in the sidebar (`PageNav`, placed by web-sessions;
+the host renders a fallback list when no plugin places one). The route is the URL hash
+`#/p/<plugin>`; while active, the header title, view tabs, toolbar, chat and composer are
+hidden. `pages.open(id)` / `pages.home()` navigate programmatically; opening or creating a
+chat returns to the chat.
 
 The host owns one Settings entry and dialog. Built-in model, channel and plugin
 management panels register with the shared `SettingsPanel` component exported by

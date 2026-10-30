@@ -307,3 +307,11 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-update-line.error span{color:var(--danger)}
 .gah-update-line.warn span{color:#b7791f}
 .gah-update-empty{color:var(--muted)}
+/* Plugin pages: sidebar entries under "New chat" and the full main-area route */
+.gah-page-nav{display:flex;flex-direction:column;gap:1px}
+.gah-page-nav:empty{display:none}
+.gah-page-nav .side-item.active{background:var(--hover,rgba(0,0,0,.06));font-weight:600}
+.gah-page-area{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+.gah-page-area[hidden],header[hidden],footer[hidden]{display:none}
+.gah-page-area .gah-page{flex:1;min-height:0;display:flex;flex-direction:column}
+.gah-page[hidden]{display:none}

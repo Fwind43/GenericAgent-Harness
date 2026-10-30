@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, useOperation, defineReact } from '@gah/sdk';
+import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, PageNav, pages, useOperation, defineReact } from '@gah/sdk';
 
 // Sidebar layout: projects first (each a collapsible group of its chats), then the
 // chats that belong to no project. A project is a durable identity; the workspace is
@@ -100,6 +100,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
   }, [current]);
   const change = (path: string, body: object, reset: boolean) => run(async () => {
     const next = await api.host.post<HostState>(path, body); api.setState(next, reset);
+    // Opening or creating a chat leaves any plugin page route.
+    if (reset) pages.home();
   });
   const act = (action: string, extra: object = {}) => change('/api/sessions', { action, id: state.session_id, ...extra }, ['new', 'select', 'delete', 'clear'].includes(action));
   const scoped = (body: object, reset = true) => change('/api/p/web-workspaces/', body, reset);
@@ -201,7 +203,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
   };
   const shownSections = layout.order.filter(key => layout.sections[key].show);
   return <PluginSlot api={api} name="sidebar"><div className="gah-sessions" hidden={!state.sessions}>
-    <button type="button" className="side-item gah-sess-new" disabled={busy} title={scope?.project ? `${T('\u5728\u9879\u76ee\u4e2d\u65b0\u5efa', 'New chat in')}: ${scope.project.name}` : T('\u65b0\u5efa\u672a\u7ed1\u5b9a\u9879\u76ee\u7684\u5bf9\u8bdd', 'New chat without a project')} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button>
+    <button type="button" className="side-item gah-sess-new" disabled={busy} title={scope?.project ? `${T('\u5728\u9879\u76ee\u4e2d\u65b0\u5efa', 'New chat in')}: ${scope.project.name}` : T('\u65b0\u5efa\u672a\u7ed1\u5b9a\u9879\u76ee\u7684\u5bf9\u8bdd', 'New chat without a project')} data-gah-close="" onClick={() => void act('new')}><Icon name="pen" />{T('\u65b0\u4f1a\u8bdd', 'New chat')}</button><PageNav />
     <input type="search" className="gah-sess-search" value={query} placeholder={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} aria-label={T('\u641c\u7d22\u4f1a\u8bdd', 'Search chats')} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
     <div className="gah-sess-list" aria-label={T('\u4f1a\u8bdd\u5217\u8868', 'Chats')}>
       {scope ? <>

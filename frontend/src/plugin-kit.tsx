@@ -6,6 +6,7 @@ import { host, useHost } from './store';
 import { T, errorText } from './i18n';
 import { settings, useSettings } from './settings';
 import { views, useViews } from './views';
+import { pages, usePages } from './pages';
 
 export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
@@ -40,6 +41,29 @@ export function ViewPanel({ api, label, order = 0, className = '', children }: {
   const visible = active === id;
   return <PluginSlot api={api} name="view"><section id={'gah-view-' + id} role="tabpanel" aria-labelledby={'gah-view-tab-' + id}
     className={'gah-view ' + className} hidden={!visible}>{visible && children}</section></PluginSlot>;
+}
+// A full main-area page listed under "New chat"; children render only while the page route is active.
+export function PagePanel({ api, label, icon, order = 0, className = '', children }: {
+  api: PluginAPI; label: string; icon: string; order?: number; className?: string; children: ReactNode;
+}) {
+  const id = api.name;
+  const snapshot = usePages();
+  useLayoutEffect(() => pages.register({ id, label, icon, order }), [id, label, icon, order]);
+  const visible = pages.current(snapshot)?.id === id;
+  return <PluginSlot api={api} name="page"><section id={'gah-page-' + id} aria-label={label}
+    className={'gah-page ' + className} hidden={!visible}>{visible && children}</section></PluginSlot>;
+}
+// Sidebar entries for registered pages. The sessions plugin places it under "New chat";
+// the host renders a fallback copy only while no plugin has placed one.
+export function PageNav({ fallback = false, onOpen }: { fallback?: boolean; onOpen?: () => void }) {
+  const snapshot = usePages();
+  useLayoutEffect(() => fallback ? undefined : pages.claimNav(), [fallback]);
+  if ((fallback && snapshot.navs > 0) || !snapshot.pages.length) return null;
+  const current = pages.current(snapshot)?.id;
+  return <nav className="gah-page-nav" aria-label={T('\u63d2\u4ef6\u9875\u9762', 'Plugin pages')}>{snapshot.pages.map(page =>
+    <button key={page.id} type="button" className={'side-item gah-page-link' + (current === page.id ? ' active' : '')}
+      aria-current={current === page.id ? 'page' : undefined} data-page={page.id} data-gah-close=""
+      onClick={() => { pages.open(page.id); onOpen?.(); }}><Icon name={page.icon} /><span>{page.label}</span></button>)}</nav>;
 }
 export function Icon({ name }: { name: string }) { return <span className="gah-ico" data-i={name} aria-hidden="true" />; }
 export function Modal({ className, label, busy = false, onClose, children }: {
