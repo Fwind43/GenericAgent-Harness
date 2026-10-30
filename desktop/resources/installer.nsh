@@ -36,6 +36,9 @@
 !macro customRemoveFiles
   !insertmacro gahRemoveAppFiles
   ${ifNot} ${isUpdated}
+    ; Launch at login (desktop/src/autostart.js WIN_NAME): do not leave a dangling Run entry.
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "GenericAgent-Harness"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "GenericAgent-Harness"
     ${if} ${FileExists} "$INSTDIR\GenericAgent\*.*"
       MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "是否同时删除内置的 GenericAgent 文件夹？$\r$\n其中包含模型配置（mykey.py）、记忆和会话记录，删除后无法恢复。$\r$\n$\r$\n$INSTDIR\GenericAgent$\r$\n$\r$\nAlso delete the bundled GenericAgent folder? It contains your model configuration (mykey.py), memory and sessions; this cannot be undone." /SD IDNO IDNO gahKeepGa
         RMDir /r "$INSTDIR\GenericAgent"

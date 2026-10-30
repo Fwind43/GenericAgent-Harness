@@ -7,6 +7,7 @@ const path = require('node:path');
 const { Backend, isGaRoot } = require('./backend');
 const { Updater } = require('./updater');
 const { t, setLanguage, initLanguage } = require('./i18n');
+const autostart = require('./autostart');
 
 let backend = null;
 let win = null;
@@ -14,6 +15,8 @@ let origin = null;
 let quitting = false;
 let tray = null;
 let updater = null;
+// Started by the login item: stay in the tray until the user opens the window.
+const startHidden = autostart.launchedHidden();
 // Windows picks the matching frame from a multi-size .ico; downscaling the 512px PNG blurs it.
 const ICON = path.join(__dirname, '..', 'resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
 
@@ -55,6 +58,16 @@ function registerBridge() {
     if (!fromBackend(event) || !/^https?:\/\//i.test(String(url))) throw new Error('forbidden');
     await shell.openExternal(String(url));
     return true;
+  });
+  ipcMain.handle('gah:autostart-get', (event) => {
+    if (!fromBackend(event)) throw new Error('forbidden');
+    return { supported: autostart.supported(), enabled: autostart.isEnabled() };
+  });
+  ipcMain.handle('gah:autostart-set', (event, on) => {
+    if (!fromBackend(event) || typeof on !== 'boolean') throw new Error('forbidden');
+    const enabled = autostart.setEnabled(on);
+    refreshTrayMenu();
+    return { supported: true, enabled };
   });
   ipcMain.handle('gah:update-status', (event) => {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
@@ -232,6 +245,13 @@ function refreshTrayMenu() {
     }, { type: 'separator' });
   }
   if (backend) items.push({ label: t('GenericAgent 目录…', 'GenericAgent folder...'), click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
+  if (autostart.supported()) {
+    items.push({ label: t('开机自启', 'Launch at login'), type: 'checkbox', checked: autostart.isEnabled(),
+      click: (item) => {
+        try { autostart.setEnabled(item.checked); } catch (err) { dialog.showErrorBox('GenericAgent-Harness', String(err.message || err)); }
+        refreshTrayMenu();
+      } }, { type: 'separator' });
+  }
   items.push({ label: t('退出', 'Quit'), click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
@@ -296,7 +316,8 @@ function createWindow(url) {
       webSecurity: true,
     },
   });
-  win.once('ready-to-show', () => win.show());
+  // Login launch with a tray: keep the window hidden (the tray icon brings it back).
+  win.once('ready-to-show', () => { if (!(startHidden && tray)) win.show(); });
   // Stay on the backend origin; everything else opens in the system browser.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:\/\//i.test(target)) shell.openExternal(target);
