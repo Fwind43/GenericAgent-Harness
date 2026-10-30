@@ -200,7 +200,7 @@ export function App() {
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         {page ? <h2 className="session-title gah-page-title" title={page.label}>{page.label}</h2> : null}
         <span className="gah-chat-head" hidden={!!page}>{sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModeBadge /> : null}</span><span className="spacer" />
-        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<span className="gah-chat-head" hidden={!!page}><Slot name="header" /></span>
+        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<span className="gah-chat-head gah-head-slot" hidden={!!page}><Slot name="header" /></span>
       </header>
       <div className="gah-chat-only" hidden={!!page}><ViewTabs /></div>
       <nav className="toolbar gah-bar" hidden={!!page} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
