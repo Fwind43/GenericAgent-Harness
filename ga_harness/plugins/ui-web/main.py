@@ -920,6 +920,10 @@ def _clip(data):
 class _Handler(BaseHTTPRequestHandler):
     frontend: WebFrontend = None
     protocol_version = "HTTP/1.1"
+    # SSE writes many tiny frames; with Nagle on, a frame can wait for the
+    # client's (Windows ~200 ms) delayed ACK before leaving, which shows up as
+    # bursty streaming. TCP_NODELAY sends each flushed frame immediately.
+    disable_nagle_algorithm = True
 
     def log_message(self, fmt, *args):  # keep the terminal quiet
         pass
