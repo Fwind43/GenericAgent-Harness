@@ -398,13 +398,11 @@ class Runs:
                 # not stored as event rows. The transcript is checkpointed at most
                 # once per interval; durable events and completion save it in full.
                 live["seq"] = seq = live["seq"] + 1
-                if now - live["flushed"] >= STREAM_FLUSH_SECONDS:
-                    with self.sessions._db() as db:
-                        self._checkpoint(db, live)
-                else:
-                    live["dirty"] = True
+                live["dirty"] = True
+                flush = now - live["flushed"] >= STREAM_FLUSH_SECONDS
                 patch = None
             else:
+                flush = False
                 with self.sessions._db() as db:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
                     self._checkpoint(db, live)
@@ -417,6 +415,14 @@ class Runs:
             self._notify("run.event", record, name=name, data=data)
         else:
             self._notify("run.event", record, name=name, data=data, patch=patch)
+        if flush:
+            # The periodic stream checkpoint serializes the whole transcript and
+            # commits it. Run it after the delta is broadcast and outside
+            # ``self.lock`` (shared by every session, run and API request) so a
+            # slow commit cannot stall them. Only this run's monitor thread
+            # mutates ``live``, and it also performs the final save afterwards.
+            with self.sessions._db() as db:
+                self._checkpoint(db, live)
 
     @staticmethod
     def _patch(messages, name, data):
@@ -459,8 +465,9 @@ class Runs:
         return added
 
     def _checkpoint(self, db, live):
-        session = self.sessions.get(live["session_id"])
-        self.sessions._write(db, session, live["messages"], live["state"])
+        # A None title keeps the stored one, so a checkpoint no longer re-reads and
+        # decodes the whole session just to write it back.
+        self.sessions._write(db, {"id": live["session_id"], "title": None}, live["messages"], live["state"])
         live["dirty"], live["flushed"] = False, time.monotonic()
 
     def _finish(self, rid, status, error=None, *, state=None, text=None):

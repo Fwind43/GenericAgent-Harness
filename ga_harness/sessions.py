@@ -239,7 +239,8 @@ class Sessions:
             title = " ".join(first.split())[:60] or title
         # A write to the chat on screen is seen as it happens; any other chat becomes unread.
         now = time.time()
-        db.execute("UPDATE sessions SET title=?,updated=?,messages=?,state=?,"
+        # A None title (run checkpoints) keeps the stored one, so callers need not re-read the row.
+        db.execute("UPDATE sessions SET title=COALESCE(?,title),updated=?,messages=?,state=?,"
                    "read_at=CASE WHEN id=(SELECT value FROM meta WHERE key='current') THEN ? ELSE read_at END WHERE id=?",
                    (title, now, json.dumps(messages, ensure_ascii=False, allow_nan=False),
                     json.dumps(state, ensure_ascii=False, allow_nan=False), now, current["id"]))
