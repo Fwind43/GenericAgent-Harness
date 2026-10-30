@@ -165,7 +165,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       const kidsShown = kids > 0 && kidsOpen(session.id);
       const owner = recent && session.project_id ? projectName.get(session.project_id) : void 0;
       const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : "");
-      const unread = !status && !!session.unread && session.id !== state.session_id;
+      const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,

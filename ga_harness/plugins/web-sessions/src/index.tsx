@@ -132,7 +132,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
     // In Recent, a project chat is tagged with its project name instead of the workspace.
     const owner = recent && session.project_id ? projectName.get(session.project_id) : undefined;
     const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : '');
-    const unread = !status && !!session.unread && session.id !== state.session_id;
+    const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}

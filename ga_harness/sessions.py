@@ -213,7 +213,9 @@ class Sessions:
             with self._db() as db:
                 rows = db.execute("SELECT id,title,updated,workspace,project_id,parent_id,pinned,read_at FROM sessions WHERE deleted=0 ORDER BY pinned DESC,updated DESC,id").fetchall()
             # Unread = new transcript content since the user last saw it (opened, or watched it being written).
-            return [dict(row, running=row["id"] in self.active, unread=row["updated"] > row["read_at"]) for row in rows]
+            # Sub-chats (worker runs under a parent) are always treated as read.
+            return [dict(row, running=row["id"] in self.active,
+                         unread=not row["parent_id"] and row["updated"] > row["read_at"]) for row in rows]
 
     def transcripts(self):
         """Read-only (id, title, updated, messages) for every live chat, e.g. for usage reports."""
