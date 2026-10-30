@@ -63,6 +63,15 @@ def apply(ctx, config):
     store = Store(_store_path(sessions))
     # session_id -> [{"id", "text", "created", "state": "queued" | "steering", "run_id"?}]
     queues = store.load()
+    held = set()  # sessions whose queue stopped after an aborted run
+
+    def peek(sid):
+        """Creation time of the message that will be sent next on its own, else None."""
+        with lock:
+            items = queues.get(sid) or []
+            if sid in held or not items or items[0]["state"] != "queued":
+                return None
+            return items[0].get("created") or 0
 
     def _items(sid):
         return queues.setdefault(sid, [])
@@ -211,17 +220,27 @@ def apply(ctx, config):
         if code >= 400:
             raise RuntimeError(reply.get("error") or "run could not be started")
         with lock:
+            held.discard(sid)
             if item in queues.get(sid, []):
                 queues[sid].remove(item)
 
     def _drain(sid, auto=True):
+        # Arrival order with conductor wake-ups: children that finished before the
+        # first queued message are reported first; that run's end drains us again.
+        since = ctx.get("conductor.pending_since")
+        first = since(sid) if callable(since) else None
         with lock:
             items = queues.get(sid, [])
+            if not auto and items:
+                held.add(sid)  # a stopped run waits for the user, not for auto-send
+            elif auto:
+                held.discard(sid)
             for i in items:
                 if i["state"] == "steering":  # worker ended without reporting
                     i["state"] = "queued"
                     i.pop("run_id", None)
-            if not auto or not items or (runs is not None and runs.active_for(sid)):
+            if (not auto or not items or (runs is not None and runs.active_for(sid))
+                    or (first is not None and first < items[0].get("created", 0))):
                 stopped = True
             else:
                 stopped = False
@@ -232,6 +251,7 @@ def apply(ctx, config):
         code, _reply = frontend.submit(item["text"], session_id=sid, source="user")
         if code < 400:
             with lock:
+                held.discard(sid)
                 if item in queues.get(sid, []):
                     queues[sid].remove(item)
         _publish()
@@ -246,6 +266,7 @@ def apply(ctx, config):
             threading.Thread(target=_drain, args=(sid, auto), name="run-queue-drain", daemon=True).start()
         return nxt(data) if nxt else None
 
+    ctx.provide("run_queue.peek", peek)
     if runs is not None:
         ctx.scope.add(runs.register_worker_plugin("ga-steer"))
     ctx.on("web.snapshot", snapshot)

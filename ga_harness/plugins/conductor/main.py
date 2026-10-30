@@ -37,7 +37,7 @@ RESULT_LIMIT = 4_000
 TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
 SOURCE = "conductor"
-WAKE_COALESCE = 1.5  # seconds to gather children finishing together into one wake-up
+WAKE_COALESCE = 0.3  # seconds to gather children finishing together into one wake-up
 
 
 def _store_path(sessions):
@@ -358,6 +358,12 @@ def apply(ctx, config):
                        if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
             if not pending or runs.active_for(parent):
                 return
+            # One queue in arrival order (as GA's conductor inbox): a user message
+            # queued before these finished goes first; its run's end wakes us again.
+            peek = ctx.get("run_queue.peek")
+            queued = peek(parent) if callable(peek) else None
+            if queued is not None and queued < min(t.get("finished") or 0 for t in pending):
+                return
             for task in pending:
                 task["notified"] = True
             waking.add(parent)  # until the run is registered, so no second wake races in
@@ -379,6 +385,15 @@ def apply(ctx, config):
             with lock:
                 waking.discard(parent)
         _publish()
+
+    def pending_since(parent):
+        """Finish time of the oldest unreported child, else None (read by run-queue)."""
+        with lock:
+            if not enabled.get(parent):
+                return None
+            times = [t.get("finished") or 0 for t in _children(parent)
+                     if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
+            return min(times) if times else None
 
     def on_finished(data, nxt=None):
         try:
@@ -438,6 +453,7 @@ def apply(ctx, config):
     ctx.scope.add(runs.register_worker_plugin("conductor-worker"))
     ctx.scope.add(runs.register_worker_plugin("ga-steer"))
     ctx.on("web.snapshot", snapshot)
+    ctx.provide("conductor.pending_since", pending_since)
     ctx.on("run.finished", on_finished)
     script, style = HERE / "client.js", HERE / "client.css"
     ctx.scope.add(host.register("conductor", script=script if script.is_file() else None,
