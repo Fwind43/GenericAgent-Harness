@@ -2,7 +2,7 @@
 // Python backend; plugins, sessions and settings all stay in the backend (same as the browser).
 'use strict';
 
-const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, clipboard, dialog, ipcMain, nativeImage, shell } = require('electron');
 const path = require('node:path');
 const { Backend, isGaRoot } = require('./backend');
 const { Updater } = require('./updater');
@@ -236,6 +236,48 @@ function refreshTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
+function showContextMenu(params) {
+  if (!win || win.isDestroyed()) return;
+  const { editFlags = {}, isEditable, selectionText, linkURL, mediaType, srcURL } = params;
+  const hasText = Boolean(selectionText && selectionText.trim());
+  const items = [];
+  const sep = () => { if (items.length && items[items.length - 1].type !== 'separator') items.push({ type: 'separator' }); };
+  if (isEditable) {
+    items.push(
+      { role: 'undo', label: t('撤销', 'Undo'), enabled: editFlags.canUndo },
+      { role: 'redo', label: t('重做', 'Redo'), enabled: editFlags.canRedo },
+      { type: 'separator' },
+      { role: 'cut', label: t('剪切', 'Cut'), enabled: editFlags.canCut },
+      { role: 'copy', label: t('复制', 'Copy'), enabled: editFlags.canCopy },
+      { role: 'paste', label: t('粘贴', 'Paste'), enabled: editFlags.canPaste },
+      { type: 'separator' },
+      { role: 'selectAll', label: t('全选', 'Select all'), enabled: editFlags.canSelectAll },
+    );
+  } else if (hasText) {
+    items.push({ role: 'copy', label: t('复制', 'Copy') });
+  }
+  if (linkURL && /^https?:\/\//i.test(linkURL)) {
+    sep();
+    items.push(
+      { label: t('在浏览器中打开链接', 'Open link in browser'), click: () => shell.openExternal(linkURL) },
+      { label: t('复制链接地址', 'Copy link address'), click: () => clipboard.writeText(linkURL) },
+    );
+  }
+  if (mediaType === 'image' && srcURL) {
+    sep();
+    items.push(
+      { label: t('复制图片', 'Copy image'), click: () => win && win.webContents.copyImageAt(params.x, params.y) },
+      { label: t('复制图片地址', 'Copy image address'), click: () => clipboard.writeText(srcURL) },
+    );
+  }
+  if (!isEditable) {
+    sep();
+    items.push({ role: 'selectAll', label: t('全选', 'Select all') });
+  }
+  if (items.length && items[items.length - 1].type === 'separator') items.pop();
+  if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+}
+
 function createWindow(url) {
   win = new BrowserWindow({
     width: 1280,
@@ -268,6 +310,8 @@ function createWindow(url) {
       if (/^https?:\/\//i.test(target)) shell.openExternal(target);
     }
   });
+  // Electron has no built-in context menu: offer copy/paste like a browser would.
+  win.webContents.on('context-menu', (_event, params) => showContextMenu(params));
   win.on('close', (event) => {
     if (quitting || !tray) return;   // real quit, or no tray to come back from
     event.preventDefault();
