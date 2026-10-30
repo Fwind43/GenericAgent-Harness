@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import OrderedDict
@@ -231,8 +232,20 @@ def _registration(base, action, params=None):
     data = urllib.parse.urlencode(dict(params or {}, action=action)).encode()
     req = urllib.request.Request(base + "/oauth/v1/app/registration", data=data, headers={
         "Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read(1 << 20) or b"{}")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read(1 << 20) or b"{}")
+    except urllib.error.HTTPError as e:
+        # OAuth device flow reports pending/slow_down/denied as HTTP 400 with
+        # a JSON error body; surface that body instead of the bare status.
+        body = e.read(1 << 20)
+        try:
+            data = json.loads(body or b"{}")
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and data.get("error"):
+            return data
+        raise
 
 
 def pair(update, cancelled):
@@ -254,7 +267,7 @@ def pair(update, cancelled):
         raise RuntimeError("incomplete onboarding response")
     update(status="wait", qr=url, text="Scan with the Feishu/Lark app")
     interval = int(begin.get("interval") or 5)
-    deadline = time.time() + int(begin.get("expire_in") or 600)
+    deadline = time.time() + int(begin.get("expires_in") or begin.get("expire_in") or 600)
     while time.time() < deadline:
         for _ in range(interval * 10):
             if cancelled():
