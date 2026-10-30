@@ -67,8 +67,8 @@ TOOLS = {
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
         "conductor_collect",
-        "Return finished tasks not yet collected. Does not wait: if nothing has finished, "
-        "end your turn; you are woken automatically when a task finishes."), "collect"),
+        "Return finished tasks not yet collected. If nothing has finished while tasks are "
+        "running, this ends your turn; you are woken automatically when a task finishes."), "collect"),
     "conductor_tasks": (_tool("conductor_tasks", "List all tasks of this conductor session."), "tasks"),
     "conductor_inspect": (_tool(
         "conductor_inspect", "Show one task in detail, including its latest result.",
@@ -100,9 +100,15 @@ def apply(ctx, config):
         body = {k: v for k, v in (args if isinstance(args, dict) else {}).items() if v is not None}
         body.update(op=op, session_id=host.session_id)
         try:
-            msg = json.dumps(host.call("conductor", body, RPC_TIMEOUT), ensure_ascii=False, indent=1)
+            result = host.call("conductor", body, RPC_TIMEOUT)
+            msg = json.dumps(result, ensure_ascii=False, indent=1)
         except Exception as exc:  # RpcError and transport errors
-            msg = f"[Error] conductor {op}: {exc}"
+            result, msg = None, f"[Error] conductor {op}: {exc}"
+        if (op == "collect" and isinstance(result, dict) and not result.get("finished")
+                and result.get("running")):
+            # Nothing to review yet: end the turn instead of letting the model
+            # poll. The host wakes this session when a child finishes.
+            return StepOutcome(msg, next_prompt=None, should_exit=True)
         return StepOutcome(msg, next_prompt=msg + "\n")
 
     def handler_for(op):
