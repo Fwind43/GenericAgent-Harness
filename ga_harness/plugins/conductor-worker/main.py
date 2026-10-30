@@ -18,7 +18,7 @@ import importlib
 import json
 
 KEEP = ("ask_user", "update_working_checkpoint", "no_tool")
-RPC_TIMEOUT = 150.0  # collect may wait up to 120 s on the host
+RPC_TIMEOUT = 150.0
 
 PARENT_PROMPT = """
 ### Conductor mode
@@ -28,8 +28,11 @@ delegate to child tasks, review their results and decide.
   `conductor_dispatch` (a complete, self-contained objective: context, scope,
   deliverable, how to verify). Children cannot see this conversation.
 - At most 3 tasks run at once, 12 may be unresolved, 48 per session.
-- When tasks are running, call `conductor_collect` (optionally waiting) instead of
-  polling; you are also woken automatically when a child finishes.
+- After dispatching, do not wait, sleep or poll. End your turn with a short status
+  for the user (what was dispatched, what happens next). When a child finishes you
+  are woken automatically with a `[Conductor]` message; then call
+  `conductor_collect` to read the results. Only keep working in the same turn if
+  there is other planning you can do without the results.
 - Use `conductor_inspect` for details, `conductor_instruct` to steer or continue a
   task, `conductor_cancel` to stop one.
 - Every finished task must be reviewed with `conductor_review`: `verified` only
@@ -64,8 +67,8 @@ TOOLS = {
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
         "conductor_collect",
-        "Return finished tasks not yet collected. Optionally wait for one to finish.",
-        {"wait_seconds": {"type": "number", "description": "Seconds to wait (0-120)."}}), "collect"),
+        "Return finished tasks not yet collected. Does not wait: if nothing has finished, "
+        "end your turn; you are woken automatically when a task finishes."), "collect"),
     "conductor_tasks": (_tool("conductor_tasks", "List all tasks of this conductor session."), "tasks"),
     "conductor_inspect": (_tool(
         "conductor_inspect", "Show one task in detail, including its latest result.",

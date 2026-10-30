@@ -33,7 +33,6 @@ MAX_RUNNING = 3
 MAX_OPEN = 12
 MAX_TOTAL = 48
 MAX_TEXT = 20_000
-MAX_WAIT = 120.0
 RESULT_LIMIT = 4_000
 TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
@@ -208,21 +207,12 @@ def apply(ctx, config):
         return {"task": _public(task), **_counts(parent)}
 
     def collect(body):
-        """Return finished, not yet collected tasks; optionally wait for one."""
+        """Return finished, not yet collected tasks. Never blocks: the parent is
+        woken by ``run.finished`` instead of waiting inside a turn."""
         parent = _sid(body)
-        wait = body.get("wait_seconds") or 0
-        if isinstance(wait, bool) or not isinstance(wait, (int, float)):
-            wait = 0
-        deadline = time.monotonic() + max(0.0, min(float(wait), MAX_WAIT))
         with lock:
-            while True:
-                children = _children(parent)
-                ready = [t for t in children if t["status"] in TERMINAL and not t.get("acked")]
-                running = any(t["status"] == "running" for t in children)
-                left = deadline - time.monotonic()
-                if ready or left <= 0 or not running:
-                    break
-                changed.wait(min(left, 5.0))
+            children = _children(parent)
+            ready = [t for t in children if t["status"] in TERMINAL and not t.get("acked")]
             for task in ready:
                 task["acked"] = task["notified"] = True
             result = {"finished": [_public(t) for t in ready],
