@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { type PluginAPI, type PluginCatalog, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
+import { type PluginAPI, type PluginCatalog, type PluginInfo, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
-import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel } from './helpers';
+import { categories, categoryOf, descriptionOf, filters, inFilter, PluginTags, stateLabel, Switch } from './helpers';
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
@@ -21,6 +21,17 @@ export function PluginManager({ api }: { api: PluginAPI }) {
   const load = async () => {
     setError('');
     await run(async () => { setConfig(await api.host.get<PluginCatalog>('/api/plugins')); }, setError, true);
+  };
+  const toggle = (plugin: PluginInfo, enabled: boolean) => {
+    if (plugin.protected || busy || state.running || !config) return;
+    setError('');
+    void run(async () => {
+      const next = await api.host.post<PluginCatalog>('/api/plugins', { action: 'save', name: plugin.name, revision: config.revision, enabled, config: plugin.config });
+      setConfig(next);
+      const item = next.items.find(p => p.name === plugin.name);
+      if (item?.error) setError(plugin.name + ': ' + item.error);
+      else api.notice(item?.restart_required ? T('\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Saved; applies on next start') : enabled ? T('\u5df2\u542f\u7528 ', 'Enabled ') + plugin.name : T('\u5df2\u505c\u7528 ', 'Disabled ') + plugin.name);
+    }, setError);
   };
   const change: PluginChange = async (action, enabled, values) => {
     if (!selected || selected.protected || busy || !config) return;
@@ -56,14 +67,14 @@ export function PluginManager({ api }: { api: PluginAPI }) {
           <div className="plugin-groups" ref={cards} aria-label={T('\u63d2\u4ef6\u5217\u8868', 'Plugin list')}>{categories.map(([key, label]) => {
             const items = shown.filter(plugin => categoryOf(plugin)[0] === key);
             return items.length > 0 && <section key={key} className="plugin-group" data-category={key}><h3 className="plugin-group-title">{label}<span className="plugin-count">{items.length}</span></h3><ul className="plugin-grid" aria-label={label}>{items.map(plugin => <li key={plugin.name}><button type="button" className="plugin-card" data-plugin={plugin.name} data-state={plugin.state} aria-label={plugin.name + T('\uff0c', ', ') + stateLabel(plugin)} disabled={working} onClick={() => { setEditing(plugin.name); setError(''); requestAnimationFrame(() => back.current?.focus()); }}>
-              <span className="plugin-card-head"><span className="plugin-name" title={plugin.name}>{plugin.name}</span><span className="plugin-badge" data-state={plugin.state}>{stateLabel(plugin)}</span></span>
+              <span className="plugin-card-head"><span className="plugin-name" title={plugin.name}>{plugin.name}</span><span className="plugin-badge" data-state={plugin.state}>{stateLabel(plugin)}</span>{plugin.hot && !plugin.protected && <span className="plugin-switch-slot" />}</span>
               <span className="plugin-card-desc">{descriptionOf(plugin) || T('\u6682\u65e0\u8bf4\u660e', 'No description')}</span>
               <span className="plugin-card-foot"><PluginTags plugin={plugin} /><span className="plugin-card-meta">{plugin.provides?.length ? T('\u63d0\u4f9b ', 'Provides ') + plugin.provides.length + T(' \u9879\u80fd\u529b', ' capabilities') : ''}</span></span>
-            </button></li>)}</ul></section>;
+            </button>{plugin.hot && !plugin.protected && <Switch checked={plugin.enabled} disabled={working || changing || state.running} label={(plugin.enabled ? T('\u505c\u7528 ', 'Disable ') : T('\u542f\u7528 ', 'Enable ')) + plugin.name} onToggle={next => toggle(plugin, next)} />}</li>)}</ul></section>;
           })}</div>
           {!shown.length && <p className="plugin-empty">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : config?.items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6', 'No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6', 'No manageable plugins found')}</p>}
         </section>
-        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} onInstall={install} /></section>}
+        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} onToggle={next => toggle(selected, next)} onInstall={install} /></section>}
       </div>
     </SettingsPanel>}
   </>;

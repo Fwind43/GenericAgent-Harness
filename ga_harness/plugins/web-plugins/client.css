@@ -52,3 +52,13 @@
 .plugin-fields{padding-top:4px}.plugin-fields[hidden]{display:none}
 .plugin-reset{margin-right:auto}.plugin-actions{flex-wrap:wrap}.plugin-actions button{white-space:normal}
 @media(max-width:600px){.gah-plugin-dialog .plugin-grid{grid-template-columns:1fr}.gah-plugin-dialog .plugin-card{min-height:0}.gah-plugin-dialog .plugin-detail-card{padding:14px}}
+
+.gah-plugin-dialog .plugin-grid>li{position:relative}
+.gah-plugin-dialog .plugin-switch-slot{flex:none;width:36px}
+.gah-plugin-dialog .plugin-grid>li>.plugin-switch{position:absolute;top:14px;right:14px}
+.gah-plugin-dialog .plugin-switch{position:relative;flex:none;width:36px;height:20px;padding:0;border:none;border-radius:999px;background:color-mix(in srgb,var(--muted) 45%,transparent);cursor:pointer;transition:background .15s}
+.gah-plugin-dialog .plugin-switch[aria-checked="true"]{background:var(--accent)}
+.gah-plugin-dialog .plugin-switch:disabled{opacity:.5;cursor:not-allowed}
+.gah-plugin-dialog .plugin-switch:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+.gah-plugin-dialog .plugin-switch-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.gah-plugin-dialog .plugin-switch[aria-checked="true"] .plugin-switch-knob{transform:translateX(16px)}

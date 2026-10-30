@@ -11,6 +11,10 @@ export const stateLabel = (plugin: PluginInfo) => states[plugin.state] || plugin
 export const categoryOf = (plugin: PluginInfo) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
 export const descriptionOf = (item: { description?: string; description_zh?: string }) => T(item.description_zh || item.description || '', item.description || '');
 export const inFilter = (plugin: PluginInfo, filter: string) => filter === 'all' || (filter === 'active' ? plugin.state === 'active' : filter === 'off' ? ['disabled', 'removed'].includes(plugin.state) : ['error', 'pending', 'missing_packages'].includes(plugin.state) || !!plugin.missing?.length || !!plugin.missing_packages?.length || !!plugin.error);
+export function Switch({ checked, disabled, label, onToggle }: { checked: boolean; disabled?: boolean; label: string; onToggle: (next: boolean) => void }) {
+  return <button type="button" role="switch" className="plugin-switch" aria-checked={checked} aria-label={label} title={label} disabled={disabled}
+    onClick={event => { event.stopPropagation(); onToggle(!checked); }}><span className="plugin-switch-knob" /></button>;
+}
 export function PluginTags({ plugin }: { plugin: PluginInfo }) {
   return <>
     {plugin.protected && <span className="plugin-tag" data-tag="protected">{T('\u53d7\u4fdd\u62a4', 'Protected')}</span>}

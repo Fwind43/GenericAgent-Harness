@@ -1,10 +1,10 @@
 import { Fragment, useState } from 'react';
 import { T, type Json, type PluginInfo } from '@gah/sdk';
-import { descriptionOf, PluginTags, stateLabel } from './helpers';
+import { descriptionOf, PluginTags, stateLabel, Switch } from './helpers';
 
 export type PluginChange = (action: 'save' | 'reset', enabled?: boolean, config?: Record<string, Json>) => void;
-export function PluginDetails({ plugin, busy, running, error, onChange, onInstall }: {
-  plugin: PluginInfo; busy: boolean; running: boolean; error: string; onChange: PluginChange; onInstall?: () => void;
+export function PluginDetails({ plugin, busy, running, error, onChange, onToggle, onInstall }: {
+  plugin: PluginInfo; busy: boolean; running: boolean; error: string; onChange: PluginChange; onToggle?: (enabled: boolean) => void; onInstall?: () => void;
 }) {
   const [enabled, setEnabled] = useState(plugin.enabled);
   const [values, setValues] = useState<Record<string, Json>>({ ...plugin.config });
@@ -33,7 +33,7 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onInstal
     {warning && <p className="plugin-note plugin-warning">{warning}</p>}
     {!!plugin.missing_packages?.length && onInstall && <div className="plugin-actions plugin-install"><button type="button" className="secondary plugin-install-button" disabled={busy || running} onClick={onInstall}>{T('\u5b89\u88c5\u4f9d\u8d56\uff08pip\uff09', 'Install packages (pip)')}</button><small>{T('\u5b89\u88c5\u5230\u5f53\u524d Python \u73af\u5883\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Installs into the current Python environment; applies on next start')}</small></div>}
     <form onSubmit={event => { event.preventDefault(); submit(); }}>
-      <label className="plugin-toggle plugin-enable"><input type="checkbox" role="switch" checked={enabled} disabled={locked} onChange={event => setEnabled(event.target.checked)} /><span>{plugin.hot ? T('\u542f\u7528', 'Enabled') : T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528', 'Enable on next start')}</span></label>
+      <div className="plugin-toggle plugin-enable"><Switch checked={enabled} disabled={locked} label={T('\u542f\u7528', 'Enabled')} onToggle={next => { setEnabled(next); if (plugin.hot) onToggle?.(next); }} /><span>{plugin.hot ? T('\u542f\u7528\uff08\u7acb\u5373\u751f\u6548\uff09', 'Enabled (applies immediately)') : T('\u4e0b\u6b21\u542f\u52a8\u65f6\u542f\u7528', 'Enable on next start')}</span></div>
       <div className="model-grid plugin-fields" hidden={!Object.keys(plugin.fields).length}>{Object.entries(plugin.fields).map(([key, spec]) => {
         const label = T(spec.label_zh || spec.label || key, spec.label || key);
         const common = { 'data-plugin-field': key, disabled: locked };

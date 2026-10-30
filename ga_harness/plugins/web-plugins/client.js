@@ -17,6 +17,25 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     var _a, _b;
     return filter === "all" || (filter === "active" ? plugin.state === "active" : filter === "off" ? ["disabled", "removed"].includes(plugin.state) : ["error", "pending", "missing_packages"].includes(plugin.state) || !!((_a = plugin.missing) == null ? void 0 : _a.length) || !!((_b = plugin.missing_packages) == null ? void 0 : _b.length) || !!plugin.error);
   };
+  function Switch({ checked, disabled, label, onToggle }) {
+    return /* @__PURE__ */ jsxRuntime.jsx(
+      "button",
+      {
+        type: "button",
+        role: "switch",
+        className: "plugin-switch",
+        "aria-checked": checked,
+        "aria-label": label,
+        title: label,
+        disabled,
+        onClick: (event) => {
+          event.stopPropagation();
+          onToggle(!checked);
+        },
+        children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-switch-knob" })
+      }
+    );
+  }
   function PluginTags({ plugin }) {
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "protected", children: sdk.T("受保护", "Protected") }),
@@ -26,7 +45,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       !plugin.enabled && plugin.state === "active" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("下次停用", "Off next start") })
     ] });
   }
-  function PluginDetails({ plugin, busy, running, error, onChange, onInstall }) {
+  function PluginDetails({ plugin, busy, running, error, onChange, onToggle, onInstall }) {
     var _a, _b, _c, _d;
     const [enabled, setEnabled] = react.useState(plugin.enabled);
     const [values, setValues] = react.useState({ ...plugin.config });
@@ -76,9 +95,12 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         event.preventDefault();
         submit();
       }, children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-toggle plugin-enable", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", role: "switch", checked: enabled, disabled: locked, onChange: (event) => setEnabled(event.target.checked) }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { children: plugin.hot ? sdk.T("启用", "Enabled") : sdk.T("下次启动时启用", "Enable on next start") })
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toggle plugin-enable", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: enabled, disabled: locked, label: sdk.T("启用", "Enabled"), onToggle: (next) => {
+            setEnabled(next);
+            if (plugin.hot) onToggle == null ? void 0 : onToggle(next);
+          } }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: plugin.hot ? sdk.T("启用（立即生效）", "Enabled (applies immediately)") : sdk.T("下次启动时启用", "Enable on next start") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid plugin-fields", hidden: !Object.keys(plugin.fields).length, children: Object.entries(plugin.fields).map(([key, spec]) => {
           var _a2;
@@ -131,6 +153,17 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         setConfig(await api.host.get("/api/plugins"));
       }, setError, true);
     };
+    const toggle = (plugin, enabled) => {
+      if (plugin.protected || busy || state.running || !config) return;
+      setError("");
+      void run(async () => {
+        const next = await api.host.post("/api/plugins", { action: "save", name: plugin.name, revision: config.revision, enabled, config: plugin.config });
+        setConfig(next);
+        const item = next.items.find((p) => p.name === plugin.name);
+        if (item == null ? void 0 : item.error) setError(plugin.name + ": " + item.error);
+        else api.notice((item == null ? void 0 : item.restart_required) ? sdk.T("已保存；下次启动时生效", "Saved; applies on next start") : enabled ? sdk.T("已启用 ", "Enabled ") + plugin.name : sdk.T("已停用 ", "Disabled ") + plugin.name);
+      }, setError);
+    };
     const change = async (action, enabled, values) => {
       if (!selected || selected.protected || busy || !config) return;
       if (action === "reset" && !await sdk.confirmDialog({ title: sdk.T("恢复启动配置", "Restore startup settings"), danger: true, message: sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start.") })) return;
@@ -178,24 +211,28 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
               ] }),
               /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "plugin-grid", "aria-label": label, children: items.map((plugin) => {
                 var _a;
-                return /* @__PURE__ */ jsxRuntime.jsx("li", { children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "plugin-card", "data-plugin": plugin.name, "data-state": plugin.state, "aria-label": plugin.name + sdk.T("，", ", ") + stateLabel(plugin), disabled: working, onClick: () => {
-                  setEditing(plugin.name);
-                  setError("");
-                  requestAnimationFrame(() => {
-                    var _a2;
-                    return (_a2 = back.current) == null ? void 0 : _a2.focus();
-                  });
-                }, children: [
-                  /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-head", children: [
-                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-name", title: plugin.name, children: plugin.name }),
-                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", "data-state": plugin.state, children: stateLabel(plugin) })
+                return /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "plugin-card", "data-plugin": plugin.name, "data-state": plugin.state, "aria-label": plugin.name + sdk.T("，", ", ") + stateLabel(plugin), disabled: working, onClick: () => {
+                    setEditing(plugin.name);
+                    setError("");
+                    requestAnimationFrame(() => {
+                      var _a2;
+                      return (_a2 = back.current) == null ? void 0 : _a2.focus();
+                    });
+                  }, children: [
+                    /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-head", children: [
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-name", title: plugin.name, children: plugin.name }),
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", "data-state": plugin.state, children: stateLabel(plugin) }),
+                      plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-switch-slot" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-desc", children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
+                    /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-foot", children: [
+                      /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin }),
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-meta", children: ((_a = plugin.provides) == null ? void 0 : _a.length) ? sdk.T("提供 ", "Provides ") + plugin.provides.length + sdk.T(" 项能力", " capabilities") : "" })
+                    ] })
                   ] }),
-                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-desc", children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
-                  /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-foot", children: [
-                    /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin }),
-                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-meta", children: ((_a = plugin.provides) == null ? void 0 : _a.length) ? sdk.T("提供 ", "Provides ") + plugin.provides.length + sdk.T(" 项能力", " capabilities") : "" })
-                  ] })
-                ] }) }, plugin.name);
+                  plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: plugin.enabled, disabled: working || changing || state.running, label: (plugin.enabled ? sdk.T("停用 ", "Disable ") : sdk.T("启用 ", "Enable ")) + plugin.name, onToggle: (next) => toggle(plugin, next) })
+                ] }, plugin.name);
               }) })
             ] }, key);
           }) }),
@@ -203,7 +240,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         ] }),
         selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
-          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change, onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
+          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change, onToggle: (next) => toggle(selected, next), onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
         ] })
       ] })
     ] }) });
