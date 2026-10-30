@@ -293,6 +293,8 @@ class Runs:
             session["state"] = self._seed_selection(session["state"])
             messages = copy.deepcopy(session["messages"])
             user = {"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at}
+            if source and source != "user":
+                user["source"] = source  # e.g. "conductor": plugin-written wake-up, rendered as a notice
             if files:
                 user["attachments"] = [{k: a[k] for k in ("name", "mime", "size", "image", "url")} for a in files]
             messages.extend([user,

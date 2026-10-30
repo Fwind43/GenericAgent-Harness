@@ -315,3 +315,16 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-page-area[hidden],header[hidden],footer[hidden]{display:none}
 .gah-page-area .gah-page{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-page[hidden]{display:none}
+/* Conductor wake-up notice (replaces the machine-written user bubble) */
+.msg.conductor-wake{display:flex;flex-direction:column;gap:6px;margin:10px 0 14px;padding:8px 12px;border-left:2px solid var(--border);color:var(--muted);font-size:13px}
+.conductor-wake .cw-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conductor-wake .cw-label{font-weight:600;color:var(--text)}
+.conductor-wake .cw-still{padding:0 6px;border-radius:999px;background:var(--surface-muted)}
+.conductor-wake .message-time{margin-left:auto}
+.conductor-wake .cw-tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.conductor-wake .cw-tasks li{display:flex;align-items:center;gap:8px;min-width:0}
+.conductor-wake .cw-status{flex:none;font-size:12px;padding:0 6px;border-radius:4px;background:var(--surface-muted)}
+.conductor-wake .cw-status.done{color:#1f7a4d;background:rgba(31,122,77,.09)}
+.conductor-wake .cw-status.error,.conductor-wake .cw-status.aborted,.conductor-wake .cw-status.interrupted{color:var(--danger)}
+.conductor-wake .cw-title{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conductor-wake .cw-id{flex:none;font-size:11px;opacity:.6}

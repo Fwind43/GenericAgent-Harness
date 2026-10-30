@@ -119,7 +119,35 @@ function Note({ note }: { note: MessageNote }) {
   const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind;
   return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
 }
+// Conductor wake-ups are prompts written for the conductor model; show them as a compact
+// notice instead of a user bubble. Older messages lack ``source``, so the text head also matches.
+const WAKE_HEAD = '[Conductor] Delegated task(s) finished:';
+const TASK_STATUS: Record<string, () => string> = { done: () => T('完成', 'done'), error: () => T('失败', 'failed'), aborted: () => T('已停止', 'stopped'), cancelled: () => T('已取消', 'cancelled'), interrupted: () => T('中断', 'interrupted') };
+export function isConductorWake(m: Message) {
+  return m.role === 'user' && (m.source === 'conductor' || !!m.text?.startsWith(WAKE_HEAD));
+}
+function ConductorWake({ m }: { m: Message }) {
+  const text = m.text || '';
+  const tasks = text.split('\n').flatMap(line => {
+    const hit = /^- (\S+) \u00b7 (.*) \u00b7 (\w+)$/.exec(line.trim());
+    return hit ? [{ id: hit[1], title: hit[2], status: hit[3] }] : [];
+  });
+  const still = Number(/(\d+) task\(s\) still running/.exec(text)?.[1] || 0);
+  return <div className="msg conductor-wake" title={text}>
+    <div className="cw-head">
+      <span className="cw-label">{T('指挥家', 'Conductor')}</span>
+      <span>{T(`${tasks.length || ''} 个子任务完成，继续审阅`, `${tasks.length || ''} subtask(s) finished, reviewing`)}</span>
+      {still > 0 && <span className="cw-still">{T(`另有 ${still} 个运行中`, `${still} still running`)}</span>}
+      <MessageTime message={m} />
+    </div>
+    {tasks.length ? <ul className="cw-tasks">{tasks.map(t => <li key={t.id}>
+      <span className={'cw-status ' + t.status}>{TASK_STATUS[t.status]?.() ?? t.status}</span>
+      <span className="cw-title">{t.title}</span><code className="cw-id">{t.id}</code>
+    </li>)}</ul> : null}
+  </div>;
+}
 export const ChatMessage = memo(function ChatMessage({ message: m, last }: { message: Message; last: boolean }) {
+  if (isConductorWake(m)) return <ConductorWake m={m} />;
   const turns = (m.turns ?? []).filter(Boolean), running = m.status === 'running', fin = turns.at(-1);
   // A terminal question is user-facing output, not a hidden execution step.
   const finalQuestion = !!fin && !['aborted', 'error'].includes(m.status ?? '')

@@ -135,6 +135,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const change = (path, body, reset) => run(async () => {
       const next = await api.host.post(path, body);
       api.setState(next, reset);
+      if (reset) sdk.pages.home();
     });
     const act = (action, extra = {}) => change("/api/sessions", { action, id: state.session_id, ...extra }, ["new", "select", "delete", "clear"].includes(action));
     const scoped = (body, reset = true) => change("/api/p/web-workspaces/", body, reset);
@@ -288,6 +289,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pen" }),
         sdk.T("新会话", "New chat")
       ] }),
+      /* @__PURE__ */ jsxRuntime.jsx(sdk.PageNav, {}),
       /* @__PURE__ */ jsxRuntime.jsx("input", { type: "search", className: "gah-sess-search", value: query, placeholder: sdk.T("搜索会话", "Search chats"), "aria-label": sdk.T("搜索会话", "Search chats"), onChange: (event) => setQuery(event.target.value), onKeyDown: (event) => {
         if (event.key === "Escape") setQuery("");
       } }),

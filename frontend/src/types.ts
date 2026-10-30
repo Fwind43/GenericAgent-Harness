@@ -16,6 +16,8 @@ export interface Message {
   notes?: MessageNote[];
   /** Files sent with a user message. */
   attachments?: Attachment[];
+  /** Who started the run when not the user, e.g. "conductor" wake-ups. */
+  source?: string;
 }
 export interface Attachment { id?: string; name: string; mime: string; size: number; image: boolean; url: string; path?: string }
 export interface MessageNote { kind: string; text: string; turn: number; created_at?: number }
