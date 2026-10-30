@@ -150,14 +150,16 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     for (const item of state.runs ?? []) if (item.status === "running" || item.status === "cancelling") activity.set(item.session_id, item.status);
     if (state.running && state.session_id && !activity.has(state.session_id)) activity.set(state.session_id, "running");
     const q = query.trim().toLowerCase();
-    const known = new Set(projects.map((p) => p.id)), byProject = /* @__PURE__ */ new Map(), loose = [];
+    const known = new Set(projects.map((p) => p.id)), byProject = /* @__PURE__ */ new Map(), recentAll = [];
+    const projectName = new Map(projects.map((p) => [p.id, p.name]));
     for (const s of state.sessions ?? []) {
       if (q && !label(s).toLowerCase().includes(q) && !(s.workspace ?? "").toLowerCase().includes(q)) continue;
+      recentAll.push(s);
       if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...byProject.get(s.project_id) ?? [], s]);
-      else loose.push(s);
     }
-    const row = (session, depth, home) => {
-      const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : "";
+    const row = (session, depth, home, recent = false) => {
+      const owner = recent && session.project_id ? projectName.get(session.project_id) : void 0;
+      const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : "");
       const unread = !status && !!session.unread && session.id !== state.session_id;
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), session.workspace, stamp(session.updated)].filter(Boolean).join("\n"), children: [
@@ -203,11 +205,11 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         )
       ] }, session.id);
     };
-    const list = (key, items, home, limit) => {
+    const list = (key, items, home, limit, recent = false) => {
       const rows = nest(pinFirst(items)), all = !!q || !!expanded[key];
       const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id || !!r.session.pinned);
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-items", role: "list", children: [
-        rows.length ? shown.map((r) => row(r.session, r.depth, home)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: q ? sdk.T("无匹配会话", "No matching chats") : sdk.T("暂无会话", "No chats yet") }),
+        rows.length ? shown.map((r) => row(r.session, r.depth, home, recent)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: q ? sdk.T("无匹配会话", "No matching chats") : sdk.T("暂无会话", "No chats yet") }),
         !q && rows.length > limit && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, [key]: !all })), children: all ? sdk.T("收起", "Show less") : `${sdk.T("显示全部", "Show all")} (${rows.length})` })
       ] });
     };
@@ -279,7 +281,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         const open = !!q || layout.sections.recent.open;
         return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-section", "data-section": "recent", children: [
           sectionHead("recent", open, /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn", disabled: busy, "data-gah-close": "", "aria-label": sdk.T("新建对话", "New chat"), onClick: () => void (current === "recent" ? act("new") : scoped({ action: "enter" })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) })),
-          open && /* @__PURE__ */ jsxRuntime.jsx("section", { className: `gah-group recent${current === "recent" ? " current" : ""}`, "data-key": "recent", children: list("recent", loose, (scope == null ? void 0 : scope.project_id) ? void 0 : scope == null ? void 0 : scope.workspace, layout.sections.recent.count) })
+          open && /* @__PURE__ */ jsxRuntime.jsx("section", { className: `gah-group recent${current === "recent" ? " current" : ""}`, "data-key": "recent", children: list("recent", recentAll, (scope == null ? void 0 : scope.project_id) ? void 0 : scope == null ? void 0 : scope.workspace, layout.sections.recent.count, true) })
         ] }, "recent");
       }
     };

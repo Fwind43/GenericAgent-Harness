@@ -1,8 +1,8 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
 import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, PageNav, pages, useOperation, defineReact } from '@gah/sdk';
 
-// Sidebar layout: projects first (each a collapsible group of its chats), then the
-// chats that belong to no project. A project is a durable identity; the workspace is
+// Sidebar layout: projects first (each a collapsible group of its chats), then Recent:
+// every chat by recency, project chats tagged with their project name. A project is a durable identity; the workspace is
 // only a per-chat directory, shown as a tag when it differs from the group default.
 const NEW = '\u65b0\u4f1a\u8bdd';
 // Customizable sections (GA Admin style): each can be hidden, reordered, collapsed and
@@ -111,13 +111,17 @@ export function Sessions({ api }: { api: PluginAPI }) {
   for (const item of state.runs ?? []) if (item.status === 'running' || item.status === 'cancelling') activity.set(item.session_id, item.status);
   if (state.running && state.session_id && !activity.has(state.session_id)) activity.set(state.session_id, 'running');
   const q = query.trim().toLowerCase();
-  const known = new Set(projects.map(p => p.id)), byProject = new Map<string, Session[]>(), loose: Session[] = [];
+  const known = new Set(projects.map(p => p.id)), byProject = new Map<string, Session[]>(), recentAll: Session[] = [];
+  const projectName = new Map(projects.map(p => [p.id, p.name]));
   for (const s of state.sessions ?? []) {
     if (q && !label(s).toLowerCase().includes(q) && !(s.workspace ?? '').toLowerCase().includes(q)) continue;
-    if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...(byProject.get(s.project_id) ?? []), s]); else loose.push(s);
+    recentAll.push(s);
+    if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...(byProject.get(s.project_id) ?? []), s]);
   }
-  const row = (session: Session, depth: number, home?: string) => {
-    const status = activity.get(session.id), tag = session.workspace && session.workspace !== home ? base(session.workspace) : '';
+  const row = (session: Session, depth: number, home?: string, recent = false) => {
+    // In Recent, a project chat is tagged with its project name instead of the workspace.
+    const owner = recent && session.project_id ? projectName.get(session.project_id) : undefined;
+    const status = activity.get(session.id), tag = owner ?? (session.workspace && session.workspace !== home ? base(session.workspace) : '');
     const unread = !status && !!session.unread && session.id !== state.session_id;
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), session.workspace, stamp(session.updated)].filter(Boolean).join('\n')}>
@@ -137,11 +141,11 @@ export function Sessions({ api }: { api: PluginAPI }) {
     </div>;
   };
   // Long groups show the latest few (plus the open chat); searching always shows every match.
-  const list = (key: string, items: Session[], home: string | undefined, limit: number) => {
+  const list = (key: string, items: Session[], home: string | undefined, limit: number, recent = false) => {
     const rows = nest(pinFirst(items)), all = !!q || !!expanded[key];
     const shown = all ? rows : rows.filter((r, i) => i < limit || r.session.id === state.session_id || !!r.session.pinned);
     return <div className="gah-sess-items" role="list">
-      {rows.length ? shown.map(r => row(r.session, r.depth, home)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
+      {rows.length ? shown.map(r => row(r.session, r.depth, home, recent)) : <div className="gah-sess-empty">{q ? T('\u65e0\u5339\u914d\u4f1a\u8bdd', 'No matching chats') : T('\u6682\u65e0\u4f1a\u8bdd', 'No chats yet')}</div>}
       {!q && rows.length > limit && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, [key]: !all }))}>{all ? T('\u6536\u8d77', 'Show less') : `${T('\u663e\u793a\u5168\u90e8', 'Show all')} (${rows.length})`}</button>}
     </div>;
   };
@@ -197,7 +201,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
       const open = !!q || layout.sections.recent.open;
       return <div key="recent" className="gah-sess-section" data-section="recent">
         {sectionHead('recent', open, <button type="button" className="gah-sess-head-btn" disabled={busy} data-gah-close="" aria-label={T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')} onClick={() => void (current === 'recent' ? act('new') : scoped({ action: 'enter' }))}><Icon name="plus" /></button>)}
-        {open && <section className={`gah-group recent${current === 'recent' ? ' current' : ''}`} data-key="recent">{list('recent', loose, scope?.project_id ? undefined : scope?.workspace, layout.sections.recent.count)}</section>}
+        {open && <section className={`gah-group recent${current === 'recent' ? ' current' : ''}`} data-key="recent">{list('recent', recentAll, scope?.project_id ? undefined : scope?.workspace, layout.sections.recent.count, true)}</section>}
       </div>;
     },
   };
