@@ -329,3 +329,7 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .conductor-wake .cw-status.error,.conductor-wake .cw-status.aborted,.conductor-wake .cw-status.interrupted{color:var(--danger)}
 .conductor-wake .cw-title{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .conductor-wake .cw-id{flex:none;font-size:11px;opacity:.6}
+.gah-log-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 6px}
+.gah-log-toolbar .gah-update-input{flex:1 1 140px;min-width:120px}
+.gah-log-follow{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+.gah-log-view{margin:6px 0 0;height:min(56vh,520px);overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--code-bg);padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;user-select:text}

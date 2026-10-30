@@ -946,6 +946,64 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    LOG_NAME = re.compile(r"^[\w.-]+\.log(\.\d+)?$")
+    LOG_TAIL = 256 * 1024
+    LOG_TAIL_MAX = 4 * 1024 * 1024
+
+    def _logs(self):
+        """GET /api/logs: list the program log files; ?name=N[&bytes=B] returns the tail of one.
+
+        Only plain ``*.log`` / ``*.log.N`` files directly inside ``logfile.log_dir()`` are
+        served (host.log, worker-*.log, faults.log and the desktop shell's backend.log).
+        """
+        from ga_harness import logfile
+        query = parse_qs(urlsplit(self.path).query)
+        try:
+            root = logfile.log_dir().resolve()
+        except Exception as e:  # noqa: BLE001 - report instead of failing the page
+            return self._json(500, {"error": f"log directory unavailable: {e}"})
+        name = query.get("name", [""])[0]
+        if not name:
+            files = []
+            try:
+                entries = list(root.iterdir()) if root.is_dir() else []
+            except OSError as e:
+                return self._json(500, {"error": f"cannot list {root}: {e}"})
+            for p in entries:
+                if not self.LOG_NAME.match(p.name) or not p.is_file():
+                    continue
+                try:
+                    st = p.stat()
+                except OSError:
+                    continue
+                files.append({"name": p.name, "size": st.st_size, "mtime": st.st_mtime})
+            files.sort(key=lambda f: -f["mtime"])
+            return self._json(200, {"dir": str(root), "files": files})
+        if not self.LOG_NAME.match(name):
+            return self._json(400, {"error": "invalid log name"})
+        target = (root / name).resolve()
+        if target.parent != root or not target.is_file():
+            return self._json(404, {"error": "log not found"})
+        try:
+            want = int(query.get("bytes", [str(self.LOG_TAIL)])[0])
+        except ValueError:
+            want = self.LOG_TAIL
+        want = max(1024, min(want, self.LOG_TAIL_MAX))
+        try:
+            with target.open("rb") as fh:
+                size = fh.seek(0, os.SEEK_END)
+                start = max(0, size - want)
+                fh.seek(start)
+                data = fh.read(size - start)
+                mtime = os.fstat(fh.fileno()).st_mtime
+        except OSError as e:
+            return self._json(404, {"error": f"unreadable: {e}"})
+        if start:   # drop the partial first line
+            cut = data.find(b"\n")
+            data = data[cut + 1:] if cut >= 0 else data
+        return self._json(200, {"name": name, "path": str(target), "size": size, "mtime": mtime,
+                                "truncated": start > 0, "text": data.decode("utf-8", "replace")})
+
     def _file(self):
         """GET /api/file?path=P[&info=1][&download=1]: read a referenced local file."""
         query = parse_qs(urlsplit(self.path).query)
@@ -1126,6 +1184,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, self.frontend.web.manifest())
         elif path == "/api/file":
             self._file()
+        elif path == "/api/logs":
+            self._logs()
         elif path == "/api/state":
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
