@@ -82,6 +82,10 @@ name = "web-channels"
 [[plugins]]
 name = "web-trace"
 
+# "Usage" page under New chat: token totals by day, model and chat
+[[plugins]]
+name = "web-usage"
+
 # per-message edit/regenerate and branch switching; add-on for ui-web
 [[plugins]]
 name = "worldline"

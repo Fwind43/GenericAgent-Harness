@@ -215,6 +215,21 @@ class Sessions:
             # Unread = new transcript content since the user last saw it (opened, or watched it being written).
             return [dict(row, running=row["id"] in self.active, unread=row["updated"] > row["read_at"]) for row in rows]
 
+    def transcripts(self):
+        """Read-only (id, title, updated, messages) for every live chat, e.g. for usage reports."""
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                rows = db.execute("SELECT id,title,updated,messages FROM sessions WHERE deleted=0").fetchall()
+        result = []
+        for row in rows:
+            try:
+                messages = json.loads(row["messages"])
+            except ValueError:
+                messages = []
+            result.append({"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages})
+        return result
+
     def _write(self, db, current, messages, state):
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":

@@ -1,0 +1,6 @@
+name = "web-usage"
+category = "ui"
+entry = "main:apply"
+description = "Usage overview page for ui-web: token usage by day, model and chat, from saved chats."
+description_zh = "ui-web 的用量总览页：按日期、模型和会话统计 token 用量（来自已保存的对话）。"
+inject = ["web.host"]
