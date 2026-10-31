@@ -18,10 +18,11 @@ Code: `ga_harness/channels.py` (hub) and `ga_harness/plugins/channels/`
   `/model <number|name>` switches this chat (a partial name works when it
   matches only one model); `/effort <low|medium|high|xhigh|max|default>` sets
   its reasoning effort. Both are stored on the chat's session, refused while a
-  task is running, and kept by `/new`; a model removed from the configuration
-  falls back to the default. Model switching uses the optional `models`
-  service from `model-store`; without it `/model` reports that it is
-  unavailable.
+  task is running, and kept by `/new`. If the chosen model is later removed
+  from the model catalog, `/new` falls back to the default and other messages
+  are not run: the chat is asked to pick another model with `/model` or to
+  send `/new`. Model switching uses the optional `models` service from
+  `model-store`; without it `/model` reports that it is unavailable.
 - Media: inbound files/images passed as `files=` are stored as uploads and
   attached to the run (images reach the model as vision input). Each task
   carries a short hint asking the model to write `[FILE:<absolute path>]` to

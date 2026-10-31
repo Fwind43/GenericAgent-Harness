@@ -238,6 +238,12 @@ class Hub:
             if self.runs.active_for(sid):
                 self.reply(channel, chat, BUSY)
                 return None
+            stale = self._stale_model(sid)
+            if stale:
+                note = (f"Model {stale} is no longer configured. Pick another with /model, "
+                        "or send /new to use the default.")
+                self.reply(channel, chat, note)
+                return None
             attachments = [self._store(f) for f in files[:uploads.MAX_FILES]]
             task = (text + "\n\n" if text else "") + f"({FILE_HINT})"
             run = self.runs.start(task, session_id=sid, source=f"channel:{channel}",
@@ -290,6 +296,17 @@ class Hub:
         models = self._models()
         data = (models.catalog() if models is not None else None) or {}
         return list(data.get("items") or []), data.get("current")
+
+    def _stale_model(self, sid):
+        """The session's model if the catalog no longer lists it, else None."""
+        model = ((self._session(sid) or {}).get("state") or {}).get("model")
+        if not model:
+            return None
+        try:
+            items, _ = self._catalog()
+        except Exception:  # no usable catalog: leave the decision to the run
+            return None
+        return model if items and model not in [m.get("name") for m in items] else None
 
     def _labels(self, session):
         """(model, effort) of a session as shown to the chat user."""

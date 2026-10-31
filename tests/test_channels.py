@@ -210,6 +210,27 @@ def test_new_command_keeps_and_drops_stale_model(tmp_path):
         hub.close()
 
 
+def test_receive_refuses_removed_model_until_repicked(tmp_path):
+    models = FakeModels()
+    hub, runs, _ = make_hub(tmp_path, models=models)
+    replies = []
+    hub.reply = lambda channel, chat, text: replies.append((chat, text))
+    try:
+        assert hub.command("fake", "9", "/model claude-b") == "Model for this chat: [2] claude-b."
+        models.items = models.items[:2]
+        assert hub.receive("fake", "9", "hello") is None
+        assert runs.started == []
+        assert replies == [("9", "Model claude-b is no longer configured. Pick another with "
+                                 "/model, or send /new to use the default.")]
+        hub.command("fake", "9", "/model claude-a")
+        assert hub.receive("fake", "9", "hello") == "r1"
+        models.items = []  # no catalog to check against: the run goes ahead
+        assert hub.receive("fake", "9", "again") == "r2"
+        assert len(replies) == 1
+    finally:
+        hub.close()
+
+
 def test_commands_without_catalog_and_help(tmp_path):
     unavailable = "Model switching is unavailable: the model catalog is not loaded."
 
