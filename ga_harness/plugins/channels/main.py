@@ -20,8 +20,11 @@ def _store_path(sessions, name="channels.db"):
 
 def apply(ctx, config):
     runs, sessions = ctx.get("runs"), ctx.get("sessions")
+    # model-store is optional ("models?") and may load, reload or stop later,
+    # so the hub looks it up on each use instead of capturing it here.
     hub = Hub(runs, sessions, Bindings(_store_path(sessions)),
-              workspace=(config or {}).get("workspace") or None)
+              workspace=(config or {}).get("workspace") or None,
+              models=lambda: ctx.get("models"))
     manager = ChannelManager(hub, ChannelStore(_store_path(sessions, "channels.json")))
     ctx.on("run.finished", hub.on_run_finished)
     ctx.provide("channels", hub)

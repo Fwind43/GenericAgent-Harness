@@ -17,11 +17,15 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from . import uploads
+from .sessions import EFFORTS
 
-HELP = ("/new  start a fresh conversation\n"
+HELP = ("/new  start a fresh conversation (keeps model and effort)\n"
         "/stop  cancel the running task\n"
-        "/status  show the bound session\n"
+        "/status  show session, model and effort\n"
+        "/model  list models; /model <n|name> switches this chat (alias /llm)\n"
+        "/effort  show effort; /effort <low|medium|high|xhigh|max|default> sets it\n"
         "/help  show this help")
+BUSY = "Still working on the previous task. Send /stop to cancel it."
 
 
 def final_text(message):
@@ -135,9 +139,11 @@ class Bindings:
 class Hub:
     """Platform-neutral router. Published as the ``channels`` service."""
 
-    def __init__(self, runs, sessions, bindings, *, workspace=None, title_prefix="channel"):
+    def __init__(self, runs, sessions, bindings, *, workspace=None, title_prefix="channel",
+                 models=None):
         self.runs, self.sessions, self.bindings = runs, sessions, bindings
         self.workspace, self.title_prefix = workspace, title_prefix
+        self.models = models  # model catalog service, or a zero-arg callable returning it
         self.adapters = {}
         self.lock = threading.RLock()
         self.outbox = queue.Queue()
@@ -174,17 +180,44 @@ class Hub:
         return dispose
 
     # -- inbound ----------------------------------------------------------
-    def _new_session(self, channel, chat):
+    def _models(self):
+        """The model catalog service, or None when model-store is not loaded."""
+        models = self.models
+        if models is not None and not hasattr(models, "catalog"):
+            try:
+                models = models()
+            except Exception:
+                return None
+        return models if hasattr(models, "catalog") else None
+
+    def _session(self, sid):
+        """sessions.get() that maps a missing (e.g. deleted) session to None."""
+        if not sid:
+            return None
+        try:
+            return self.sessions.get(sid)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _selection(session):
+        """The model/effort explicitly stored on a session."""
+        state = (session or {}).get("state") or {}
+        return {k: state[k] for k in ("model", "effort") if k in state}
+
+    def _new_session(self, channel, chat, selection=None):
         kw = {"title": f"{self.title_prefix}:{channel}:{chat}"[:80]}
         if self.workspace:
             kw["workspace"] = self.workspace
         session = self.sessions.create(**kw)
         self.bindings.set(channel, chat, session["id"])
+        if selection:
+            self.sessions.remember_for(session["id"], **selection)
         return session["id"]
 
     def session_for(self, channel, chat):
         sid = self.bindings.get(channel, chat)
-        if sid and self.sessions.get(sid):
+        if self._session(sid):
             return sid
         return self._new_session(channel, chat)
 
@@ -203,7 +236,7 @@ class Hub:
                     return None
             sid = self.session_for(channel, chat)
             if self.runs.active_for(sid):
-                self.reply(channel, chat, "Still working on the previous task. Send /stop to cancel it.")
+                self.reply(channel, chat, BUSY)
                 return None
             attachments = [self._store(f) for f in files[:uploads.MAX_FILES]]
             task = (text + "\n\n" if text else "") + f"({FILE_HINT})"
@@ -216,12 +249,25 @@ class Hub:
 
     def command(self, channel, chat, text):
         """Return a reply for a known command, or None to treat as a prompt."""
-        word = text.split()[0].lower().split("@")[0]
+        parts = text.split(None, 1)
+        word = parts[0].lower().split("@")[0]
+        arg = parts[1].strip() if len(parts) > 1 else ""
         if word == "/help":
             return HELP
         if word == "/new":
-            self._new_session(channel, chat)
-            return "Started a new conversation."
+            old = self._session(self.bindings.get(channel, chat))
+            keep = self._selection(old)
+            names = [m.get("name") for m in self._catalog()[0]]
+            note = ""
+            if names and keep.get("model") and keep["model"] not in names:
+                # Removed from the model config since it was picked: fall back to the default.
+                note = f" Model {keep.pop('model')} is no longer configured; using the default."
+            self._new_session(channel, chat, keep)
+            return "Started a new conversation." + note
+        if word in ("/model", "/llm"):
+            return self._cmd_model(channel, chat, arg)
+        if word == "/effort":
+            return self._cmd_effort(channel, chat, arg)
         if word == "/stop":
             sid = self.bindings.get(channel, chat)
             run = sid and self.runs.active_for(sid)
@@ -231,11 +277,108 @@ class Hub:
             return "Cancelling."
         if word == "/status":
             sid = self.bindings.get(channel, chat)
-            if not sid:
+            session = self._session(sid)
+            if not session:
                 return "No conversation yet."
             busy = "running" if self.runs.active_for(sid) else "idle"
-            return f"session {sid} ({busy})"
+            return f"session {sid} ({busy})\n{self._describe(session)}"
         return None
+
+    # -- per-chat model / effort ------------------------------------------
+    def _catalog(self):
+        """(items, host current id) from model-store; ([], None) without it."""
+        models = self._models()
+        data = (models.catalog() if models is not None else None) or {}
+        return list(data.get("items") or []), data.get("current")
+
+    def _labels(self, session):
+        """(model, effort) of a session as shown to the chat user."""
+        state = (session or {}).get("state") or {}
+        items, current = self._catalog()
+        model = state.get("model")
+        if model and items and model not in [m.get("name") for m in items]:
+            model += " (no longer configured; pick another with /model)"
+        elif not model:
+            host = next((m.get("name") for m in items if m.get("id") == current), None)
+            model = f"{host} (host default)" if host else "host default"
+        effort = (state["effort"] or "default") if "effort" in state else "host setting"
+        return model, effort
+
+    def _describe(self, session):
+        return "model: {}\neffort: {}".format(*self._labels(session))
+
+    def _busy(self, sid):
+        """Refusal while a run is active; settings only change between runs."""
+        if self.runs.active_for(sid):
+            return ("Still working on the previous task; change settings after it "
+                    "finishes. Send /stop to cancel it.")
+        return None
+
+    def _cmd_effort(self, channel, chat, arg):
+        options = ", ".join([*EFFORTS, "default"])
+        if not arg:
+            session = self._session(self.bindings.get(channel, chat))
+            return f"effort: {self._labels(session)[1]}\noptions: {options}"
+        value = arg.lower()
+        if value in ("default", "reset", "clear"):  # drop this chat's override
+            value = "default"
+        elif value not in EFFORTS:
+            return f"Unknown effort '{arg}'. Options: {options}"
+        sid = self.session_for(channel, chat)
+        busy = self._busy(sid)
+        if busy:
+            return busy
+        self.sessions.remember_for(sid, effort=None if value == "default" else value)
+        return f"Effort for this chat: {value}."
+
+    def _cmd_model(self, channel, chat, arg):
+        items, current = self._catalog()
+        if not items:
+            return "Model switching is unavailable: the model catalog is not loaded."
+        if not arg:
+            session = self._session(self.bindings.get(channel, chat))
+            chosen = ((session or {}).get("state") or {}).get("model")
+            if not chosen:
+                chosen = next((m.get("name") for m in items if m.get("id") == current), None)
+            rows = [("-> " if m.get("name") == chosen else "   ") + f"[{m.get('id')}] {m.get('name')}"
+                    + (f" ({m['provider']})" if m.get("provider") else "") for m in items]
+            return "\n".join([f"model: {self._labels(session)[0]}", *rows,
+                              "Switch with /model <number|name>."])
+        item, error = self._pick(items, arg)
+        if error:
+            return error
+        sid = self.session_for(channel, chat)
+        busy = self._busy(sid)
+        if busy:
+            return busy
+        self.sessions.remember_for(sid, model=item["name"])
+        return f"Model for this chat: [{item['id']}] {item['name']}."
+
+    @staticmethod
+    def _pick(items, arg):
+        """(item, None) for a catalog id or a unique name/model match, else (None, error)."""
+        key = arg.casefold()
+
+        def text(m, k):
+            return str(m.get(k) or "").casefold()
+        if arg.isascii() and arg.isdigit():  # a bare number is always a catalog id
+            hit = [m for m in items if m.get("id") == int(arg)]
+            if not hit:
+                return None, f"No model number {arg}. Send /model to see the list."
+            return hit[0], None
+        tests = (lambda m: text(m, "name") == key,
+                 lambda m: text(m, "model") == key,
+                 lambda m: key in text(m, "name") or key in text(m, "model"))
+        for test in tests:
+            hit = [m for m in items if test(m)]
+            if hit:
+                break
+        if len(hit) == 1:
+            return hit[0], None
+        if not hit:
+            return None, f"Unknown model '{arg}'. Send /model to see the list."
+        names = ", ".join(f"[{m.get('id')}] {m.get('name')}" for m in hit[:10])
+        return None, f"'{arg}' matches several models: {names}. Pick one by number."
 
     # -- outbound ---------------------------------------------------------
     @staticmethod

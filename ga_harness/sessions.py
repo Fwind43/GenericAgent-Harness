@@ -267,6 +267,18 @@ class Sessions:
                 db.execute("UPDATE sessions SET state=? WHERE id=?",
                            (json.dumps(state, ensure_ascii=False, allow_nan=False), current["id"]))
 
+    def remember_for(self, sid, **values):
+        """remember() for an explicitly identified session (e.g. a channel chat)."""
+        with self.lock:
+            session = self.get(sid)
+            if session["id"] in self.active:
+                raise RuntimeError("session is running")
+            state = dict(session["state"] or {})
+            state.update(values)
+            with self._db() as db:
+                db.execute("UPDATE sessions SET state=? WHERE id=?",
+                           (json.dumps(state, ensure_ascii=False, allow_nan=False), session["id"]))
+
     def save_for(self, sid, messages, state, *, run_id=None):
         """Save an explicitly identified session; never follow UI selection.
 

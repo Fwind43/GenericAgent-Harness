@@ -13,7 +13,15 @@ Code: `ga_harness/channels.py` (hub) and `ga_harness/plugins/channels/`
 - Starts a run for every inbound message (`source = "channel:<name>"`).
 - On `run.finished` takes the final reply, splits it to the adapter's
   `max_len`, and sends it from one ordered delivery thread.
-- Built-in commands: `/new`, `/stop`, `/status`, `/help`.
+- Built-in commands: `/new`, `/stop`, `/status`, `/model` (alias `/llm`),
+  `/effort`, `/help`. `/model` lists the configured models and
+  `/model <number|name>` switches this chat (a partial name works when it
+  matches only one model); `/effort <low|medium|high|xhigh|max|default>` sets
+  its reasoning effort. Both are stored on the chat's session, refused while a
+  task is running, and kept by `/new`; a model removed from the configuration
+  falls back to the default. Model switching uses the optional `models`
+  service from `model-store`; without it `/model` reports that it is
+  unavailable.
 - Media: inbound files/images passed as `files=` are stored as uploads and
   attached to the run (images reach the model as vision input). Each task
   carries a short hint asking the model to write `[FILE:<absolute path>]` to
