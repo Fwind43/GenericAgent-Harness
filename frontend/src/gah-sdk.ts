@@ -10,7 +10,7 @@ export { host, useHost } from './store';
 export { views, useViews, CHAT_VIEW } from './views';
 export { pages, usePages } from './pages';
 export { T, save, saved, errorText } from './i18n';
-export { Icon, Modal, PluginSlot, SettingsPanel, ViewPanel, PagePanel, PageNav, useOperation, matches, alertDialog, confirmDialog, promptDialog } from './plugin-kit';
+export { Icon, Modal, PluginSlot, SettingsPanel, ViewPanel, PagePanel, PageNav, useOperation, matches, QrCode, copyText, alertDialog, confirmDialog, promptDialog } from './plugin-kit';
 export type { AskOptions } from './plugin-kit';
 export type * from './types';
 export type { PluginAPI, SlotName, Cleanup, Interceptor, PluginSetup, ReactPlugin, DomChild } from './sdk';

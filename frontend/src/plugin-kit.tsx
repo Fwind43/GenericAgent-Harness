@@ -7,6 +7,7 @@ import { T, errorText } from './i18n';
 import { settings, useSettings } from './settings';
 import { views, useViews } from './views';
 import { pages, usePages } from './pages';
+import qrcode from 'qrcode-generator';
 
 export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
@@ -64,6 +65,24 @@ export function PageNav({ fallback = false, onOpen }: { fallback?: boolean; onOp
     <button key={page.id} type="button" className={'side-item gah-page-link' + (current === page.id ? ' active' : '')}
       aria-current={current === page.id ? 'page' : undefined} data-page={page.id} data-gah-close=""
       onClick={() => { pages.open(page.id); onOpen?.(); }}><Icon name={page.icon} /><span>{page.label}</span></button>)}</nav>;
+}
+// Shared helpers so plugin bundles do not each ship their own copy.
+export function QrCode({ value, className = 'gah-qr', label }: { value: string; className?: string; label?: string }) {
+  const code = qrcode(0, 'M');
+  code.addData(value); code.make();
+  const n = code.getModuleCount(), cells: string[] = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (code.isDark(y, x)) cells.push(`M${x + 2} ${y + 2}h1v1h-1z`);
+  return <svg className={className} viewBox={`0 0 ${n + 4} ${n + 4}`} role="img" aria-label={label ?? T('\u4e8c\u7ef4\u7801', 'QR code')} shapeRendering="crispEdges">
+    <rect width={n + 4} height={n + 4} fill="#fff" /><path d={cells.join('')} fill="#000" />
+  </svg>;
+}
+export async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* insecure context */ }
+  const area = document.createElement('textarea');
+  area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+  document.body.appendChild(area); area.select();
+  const ok = document.execCommand('copy'); area.remove();
+  return ok;
 }
 export function Icon({ name }: { name: string }) { return <span className="gah-ico" data-i={name} aria-hidden="true" />; }
 export function Modal({ className, label, busy = false, onClose, children }: {

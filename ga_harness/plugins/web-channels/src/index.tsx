@@ -1,6 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { type PluginAPI, useHost, T, Icon, SettingsPanel, useOperation, confirmDialog, defineReact } from '@gah/sdk';
-import qrcode from 'qrcode-generator';
+import { type PluginAPI, useHost, T, Icon, SettingsPanel, useOperation, confirmDialog, defineReact, QrCode } from '@gah/sdk';
 
 // Channel management UI backed by the channel_manager service (see main.py).
 type Field = { key: string; label: string; label_zh?: string; secret?: boolean; required?: boolean; default?: string };
@@ -114,15 +113,6 @@ function LogPanel({ api, id }: { api: PluginAPI; id: string }) {
 
 // QR login (pi-connect style): the provider runs the login in a background
 // thread; the browser only polls the pairing view. Secrets never reach it.
-function QrCode({ value }: { value: string }) {
-  const code = qrcode(0, 'M');
-  code.addData(value); code.make();
-  const n = code.getModuleCount(), cells: string[] = [];
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (code.isDark(y, x)) cells.push(`M${x + 2} ${y + 2}h1v1h-1z`);
-  return <svg className="channel-qr" viewBox={`0 0 ${n + 4} ${n + 4}`} role="img" aria-label={T('\u767b\u5f55\u4e8c\u7ef4\u7801', 'Login QR code')} shapeRendering="crispEdges">
-    <rect width={n + 4} height={n + 4} fill="#fff" /><path d={cells.join('')} fill="#000" />
-  </svg>;
-}
 const PAIR_STATES: Record<string, [string, string]> = {
   starting: ['\u6b63\u5728\u83b7\u53d6\u4e8c\u7ef4\u7801\u2026', 'Fetching QR code\u2026'],
   wait: ['\u8bf7\u7528\u624b\u673a\u626b\u7801', 'Scan with your phone'],
@@ -179,7 +169,7 @@ function PairView({ api, provider, channel, id, onDone, onCancel }: {
       <p>{T('\u7528\u624b\u673a\u626b\u63cf\u4e0b\u65b9\u4e8c\u7ef4\u7801\u5e76\u786e\u8ba4\uff0c\u5b8c\u6210\u540e\u81ea\u52a8\u4fdd\u5b58\u5e76\u542f\u52a8\u901a\u9053\u3002', 'Scan the code below with your phone and confirm. The channel is saved and started automatically.')}</p>
     </div>
     <div className="channel-pair-body" data-status={status}>
-      <div className="channel-qr-box">{pairing?.qr && !failed ? <QrCode value={pairing.qr} />
+      <div className="channel-qr-box">{pairing?.qr && !failed ? <QrCode value={pairing.qr} className="channel-qr" label={T('\u767b\u5f55\u4e8c\u7ef4\u7801', 'Login QR code')} />
         : <span className="channel-qr-placeholder">{failed ? '\u00d7' : <i className="channel-spinner" aria-hidden="true" />}</span>}</div>
       <div className="channel-pair-status" role="status" aria-live="polite">
         <strong>{text ? T(text[0], text[1]) : status}</strong>
