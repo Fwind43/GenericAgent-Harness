@@ -8,7 +8,8 @@
 .gah-model-trigger:hover:not(:disabled){background:var(--border)}
 .gah-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gah-model-effort{flex:none;color:var(--muted);padding-left:7px;border-left:1px solid var(--border)}
-.gah-model-caret{flex:none;color:var(--muted)}
+.gah-model-caret{flex:none;color:var(--muted);transform:rotate(180deg);transition:transform .15s}
+.gah-model-trigger[aria-expanded=true] .gah-model-caret{transform:none}
 .gah-model-popover{position:fixed;inset:auto;margin:0;box-sizing:border-box;width:min(380px,calc(100vw - 24px));max-height:min(560px,calc(100dvh - 24px));padding:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:0 10px 32px #0002;overflow:hidden}
 .gah-model-popover:popover-open{display:flex;flex-direction:column}
 .gah-picker-effort{flex:none;padding:12px 14px;border-top:1px solid var(--border)}

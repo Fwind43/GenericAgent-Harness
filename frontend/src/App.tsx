@@ -225,7 +225,7 @@ export function App() {
         }} />
         <div className="composer-row">
           <input ref={picker} type="file" multiple hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
-          <button type="button" className="icon-btn gah-attach-btn" aria-label={T('添加图片或文件', 'Attach images or files')} title={T('添加图片或文件（也可粘贴或拖入）', 'Attach images or files (or paste / drop)')} onClick={() => picker.current?.click()}>📎</button>
+          <button type="button" className="icon-btn gah-attach-btn" aria-label={T('添加图片或文件', 'Attach images or files')} title={T('添加图片或文件（也可粘贴或拖入）', 'Attach images or files (or paste / drop)')} onClick={() => picker.current?.click()}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 7.6 8.1 13a3.4 3.4 0 0 1-4.8-4.8l5.6-5.6a2.25 2.25 0 0 1 3.2 3.2L6.5 11.4a1.1 1.1 0 0 1-1.6-1.6l5-5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
           <Slot name="composer" /><span className="spacer" />
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
           <button type="submit" id="send" disabled={changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>

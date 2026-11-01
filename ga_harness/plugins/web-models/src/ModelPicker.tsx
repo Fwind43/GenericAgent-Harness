@@ -39,7 +39,7 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
     <PluginSlot api={api} name="composer"><div className="gah-models">
       <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy} aria-haspopup="dialog" aria-controls="gah-model-picker" aria-expanded={open} onClick={() => { setQuery(''); setProvider(''); setOpen(value => !value); }}>
         <span className="gah-model-name">{current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b', 'Choose model')}</span>
-        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<span className="gah-model-caret" aria-hidden="true">{'\u2303'}</span>
+        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<svg className="gah-model-caret" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
     </div></PluginSlot>
     {open && createPortal(<div ref={popup} popover="auto" role="dialog" aria-label={T('\u6a21\u578b\u4e0e\u601d\u8003\u5f3a\u5ea6', 'Model and reasoning effort')} id="gah-model-picker" className="gah-model-popover" onToggle={event => { if (event.newState === 'closed') setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') close(true); }}>

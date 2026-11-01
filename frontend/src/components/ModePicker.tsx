@@ -45,7 +45,7 @@ export function ModePicker({ disabled, head = false }: { disabled: boolean; head
     <button type="button" ref={trigger} className={presets.missing ? 'gah-mode-trigger missing' : 'gah-mode-trigger'} disabled={locked} aria-haspopup="listbox" aria-expanded={open}
       title={tip} onClick={() => setOpen(value => !value)}>
       <ModeIcon />
-      <span>{presets.missing ? presets.missing + T('\uff08\u5df2\u5931\u6548\uff09', ' (unavailable)') : label(active)}</span><span className="gah-mode-caret" aria-hidden="true">{'\u2304'}</span>
+      <span>{presets.missing ? presets.missing + T('\uff08\u5df2\u5931\u6548\uff09', ' (unavailable)') : label(active)}</span><svg className="gah-mode-caret" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </button>
     {open && <ul className="gah-mode-menu" role="listbox" aria-label={T('Agent \u6a21\u5f0f', 'Agent mode')}>
       {[null, ...presets.items].map(item => {
