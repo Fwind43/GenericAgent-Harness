@@ -70,7 +70,11 @@ def catalog(current=None, dirs=None):
     presets, errors = load(dirs)
     items = [{k: p[k] for k in ("id", "name", "name_zh", "description", "description_zh", "builtin")}
              for p in presets.values()]
-    return {"current": current if current in presets else None, "items": items, "errors": errors}
+    # ``missing``: the session stored a preset whose file is gone or invalid; runs refuse it,
+    # so the UI must not present the session as Standard.
+    return {"current": current if current in presets else None,
+            "missing": current if current and current not in presets else None,
+            "items": items, "errors": errors}
 
 
 def get(preset_id, dirs=None):

@@ -18,6 +18,8 @@ const ModeIcon = () => <svg viewBox="0 0 16 16" width="14" height="14" aria-hidd
 export function ModeBadge() {
   const { state } = useHost();
   const presets = state.presets;
+  if (presets?.missing) return <span className="gah-mode-badge missing" title={T('\u8be5\u6a21\u5f0f\u7684\u6587\u4ef6\u5df2\u5220\u9664\u6216\u65e0\u6548\uff0c\u5bf9\u8bdd\u65e0\u6cd5\u8fd0\u884c', 'This mode\'s file was removed or is invalid; the chat cannot run')}>
+    <ModeIcon /><span>{presets.missing}{T('\uff08\u5df2\u5931\u6548\uff09', ' (unavailable)')}</span></span>;
   if (!presets || !presets.items.length) return null;
   const active = presets.items.find(item => item.id === presets.current) ?? null;
   return <span className="gah-mode-badge" title={describe(active)}><ModeIcon /><span>{label(active)}</span></span>;
@@ -41,7 +43,7 @@ export function ModePicker({ disabled }: { disabled: boolean }) {
   if (!presets || !presets.items.length) return null;
   async function choose(item: AgentPreset | null) {
     setOpen(false); trigger.current?.focus();
-    if ((item?.id ?? null) === (presets?.current ?? null)) return;
+    if ((item?.id ?? null) === (presets?.current ?? presets?.missing ?? null)) return;
     setSaving(true);
     try { host.setState(await request<HostState>('/api/preset', { value: item?.id ?? '' })); }
     catch (error) { host.report(error); }
@@ -51,11 +53,11 @@ export function ModePicker({ disabled }: { disabled: boolean }) {
     <button type="button" ref={trigger} className="gah-mode-trigger" disabled={locked} aria-haspopup="listbox" aria-expanded={open}
       title={describe(active)} onClick={() => setOpen(value => !value)}>
       <ModeIcon />
-      <span>{label(active)}</span><span className="gah-mode-caret" aria-hidden="true">{'\u2304'}</span>
+      <span>{presets.missing ? presets.missing + T('\uff08\u5df2\u5931\u6548\uff09', ' (unavailable)') : label(active)}</span><span className="gah-mode-caret" aria-hidden="true">{'\u2304'}</span>
     </button>
     {open && <ul className="gah-mode-menu" role="listbox" aria-label={T('Agent \u6a21\u5f0f', 'Agent mode')}>
       {[null, ...presets.items].map(item => {
-        const selected = (item?.id ?? null) === (presets.current ?? null);
+        const selected = !presets.missing && (item?.id ?? null) === (presets.current ?? null);
         return <li key={item?.id ?? ''} role="option" aria-selected={selected}>
           <button type="button" onClick={() => void choose(item)}>
             <span className="gah-mode-name">{label(item)}{item?.builtin === false && <small>{T('\u81ea\u5b9a\u4e49', 'Custom')}</small>}</span>
