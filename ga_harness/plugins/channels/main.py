@@ -24,7 +24,8 @@ def apply(ctx, config):
     # so the hub looks it up on each use instead of capturing it here.
     hub = Hub(runs, sessions, Bindings(_store_path(sessions)),
               workspace=(config or {}).get("workspace") or None,
-              models=lambda: ctx.get("models"))
+              models=lambda: ctx.get("models"),
+              workspaces=lambda: ctx.get("workspaces"))
     manager = ChannelManager(hub, ChannelStore(_store_path(sessions, "channels.json")))
     ctx.on("run.event", hub.on_run_event)
     ctx.on("run.finished", hub.on_run_finished)

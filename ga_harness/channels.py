@@ -7,6 +7,7 @@ reply extraction, splitting and ordered delivery. See CHANNELS.md.
 from __future__ import annotations
 
 import io
+import json
 import os
 import queue
 import re
@@ -22,8 +23,9 @@ from .sessions import EFFORTS
 HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
         "/sessions  列出最近的会话；/sessions <页码> 翻页\n"
         "/use  /use <编号|会话ID> 把本聊天切换到已有会话\n"
+        "/projects  列出项目；/project <编号|名称> 切换到该项目，/project none 回到默认\n"
         "/stop  取消正在运行的任务\n"
-        "/status  查看当前会话、模型和推理强度\n"
+        "/status  查看当前会话、项目、模型和推理强度\n"
         "/model  列出模型；/model <编号|名称> 切换本聊天的模型（别名 /llm）\n"
         "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
         "/help  显示本帮助")
@@ -152,10 +154,11 @@ class Hub:
     """Platform-neutral router. Published as the ``channels`` service."""
 
     def __init__(self, runs, sessions, bindings, *, workspace=None, title_prefix="channel",
-                 models=None):
+                 models=None, workspaces=None):
         self.runs, self.sessions, self.bindings = runs, sessions, bindings
         self.workspace, self.title_prefix = workspace, title_prefix
         self.models = models  # model catalog service, or a zero-arg callable returning it
+        self.workspaces = workspaces  # workspace/project service, or a zero-arg callable
         self.adapters = {}
         self.run_channels = {}  # run_id -> channel name or None (progress routing cache)
         self.lock = threading.RLock()
@@ -218,9 +221,23 @@ class Hub:
         state = (session or {}).get("state") or {}
         return {k: state[k] for k in ("model", "effort") if k in state}
 
-    def _new_session(self, channel, chat, selection=None):
-        kw = {"title": f"{self.title_prefix}:{channel}:{chat}"[:80]}
-        if self.workspace:
+    def _workspaces(self):
+        """The workspace/project service, or None when workspace-store is not loaded."""
+        ws = self.workspaces
+        if ws is not None and not hasattr(ws, "projects"):
+            try:
+                ws = ws()
+            except Exception:
+                return None
+        return ws if hasattr(ws, "projects") else None
+
+    def _new_session(self, channel, chat, selection=None, project_id=""):
+        # Always pass the project explicitly: otherwise sessions.create() inherits the
+        # project the web UI happens to have selected. A project chat starts in the
+        # project's directory (resolved by the session store); the configured channel
+        # workspace only applies to chats without a project.
+        kw = {"title": f"{self.title_prefix}:{channel}:{chat}"[:80], "project_id": project_id or ""}
+        if self.workspace and not project_id:
             kw["workspace"] = self.workspace
         session = self.sessions.create(**kw)
         self.bindings.set(channel, chat, session["id"])
@@ -281,7 +298,7 @@ class Hub:
             if names and keep.get("model") and keep["model"] not in names:
                 # Removed from the model config since it was picked: fall back to the default.
                 note = f"模型 {keep.pop('model')} 已不在配置中，改用默认模型。"
-            self._new_session(channel, chat, keep)
+            self._new_session(channel, chat, keep, project_id=(old or {}).get("project_id") or "")
             return "已新建会话。" + note
         if word == "/sessions":
             return self._cmd_sessions(channel, chat, arg)
@@ -291,6 +308,10 @@ class Hub:
             return self._cmd_model(channel, chat, arg)
         if word == "/effort":
             return self._cmd_effort(channel, chat, arg)
+        if word == "/projects":
+            return self._cmd_project(channel, chat, "")
+        if word == "/project":
+            return self._cmd_project(channel, chat, arg)
         if word == "/stop":
             sid = self.bindings.get(channel, chat)
             run = sid and self.runs.active_for(sid)
@@ -305,8 +326,91 @@ class Hub:
                 return "还没有会话。"
             busy = "运行中" if self.runs.active_for(sid) else "空闲"
             return (f"会话 {sid}（{busy}）\n标题：{session.get('title') or '-'}\n"
-                    f"{self._describe(session)}")
+                    f"{self._scope_text(sid, session)}{self._describe(session)}")
         return None
+
+    # -- project switching ------------------------------------------------
+    def _scope_text(self, sid, session):
+        """'项目/目录' lines for /status; empty without the workspace store."""
+        ws = self._workspaces()
+        if ws is None:
+            return ""
+        try:
+            ctx = ws.context(sid)
+        except Exception as e:
+            return f"项目：{session.get('project_id') or '无'}（{e}）\n"
+        name = (ctx.get("project") or {}).get("name") or "无"
+        return f"项目：{name}\n目录：{ctx.get('workspace') or '-'}\n"
+
+    def _rescope(self, sid, project):
+        """Re-file an empty chat under another project in place; False if not possible."""
+        ws, store = self._workspaces(), self.sessions
+        if ws is None or not hasattr(store, "_db") or not hasattr(store, "lock"):
+            return False
+        try:
+            directory = ws.project_workspace(project) if project else (self.workspace or ws.default_workspace)
+            with store.lock, store._db() as db:
+                row = db.execute("SELECT messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+                if row is None or json.loads(row[0] or "[]"):
+                    return False
+                db.execute("UPDATE sessions SET workspace=?, project_id=?, updated=? WHERE id=?",
+                           (str(directory), project["id"] if project else "", time.time(), sid))
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _list_projects(ws):
+        """Projects incl. folders discovered under temp/projects (snapshot runs _discover)."""
+        try:
+            return list(ws.snapshot()["projects"])
+        except Exception:
+            return ws.projects()
+
+    def _cmd_project(self, channel, chat, arg):
+        ws = self._workspaces()
+        try:
+            projects = self._list_projects(ws) if ws is not None else None
+        except Exception:
+            projects = None
+        if projects is None:
+            return "未加载工作区服务（workspace-store），无法切换项目。"
+        sid = self.bindings.get(channel, chat)
+        session = self._session(sid)
+        current = (session or {}).get("project_id") or ""
+        if not arg:
+            if not projects:
+                return "还没有项目。请先在网页端创建项目。"
+            lines = ["项目（* 为本聊天当前项目）："]
+            for i, p in enumerate(projects, 1):
+                lines.append(f"{'*' if p['id'] == current else ' '}{i}. {p['name']}")
+            lines.append(f"{'*' if not current else ' '}none. 无项目（默认目录）")
+            lines.append("发送 /project <编号|名称> 切换；/project none 回到默认。")
+            return "\n".join(lines)
+        target = None
+        if arg.lower() not in ("none", "default", "无"):
+            if arg.isdigit() and 1 <= int(arg) <= len(projects):
+                target = projects[int(arg) - 1]
+            else:
+                key = arg.casefold()
+                hits = [p for p in projects if p["name"].casefold() == key] or \
+                       [p for p in projects if key in p["name"].casefold()]
+                if len(hits) > 1:
+                    names = "、".join(p["name"] for p in hits[:5])
+                    return f"有多个项目匹配 '{arg}'：{names}。请用编号或完整名称。"
+                target = hits[0] if hits else None
+            if target is None:
+                return f"没有找到项目 '{arg}'。发送 /projects 查看列表。"
+        pid = target["id"] if target else ""
+        label = f"项目 {target['name']}" if target else "无项目（默认目录）"
+        if session and current == pid:
+            return f"本聊天已经在{label}。"
+        if session and self.runs.active_for(sid):
+            return "本聊天当前的任务还在运行，请等它结束或发送 /stop 后再切换项目。"
+        if session and self._rescope(sid, target):
+            return f"已切换到{label}（当前会话还没有消息，直接沿用）。"
+        self._new_session(channel, chat, self._selection(session), project_id=pid)
+        return f"已切换到{label}，并新建了会话。之前的会话可用 /sessions 和 /use 找回。"
 
     # -- session switching ------------------------------------------------
     def session_choices(self, limit=None):

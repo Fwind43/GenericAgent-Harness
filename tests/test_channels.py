@@ -241,7 +241,7 @@ def test_commands_without_catalog_and_help(tmp_path):
         raise RuntimeError("model-store failed to start")
 
     assert [line.split()[0] for line in HELP.splitlines()] == [
-        "/new", "/sessions", "/use", "/stop", "/status", "/model", "/effort", "/help"]
+        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/help"]
     for n, models in enumerate((None, broken, lambda: FakeModels(rows=()))):
         (tmp_path / str(n)).mkdir()
         hub, _, _ = make_hub(tmp_path / str(n), models=models)
@@ -277,5 +277,52 @@ def test_sessions_command_pages_with_global_numbers(tmp_path):
         assert hub.bindings.get("fake", "1") == "s9"
         assert "→ 15. t9（" in hub.command("fake", "1", "/sessions 2")
         assert hub.command("fake", "1", "/use 24").startswith("没有编号为 24 的会话")
+    finally:
+        hub.close()
+
+
+class FakeWorkspaces:
+    default_workspace = "D:/default"
+
+    def __init__(self, sessions):
+        self.sessions = sessions
+        self.items = [{"id": "p1", "name": "Alpha", "workspace": "D:/alpha", "updated": 2},
+                      {"id": "p2", "name": "Beta", "workspace": "", "updated": 1}]
+
+    def projects(self):
+        return [dict(p) for p in self.items]
+
+    def project_workspace(self, project):
+        return project["workspace"] or self.default_workspace
+
+    def context(self, sid):
+        pid = self.sessions.get(sid).get("project_id") or ""
+        project = next((p for p in self.items if p["id"] == pid), None)
+        return {"workspace": self.project_workspace(project) if project else self.default_workspace,
+                "project_id": pid, "project": project}
+
+
+def test_project_commands_switch_and_keep_project(tmp_path):
+    runs, sessions = FakeRuns(), FakeSessions()
+    hub = Hub(runs, sessions, Bindings(tmp_path / "channels.db"),
+              workspaces=lambda: FakeWorkspaces(sessions))
+    try:
+        listing = hub.command("fake", "3", "/projects").splitlines()
+        assert listing[1:4] == [" 1. Alpha", " 2. Beta", "*none. 无项目（默认目录）"]
+        assert hub.command("fake", "3", "/project gamma") == "没有找到项目 'gamma'。发送 /projects 查看列表。"
+        assert hub.command("fake", "3", "/project alp").startswith("已切换到项目 Alpha，并新建了会话。")
+        sid = hub.bindings.get("fake", "3")
+        assert sessions.get(sid)["project_id"] == "p1" and "workspace" not in sessions.get(sid)
+        assert hub.command("fake", "3", "/project 1") == "本聊天已经在项目 Alpha。"
+        assert hub.command("fake", "3", "/status").splitlines()[2:4] == ["项目：Alpha", "目录：D:/alpha"]
+        assert hub.command("fake", "3", "/new") == "已新建会话。"
+        assert sessions.get(hub.bindings.get("fake", "3"))["project_id"] == "p1"
+        runs.active[hub.bindings.get("fake", "3")] = {"id": "r9"}
+        assert hub.command("fake", "3", "/project none").startswith("本聊天当前的任务还在运行")
+        runs.active = {}
+        assert hub.command("fake", "3", "/project none").startswith("已切换到无项目（默认目录）")
+        assert sessions.get(hub.bindings.get("fake", "3"))["project_id"] == ""
+        hub.receive("fake", "4", "hi")  # a fresh chat never inherits the web UI's project
+        assert sessions.get(hub.bindings.get("fake", "4"))["project_id"] == ""
     finally:
         hub.close()
