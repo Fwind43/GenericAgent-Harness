@@ -23,6 +23,14 @@ function linuxExec() {
   return process.env.APPIMAGE || process.execPath || null;
 }
 
+// Windows: quote the exe. Electron parses options.path as a command line to find the program,
+// so an unquoted "C:\Program Files\..." path is cut at the first space and never matches our
+// Run value (the switch then reads as off right after enabling). The quoted form is also the
+// correct Run value for a path with spaces.
+function winExec() {
+  return `"${process.execPath}"`;
+}
+
 function linuxFile() {
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
   return path.join(base, 'autostart', 'genericagent-harness.desktop');
@@ -35,7 +43,7 @@ function isEnabled() {
     if (process.platform === 'win32') {
       // openAtLogin is looked up under the AppUserModelID value, not our custom name, so it
       // stays false after setEnabled(true); match our Run value in launchItems instead.
-      const s = app.getLoginItemSettings({ path: process.execPath, args: [HIDDEN_ARG] });
+      const s = app.getLoginItemSettings({ path: winExec(), args: [HIDDEN_ARG] });
       const mine = (s.launchItems || []).find(it => String(it.name).toLowerCase() === WIN_NAME.toLowerCase());
       return mine ? mine.enabled !== false : Boolean(s.openAtLogin);
     }
@@ -59,7 +67,7 @@ function setEnabled(on) {
       try { fs.unlinkSync(file); } catch (err) { if (err.code !== 'ENOENT') throw err; }
     }
   } else if (process.platform === 'win32') {
-    app.setLoginItemSettings({ openAtLogin: on, name: WIN_NAME, path: process.execPath, args: [HIDDEN_ARG] });
+    app.setLoginItemSettings({ openAtLogin: on, name: WIN_NAME, path: winExec(), args: [HIDDEN_ARG] });
   } else {
     app.setLoginItemSettings({ openAtLogin: on, openAsHidden: true });
   }
