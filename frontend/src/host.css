@@ -387,6 +387,15 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
   .gah-stats::-webkit-scrollbar{display:none}
   .gah-stats-group{gap:8px}
   /* drawer */
+  /* touch rows: no hover, so actions always visible; fixed age column keeps rows aligned */
+  html body.app .sidebar .gah-sess-acts{display:flex}
+  html body.app .sidebar .gah-sess-row .gah-sess-age{display:block;min-width:40px;margin-left:0;text-align:right;padding:0 2px 0 6px}
+  html body.app .sidebar .gah-sess-title{min-width:0}
+  html body.app .sidebar .gah-sess-title+*{margin-left:auto}
+  html body.app .sidebar .gah-sess-kids{flex:none;width:28px;justify-content:center}
+  html body.app .sidebar .side-body:has(.gah-sess-kids) .gah-sess-row:not(:has(>.gah-sess-kids))>.gah-sess-open{margin-right:30px}
+  html body.app .sidebar .gah-sess-unread{order:0;margin-left:6px}
+  html body.app .sidebar .side-body{padding-bottom:24px;scroll-padding-bottom:24px}
   html body.app .sidebar{width:min(320px,86vw);background:linear-gradient(var(--surface),var(--surface)) Canvas;-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border-right:0;transition:transform .26s cubic-bezier(.32,.72,0,1);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);font-size:14px;will-change:transform}
   html .app.side-open .sidebar{box-shadow:0 0 0 1px var(--border),12px 0 40px rgba(0,0,0,.22);border-radius:0 18px 18px 0}
   html .app.side-open .scrim{display:block;position:fixed;inset:0;z-index:29;background:rgba(10,10,14,.42);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:gah-scrim-in .22s ease}
