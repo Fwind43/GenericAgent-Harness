@@ -183,7 +183,10 @@ def test_plugin_categories(tmp_path):
     assert cats["ga-core"] == "core"
     assert {cats[n] for n in ("ga-hooks", "ga-tools", "ga-prompt", "ga-stdout")} == {"extension"}
     assert {cats[n] for n in ("ga-events", "ga-usage", "ga-timing")} == {"observe"}
-    assert all(c == "ui" for n, c in cats.items() if n.startswith(("ui-", "web-")))
+    # web-lan / web-tailscale expose the web UI on the network: declared as services.
+    network = {"web-lan", "web-tailscale"}
+    assert {cats[n] for n in network} == {"service"}
+    assert all(c == "ui" for n, c in cats.items() if n.startswith(("ui-", "web-")) and n not in network)
     assert all(c == "service" for n, c in cats.items() if n.endswith("-store") or n == "plugin-manager")
     assert "other" not in cats.values()
     d = tmp_path / "third"

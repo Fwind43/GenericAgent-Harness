@@ -372,20 +372,20 @@ class PluginManager:
         purge_modules(name)
         unmet.pop(name, None)
         running = {"name": name, "disabled": entry["disabled"], "config": copy.deepcopy(entry["config"])}
-        try:
-            if not entry["disabled"]:
-                lack = missing_packages(m)
-                if lack:
-                    unmet[name] = lack
-                else:
-                    rt.add(m.to_plugin(), copy.deepcopy(entry["config"]))
-        finally:
-            for i, e in enumerate(self.running_tree):
-                if e["name"] == name:
-                    self.running_tree[i] = {**e, **running}
-                    break
+        if not entry["disabled"]:
+            lack = missing_packages(m)
+            if lack:
+                unmet[name] = lack
             else:
-                self.running_tree.append(running)
+                # On failure the running tree keeps its previous entry, so the
+                # catalog still reports restart_required for this plugin.
+                rt.add(m.to_plugin(), copy.deepcopy(entry["config"]))
+        for i, e in enumerate(self.running_tree):
+            if e["name"] == name:
+                self.running_tree[i] = {**e, **running}
+                break
+        else:
+            self.running_tree.append(running)
 
     def rescan(self):
         """Pick up plugins added to (or edited in) the user plugin directory."""

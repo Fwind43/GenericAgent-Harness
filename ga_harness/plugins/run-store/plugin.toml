@@ -2,6 +2,7 @@ name = "run-store"
 category = "service"
 entry = "main:apply"
 description = "Durable runs with per-session ownership and isolated worker processes."
+description_zh = "持久化的运行记录，按会话归属并在隔离的 worker 进程中执行。"
 inject = ["sessions", "workspaces", "plugin.catalog"]
 provides = ["runs"]
 
