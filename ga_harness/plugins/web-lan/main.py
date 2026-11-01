@@ -14,8 +14,6 @@ Routes: GET /api/p/web-lan/ -> status; POST with {"action": start|stop|reset_tok
 from __future__ import annotations
 
 import ipaddress
-import json
-import os
 import secrets
 import socket
 import sys
@@ -24,6 +22,7 @@ import time
 from pathlib import Path
 
 from ga_harness import paths
+from ga_harness.tcp_forward import Forwarder, load_state, save_state
 
 HERE = Path(__file__).resolve().parent
 NAME = "web-lan"
@@ -92,97 +91,6 @@ def lan_ips():
     return found
 
 
-class Forwarder:
-    """Accept on ``binds`` (LAN IPs) and pipe each connection to 127.0.0.1:target."""
-
-    def __init__(self, binds, port, target):
-        self.binds, self.port, self.target = binds, port, target
-        self.socks, self.conns = [], set()
-        self.lock = threading.Lock()
-        self.closed = False
-
-    def start(self):
-        try:
-            for ip in self.binds:
-                fam = socket.AF_INET6 if ":" in ip else socket.AF_INET
-                s = socket.socket(fam, socket.SOCK_STREAM)
-                if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-                    s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-                self.socks.append(s)
-                s.bind((ip, self.port))
-                s.listen(64)
-        except OSError:
-            self.close()
-            raise
-        for s in self.socks:
-            threading.Thread(target=self._accept, args=(s,), daemon=True, name="gah-lan-accept").start()
-
-    def _accept(self, srv):
-        while not self.closed:
-            try:
-                client, peer = srv.accept()
-            except OSError:
-                return
-            if not _lan_peer(peer[0]):
-                client.close()
-                continue
-            threading.Thread(target=self._serve, args=(client,), daemon=True, name="gah-lan-conn").start()
-
-    def _serve(self, client):
-        try:
-            upstream = socket.create_connection(("127.0.0.1", self.target), timeout=10)
-            upstream.settimeout(None)
-        except OSError as e:
-            _log(f"[lan] upstream connect failed: {e}")
-            client.close()
-            return
-        with self.lock:
-            if self.closed:
-                client.close()
-                upstream.close()
-                return
-            self.conns.update((client, upstream))
-        t = threading.Thread(target=self._pipe, args=(upstream, client), daemon=True, name="gah-lan-pipe")
-        t.start()
-        self._pipe(client, upstream)
-        t.join()
-        with self.lock:
-            self.conns.discard(client)
-            self.conns.discard(upstream)
-        for s in (client, upstream):
-            try:
-                s.close()
-            except OSError:
-                pass
-
-    @staticmethod
-    def _pipe(src, dst):
-        try:
-            while True:
-                data = src.recv(65536)
-                if not data:
-                    break
-                dst.sendall(data)
-        except OSError:
-            pass
-        try:
-            dst.shutdown(socket.SHUT_WR)
-        except OSError:
-            pass
-
-    def close(self):
-        with self.lock:
-            self.closed = True
-            items = list(self.socks) + list(self.conns)
-            self.socks, self.conns = [], set()
-        for s in items:
-            try:
-                s.close()
-            except OSError:
-                pass
-
-
-
 class Lan:
     def __init__(self, host, config):
         self.host = host
@@ -199,20 +107,10 @@ class Lan:
 
     # ---- persisted state (token + enabled flag) ----
     def _load(self):
-        try:
-            data = json.loads(self.state_file.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        return load_state(self.state_file)
 
     def _save(self, **changes):
-        data = {**self._load(), **changes}
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.state_file.with_name(self.state_file.name + ".tmp")
-        tmp.write_text(json.dumps(data), encoding="utf-8")
-        if os.name != "nt":
-            os.chmod(tmp, 0o600)
-        os.replace(tmp, self.state_file)
+        save_state(self.state_file, **changes)
 
     def net_status(self):
         ips = lan_ips()
@@ -259,7 +157,7 @@ class Lan:
                 raise ValueError("set the LAN port (1-65535) in the plugin settings")
             if port == target:
                 raise ValueError(f"port {port} is the local web UI port; choose another one")
-            fwd = Forwarder(st["binds"], port, target)
+            fwd = Forwarder(st["binds"], port, target, _lan_peer, "lan")
             try:
                 fwd.start()
             except OSError as e:
