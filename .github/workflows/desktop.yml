@@ -40,7 +40,7 @@ jobs:
       matrix:
         include:
           - { name: windows-x64, runner: windows-latest, target: --win, arch: --x64 }
-          - { name: macos-arm64, runner: macos-14, target: --mac, arch: --arm64 }
+          - { name: macos-arm64, runner: macos-15, target: --mac, arch: --arm64 }
           - { name: macos-x64, runner: macos-15-intel, target: --mac, arch: --x64 }
           - { name: linux-x64, runner: ubuntu-22.04, target: --linux, arch: --x64 }
     env:
