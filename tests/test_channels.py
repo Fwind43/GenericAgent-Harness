@@ -196,7 +196,7 @@ def test_new_command_keeps_and_drops_stale_model(tmp_path):
         assert second != first
         assert sessions.get(second)["state"] == {"model": "claude-b", "effort": "high"}
         models.items = models.items[:2]
-        assert hub.command("fake", "5", "/status").splitlines()[1] == (
+        assert hub.command("fake", "5", "/status").splitlines()[2] == (
             "模型：claude-b（已不在配置中，请用 /model 另选）")
         assert hub.command("fake", "5", "/new") == (
             "已新建会话。"
@@ -204,7 +204,7 @@ def test_new_command_keeps_and_drops_stale_model(tmp_path):
         third = hub.bindings.get("fake", "5")
         assert sessions.get(third)["state"] == {"effort": "high"}
         assert sessions.get(second)["state"]["model"] == "claude-b"
-        assert hub.command("fake", "5", "/status").splitlines()[1:] == [
+        assert hub.command("fake", "5", "/status").splitlines()[2:] == [
             "模型：gpt-main（宿主默认）", "推理强度：high"]
     finally:
         hub.close()
