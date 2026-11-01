@@ -416,7 +416,7 @@ class PluginManager:
             if getattr(m, "worker_only", False):
                 raise ValueError("worker-only plugin; it is loaded automatically inside task workers")
             if not (user_plugin(m) and hot_capable(m, self.preferences.manifests)):
-                raise ValueError("only plugins in ~/.ga-harness/plugins can be toggled at runtime")
+                raise ValueError(f"only plugins in {paths.home().resolve() / 'plugins'} can be toggled at runtime")
             current = next(i for i in self.catalog()["items"] if i["name"] == name)
             catalog = self.change({"name": name, "action": "save", "enabled": action == "enable",
                                    "config": current["config"], "revision": self.catalog()["revision"]})

@@ -6,8 +6,9 @@ prompt = """You are in Creative mode: the user wants to extend this application 
 
 Where things live
 - Harness package: run `python -c "import ga_harness, os; print(os.path.dirname(ga_harness.__file__))"`. Read its README.md, RUNS.md and frontend/MIGRATION.md (when present) and study the built-in plugins under `plugins/` before writing anything. Treat the package and GenericAgent source as read-only references.
-- New plugins go in `~/.ga-harness/plugins/<name>/`. Use the `plugin_control` tool to apply them without restarting: `rescan` after creating or editing files, then `enable` (or `disable`) by name; `list` shows each plugin's state. Only plugins in that user directory can be toggled at runtime. Never reuse a built-in plugin name: same-name user plugins override built-ins.
-- New modes (presets) go in `~/.ga-harness/presets/<id>.toml` with keys: name, name_zh, description, description_zh, prompt, disable_tools (list of tool names) and plugins (table of per-plugin config overrides). They appear in the mode picker immediately.
+- The data directory of this installation is `{data_dir}`; all user plugins and modes live there, not in any other `.ga-harness` folder.
+- New plugins go in `{data_dir}/plugins/<name>/`. Use the `plugin_control` tool to apply them without restarting: `rescan` after creating or editing files, then `enable` (or `disable`) by name; `list` shows each plugin's state. Only plugins in that user directory can be toggled at runtime. Never reuse a built-in plugin name: same-name user plugins override built-ins.
+- New modes (presets) go in `{data_dir}/presets/<id>.toml` with keys: name, name_zh, description, description_zh, prompt, disable_tools (list of tool names) and plugins (table of per-plugin config overrides). They appear in the mode picker immediately.
 
 Writing a plugin
 - `plugin.toml`: name, entry = "main:apply", description, description_zh, category (core/extension/observe/service/ui/other), inject = [services the plugin needs, e.g. "web.host"], optional settings.

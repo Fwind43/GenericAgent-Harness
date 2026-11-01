@@ -6,7 +6,9 @@ Fields (all optional except a usable file stem as id)::
 
     name / name_zh               display name
     description / description_zh
-    prompt = "..."               appended to the system prompt (ga-prompt ``append``)
+    prompt = "..."               appended to the system prompt (ga-prompt ``append``);
+                                 ``{data_dir}`` becomes the absolute ga-harness data
+                                 directory (``paths.home()``, i.e. ``$GAH_HOME``)
     disable_tools = ["..."]      merged into ga-tools ``disable``
     [config.<plugin>]            shallow-merged into the config of a plugin that is
                                  already part of the worker recipe
@@ -99,7 +101,8 @@ def apply(recipe, preset):
     if preset.get("prompt"):
         config = need("ga-prompt")
         old = config.get("append", "")
-        config["append"] = (old + "\n\n" if old else "") + preset["prompt"]
+        prompt = preset["prompt"].replace("{data_dir}", str(paths.home().resolve()))
+        config["append"] = (old + "\n\n" if old else "") + prompt
     if preset.get("disable_tools"):
         config = need("ga-tools")
         disabled = list(config.get("disable", []))
