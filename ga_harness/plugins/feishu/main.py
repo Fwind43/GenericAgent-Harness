@@ -178,6 +178,75 @@ def _one_line(text, limit=60):
     return _clip(" ".join(str(text or "").split()), limit)
 
 
+TOOL_CODE_KEYS = ("script", "code", "command", "cmd", "js")
+TOOL_MAIN_KEYS = ("path", "file", "url", "query", "pattern", "question", "text", "prompt")
+TOOL_CODE_LINES = 12
+TOOL_CODE_CHARS = 700
+
+
+def _code_block(code, lang=""):
+    lines = str(code).strip("\n").splitlines()
+    more = len(lines) - TOOL_CODE_LINES
+    body = _clip("\n".join(lines[:TOOL_CODE_LINES]), TOOL_CODE_CHARS).replace("```", "\u02cb\u02cb\u02cb")
+    if more > 0:
+        body += f"\n# \u2026 +{more} lines"
+    return f"```{lang}\n{body}\n```"
+
+
+def _result_preview(data):
+    """One readable line from a tool result (stdout/msg/error if JSON)."""
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError:
+            pass
+    if isinstance(data, dict):
+        for key in ("error", "stderr", "stdout", "result", "msg", "message", "content"):
+            if data.get(key):
+                data = data[key]
+                break
+    if not isinstance(data, str):
+        try:
+            data = json.dumps(data, ensure_ascii=False)
+        except (TypeError, ValueError):
+            data = str(data)
+    return _one_line(data, 160)
+
+
+def _fmt_tool(tool):
+    mark = "\u23f3" if tool["ok"] is None else ("\u2705" if tool["ok"] else "\u274c")
+    secs = tool["seconds"]
+    took = f" <font color='grey'>{secs:.1f}s</font>" if isinstance(secs, (int, float)) else ""
+    out = [f"{mark} **{tool['name']}**{took}"]
+    args = tool["args"]
+    if isinstance(args, dict):
+        rest = dict(args)
+        for k in TOOL_CODE_KEYS:
+            if isinstance(rest.get(k), str) and rest[k].strip():
+                code = rest.pop(k)
+                kind = str(rest.get("type") or "").lower()
+                lang = ("javascript" if k == "js" or "js" in tool["name"] else
+                        "powershell" if kind == "powershell" else
+                        "bash" if k in ("command", "cmd") else "python")
+                rest.pop("type", None)
+                out.append(_code_block(code, lang))
+                break
+        for k in TOOL_MAIN_KEYS:
+            if k in rest and rest[k] not in (None, ""):
+                out.insert(1, f"`{_one_line(rest.pop(k), 120).replace('`', chr(39))}`")
+                break
+        extra = [f"{k}={_one_line(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False), 40)}"
+                 for k, v in rest.items() if v not in (None, "", [], {})]
+        if extra:
+            out.append("<font color='grey'>" + _one_line(" \u00b7 ".join(extra), 160).replace("<", "&lt;") + "</font>")
+    elif args not in (None, ""):
+        out.append(f"`{_one_line(args, 160).replace('`', chr(39))}`")
+    if tool.get("result"):
+        res = tool["result"].replace("<", "&lt;")
+        out.append(f"<font color='{'red' if tool['ok'] is False else 'grey'}'>\u21b3 {res}</font>")
+    return "\n".join(out)
+
+
 class TaskCard:
     """One run rendered as a Feishu JSON 2.0 card, mirroring GA's fsapp:
     a status line, one collapsed panel per turn, then the final answer."""
@@ -206,18 +275,16 @@ class TaskCard:
             t["reply"] = data.get("reply") or data.get("text") or ""
         elif name == "tool.call":
             args = data.get("args")
-            if not isinstance(args, str):
-                try:
-                    args = json.dumps(args, ensure_ascii=False)
-                except (TypeError, ValueError):
-                    args = str(args)
+            if isinstance(args, dict):
+                args = {k: v for k, v in args.items() if not str(k).startswith("_")}
             self._turn(data)["tools"].append(
                 {"id": data.get("id"), "name": str(data.get("name") or "tool"),
-                 "args": _one_line(args, 160), "ok": None, "seconds": None})
+                 "args": args, "ok": None, "seconds": None, "result": ""})
         elif name == "tool.result":
             for tool in reversed(self._turn(data)["tools"]):
                 if tool["id"] == data.get("id") or (data.get("id") is None and tool["ok"] is None):
                     tool["ok"], tool["seconds"] = bool(data.get("ok", True)), data.get("seconds")
+                    tool["result"] = _result_preview(data.get("data"))
                     break
         elif name != "turn.end":
             return False
@@ -254,17 +321,26 @@ class TaskCard:
 
     @staticmethod
     def _panel(n, t):
-        lines = []
-        for tool in t["tools"]:
-            mark = "\u23f3" if tool["ok"] is None else ("\u2705" if tool["ok"] else "\u274c")
-            secs = tool["seconds"]
-            took = f" \u00b7 {secs:.1f}s" if isinstance(secs, (int, float)) else ""
-            args = tool["args"].replace("`", "'")
-            lines.append(f"{mark} **{tool['name']}** `{args}`{took}")
-        reply = (t["reply"] or "").strip()
-        detail = "\n".join(lines)
+        # Sections like fsapp's step detail (Output / Tool Calls), but each
+        # tool gets a status line, its main argument (code in a fenced block)
+        # and a one-line result preview. Whole blocks are dropped rather than
+        # cut mid-way so a code fence never stays open.
+        blocks = []
+        # The summary is already the panel title; drop its raw tag here.
+        reply = re.sub(r"<summary>.*?</summary>", "", t["reply"] or "", flags=re.S).strip()
         if reply:
-            detail = (reply + "\n\n" + detail) if detail else reply
+            blocks.append("**\U0001f4dd \u8f93\u51fa**\n" + _clip(reply, CARD_PANEL_MAX // 2))
+        if t["tools"]:
+            blocks.append(f"**\U0001f6e0 \u5de5\u5177\u8c03\u7528 \u00b7 {len(t['tools'])}**")
+            blocks += [_fmt_tool(tool) for tool in t["tools"]]
+        kept, used = [], 0
+        for b in blocks:
+            if kept and used + len(b) > CARD_PANEL_MAX:
+                kept.append(f"*\u2026 \u53e6\u6709 {len(blocks) - len(kept)} \u9879\u672a\u663e\u793a*")
+                break
+            kept.append(b)
+            used += len(b)
+        detail = "\n\n".join(kept)
         title = f"Turn {n}" + (f" \u00b7 {t['summary']}" if t["summary"] else "")
         # Explicit chevron + border: without them Feishu draws the header as
         # plain text and the panel does not look expandable.
@@ -277,8 +353,7 @@ class TaskCard:
                            "icon": {"tag": "standard_icon", "token": "down-small-ccm_outlined",
                                     "size": "16px 16px"},
                            "icon_position": "right", "icon_expanded_angle": -180},
-                "elements": [{"tag": "markdown",
-                              "content": _clip(detail, CARD_PANEL_MAX) or "\u2026"}]}
+                "elements": [{"tag": "markdown", "content": detail or "\u2026"}]}
 
     def _visible_turns(self):
         """Turns to draw; the last turn's reply is dropped when it is the
