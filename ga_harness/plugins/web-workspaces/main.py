@@ -21,7 +21,10 @@ def apply(ctx, config):
             if frontend.running:
                 return 409, {"error": "wait for the running task to finish"}
             try:
-                store.sessions.save(frontend.messages)
+                # With isolated runs the chat on screen may be running and owned by its run;
+                # runs persist their own transcript, so only the legacy path saves here.
+                if not getattr(frontend, "runs", None):
+                    store.sessions.save(frontend.messages)
                 selected = store.change(request["body"])
                 frontend.messages = selected["messages"]
                 frontend.persistence_error = None

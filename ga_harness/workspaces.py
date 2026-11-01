@@ -160,7 +160,8 @@ class Workspaces:
         """Must be called while idle; web callers also hold the frontend lock."""
         store = self.sessions
         with store.lock:
-            store._idle()
+            if not store.parallel:  # isolated runs never touch the shared agent
+                store._idle()
             action = body.get("action")
             if action in ("create", "update"):
                 # Rules/notes columns are kept for old databases but no longer used:
