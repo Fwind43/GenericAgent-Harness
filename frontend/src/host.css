@@ -337,3 +337,85 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-log-toolbar .gah-update-input{flex:1 1 140px;min-width:120px}
 .gah-log-follow{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
 .gah-log-view{margin:6px 0 0;height:min(56vh,520px);overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--code-bg);padding:8px 10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;user-select:text}
+/* ---- Mobile layer (<=760px): touch targets, safe areas, opaque drawer, compact chrome ---- */
+.gah-view-tab{border-radius:0}
+@media (max-width:760px){
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  body{-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+  html,body,.app{height:100dvh}
+  button,select,summary,[role=button]{touch-action:manipulation}
+  /* header */
+  header{min-height:52px;gap:6px;padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(6px,env(safe-area-inset-left))}
+  #sideOpen{width:40px;height:40px;padding:0;align-items:center;justify-content:center;border-radius:12px;font-size:19px;color:var(--text);flex:none}
+  #sideOpen:active{background:var(--surface-muted)}
+  header .session-title{font-size:15.5px;letter-spacing:.005em}
+  .gah-mode.head{margin-left:2px}
+  .gah-mode.head .gah-mode-trigger{height:30px;padding:0 8px;border-radius:999px;background:var(--surface-muted);border-color:transparent}
+  .gah-head-slot:not([hidden]){gap:6px;min-width:0}
+  header select{height:32px;max-width:92px;border-radius:999px;padding:0 24px 0 10px;font-size:12.5px;text-overflow:ellipsis}
+  /* view tabs */
+  .gah-view-tabs{padding:0 max(10px,env(safe-area-inset-left));gap:4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .gah-view-tabs::-webkit-scrollbar{display:none}
+  .gah-view-tab{flex:none;min-height:38px;padding:8px 12px;font-size:14px}
+  .gah-view-tab.active{font-weight:600}
+  /* transcript */
+  #thread{padding:18px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left))}
+  .md{font-size:15px;line-height:1.75;overflow-wrap:anywhere}
+  .md ul,.md ol{padding-left:1.35em}
+  .md li>ul,.md li>ol{padding-left:1.1em}
+  .md :not(pre)>code{-webkit-box-decoration-break:clone;box-decoration-break:clone;overflow-wrap:anywhere;word-break:normal}
+  .md-table{margin-left:-2px;margin-right:-2px}
+  .msg.user .body{max-width:86%;border-radius:18px 18px 6px 18px}
+  .message-actions{gap:2px;min-width:0}
+  .message-actions .usage{flex:1 1 auto;min-width:0;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent);padding-right:16px}
+  .message-actions .usage::-webkit-scrollbar{display:none}
+  .message-actions .usage>*{flex:none}
+  .message-actions .output-copy{flex:none;min-width:32px;min-height:32px}
+  /* composer */
+  footer{padding:6px max(10px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+  footer form{border-radius:22px;padding:4px 6px 6px;gap:2px}
+  footer textarea,#input{font-size:16px;line-height:24px;padding:8px 8px 4px;min-height:40px}
+  footer .composer-row{gap:4px;min-height:38px}
+  footer .gah-attach-btn{width:36px;height:36px;border-radius:50%}
+  footer .composer-row .gah-slot{min-width:0}
+  footer .composer-row>.spacer{order:0}
+  footer [data-gah-plugin=web-models]{min-width:0;flex:0 1 auto}
+  footer .gah-model-trigger{height:34px;max-width:min(52vw,220px);min-width:0}
+  footer .gah-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #send,#stop{height:36px;min-width:56px;padding:0 16px;border-radius:999px;font-weight:600;flex:none}
+  .gah-stats{margin-top:6px;font-size:11px;column-gap:8px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12px,#000 calc(100% - 12px),transparent);mask-image:linear-gradient(90deg,transparent,#000 12px,#000 calc(100% - 12px),transparent);padding:0 12px 1px;scrollbar-width:none}
+  .gah-stats::-webkit-scrollbar{display:none}
+  .gah-stats-group{gap:8px}
+  /* drawer */
+  html .app .sidebar{width:min(320px,86vw);background:var(--surface);background-color:color-mix(in srgb,var(--surface) 96%,transparent);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border-right:0;transition:transform .26s cubic-bezier(.32,.72,0,1);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);font-size:14px;will-change:transform}
+  html .app.side-open .sidebar{box-shadow:0 0 0 1px var(--border),12px 0 40px rgba(0,0,0,.22);border-radius:0 18px 18px 0}
+  html .app.side-open .scrim{display:block;position:fixed;inset:0;z-index:29;background:rgba(10,10,14,.42);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:gah-scrim-in .22s ease}
+  .side-head{height:52px;padding:0 8px 0 18px}
+  .side-close{width:40px;height:40px;border-radius:12px;font-size:18px}
+  .sidebar .side-item{min-height:42px;border-radius:10px}
+  .sidebar .gah-sess-search{height:40px;border-radius:12px;font-size:15px;padding:0 12px;background:var(--surface-muted)}
+  .sidebar .gah-sess-row{min-height:44px;border-radius:10px}
+  .sidebar .gah-sess-open{padding:9px 12px;font-size:14.5px;border-radius:10px}
+  .sidebar .gah-sess-act,.sidebar .gah-sess-head-btn,.sidebar .gah-group-add{width:36px;height:36px;border-radius:10px}
+  .sidebar .gah-group-head{min-height:42px;border-radius:10px}
+  .side-foot{padding:8px 8px 10px}
+  /* menus & dialogs */
+  .gah-mode-menu{max-width:calc(100vw - 24px)}
+  .gah-mode-menu button{padding:10px 30px 10px 12px}
+  dialog.gah-dialog:not(.gah-settings-dialog){width:100vw;max-width:100vw;max-height:calc(100dvh - 24px - env(safe-area-inset-top));margin:auto 0 0;border-radius:20px 20px 0 0;border-width:1px 0 0;padding-bottom:env(safe-area-inset-bottom);animation:gah-sheet-in .26s cubic-bezier(.32,.72,0,1)}
+  .gah-settings-dialog{width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+  .empty{margin-top:10vh}
+  .gah-starter{min-height:40px;padding:9px 16px;font-size:14px}
+}
+@media (max-width:760px) and (hover:none){
+  .icon-btn:hover:not(:disabled),.gah-icon-btn:hover:not(:disabled){background:transparent}
+  .icon-btn:active:not(:disabled),.gah-icon-btn:active:not(:disabled),.sidebar .gah-sess-open:active{background:var(--active,var(--surface-muted))}
+}
+@media (max-width:380px){
+  .gah-mode.head .gah-mode-trigger>span{display:none}
+  header select{max-width:76px}
+  footer .gah-model-trigger{max-width:44vw}
+}
+@keyframes gah-scrim-in{from{opacity:0}}
+@keyframes gah-sheet-in{from{transform:translateY(24px);opacity:.6}}
+@media (prefers-reduced-motion:reduce){html .app .sidebar{transition:none}.app.side-open .scrim,dialog.gah-dialog{animation:none!important}}
