@@ -201,7 +201,7 @@ class Runs:
         try:
             self.emit(kind, envelope)
         except Exception:
-            pass
+            log.exception("run %s: %s subscriber failed", record["id"], kind)
 
     def get(self, run_id):
         if not isinstance(run_id, str) or not run_id:

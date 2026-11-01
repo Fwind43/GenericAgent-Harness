@@ -1,6 +1,7 @@
 """Conversation worldlines: edit/resend, regenerate and branch switching."""
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -112,7 +113,7 @@ def apply(ctx, config):
             if sid and idx is not None:
                 store.checkpoint(sid, idx, _hash(messages[:idx]), sessions.get(sid)["state"])
         except Exception:
-            pass
+            logging.getLogger(__name__).exception("worldline checkpoint failed")
         return nxt(data) if nxt else None
 
     def snapshot(data, nxt):

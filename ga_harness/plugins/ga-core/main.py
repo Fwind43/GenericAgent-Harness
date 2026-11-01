@@ -16,6 +16,7 @@ Events (emit): agent.chunk(text), agent.done(text, item)
 """
 from __future__ import annotations
 import importlib
+import logging
 import os
 import queue
 import sys
@@ -42,7 +43,7 @@ class AgentHandle:
                 try:
                     reload()   # mykey.py may have been edited since startup
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).exception("reloading model sessions failed")
         if not getattr(self.raw, "llmclients", None):
             raise RuntimeError(NO_MODEL)
         # GA's run loop drops task["images"]; deliver them on the first LLM call instead.

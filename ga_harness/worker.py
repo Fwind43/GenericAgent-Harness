@@ -158,7 +158,7 @@ class WorkerHost:
                 try:
                     listener(*args)
                 except Exception:
-                    pass
+                    logging.getLogger("gah.worker").exception("listener for %s failed", topic)
 
     def _close(self):
         self.cancelled.set()
