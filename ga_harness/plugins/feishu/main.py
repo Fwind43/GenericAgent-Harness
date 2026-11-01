@@ -266,8 +266,17 @@ class TaskCard:
         if reply:
             detail = (reply + "\n\n" + detail) if detail else reply
         title = f"Turn {n}" + (f" \u00b7 {t['summary']}" if t["summary"] else "")
+        # Explicit chevron + border: without them Feishu draws the header as
+        # plain text and the panel does not look expandable.
         return {"tag": "collapsible_panel", "expanded": False,
-                "header": {"title": {"tag": "plain_text", "content": _one_line(title, 80)}},
+                "background_color": "grey",
+                "border": {"color": "grey", "corner_radius": "5px"},
+                "vertical_spacing": "8px", "padding": "8px 8px 8px 8px",
+                "header": {"title": {"tag": "plain_text", "content": _one_line(title, 80)},
+                           "vertical_align": "center",
+                           "icon": {"tag": "standard_icon", "token": "down-small-ccm_outlined",
+                                    "size": "16px 16px"},
+                           "icon_position": "right", "icon_expanded_angle": -180},
                 "elements": [{"tag": "markdown",
                               "content": _clip(detail, CARD_PANEL_MAX) or "\u2026"}]}
 
