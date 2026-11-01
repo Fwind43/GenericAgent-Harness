@@ -187,6 +187,7 @@ class TaskCard:
         self.turns = OrderedDict()  # turn number -> {"summary", "reply", "tools"}
         self.current = 0
         self.state, self.final, self.error = "running", "", ""
+        self.answer = ""  # full final answer, used to de-duplicate the last turn
 
     def _turn(self, data):
         n = data.get("turn")
@@ -227,6 +228,7 @@ class TaskCard:
         self.state = status if status in ("aborted", "error", "interrupted") else "done"
         self.error = _one_line(error or "", 300)
         text = (text or "").strip()
+        self.answer = text
         if len(text) <= CARD_FINAL_MAX:
             self.final = text
             return ""
@@ -269,11 +271,27 @@ class TaskCard:
                 "elements": [{"tag": "markdown",
                               "content": _clip(detail, CARD_PANEL_MAX) or "\u2026"}]}
 
+    def _visible_turns(self):
+        """Turns to draw; the last turn's reply is dropped when it is the
+        final answer shown below the divider (and the panel too if empty)."""
+        items = list(self.turns.items())
+        if not (self.final and items):
+            return items
+        n, last = items[-1]
+        norm = lambda x: " ".join(str(x or "").split())
+        reply, answer = norm(last["reply"]), norm(self.answer)
+        if reply and answer and (reply in answer or answer in reply):
+            if not last["tools"]:
+                return items[:-1]
+            items[-1] = (n, dict(last, reply=""))
+        return items
+
     def render(self):
-        panels = [self._panel(n, t) for n, t in self.turns.items()]
+        visible = self._visible_turns()
+        panels = [self._panel(n, t) for n, t in visible]
         while True:
             elements = [{"tag": "markdown", "content": self._status()}]
-            hidden = len(self.turns) - len(panels)
+            hidden = len(visible) - len(panels)
             if hidden:
                 elements.append({"tag": "markdown",
                                  "content": f"*\u2026 \u7701\u7565\u524d {hidden} \u8f6e*"})
