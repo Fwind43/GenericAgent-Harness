@@ -203,7 +203,7 @@ def test_ui_web_clips_large_tool_data():
     import importlib.util
     from pathlib import Path
     spec = importlib.util.spec_from_file_location(
-        "uiweb_main", Path(__file__).resolve().parents[1] / "ga_harness" / "plugins" / "ui-web" / "main.py")
+        "uiweb_handler", Path(__file__).resolve().parents[1] / "ga_harness" / "plugins" / "ui-web" / "handler.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     out = m._clip("x" * (m.MAX_TOOL_DATA + 5))
