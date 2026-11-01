@@ -130,7 +130,8 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
   }
   function PluginManager({ api }) {
     const { state, changing } = sdk.useHost();
-    const { busy, working, run } = sdk.useOperation(api);
+    const { busy, working, run } = sdk.useOperation(api, true);
+    const lockedByRun = (plugin) => state.running && !plugin.run_safe;
     const [config, setConfig] = react.useState(null);
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all"), [source, setSource] = react.useState("all");
@@ -157,7 +158,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       }, setError, true);
     };
     const toggle = (plugin, enabled) => {
-      if (plugin.protected || busy || state.running || !config) return;
+      if (plugin.protected || busy || lockedByRun(plugin) || !config) return;
       setError("");
       void run(async () => {
         const next = await api.host.post("/api/plugins", { action: "save", name: plugin.name, revision: config.revision, enabled, config: plugin.config });
@@ -168,7 +169,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       }, setError);
     };
     const change = async (action, enabled, values) => {
-      if (!selected || selected.protected || busy || !config) return;
+      if (!selected || selected.protected || busy || lockedByRun(selected) || !config) return;
       if (action === "reset" && !await sdk.confirmDialog({ title: sdk.T("恢复启动配置", "Restore startup settings"), danger: true, message: sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start.") })) return;
       setError("");
       void run(async () => {
@@ -181,7 +182,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     };
     const install = () => {
       var _a;
-      if (!((_a = selected == null ? void 0 : selected.missing_packages) == null ? void 0 : _a.length) || busy) return;
+      if (!((_a = selected == null ? void 0 : selected.missing_packages) == null ? void 0 : _a.length) || busy || lockedByRun(selected)) return;
       setError("");
       void run(async () => {
         const result = await api.host.post("/api/plugins", { action: "install", name: selected.name });
@@ -238,7 +239,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
                       /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-meta", children: ((_a = plugin.provides) == null ? void 0 : _a.length) ? sdk.T("提供 ", "Provides ") + plugin.provides.length + sdk.T(" 项能力", " capabilities") : "" })
                     ] })
                   ] }),
-                  plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: plugin.enabled, disabled: working || changing || state.running, label: (plugin.enabled ? sdk.T("停用 ", "Disable ") : sdk.T("启用 ", "Enable ")) + plugin.name, onToggle: (next) => toggle(plugin, next) })
+                  plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: plugin.enabled, disabled: working || changing || lockedByRun(plugin), label: (plugin.enabled ? sdk.T("停用 ", "Disable ") : sdk.T("启用 ", "Enable ")) + plugin.name, onToggle: (next) => toggle(plugin, next) })
                 ] }, plugin.name);
               }) })
             ] }, key);
@@ -247,7 +248,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         ] }),
         selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
-          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: state.running, error, onChange: change, onToggle: (next) => toggle(selected, next), onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
+          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: lockedByRun(selected), error, onChange: change, onToggle: (next) => toggle(selected, next), onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
         ] })
       ] })
     ] }) });

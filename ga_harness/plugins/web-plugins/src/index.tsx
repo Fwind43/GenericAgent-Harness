@@ -5,7 +5,9 @@ import { categories, categoryOf, descriptionOf, filters, inFilter, inSource, Plu
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
-  const { busy, working, run } = useOperation(api);
+  // Running tasks only lock plugins that are not run_safe; the server enforces the same rule.
+  const { busy, working, run } = useOperation(api, true);
+  const lockedByRun = (plugin: PluginInfo) => state.running && !plugin.run_safe;
   const [config, setConfig] = useState<PluginCatalog | null>(null);
   const [editing, setEditing] = useState<string | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [source, setSource] = useState('all');
@@ -23,7 +25,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     await run(async () => { setConfig(await api.host.get<PluginCatalog>('/api/plugins')); }, setError, true);
   };
   const toggle = (plugin: PluginInfo, enabled: boolean) => {
-    if (plugin.protected || busy || state.running || !config) return;
+    if (plugin.protected || busy || lockedByRun(plugin) || !config) return;
     setError('');
     void run(async () => {
       const next = await api.host.post<PluginCatalog>('/api/plugins', { action: 'save', name: plugin.name, revision: config.revision, enabled, config: plugin.config });
@@ -34,7 +36,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     }, setError);
   };
   const change: PluginChange = async (action, enabled, values) => {
-    if (!selected || selected.protected || busy || !config) return;
+    if (!selected || selected.protected || busy || lockedByRun(selected) || !config) return;
     if (action === 'reset' && !(await confirmDialog({ title: T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings'), danger: true, message: T('\u6e05\u9664\u7f51\u9875\u8986\u76d6\u5e76\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', 'Clear web overrides and restore startup settings? Applies on next start.') }))) return;
     setError('');
     void run(async () => {
@@ -45,7 +47,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
     }, setError);
   };
   const install = () => {
-    if (!selected?.missing_packages?.length || busy) return;
+    if (!selected?.missing_packages?.length || busy || lockedByRun(selected)) return;
     setError('');
     void run(async () => {
       const result = await api.host.post<{ ok: boolean; output: string; catalog: PluginCatalog }>('/api/plugins', { action: 'install', name: selected.name });
@@ -71,11 +73,11 @@ export function PluginManager({ api }: { api: PluginAPI }) {
               <span className="plugin-card-head"><span className="plugin-name" title={plugin.name}>{plugin.name}</span><span className="plugin-badge" data-state={plugin.state}>{stateLabel(plugin)}</span>{plugin.hot && !plugin.protected && <span className="plugin-switch-slot" />}</span>
               <span className="plugin-card-desc">{descriptionOf(plugin) || T('\u6682\u65e0\u8bf4\u660e', 'No description')}</span>
               <span className="plugin-card-foot"><PluginTags plugin={plugin} /><span className="plugin-card-meta">{plugin.provides?.length ? T('\u63d0\u4f9b ', 'Provides ') + plugin.provides.length + T(' \u9879\u80fd\u529b', ' capabilities') : ''}</span></span>
-            </button>{plugin.hot && !plugin.protected && <Switch checked={plugin.enabled} disabled={working || changing || state.running} label={(plugin.enabled ? T('\u505c\u7528 ', 'Disable ') : T('\u542f\u7528 ', 'Enable ')) + plugin.name} onToggle={next => toggle(plugin, next)} />}</li>)}</ul></section>;
+            </button>{plugin.hot && !plugin.protected && <Switch checked={plugin.enabled} disabled={working || changing || lockedByRun(plugin)} label={(plugin.enabled ? T('\u505c\u7528 ', 'Disable ') : T('\u542f\u7528 ', 'Enable ')) + plugin.name} onToggle={next => toggle(plugin, next)} />}</li>)}</ul></section>;
           })}</div>
           {!shown.length && <p className="plugin-empty">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : config?.items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6', 'No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6', 'No manageable plugins found')}</p>}
         </section>
-        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={state.running} error={error} onChange={change} onToggle={next => toggle(selected, next)} onInstall={install} /></section>}
+        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={lockedByRun(selected)} error={error} onChange={change} onToggle={next => toggle(selected, next)} onInstall={install} /></section>}
       </div>
     </SettingsPanel>}
   </>;

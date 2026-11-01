@@ -437,7 +437,7 @@ class WebFrontend:
         if body.get("action") == "install":
             return self.plugin_install(body)
         with self.lock:
-            if self.running:
+            if self.running and not self.plugins.run_safe(body.get("name")):
                 return 409, {"error": "wait for the running task to finish"}
             try:
                 return 200, self.plugins.change(body)

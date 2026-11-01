@@ -5,7 +5,7 @@ import pytest
 
 from ga_harness.kernel import Plugin, Runtime
 from ga_harness.kernel.loader import Manifest, discover, mount
-from ga_harness.plugin_manager import PluginManager, PluginPreferences
+from ga_harness.plugin_manager import PluginManager, PluginPreferences, run_safe
 
 PLUGINS = Path(__file__).resolve().parents[1] / "ga_harness" / "plugins"
 
@@ -240,5 +240,22 @@ def test_agent_list_exposes_service_wiring(tmp_path):
         assert items["needs-tools"]["missing"] == ["ga.tools"]
         assert "ga.hooks" in items["ga-hooks"]["provides"]
         assert items["demo"]["missing"] == []
+    finally:
+        rt.dispose()
+
+def test_run_safe_plugins(tmp_path):
+    # Plugins that may be hot-applied while a task runs: hot, provide nothing,
+    # need only the web host. Anything touching agent/runs/sessions stays locked.
+    ms = discover([PLUGINS])
+    safe = {n for n, m in ms.items() if run_safe(m, ms)}
+    assert {"web-tailscale", "web-lan", "web-theme", "web-trace", "web-usage"} <= safe
+    assert not safe & {"ga-core", "ga-hooks", "ga-events", "ga-steer", "ga-tools", "channels", "run-queue",
+                       "conductor", "worldline", "web-workspaces", "web-channels", "ui-web", "plugin-manager"}
+    rt, m = make_manager(tmp_path)
+    try:
+        assert m.run_safe("web-tailscale") and not m.run_safe("demo")
+        assert not m.run_safe("missing") and not m.run_safe(None)
+        assert item(m.catalog(), "web-tailscale")["run_safe"] is True
+        assert item(m.catalog(), "demo")["run_safe"] is False
     finally:
         rt.dispose()

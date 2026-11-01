@@ -84,6 +84,24 @@ def hot_capable(manifest, manifests=None):
     return True
 
 
+# Capabilities a plugin may require and still be (un)mounted while a task runs.
+RUN_SAFE_REQUIRES = {"web.host"}
+
+
+def run_safe(manifest, manifests=None):
+    """True if hot-applying the plugin cannot disturb a running task.
+
+    Only hot plugins that provide nothing and require nothing beyond the web
+    host qualify (web UI panels, LAN/tailnet forwarders, themes): they never
+    hook into the agent, tools, runs or sessions that a task is using.
+    """
+    if not hot_capable(manifest, manifests) or getattr(manifest, "worker_only", False):
+        return False
+    if manifest.provides:
+        return False
+    return {c.rstrip("?") for c in manifest.inject} <= RUN_SAFE_REQUIRES
+
+
 def purge_modules(name):
     pkg = "ga_harness_ext_" + name.replace("-", "_")
     for key in [k for k in sys.modules if k == pkg or k.startswith(pkg + ".")]:
@@ -276,6 +294,7 @@ class PluginManager:
                               "error": "plugin activation failed; see local logs" if h and h.error else None,
                               "enabled": not target["disabled"], "restart_required": pending,
                               "protected": protected(m), "hot": hot_capable(m, p.manifests),
+                              "run_safe": run_safe(m, p.manifests),
                               "source": "user" if user_plugin(m) else "builtin",
                               "fields": fields, "config": values,
                               "requires": m.inject, "provides": m.provides,
@@ -309,6 +328,11 @@ class PluginManager:
         finally:
             self._install_lock.release()
         return {"ok": result["ok"], "output": result["output"], "catalog": self.catalog()}
+
+    def run_safe(self, name):
+        """True if ``name`` may be changed while a task is running."""
+        m = self.preferences.manifests.get(name) if isinstance(name, str) else None
+        return bool(m) and run_safe(m, self.preferences.manifests)
 
     def change(self, body):
         p = self.preferences
