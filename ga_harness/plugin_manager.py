@@ -425,7 +425,7 @@ class PluginManager:
         else:
             raise ValueError("unknown action; use list, enable, disable or rescan")
         items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "source", "restart_required",
-                                    "description", "missing_packages")} for i in catalog["items"]
+                                    "description", "missing_packages", "requires", "provides", "missing")} for i in catalog["items"]
                  if not i.get("worker_only")]
         out = {"items": items, "issues": catalog["issues"]}
         for k in ("applied", "hot_error"):

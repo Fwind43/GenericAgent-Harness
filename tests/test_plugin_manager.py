@@ -231,3 +231,14 @@ def test_bundled_plugin_settings_are_editable():
         assert set(fields) == keys, name
         for spec in fields.values():
             assert spec.get("label_zh") and "default" in spec, name
+
+def test_agent_list_exposes_service_wiring(tmp_path):
+    rt, m = make_manager(tmp_path)
+    try:
+        items = {i["name"]: i for i in m.agent_control({"action": "list"})["items"]}
+        assert items["needs-tools"]["requires"] == ["ga.tools"]
+        assert items["needs-tools"]["missing"] == ["ga.tools"]
+        assert "ga.hooks" in items["ga-hooks"]["provides"]
+        assert items["demo"]["missing"] == []
+    finally:
+        rt.dispose()
