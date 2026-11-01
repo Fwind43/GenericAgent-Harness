@@ -26,6 +26,7 @@ def apply(ctx, config):
               workspace=(config or {}).get("workspace") or None,
               models=lambda: ctx.get("models"))
     manager = ChannelManager(hub, ChannelStore(_store_path(sessions, "channels.json")))
+    ctx.on("run.event", hub.on_run_event)
     ctx.on("run.finished", hub.on_run_finished)
     ctx.provide("channels", hub)
     ctx.provide("channel_manager", manager)

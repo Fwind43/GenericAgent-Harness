@@ -26,6 +26,9 @@ HELP = ("/new  start a fresh conversation (keeps model and effort)\n"
         "/effort  show effort; /effort <low|medium|high|xhigh|max|default> sets it\n"
         "/help  show this help")
 BUSY = "Still working on the previous task. Send /stop to cancel it."
+# Durable per-turn events forwarded to adapters that implement ``progress``;
+# high-frequency stream fragments (assistant.delta) are never forwarded.
+PROGRESS_EVENTS = frozenset({"turn.start", "assistant.text", "tool.call", "tool.result", "turn.end"})
 
 
 def final_text(message):
@@ -76,6 +79,12 @@ class Adapter:
     (``data`` = bytes). Outbound: the hub calls ``send(chat_id, text)`` from
     its delivery thread, already split to ``max_len``, and ``send_file(chat_id,
     path)`` for each ``[FILE:path]`` in a reply (override to support files).
+
+    Optional rich rendering: an adapter defining ``progress(chat_id, run_id,
+    name, data)`` receives durable per-turn run events (``PROGRESS_EVENTS``),
+    and one defining ``finish(chat_id, run_id, text, status, error)`` renders
+    the final answer itself; if ``finish`` raises, the hub falls back to
+    plain ``send``.
     """
     name = "adapter"
     max_len = 4000
@@ -145,6 +154,7 @@ class Hub:
         self.workspace, self.title_prefix = workspace, title_prefix
         self.models = models  # model catalog service, or a zero-arg callable returning it
         self.adapters = {}
+        self.run_channels = {}  # run_id -> channel name or None (progress routing cache)
         self.lock = threading.RLock()
         self.outbox = queue.Queue()
         self.closed = False
@@ -404,6 +414,37 @@ class Hub:
         d = uploads.save(io.BytesIO(data), len(data), f.get("name") or "file", f.get("mime"))
         return {"url": d["url"], "mime": d["mime"]}
 
+    def _run_channel(self, run_id):
+        """Channel name of a run started from a chat (cached), else None."""
+        with self.lock:
+            if run_id in self.run_channels:
+                return self.run_channels[run_id]
+        try:
+            source = self.runs.get(run_id).get("source") or ""
+        except Exception:
+            return None
+        channel = source.split(":", 1)[1] if source.startswith("channel:") else None
+        with self.lock:
+            self.run_channels[run_id] = channel
+            while len(self.run_channels) > 256:
+                self.run_channels.pop(next(iter(self.run_channels)))
+        return channel
+
+    def on_run_event(self, envelope):
+        """Kernel ``run.event`` subscriber: forward turn progress to adapters
+        that render it (``adapter.progress``); others only get the final reply."""
+        envelope = envelope or {}
+        name, run_id = envelope.get("name"), envelope.get("run_id")
+        if name not in PROGRESS_EVENTS or not run_id or self.closed:
+            return
+        channel = self._run_channel(run_id)
+        adapter = self.adapters.get(channel) if channel else None
+        if adapter is None or not callable(getattr(adapter, "progress", None)):
+            return
+        data = envelope.get("data") if isinstance(envelope.get("data"), dict) else {}
+        for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
+            self.outbox.put((channel, str(chat), "progress", (run_id, name, data)))
+
     def on_run_finished(self, envelope):
         """Kernel ``run.finished`` subscriber: deliver the answer to its chat."""
         run = (envelope or {}).get("run") or {}
@@ -411,12 +452,19 @@ class Hub:
         if not source.startswith("channel:"):
             return
         channel = source.split(":", 1)[1]
+        with self.lock:
+            self.run_channels.pop(run.get("id"), None)
         text, paths = extract_files(final_text(envelope.get("message")))
         status = run.get("status")
         if not text and not paths:
             text = "(cancelled)" if status == "aborted" else "(no reply)"
+        adapter = self.adapters.get(channel)
+        rich = adapter is not None and callable(getattr(adapter, "finish", None))
         for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
-            if text:
+            if rich and not self.closed:
+                self.outbox.put((channel, str(chat), "finish",
+                                 (run.get("id"), text, status, run.get("error"))))
+            elif text:
                 self.reply(channel, chat, text)
             for path in paths:
                 self.reply_file(channel, chat, path)
@@ -443,6 +491,21 @@ class Hub:
             if kind == "file":
                 self._send_file(adapter, chat, text)
                 continue
+            if kind == "progress":
+                try:
+                    adapter.progress(chat, *text)
+                except Exception:
+                    pass  # progress is best effort; the final reply still follows
+                continue
+            if kind == "finish":
+                run_id, text, status, error = text
+                try:
+                    adapter.finish(chat, run_id, text, status, error)
+                    continue
+                except Exception:
+                    pass  # fall back to plain text below
+                if not text:
+                    continue
             for part in split_text(text, max(1, int(getattr(adapter, "max_len", 4000)))):
                 try:
                     adapter.send(chat, part)

@@ -20,7 +20,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from ga_harness.channel_manager import Provider
-from ga_harness.channels import Adapter
+from ga_harness.channels import Adapter, split_text
 
 WORKER = Path(__file__).with_name("ws_worker.py")
 API = "https://open.feishu.cn/open-apis"
@@ -86,9 +86,15 @@ class FeishuApi:
                           ctype="multipart/form-data; boundary=" + boundary).get("data") or {}
 
     def send(self, chat_id, msg_type, content):
-        self._call("POST", "/im/v1/messages?receive_id_type=chat_id", {
+        data = self._call("POST", "/im/v1/messages?receive_id_type=chat_id", {
             "receive_id": chat_id, "msg_type": msg_type,
             "content": json.dumps(content, ensure_ascii=False)})
+        return (data.get("data") or {}).get("message_id") or ""
+
+    def patch(self, message_id, content):
+        """Replace the content of a sent interactive (card) message."""
+        self._call("PATCH", f"/im/v1/messages/{urllib.parse.quote(message_id, safe='')}",
+                   {"content": json.dumps(content, ensure_ascii=False)})
 
     def resource(self, message_id, key, kind):
         path = (f"/im/v1/messages/{urllib.parse.quote(message_id, safe='')}/resources/"
@@ -158,6 +164,130 @@ FILE_TYPES = {".opus": "opus", ".mp4": "mp4", ".pdf": "pdf", ".doc": "doc", ".do
               ".xls": "xls", ".xlsx": "xls", ".csv": "xls", ".ppt": "ppt", ".pptx": "ppt"}
 
 
+CARD_FINAL_MAX = 9000     # final answer chars kept inside the card; the rest follows as text
+CARD_PANEL_MAX = 3000     # detail chars per turn panel
+CARD_MAX_BYTES = 28000    # Feishu caps card JSON at ~30 KB; oldest panels are folded away
+
+
+def _clip(text, limit):
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + " \u2026"
+
+
+def _one_line(text, limit=60):
+    return _clip(" ".join(str(text or "").split()), limit)
+
+
+class TaskCard:
+    """One run rendered as a Feishu JSON 2.0 card, mirroring GA's fsapp:
+    a status line, one collapsed panel per turn, then the final answer."""
+
+    def __init__(self):
+        self.mid, self.patched = "", 0.0
+        self.turns = OrderedDict()  # turn number -> {"summary", "reply", "tools"}
+        self.current = 0
+        self.state, self.final, self.error = "running", "", ""
+
+    def _turn(self, data):
+        n = data.get("turn")
+        n = n if isinstance(n, int) else (self.current or 1)
+        self.current = max(self.current, n)
+        return self.turns.setdefault(n, {"summary": "", "reply": "", "tools": []})
+
+    def apply(self, name, data):
+        """Fold one run event in; True if the card changed visibly."""
+        data = data if isinstance(data, dict) else {}
+        if name == "turn.start":
+            self._turn(data)
+        elif name == "assistant.text":
+            t = self._turn(data)
+            t["summary"] = _one_line(data.get("summary") or "")
+            t["reply"] = data.get("reply") or data.get("text") or ""
+        elif name == "tool.call":
+            args = data.get("args")
+            if not isinstance(args, str):
+                try:
+                    args = json.dumps(args, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    args = str(args)
+            self._turn(data)["tools"].append(
+                {"id": data.get("id"), "name": str(data.get("name") or "tool"),
+                 "args": _one_line(args, 160), "ok": None, "seconds": None})
+        elif name == "tool.result":
+            for tool in reversed(self._turn(data)["tools"]):
+                if tool["id"] == data.get("id") or (data.get("id") is None and tool["ok"] is None):
+                    tool["ok"], tool["seconds"] = bool(data.get("ok", True)), data.get("seconds")
+                    break
+        elif name != "turn.end":
+            return False
+        return True
+
+    def complete(self, text, status, error=None):
+        """Mark the run finished; returns answer text that did not fit the card."""
+        self.state = status if status in ("aborted", "error", "interrupted") else "done"
+        self.error = _one_line(error or "", 300)
+        text = (text or "").strip()
+        if len(text) <= CARD_FINAL_MAX:
+            self.final = text
+            return ""
+        cut = text.rfind("\n", 0, CARD_FINAL_MAX)
+        cut = cut if cut > CARD_FINAL_MAX // 2 else CARD_FINAL_MAX
+        self.final = text[:cut].rstrip() + "\n\n*\u2026\uff08\u4f59\u4e0b\u5185\u5bb9\u89c1\u4e0b\u4e00\u6761\u6d88\u606f\uff09*"
+        return text[cut:].strip()
+
+    def _status(self):
+        n = len(self.turns)
+        if self.state == "running":
+            if not n:
+                return "**\U0001f914 \u601d\u8003\u4e2d\u2026**"
+            return f"**\u23f3 \u5de5\u4f5c\u4e2d \u00b7 Turn {self.current}**"
+        suffix = f" \u00b7 {n} turns" if n else ""
+        if self.state == "done":
+            return f"**\u2705 \u5df2\u5b8c\u6210{suffix}**"
+        if self.state == "aborted":
+            return f"**\u23f9 \u5df2\u53d6\u6d88{suffix}**"
+        if self.state == "interrupted":
+            return f"**\u26a0\ufe0f \u5df2\u4e2d\u65ad{suffix}**"
+        return f"**\u274c \u51fa\u9519\uff1a{self.error or 'unknown error'}**"
+
+    @staticmethod
+    def _panel(n, t):
+        lines = []
+        for tool in t["tools"]:
+            mark = "\u23f3" if tool["ok"] is None else ("\u2705" if tool["ok"] else "\u274c")
+            secs = tool["seconds"]
+            took = f" \u00b7 {secs:.1f}s" if isinstance(secs, (int, float)) else ""
+            args = tool["args"].replace("`", "'")
+            lines.append(f"{mark} **{tool['name']}** `{args}`{took}")
+        reply = (t["reply"] or "").strip()
+        detail = "\n".join(lines)
+        if reply:
+            detail = (reply + "\n\n" + detail) if detail else reply
+        title = f"Turn {n}" + (f" \u00b7 {t['summary']}" if t["summary"] else "")
+        return {"tag": "collapsible_panel", "expanded": False,
+                "header": {"title": {"tag": "plain_text", "content": _one_line(title, 80)}},
+                "elements": [{"tag": "markdown",
+                              "content": _clip(detail, CARD_PANEL_MAX) or "\u2026"}]}
+
+    def render(self):
+        panels = [self._panel(n, t) for n, t in self.turns.items()]
+        while True:
+            elements = [{"tag": "markdown", "content": self._status()}]
+            hidden = len(self.turns) - len(panels)
+            if hidden:
+                elements.append({"tag": "markdown",
+                                 "content": f"*\u2026 \u7701\u7565\u524d {hidden} \u8f6e*"})
+            elements += panels
+            if self.final:
+                elements += [{"tag": "hr"}, {"tag": "markdown", "content": self.final}]
+            card = {"schema": "2.0", "config": {"streaming_mode": False, "width_mode": "fill"},
+                    "body": {"elements": elements}}
+            size = len(json.dumps(card, ensure_ascii=False).encode("utf-8"))
+            if size <= CARD_MAX_BYTES or not panels:
+                return card
+            panels.pop(0)
+
+
 class FeishuAdapter(Adapter):
     max_len = 4000
 
@@ -168,6 +298,7 @@ class FeishuAdapter(Adapter):
         self.log = log or (lambda level, text: None)
         self.on_dead = on_dead
         self.seen, self.lock = OrderedDict(), threading.Lock()
+        self.cards = OrderedDict()  # (chat_id, run_id) -> TaskCard
         self.client = self.proc = self.reader = None
         self.stopping = False
 
@@ -272,9 +403,44 @@ class FeishuAdapter(Adapter):
 
     def _create(self, chat_id, msg_type, content):
         try:
-            self.client.send(chat_id, msg_type, content)
+            return self.client.send(chat_id, msg_type, content)
         except RuntimeError as e:
             raise RuntimeError(f"feishu send failed: {e}") from None
+
+    # -- task card (one interactive card per run, patched as turns progress) --
+    def progress(self, chat_id, run_id, name, data):
+        key = (chat_id, run_id)
+        with self.lock:
+            card = self.cards.get(key)
+            if card is None:
+                card = self.cards[key] = TaskCard()
+                while len(self.cards) > 50:
+                    self.cards.pop(next(iter(self.cards)))
+        if not card.apply(name, data):
+            return
+        now = time.monotonic()
+        if card.mid and name not in ("turn.start", "turn.end") and now - card.patched < 1.0:
+            return  # throttle; the next boundary event or finish() catches up
+        self._show(chat_id, card)
+        card.patched = now
+
+    def finish(self, chat_id, run_id, text, status, error=None):
+        with self.lock:
+            card = self.cards.pop((chat_id, run_id), None) or TaskCard()
+        overflow = card.complete(text, status, error)
+        self._show(chat_id, card)
+        for part in split_text(overflow, self.max_len) if overflow else ():
+            self.send(chat_id, part)
+
+    def _show(self, chat_id, card):
+        body = card.render()
+        if card.mid:
+            try:
+                self.client.patch(card.mid, body)
+            except RuntimeError as e:
+                raise RuntimeError(f"feishu card update failed: {e}") from None
+        else:
+            card.mid = self._create(chat_id, "interactive", body)
 
     def stop(self):
         self.stopping = True
