@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.timed")
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
@@ -240,6 +241,17 @@ def run_worker(connection, recipe, payload):
         runtime.ctx.on("ga.agent_before", lambda g, nxt: Workspaces.bind(binding, g, nxt))
         runtime.ctx.on("ga.llm_before", lambda g, nxt: Workspaces.inject(binding, g, nxt))
         runtime.ctx.on("agent.chunk", lambda text: send("event", name="agent.chunk", data=text))
+
+        # GA ends a run "normally" after an empty model reply in some setups;
+        # remember whether the final LLM call produced neither text nor tools.
+        last = {"empty": False}
+
+        def track_reply(g, nxt):
+            r = g.get("response")
+            last["empty"] = r is not None and not str(getattr(r, "content", "") or "").strip() \
+                and not getattr(r, "tool_calls", None)
+            return nxt(g)
+        runtime.ctx.on("ga.llm_after", track_reply)
         for name in EVENTS:
             runtime.ctx.on(name, lambda data, event=name: send("event", name=event, data=data))
 
@@ -274,7 +286,11 @@ def run_worker(connection, recipe, payload):
         started = True
         result = agent.run(payload["task"], source=payload.get("source", "user"),
                            images=payload.get("images") or None, timeout=payload.get("timeout"))
-        send("done", text=str(result or ""), state=capture(raw))
+        if last["empty"]:
+            logging.getLogger("gah.worker").warning("run %s ended after an empty model reply", payload.get("run_id"))
+            send("error", error=EMPTY_REPLY, state=capture(raw))
+        else:
+            send("done", text=str(result or ""), state=capture(raw))
     except Exception as error:
         # Once the agent has run, its history already contains this partial turn.
         # Return it so continuing the session matches the visible output. Setup
