@@ -85,6 +85,10 @@ function registerBridge() {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
     return updater.install();
   });
+  ipcMain.handle('gah:update-cancel', (event) => {
+    if (!fromBackend(event) || !updater) throw new Error('forbidden');
+    return updater.cancel();
+  });
   ipcMain.handle('gah:update-restart', (event) => {
     if (!fromBackend(event) || !updater) throw new Error('forbidden');
     return updater.restart();

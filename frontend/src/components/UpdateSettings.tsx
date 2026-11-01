@@ -13,12 +13,14 @@ type UpdateState = {
   shellVersion: string; codeVersion: string; codeSource: string; packaged: boolean;
   releasesPage: string; settingsFile: string; autoCheck: boolean; mirror: string; presets: Preset[];
   phase: string; kind: string | null; version: string | null; received: number; total: number;
-  error: string | null; checkedAt: number | null; busy: boolean; log: LogLine[];
+  error: string | null; checkedAt: number | null; busy: boolean;
+  cancellable?: boolean; log: LogLine[];
 };
 type UpdatesApi = {
   state(): Promise<UpdateState>;
   check(): Promise<unknown>;
   install(): Promise<unknown>;
+  cancel?(): Promise<unknown>;
   restart(): Promise<unknown>;
   configure(patch: Partial<Pick<UpdateState, 'autoCheck' | 'mirror'>>): Promise<unknown>;
   onState(fn: (s: UpdateState) => void): () => void;
@@ -128,6 +130,7 @@ export function UpdateSettings() {
             <div className="gah-update-actions">
               {s.phase === 'available' && <button type="button" className="gah-update-btn primary" disabled={working} onClick={() => run(api.install())}>
                 {s.kind === 'manual' ? T('打开下载页', 'Open download page') : s.kind === 'shell' ? T('下载安装包', 'Download installer') : T('下载并安装', 'Download and install')}</button>}
+              {s.cancellable && api.cancel && <button type="button" className="gah-update-btn" onClick={() => run(api.cancel!())}>{T('取消下载', 'Cancel download')}</button>}
               {s.phase === 'ready' && <button type="button" className="gah-update-btn primary" onClick={() => run(api.restart())}>{T('立即重启', 'Restart now')}</button>}
               {s.phase === 'error' && <button type="button" className="gah-update-btn" onClick={() => run(api.check())}>{T('重试', 'Retry')}</button>}
               <button type="button" className="gah-update-link" onClick={() => desktop?.openExternal?.(s.releasesPage)}>{T('查看发布说明', 'Release notes')}</button>

@@ -39,6 +39,11 @@ const MIRROR_PRESETS = [
 ];
 const AUTO_CHECK_DELAY = 15 * 1000;
 const AUTO_CHECK_EVERY = 6 * 60 * 60 * 1000;
+// A download fails instead of hanging forever when the server never answers or the stream
+// stops delivering data (dropped connection, dead mirror). There is no cap on the total time,
+// so slow but steady links still finish.
+const CONNECT_TIMEOUT = 30 * 1000;
+const STALL_TIMEOUT = 60 * 1000;
 
 function mirrored(mirror, url) {
   const m = String(mirror || '').trim();
@@ -62,6 +67,22 @@ async function fetchOk(url, timeoutMs) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Thrown when the user cancels; the update stays available so it can simply be started again.
+class Cancelled extends Error {
+  constructor() { super('cancelled'); this.cancelled = true; }
+}
+
+// Resolves/rejects with `promise`, or rejects with Cancelled as soon as `signal` aborts.
+function unlessAborted(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Cancelled());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new Cancelled());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
 }
 
 function run(cmd, args) {
@@ -93,6 +114,7 @@ class Updater {
     this.dismissed = null;           // version the user postponed during this session
     this.pending = null;             // { info, kind } found by the last check
     this.ready = null;               // { version, kind, restart } once installed / downloaded
+    this.op = null;                  // AbortController of the running install, for cancel()
     this.st = { phase: 'idle', kind: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
     this.log = [];
     this.lastEmit = 0;
@@ -143,7 +165,7 @@ class Updater {
 
   // Full state for the settings page: versions, config, current phase/progress and the log.
   snapshot() {
-    return { ...this.status(), ...this.st, busy: this.busy, log: this.log.slice() };
+    return { ...this.status(), ...this.st, busy: this.busy, cancellable: this.cancellable(), log: this.log.slice() };
   }
 
   note(msg, level = 'info') {
@@ -196,6 +218,7 @@ class Updater {
     try {
       await this.checkInner(silent, ui);
     } catch (err) {
+      if (err.cancelled) { this.afterCancel(); return this.snapshot(); }
       this.set({ phase: 'error', error: err.message }, `Update failed: ${err.message}`, 'error');
       if (!silent && !ui) {
         await this.message({
@@ -279,7 +302,8 @@ class Updater {
     try {
       await this.installInner(p);
     } catch (err) {
-      this.set({ phase: 'error', error: err.message }, `Install failed: ${err.message}`, 'error');
+      if (err.cancelled) this.afterCancel();
+      else this.set({ phase: 'error', error: err.message }, `Install failed: ${err.message}`, 'error');
     } finally {
       this.busy = false;
       this.emit(true);
@@ -288,10 +312,38 @@ class Updater {
   }
 
   async installInner(p) {
-    if (p.kind === 'code') await this.installCode(p.info);
-    else if (process.platform === 'darwin') await this.downloadMacShell(p.info);
-    else await this.downloadShell(p.info);
+    this.op = new AbortController();
+    try {
+      if (p.kind === 'code') await this.installCode(p.info);
+      else if (process.platform === 'darwin') await this.downloadMacShell(p.info);
+      else await this.downloadShell(p.info);
+    } finally {
+      this.op = null;
+    }
     this.pending = null;
+  }
+
+  // Only the network part can be cancelled; once the file is in, verifying and extracting
+  // are short and are left to finish so no half-installed version is left behind.
+  cancellable() {
+    return Boolean(this.op && !this.op.signal.aborted && (this.st.phase === 'checking' || this.st.phase === 'downloading'));
+  }
+
+  cancel() {
+    if (!this.cancellable()) return this.snapshot();
+    this.note('Cancelling the download');
+    this.op.abort();
+    this.emit(true);
+    return this.snapshot();
+  }
+
+  // Back to "available" with the same update, so the user can start it again (or pick
+  // another mirror first).
+  afterCancel() {
+    const p = this.pending;
+    if (!p) { this.set({ phase: 'idle', error: null, received: 0, total: 0 }, 'Download cancelled'); return; }
+    this.set({ phase: 'available', version: p.info.version, kind: p.kind, error: null, received: 0,
+      total: p.kind === 'code' ? p.info.app.size || 0 : 0 }, 'Download cancelled');
   }
 
   async restart() {
@@ -304,29 +356,55 @@ class Updater {
 
   // ---- code-only update -------------------------------------------------------------------
 
+  // Fails after CONNECT_TIMEOUT without a response or STALL_TIMEOUT without any data, and
+  // stops at once when the user cancels (this.op).
   async download(url, expectedSize) {
     this.set({ phase: 'downloading', received: 0, total: expectedSize || 0 }, `Downloading ${url}`);
-    const res = await fetchOk(url, 10 * 60 * 1000);
-    const total = Number(res.headers.get('content-length')) || expectedSize || 0;
-    this.st.total = total;
-    const chunks = [];
-    let got = 0;
-    if (res.body && res.body.getReader) {
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(Buffer.from(value));
-        got += value.length;
-        this.st.received = got;
-        this.emit();
+    const user = this.op && this.op.signal;
+    if (user && user.aborted) throw new Cancelled();
+    const ctrl = new AbortController();
+    let why = null;              // 'cancel' or the timeout message
+    let timer = null;
+    const stop = (reason) => { if (!why) { why = reason; ctrl.abort(); } };
+    const arm = (ms, msg) => { clearTimeout(timer); timer = setTimeout(() => stop(msg), ms); };
+    const onCancel = () => stop('cancel');
+    user?.addEventListener('abort', onCancel, { once: true });
+    const stalled = `download stalled: no data for ${STALL_TIMEOUT / 1000}s (${url})`;
+    arm(CONNECT_TIMEOUT, `no response within ${CONNECT_TIMEOUT / 1000}s: ${url}`);
+    try {
+      const res = await net.fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      const total = Number(res.headers.get('content-length')) || expectedSize || 0;
+      this.st.total = total;
+      arm(STALL_TIMEOUT, stalled);
+      const chunks = [];
+      let got = 0;
+      if (res.body && res.body.getReader) {
+        const reader = res.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          arm(STALL_TIMEOUT, stalled);
+          chunks.push(Buffer.from(value));
+          got += value.length;
+          this.st.received = got;
+          this.emit();
+        }
+      } else {
+        chunks.push(Buffer.from(await res.arrayBuffer()));
+        got = chunks[0].length;
       }
-    } else {
-      chunks.push(Buffer.from(await res.arrayBuffer()));
-      got = chunks[0].length;
+      if (why) throw new Error(why);
+      this.st.received = got;
+      return Buffer.concat(chunks, got);
+    } catch (err) {
+      if (why === 'cancel') throw new Cancelled();
+      if (why) throw new Error(why);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      user?.removeEventListener('abort', onCancel);
     }
-    this.st.received = got;
-    return Buffer.concat(chunks, got);
   }
 
   async installCode(info) {
@@ -485,18 +563,42 @@ class Updater {
     if (!updater) throw new Error('installer updates are not supported on this platform');
     // Generic feed = the same latest/download URL, so the mirror applies to the installer too.
     updater.setFeedURL({ provider: 'generic', url: this.url('').replace(/\/$/, '') });
+    const user = this.op && this.op.signal;
     this.set({ phase: 'checking' }, 'Looking up the installer for this platform');
-    const result = await updater.checkForUpdates();
+    const result = await unlessAborted(updater.checkForUpdates(), user);
     if (!result || !result.updateInfo || compareVersions(result.updateInfo.version, app.getVersion()) <= 0) {
       throw new Error('the release has no installer update for this platform');
     }
     const version = result.updateInfo.version;
     this.set({ phase: 'downloading', received: 0, total: 0 }, `Downloading installer ${version}`);
-    const onProgress = (p) => { this.st.received = p.transferred || 0; this.st.total = p.total || 0; this.emit(); };
+    // electron-updater has no stall timeout of its own: cancel its token when progress stops
+    // for STALL_TIMEOUT, or when the user cancels.
+    const { CancellationToken } = require('electron-updater');
+    const token = CancellationToken ? new CancellationToken() : null;
+    let why = null;
+    let timer = null;
+    const stop = (reason) => { if (!why) { why = reason; try { token?.cancel(); } catch { /* already done */ } } };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => stop(`installer download stalled: no data for ${STALL_TIMEOUT / 1000}s`), STALL_TIMEOUT);
+    };
+    const onCancel = () => stop('cancel');
+    const onProgress = (p) => { arm(); this.st.received = p.transferred || 0; this.st.total = p.total || 0; this.emit(); };
     updater.on('download-progress', onProgress);
+    user?.addEventListener('abort', onCancel, { once: true });
+    arm();
     try {
-      await updater.downloadUpdate();
+      // The race also unblocks the UI if the token is unavailable or ignored.
+      await new Promise((resolve, reject) => {
+        const giveUp = () => reject(why === 'cancel' ? new Cancelled() : new Error(why));
+        const poll = setInterval(() => { if (why) { clearInterval(poll); giveUp(); } }, 250);
+        updater.downloadUpdate(token || undefined).then(
+          (v) => { clearInterval(poll); if (why) giveUp(); else resolve(v); },
+          (err) => { clearInterval(poll); if (why) giveUp(); else reject(err); });
+      });
     } finally {
+      clearTimeout(timer);
+      user?.removeEventListener('abort', onCancel);
       updater.removeListener('download-progress', onProgress);
     }
     this.ready = {

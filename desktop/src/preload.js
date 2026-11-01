@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
     state: () => ipcRenderer.invoke('gah:update-state'),
     check: () => ipcRenderer.invoke('gah:update-check'),
     install: () => ipcRenderer.invoke('gah:update-install'),
+    cancel: () => ipcRenderer.invoke('gah:update-cancel'),
     restart: () => ipcRenderer.invoke('gah:update-restart'),
     configure: (patch) => ipcRenderer.invoke('gah:update-config', patch || {}),
     // Subscriptions return an unsubscribe function.
