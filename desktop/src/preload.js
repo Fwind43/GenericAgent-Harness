@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
       return () => ipcRenderer.removeListener('gah:update-state', h);
     },
     onOpen: (fn) => {
-      const h = () => fn();
+      const h = (_e, opts) => fn(opts || {});
       ipcRenderer.on('gah:update-open', h);
       return () => ipcRenderer.removeListener('gah:update-open', h);
     },

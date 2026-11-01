@@ -185,6 +185,12 @@ function openUpdateSettings() {
   updater.check({ ui: true }).catch(() => {});
 }
 
+// Tray mirror dialog "Custom...": show Settings > Updates with the mirror address editor open.
+function openMirrorSettings() {
+  showWindow();
+  if (win && !win.isDestroyed()) win.webContents.send('gah:update-open', { custom: true });
+}
+
 // Stop the backend and mark the app as quitting (used before installers take over).
 async function prepareQuit() {
   quitting = true;
@@ -420,7 +426,7 @@ async function boot() {
     backend.start();
     const url = await backend.waitReady();
     origin = new URL(url).origin;
-    updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState });
+    updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState, openSettings: openMirrorSettings });
     registerBridge();
     createTray();
     createWindow(url);

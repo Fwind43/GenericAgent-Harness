@@ -17,7 +17,7 @@
 // prefix ("https://ghfast.top/" + github URL) or a template containing "{url}".
 'use strict';
 
-const { app, dialog, net, shell } = require('electron');
+const { app, dialog, net } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -83,7 +83,8 @@ const EMIT_EVERY = 120;   // ms between progress pushes to the renderer
 class Updater {
   // opts: { getBackend: () => Backend, getWindow: () => BrowserWindow|null,
   //         relaunch: () => void (restart the whole app), prepareQuit: async () => void,
-  //         onState?: (snapshot) => void (pushes progress to the settings page) }
+  //         onState?: (snapshot) => void (pushes progress to the settings page),
+  //         openSettings?: ({custom}) => void (shows Settings > Updates; custom opens the mirror editor) }
   constructor(opts) {
     this.opts = opts;
     this.busy = false;
@@ -517,7 +518,7 @@ class Updater {
       buttons: [...presets, custom, t('取消', 'Cancel')], cancelId: presets.length + 1, noLink: true,
     });
     if (response < presets.length) this.setConfig({ mirror: MIRROR_PRESETS[response].value });
-    else if (response === presets.length) shell.openPath(this.settingsFile);
+    else if (response === presets.length) this.opts.openSettings?.({ custom: true });
     return this.config();
   }
 }

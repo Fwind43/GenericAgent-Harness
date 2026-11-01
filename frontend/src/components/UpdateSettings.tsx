@@ -22,7 +22,7 @@ type UpdatesApi = {
   restart(): Promise<unknown>;
   configure(patch: Partial<Pick<UpdateState, 'autoCheck' | 'mirror'>>): Promise<unknown>;
   onState(fn: (s: UpdateState) => void): () => void;
-  onOpen(fn: () => void): () => void;
+  onOpen(fn: (opts: { custom?: boolean }) => void): () => void;
 };
 type DesktopApi = { updates?: UpdatesApi; openExternal?: (url: string) => Promise<unknown> };
 
@@ -59,6 +59,8 @@ export function UpdateSettings() {
   const [draft, setDraft] = useState('');
   const [mirrorError, setMirrorError] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useLayoutEffect(() => api ? settings.register({ id: ID, label: T('更新', 'Updates'), icon: 'settings', order: -90 }) : undefined, []);
   useEffect(() => {
@@ -66,7 +68,14 @@ export function UpdateSettings() {
     let alive = true;
     api.state().then(s => { if (alive) setState(s); }).catch(() => {});
     const offState = api.onState(s => setState(s));
-    const offOpen = api.onOpen(() => { settings.show(); settings.select(ID); });
+    const offOpen = api.onOpen(opts => {
+      settings.show(); settings.select(ID);
+      if (!opts?.custom) return;
+      // Tray "Custom..." asks for the mirror address editor.
+      const cur = stateRef.current;
+      setDraft(cur && !cur.presets.some(p => p.value === cur.mirror) ? cur.mirror : '');
+      setMirrorError(''); setEditing(true);
+    });
     return () => { alive = false; offState(); offOpen(); };
   }, []);
   useEffect(() => {
