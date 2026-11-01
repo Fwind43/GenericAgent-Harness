@@ -2,6 +2,8 @@
 
 GET  /api/p/web-channels/                      -> snapshot {providers, channels}
 GET  /api/p/web-channels/?logs=<id>&after=<t>  -> {logs: [...]}
+GET  /api/p/web-channels/?bindings=<id>        -> {chats: [...], sessions: [...]}
+POST /api/p/web-channels/  {action: bind, id, chat, session}            -> {chats, sessions}
 POST /api/p/web-channels/  {action: create|update|delete|start|stop|restart, ...}
 POST /api/p/web-channels/  {action: pair_begin, provider|channel, id?, name?} -> {pairing}
 POST /api/p/web-channels/  {action: pair_poll|pair_cancel, pairing}          -> {pairing}
@@ -24,6 +26,12 @@ def apply(ctx, config):
 
     def read(req):
         query = req.get("query") or {}
+        bid = _q(query, "bindings")
+        if bid:
+            try:
+                return manager.bindings_view(bid)
+            except KeyError:
+                return 404, {"error": f"unknown channel: {bid}"}
         cid = _q(query, "logs")
         if cid:
             try:
@@ -45,6 +53,13 @@ def apply(ctx, config):
                 return {"pairing": getattr(manager, action)(body.get("pairing") or "")}
             except KeyError as e:
                 return 404, {"error": f"unknown pairing or channel: {e.args[0] if e.args else ''}"}
+            except (ValueError, RuntimeError) as e:
+                return 400, {"error": str(e)}
+        if action == "bind":
+            try:
+                return manager.bind(cid, str(body.get("chat") or ""), body.get("session") or "")
+            except KeyError:
+                return 404, {"error": f"unknown channel: {cid}"}
             except (ValueError, RuntimeError) as e:
                 return 400, {"error": str(e)}
         try:

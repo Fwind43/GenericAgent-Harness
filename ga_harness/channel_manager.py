@@ -153,6 +153,39 @@ class ChannelManager:
             return {"providers": [p.describe() for p in self.providers.values()],
                     "channels": [self._view(c) for c in self.channels.values()]}
 
+    def bindings_view(self, cid):
+        """Chats bound on one channel plus the sessions they can be switched to."""
+        with self.lock:
+            if cid not in self.channels:
+                raise KeyError(cid)
+        hub = self.hub
+        choices = hub.session_choices()
+        titles = {r["id"]: r for r in choices}
+        chats = []
+        for row in hub.bindings.all():
+            if row["channel"] != cid:
+                continue
+            sid = row["session_id"]
+            info = titles.get(sid) or hub._session(sid) or {}
+            chats.append({"chat": row["chat"], "session_id": sid, "updated": row["updated"],
+                          "title": info.get("title"), "missing": not info,
+                          "running": bool(sid and hub.runs.active_for(sid))})
+        sessions = [{"id": r["id"], "title": r.get("title"), "updated": r.get("updated"),
+                     "running": bool(r.get("running"))} for r in choices]
+        return {"chats": chats, "sessions": sessions}
+
+    def bind(self, cid, chat, sid):
+        with self.lock:
+            if cid not in self.channels:
+                raise KeyError(cid)
+        if not chat or not sid:
+            raise ValueError("chat and session are required")
+        error = self.hub.bind_chat(cid, chat, sid)
+        if error:
+            raise ValueError(error)
+        self.log(cid, "info", f"chat {chat} -> session {sid}")
+        return self.bindings_view(cid)
+
     def get_logs(self, cid, after=0):
         with self.lock:
             if cid not in self.channels:

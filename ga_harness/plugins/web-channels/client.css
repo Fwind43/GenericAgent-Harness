@@ -146,3 +146,11 @@
 .channel-pair-status { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .channel-pair-status small { opacity: .7; word-break: break-all; }
 @media (max-width: 640px) { .channel-pair-offer { flex-direction: column; align-items: stretch; } .channel-pair-body { flex-direction: column; } }
+.channel-dialog .channel-bindings{display:flex;flex-direction:column;gap:8px;min-width:0;border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.channel-dialog .channel-bindings-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12px;font-weight:500}
+.channel-dialog .channel-bindings-head small{font-weight:400;opacity:.65}
+.channel-dialog .channel-bindings-empty{font-size:12px;opacity:.65}
+.channel-dialog .channel-bindings-error{font-size:12px;color:var(--danger,#c0392b)}
+.channel-dialog .channel-binding{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);align-items:center;gap:10px;font-size:12px}
+.channel-dialog .channel-binding-chat{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono,ui-monospace,monospace);opacity:.8}
+.channel-dialog .channel-binding select{min-width:0;width:100%}

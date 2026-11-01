@@ -19,13 +19,16 @@ from pathlib import Path
 from . import uploads
 from .sessions import EFFORTS
 
-HELP = ("/new  start a fresh conversation (keeps model and effort)\n"
-        "/stop  cancel the running task\n"
-        "/status  show session, model and effort\n"
-        "/model  list models; /model <n|name> switches this chat (alias /llm)\n"
-        "/effort  show effort; /effort <low|medium|high|xhigh|max|default> sets it\n"
-        "/help  show this help")
-BUSY = "Still working on the previous task. Send /stop to cancel it."
+HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
+        "/sessions  列出最近的会话\n"
+        "/use  /use <编号|会话ID> 把本聊天切换到已有会话\n"
+        "/stop  取消正在运行的任务\n"
+        "/status  查看当前会话、模型和推理强度\n"
+        "/model  列出模型；/model <编号|名称> 切换本聊天的模型（别名 /llm）\n"
+        "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
+        "/help  显示本帮助")
+BUSY = "上一个任务还在运行。发送 /stop 可以取消。"
+SESSIONS_SHOWN = 10  # rows listed by /sessions (and the numbers /use accepts)
 # Durable per-turn events forwarded to adapters that implement ``progress``;
 # high-frequency stream fragments (assistant.delta) are never forwarded.
 PROGRESS_EVENTS = frozenset({"turn.start", "assistant.text", "tool.call", "tool.result", "turn.end"})
@@ -250,8 +253,8 @@ class Hub:
                 return None
             stale = self._stale_model(sid)
             if stale:
-                note = (f"Model {stale} is no longer configured. Pick another with /model, "
-                        "or send /new to use the default.")
+                note = (f"模型 {stale} 已不在配置中。请用 /model 另选一个，"
+                        "或发送 /new 使用默认模型。")
                 self.reply(channel, chat, note)
                 return None
             attachments = [self._store(f) for f in files[:uploads.MAX_FILES]]
@@ -260,7 +263,7 @@ class Hub:
                                   attachments=attachments)
             return run["id"]
         except Exception as e:  # adapters must not crash on hub errors
-            self.reply(channel, chat, f"[error] {e}")
+            self.reply(channel, chat, f"[错误] {e}")
             return None
 
     def command(self, channel, chat, text):
@@ -277,9 +280,13 @@ class Hub:
             note = ""
             if names and keep.get("model") and keep["model"] not in names:
                 # Removed from the model config since it was picked: fall back to the default.
-                note = f" Model {keep.pop('model')} is no longer configured; using the default."
+                note = f"模型 {keep.pop('model')} 已不在配置中，改用默认模型。"
             self._new_session(channel, chat, keep)
-            return "Started a new conversation." + note
+            return "已新建会话。" + note
+        if word == "/sessions":
+            return self._cmd_sessions(channel, chat)
+        if word == "/use":
+            return self._cmd_use(channel, chat, arg)
         if word in ("/model", "/llm"):
             return self._cmd_model(channel, chat, arg)
         if word == "/effort":
@@ -288,17 +295,81 @@ class Hub:
             sid = self.bindings.get(channel, chat)
             run = sid and self.runs.active_for(sid)
             if not run:
-                return "Nothing is running."
+                return "当前没有正在运行的任务。"
             self.runs.cancel(run["id"])
-            return "Cancelling."
+            return "正在取消。"
         if word == "/status":
             sid = self.bindings.get(channel, chat)
             session = self._session(sid)
             if not session:
-                return "No conversation yet."
-            busy = "running" if self.runs.active_for(sid) else "idle"
-            return f"session {sid} ({busy})\n{self._describe(session)}"
+                return "还没有会话。"
+            busy = "运行中" if self.runs.active_for(sid) else "空闲"
+            return (f"会话 {sid}（{busy}）\n标题：{session.get('title') or '-'}\n"
+                    f"{self._describe(session)}")
         return None
+
+    # -- session switching ------------------------------------------------
+    def session_choices(self, limit=None):
+        """Top-level live sessions, newest first (sub-chats of workers excluded)."""
+        rows = [r for r in self.sessions.listing() if not r.get("parent_id")]
+        rows.sort(key=lambda r: r.get("updated") or 0, reverse=True)
+        return rows[:limit] if limit else rows
+
+    def bind_chat(self, channel, chat, sid):
+        """Point a chat at an existing session. Returns an error text, or None on success."""
+        chat = str(chat)
+        target = self._session(sid)
+        if not target:
+            return f"会话 {sid} 不存在或已删除。"
+        current = self.bindings.get(channel, chat)
+        if current == sid:
+            return None
+        if current and self.runs.active_for(current):
+            return "本聊天当前的任务还在运行，请等它结束或发送 /stop 后再切换。"
+        if self.runs.active_for(sid):
+            return "目标会话正在运行任务，请等它结束后再切换。"
+        self.bindings.set(channel, chat, sid)
+        return None
+
+    def _cmd_sessions(self, channel, chat):
+        rows = self.session_choices(SESSIONS_SHOWN)
+        if not rows:
+            return "还没有任何会话。发送消息会自动新建一个。"
+        current = self.bindings.get(channel, chat)
+        lines = ["最近的会话："]
+        for i, r in enumerate(rows, 1):
+            mark = "→ " if r["id"] == current else "   "
+            when = time.strftime("%m-%d %H:%M", time.localtime(r.get("updated") or 0))
+            title = " ".join(str(r.get("title") or "").split())[:40] or "（无标题）"
+            busy = " · 运行中" if r.get("running") else ""
+            lines.append(f"{mark}{i}. {title}（{when}{busy}）")
+        lines.append("用 /use <编号> 切换到对应会话。")
+        return "\n".join(lines)
+
+    def _cmd_use(self, channel, chat, arg):
+        if not arg:
+            return "用法：/use <编号|会话ID>。发送 /sessions 查看列表。"
+        rows = self.session_choices()
+        if arg.isascii() and arg.isdigit():
+            n = int(arg)
+            shown = rows[:SESSIONS_SHOWN]
+            if not 1 <= n <= len(shown):
+                return f"没有编号为 {arg} 的会话。发送 /sessions 查看列表。"
+            hit = shown[n - 1]
+        else:
+            hit = next((r for r in rows if r["id"] == arg), None)
+            if hit is None:
+                found = [r for r in rows if r["id"].startswith(arg)]
+                if len(found) > 1:
+                    return f"'{arg}' 匹配到多个会话，请写完整的会话ID。"
+                hit = found[0] if found else None
+            if hit is None:
+                return f"找不到会话 '{arg}'。发送 /sessions 查看列表。"
+        error = self.bind_chat(channel, chat, hit["id"])
+        if error:
+            return error
+        title = " ".join(str(hit.get("title") or "").split())[:40] or hit["id"]
+        return f"已切换到会话：{title}\n{self._describe(self._session(hit['id']))}"
 
     # -- per-chat model / effort ------------------------------------------
     def _catalog(self):
@@ -324,44 +395,43 @@ class Hub:
         items, current = self._catalog()
         model = state.get("model")
         if model and items and model not in [m.get("name") for m in items]:
-            model += " (no longer configured; pick another with /model)"
+            model += "（已不在配置中，请用 /model 另选）"
         elif not model:
             host = next((m.get("name") for m in items if m.get("id") == current), None)
-            model = f"{host} (host default)" if host else "host default"
-        effort = (state["effort"] or "default") if "effort" in state else "host setting"
+            model = f"{host}（宿主默认）" if host else "宿主默认"
+        effort = (state["effort"] or "default") if "effort" in state else "跟随宿主设置"
         return model, effort
 
     def _describe(self, session):
-        return "model: {}\neffort: {}".format(*self._labels(session))
+        return "模型：{}\n推理强度：{}".format(*self._labels(session))
 
     def _busy(self, sid):
         """Refusal while a run is active; settings only change between runs."""
         if self.runs.active_for(sid):
-            return ("Still working on the previous task; change settings after it "
-                    "finishes. Send /stop to cancel it.")
+            return "上一个任务还在运行，请等它结束后再修改设置。发送 /stop 可以取消。"
         return None
 
     def _cmd_effort(self, channel, chat, arg):
         options = ", ".join([*EFFORTS, "default"])
         if not arg:
             session = self._session(self.bindings.get(channel, chat))
-            return f"effort: {self._labels(session)[1]}\noptions: {options}"
+            return f"推理强度：{self._labels(session)[1]}\n可选：{options}"
         value = arg.lower()
         if value in ("default", "reset", "clear"):  # drop this chat's override
             value = "default"
         elif value not in EFFORTS:
-            return f"Unknown effort '{arg}'. Options: {options}"
+            return f"未知的推理强度 '{arg}'。可选：{options}"
         sid = self.session_for(channel, chat)
         busy = self._busy(sid)
         if busy:
             return busy
         self.sessions.remember_for(sid, effort=None if value == "default" else value)
-        return f"Effort for this chat: {value}."
+        return f"本聊天的推理强度：{value}。"
 
     def _cmd_model(self, channel, chat, arg):
         items, current = self._catalog()
         if not items:
-            return "Model switching is unavailable: the model catalog is not loaded."
+            return "无法切换模型：模型目录未加载。"
         if not arg:
             session = self._session(self.bindings.get(channel, chat))
             chosen = ((session or {}).get("state") or {}).get("model")
@@ -369,8 +439,8 @@ class Hub:
                 chosen = next((m.get("name") for m in items if m.get("id") == current), None)
             rows = [("-> " if m.get("name") == chosen else "   ") + f"[{m.get('id')}] {m.get('name')}"
                     + (f" ({m['provider']})" if m.get("provider") else "") for m in items]
-            return "\n".join([f"model: {self._labels(session)[0]}", *rows,
-                              "Switch with /model <number|name>."])
+            return "\n".join([f"模型：{self._labels(session)[0]}", *rows,
+                              "用 /model <编号|名称> 切换。"])
         item, error = self._pick(items, arg)
         if error:
             return error
@@ -379,7 +449,7 @@ class Hub:
         if busy:
             return busy
         self.sessions.remember_for(sid, model=item["name"])
-        return f"Model for this chat: [{item['id']}] {item['name']}."
+        return f"本聊天的模型：[{item['id']}] {item['name']}。"
 
     @staticmethod
     def _pick(items, arg):
@@ -391,7 +461,7 @@ class Hub:
         if arg.isascii() and arg.isdigit():  # a bare number is always a catalog id
             hit = [m for m in items if m.get("id") == int(arg)]
             if not hit:
-                return None, f"No model number {arg}. Send /model to see the list."
+                return None, f"没有编号为 {arg} 的模型。发送 /model 查看列表。"
             return hit[0], None
         tests = (lambda m: text(m, "name") == key,
                  lambda m: text(m, "model") == key,
@@ -403,9 +473,9 @@ class Hub:
         if len(hit) == 1:
             return hit[0], None
         if not hit:
-            return None, f"Unknown model '{arg}'. Send /model to see the list."
+            return None, f"未知模型 '{arg}'。发送 /model 查看列表。"
         names = ", ".join(f"[{m.get('id')}] {m.get('name')}" for m in hit[:10])
-        return None, f"'{arg}' matches several models: {names}. Pick one by number."
+        return None, f"'{arg}' 匹配到多个模型：{names}。请用编号选择。"
 
     # -- outbound ---------------------------------------------------------
     @staticmethod
@@ -457,7 +527,7 @@ class Hub:
         text, paths = extract_files(final_text(envelope.get("message")))
         status = run.get("status")
         if not text and not paths:
-            text = "(cancelled)" if status == "aborted" else "(no reply)"
+            text = "（已取消）" if status == "aborted" else "（无回复）"
         adapter = self.adapters.get(channel)
         rich = adapter is not None and callable(getattr(adapter, "finish", None))
         for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
@@ -523,7 +593,7 @@ class Hub:
             adapter.send_file(chat, path)
         except Exception as e:
             try:
-                adapter.send(chat, f"[file not sent: {name}: {e}]")
+                adapter.send(chat, f"[文件未发送：{name}：{e}]")
             except Exception:
                 pass
 

@@ -61,6 +61,47 @@ function Logs({ api, id }: { api: PluginAPI; id: string }) {
     </div>) : <div className="channel-log-empty">{T('\u6682\u65e0\u65e5\u5fd7', 'No logs yet')}</div>}
   </div>;
 }
+// Chats on this channel and the session each one is bound to; a chat can be
+// re-pointed at any top-level session (same rules as the /use chat command).
+type Bound = { chat: string; session_id: string; title?: string | null; missing: boolean; running: boolean; updated?: number };
+type Choice = { id: string; title?: string | null; updated?: number; running: boolean };
+function BindingsPanel({ api, id }: { api: PluginAPI; id: string }) {
+  const [view, setView] = useState<{ chats: Bound[]; sessions: Choice[] } | null>(null);
+  const [error, setError] = useState(''), [saving, setSaving] = useState<string | null>(null);
+  const load = async () => {
+    try { setView(await api.get<{ chats: Bound[]; sessions: Choice[] }>(`?bindings=${encodeURIComponent(id)}`)); setError(''); }
+    catch (e) { setError(String((e as Error)?.message || e)); }
+  };
+  useEffect(() => {
+    setView(null); void load();
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [api, id]);
+  const bind = async (chat: string, session: string) => {
+    setSaving(chat); setError('');
+    try { setView(await api.post<{ chats: Bound[]; sessions: Choice[] }>('', { action: 'bind', id, chat, session })); }
+    catch (e) { setError(String((e as Error)?.message || e)); }
+    finally { setSaving(null); }
+  };
+  const name = (title?: string | null) => (title || '').trim() || T('\u65b0\u4f1a\u8bdd', 'New session');
+  return <section className="channel-bindings">
+    <div className="channel-bindings-head"><span>{T('\u4f1a\u8bdd\u7ed1\u5b9a', 'Session bindings')}</span>
+      <small>{T('\u4e5f\u53ef\u5728\u804a\u5929\u4e2d\u53d1\u9001 /sessions\u3001/use <\u7f16\u53f7>', 'Or send /sessions, /use <n> in the chat')}</small></div>
+    {error && <div className="channel-bindings-error" role="alert">{error}</div>}
+    {!view ? <div className="channel-bindings-empty">{T('\u52a0\u8f7d\u4e2d\u2026', 'Loading\u2026')}</div>
+      : !view.chats.length ? <div className="channel-bindings-empty">{T('\u8fd8\u6ca1\u6709\u804a\u5929\u53d1\u8fc7\u6d88\u606f\uff0c\u6536\u5230\u7b2c\u4e00\u6761\u6d88\u606f\u540e\u4f1a\u81ea\u52a8\u7ed1\u5b9a\u65b0\u4f1a\u8bdd\u3002', 'No chat has messaged this channel yet; the first message creates and binds a session.')}</div>
+      : view.chats.map(row => <label key={row.chat} className="channel-binding">
+        <span className="channel-binding-chat" title={row.chat}>{row.chat}</span>
+        <select value={row.session_id} disabled={saving === row.chat || row.running}
+          title={row.running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u7ed3\u675f\u540e\u624d\u80fd\u5207\u6362', 'A task is running; switch after it ends') : undefined}
+          onChange={event => void bind(row.chat, event.currentTarget.value)}>
+          {row.missing && <option value={row.session_id}>{T('\uff08\u4f1a\u8bdd\u5df2\u5220\u9664\uff09', '(session deleted)')}</option>}
+          {view.sessions.map(s => <option key={s.id} value={s.id} disabled={s.running && s.id !== row.session_id}>
+            {name(s.title)}{s.running ? T(' \u00b7 \u8fd0\u884c\u4e2d', ' \u00b7 running') : ''}</option>)}
+        </select>
+      </label>)}
+  </section>;
+}
 function LogPanel({ api, id }: { api: PluginAPI; id: string }) {
   const [expanded, setExpanded] = useState(false);
   return <details className="channel-log-panel" onToggle={event => setExpanded(event.currentTarget.open)}>
@@ -250,6 +291,7 @@ function ChannelDetail({ api, channel, provider, busy, onAct, onEdit, onRemove }
         </div>)}
       </dl>
     </section>
+    <BindingsPanel api={api} id={channel.id} />
     <LogPanel key={channel.id} api={api} id={channel.id} />
     <div className="channel-detail-footer"><button type="button" className="channel-delete" disabled={busy} onClick={onRemove}>
       <Icon name="trash" />{T('\u5220\u9664\u901a\u9053', 'Delete channel')}

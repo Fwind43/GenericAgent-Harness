@@ -1741,6 +1741,62 @@ var GAHPlugin_web_channels = (function(exports, jsxRuntime, react, sdk) {
       /* @__PURE__ */ jsxRuntime.jsx("span", { className: "channel-log-text", children: line.text })
     ] }, index)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "channel-log-empty", children: sdk.T("暂无日志", "No logs yet") }) });
   }
+  function BindingsPanel({ api, id }) {
+    const [view, setView] = react.useState(null);
+    const [error, setError] = react.useState(""), [saving, setSaving] = react.useState(null);
+    const load = async () => {
+      try {
+        setView(await api.get(`?bindings=${encodeURIComponent(id)}`));
+        setError("");
+      } catch (e) {
+        setError(String((e == null ? void 0 : e.message) || e));
+      }
+    };
+    react.useEffect(() => {
+      setView(null);
+      void load();
+      const timer = window.setInterval(() => void load(), 5e3);
+      return () => window.clearInterval(timer);
+    }, [api, id]);
+    const bind = async (chat, session) => {
+      setSaving(chat);
+      setError("");
+      try {
+        setView(await api.post("", { action: "bind", id, chat, session }));
+      } catch (e) {
+        setError(String((e == null ? void 0 : e.message) || e));
+      } finally {
+        setSaving(null);
+      }
+    };
+    const name = (title) => (title || "").trim() || sdk.T("新会话", "New session");
+    return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "channel-bindings", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "channel-bindings-head", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("会话绑定", "Session bindings") }),
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("也可在聊天中发送 /sessions、/use <编号>", "Or send /sessions, /use <n> in the chat") })
+      ] }),
+      error && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "channel-bindings-error", role: "alert", children: error }),
+      !view ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "channel-bindings-empty", children: sdk.T("加载中…", "Loading…") }) : !view.chats.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "channel-bindings-empty", children: sdk.T("还没有聊天发过消息，收到第一条消息后会自动绑定新会话。", "No chat has messaged this channel yet; the first message creates and binds a session.") }) : view.chats.map((row) => /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "channel-binding", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "channel-binding-chat", title: row.chat, children: row.chat }),
+        /* @__PURE__ */ jsxRuntime.jsxs(
+          "select",
+          {
+            value: row.session_id,
+            disabled: saving === row.chat || row.running,
+            title: row.running ? sdk.T("任务运行中，结束后才能切换", "A task is running; switch after it ends") : void 0,
+            onChange: (event) => void bind(row.chat, event.currentTarget.value),
+            children: [
+              row.missing && /* @__PURE__ */ jsxRuntime.jsx("option", { value: row.session_id, children: sdk.T("（会话已删除）", "(session deleted)") }),
+              view.sessions.map((s) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: s.id, disabled: s.running && s.id !== row.session_id, children: [
+                name(s.title),
+                s.running ? sdk.T(" · 运行中", " · running") : ""
+              ] }, s.id))
+            ]
+          }
+        )
+      ] }, row.chat))
+    ] });
+  }
   function LogPanel({ api, id }) {
     const [expanded, setExpanded] = react.useState(false);
     return /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "channel-log-panel", onToggle: (event) => setExpanded(event.currentTarget.open), children: [
@@ -1994,6 +2050,7 @@ var GAHPlugin_web_channels = (function(exports, jsxRuntime, react, sdk) {
           ] }, field.key))
         ] })
       ] }),
+      /* @__PURE__ */ jsxRuntime.jsx(BindingsPanel, { api, id: channel.id }),
       /* @__PURE__ */ jsxRuntime.jsx(LogPanel, { api, id: channel.id }, channel.id),
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "channel-detail-footer", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "channel-delete", disabled: busy, onClick: onRemove, children: [
         /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }),
