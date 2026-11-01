@@ -20,7 +20,7 @@ from . import uploads
 from .sessions import EFFORTS
 
 HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
-        "/sessions  列出最近的会话\n"
+        "/sessions  列出最近的会话；/sessions <页码> 翻页\n"
         "/use  /use <编号|会话ID> 把本聊天切换到已有会话\n"
         "/stop  取消正在运行的任务\n"
         "/status  查看当前会话、模型和推理强度\n"
@@ -28,7 +28,7 @@ HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
         "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
         "/help  显示本帮助")
 BUSY = "上一个任务还在运行。发送 /stop 可以取消。"
-SESSIONS_SHOWN = 10  # rows listed by /sessions (and the numbers /use accepts)
+SESSIONS_PAGE = 10  # rows per /sessions page; numbering is global so /use <n> works from any page
 # Durable per-turn events forwarded to adapters that implement ``progress``;
 # high-frequency stream fragments (assistant.delta) are never forwarded.
 PROGRESS_EVENTS = frozenset({"turn.start", "assistant.text", "tool.call", "tool.result", "turn.end"})
@@ -284,7 +284,7 @@ class Hub:
             self._new_session(channel, chat, keep)
             return "已新建会话。" + note
         if word == "/sessions":
-            return self._cmd_sessions(channel, chat)
+            return self._cmd_sessions(channel, chat, arg)
         if word == "/use":
             return self._cmd_use(channel, chat, arg)
         if word in ("/model", "/llm"):
@@ -331,19 +331,30 @@ class Hub:
         self.bindings.set(channel, chat, sid)
         return None
 
-    def _cmd_sessions(self, channel, chat):
-        rows = self.session_choices(SESSIONS_SHOWN)
+    def _cmd_sessions(self, channel, chat, arg=""):
+        rows = self.session_choices()
         if not rows:
             return "还没有任何会话。发送消息会自动新建一个。"
+        pages = (len(rows) + SESSIONS_PAGE - 1) // SESSIONS_PAGE
+        if not arg:
+            page = 1
+        elif arg.isascii() and arg.isdigit() and 1 <= int(arg) <= pages:
+            page = int(arg)
+        else:
+            return f"页码应为 1-{pages}。"
+        start = (page - 1) * SESSIONS_PAGE
         current = self.bindings.get(channel, chat)
-        lines = ["最近的会话："]
-        for i, r in enumerate(rows, 1):
+        lines = [f"最近的会话（第 {page}/{pages} 页，共 {len(rows)} 个）："]
+        for i, r in enumerate(rows[start:start + SESSIONS_PAGE], start + 1):
             mark = "→ " if r["id"] == current else "   "
             when = time.strftime("%m-%d %H:%M", time.localtime(r.get("updated") or 0))
             title = " ".join(str(r.get("title") or "").split())[:40] or "（无标题）"
             busy = " · 运行中" if r.get("running") else ""
             lines.append(f"{mark}{i}. {title}（{when}{busy}）")
-        lines.append("用 /use <编号> 切换到对应会话。")
+        tail = "用 /use <编号> 切换到对应会话。"
+        if page < pages:
+            tail += f"发送 /sessions {page + 1} 看下一页。"
+        lines.append(tail)
         return "\n".join(lines)
 
     def _cmd_use(self, channel, chat, arg):
@@ -352,10 +363,9 @@ class Hub:
         rows = self.session_choices()
         if arg.isascii() and arg.isdigit():
             n = int(arg)
-            shown = rows[:SESSIONS_SHOWN]
-            if not 1 <= n <= len(shown):
+            if not 1 <= n <= len(rows):
                 return f"没有编号为 {arg} 的会话。发送 /sessions 查看列表。"
-            hit = shown[n - 1]
+            hit = rows[n - 1]
         else:
             hit = next((r for r in rows if r["id"] == arg), None)
             if hit is None:

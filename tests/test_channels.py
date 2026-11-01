@@ -16,6 +16,9 @@ class FakeSessions:
     def remember_for(self, sid, **values):
         self.items[sid]["state"] = {**(self.items[sid].get("state") or {}), **values}
 
+    def listing(self):
+        return [dict(r) for r in self.items.values()]
+
 
 class FakeRuns:
     def __init__(self):
@@ -253,3 +256,26 @@ def test_commands_without_catalog_and_help(tmp_path):
             assert hub.command("fake", "7", "/model gpt-main") == unavailable
         finally:
             hub.close()
+
+
+def test_sessions_command_pages_with_global_numbers(tmp_path):
+    hub, _, sessions = make_hub(tmp_path)
+    try:
+        for n in range(1, 24):  # s1..s23, s23 newest
+            sessions.create(title=f"t{n}", updated=n)
+        first = hub.command("fake", "1", "/sessions").splitlines()
+        assert first[0] == "最近的会话（第 1/3 页，共 23 个）："
+        assert first[1].strip().startswith("1. t23（") and first[10].strip().startswith("10. t14（")
+        assert first[-1] == "用 /use <编号> 切换到对应会话。发送 /sessions 2 看下一页。"
+        last = hub.command("fake", "1", "/sessions 3").splitlines()
+        assert last[0] == "最近的会话（第 3/3 页，共 23 个）："
+        assert [l.strip().split("（")[0] for l in last[1:-1]] == ["21. t3", "22. t2", "23. t1"]
+        assert last[-1] == "用 /use <编号> 切换到对应会话。"
+        for bad in ("0", "4", "x"):
+            assert hub.command("fake", "1", f"/sessions {bad}") == "页码应为 1-3。"
+        assert hub.command("fake", "1", "/use 15").startswith("已切换到会话：t9")
+        assert hub.bindings.get("fake", "1") == "s9"
+        assert "→ 15. t9（" in hub.command("fake", "1", "/sessions 2")
+        assert hub.command("fake", "1", "/use 24").startswith("没有编号为 24 的会话")
+    finally:
+        hub.close()
