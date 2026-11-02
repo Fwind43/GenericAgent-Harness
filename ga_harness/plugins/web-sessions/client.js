@@ -162,7 +162,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const kidsOpen = (id) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
     const row = (session, depth, home, recent = false, kids = 0) => {
       const kidsShown = kids > 0 && kidsOpen(session.id);
-      const menuKey = `s:${session.id}`, menuOpen = menu === menuKey;
+      const menuKey = `s:${session.id}:${recent ? "r" : "p"}:${home ?? ""}`, menuOpen = menu === menuKey;
       const pick = (fn) => () => {
         setMenu("");
         fn();

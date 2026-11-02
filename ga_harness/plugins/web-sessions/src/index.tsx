@@ -129,7 +129,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const kidsOpen = (id: string) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
   const row = (session: Session, depth: number, home?: string, recent = false, kids = 0) => {
     const kidsShown = kids > 0 && kidsOpen(session.id);
-    const menuKey = `s:${session.id}`, menuOpen = menu === menuKey;
+    const menuKey = `s:${session.id}:${recent ? 'r' : 'p'}:${home ?? ''}`, menuOpen = menu === menuKey;
     const pick = (fn: () => void) => () => { setMenu(''); fn(); };
     // Rows are tagged with the project name only (Recent; inside a project group it is implied); the workspace lives in the tooltip.
     const project = session.project_id ? projectName.get(session.project_id) : undefined;
