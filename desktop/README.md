@@ -112,12 +112,20 @@ Two kinds, both checked from the tray menu (Updates > Check for updates) and aut
   the backend runs that code instead of `resources/py`. Only the new and the current version are
   kept. If the updated code fails to start, the app marks it bad and falls back to the bundled code.
   It waits for confirmation while a task is running.
-- **Installer update**: when `update.json`'s `min_shell` is newer than the installed app, the
+- **Installer update**: when the required shell for this platform in `update.json` (`shell.required`,
+  falling back to the legacy `min_shell`) is newer than the installed app, the
   code package is not applied; Windows/Linux (AppImage) download the new installer through
   electron-updater (`latest.yml` / `latest-linux.yml` + blockmap, generic feed on
   `releases/latest/download`) and install on restart. macOS builds are only ad-hoc signed, so they open
-  the release page instead. Bump `desktop/MIN_SHELL` in any release that changes Electron code,
-  the bundled Python, dependencies or the backend launch contract.
+  the release page instead.
+- **Shell versions** live in `desktop/shell.json`, per platform (`win32`, `darwin`, `linux`):
+  - `required`: raise only when the new code cannot run on older shells (backend launch contract,
+    bundled Python or its dependencies, preload API the code uses), and only for the affected
+    platforms. This forces the full download, so keep it rare.
+  - `recommended`: for shell fixes the code does not depend on. Older shells still take the code
+    update and only show an optional reinstall hint.
+  `update.json` also keeps `min_shell` (highest `required` across platforms) for shells released
+  before per-platform requirements; those shells see the stricter global value.
 
 GitHub mirror: Updates > Download mirror offers direct, `https://ghfast.top/` and
 `https://gh-proxy.com/`, or edit `<userData>/desktop.json`:

@@ -1,12 +1,14 @@
 // One-click updates for the desktop shell.
 //
 // Every "v*" release carries:
-//   update.json                      {"version", "min_shell", "app": {"file", "sha256", "size"}}
+//   update.json                      {"version", "min_shell", "shell": {"required", "recommended"},
+//                                     "app": {"file", "sha256", "size"}} (shell.* keyed by platform)
 //   ga-harness-app-<version>.zip     the ga_harness package (plugins, ui-web dist, ...) plus
 //                                    genericagent/, the GA source pinned in desktop/GA_REF
 //   installers + latest.yml / latest-linux.yml + *.blockmap (electron-updater, generic feed)
 //
-// Most releases only change code: when this shell is new enough (min_shell <= shell version)
+// Most releases only change code: when this shell is new enough (shell.required for this
+// platform, or legacy min_shell, <= shell version)
 // we download the small app bundle into <userData>/app/<version> and restart; backend.js
 // prefers it over the code the installer shipped (and falls back if it fails to start).
 // Otherwise the shell itself needs updating: Windows/Linux(AppImage) use electron-updater,
@@ -115,7 +117,7 @@ class Updater {
     this.pending = null;             // { info, kind } found by the last check
     this.ready = null;               // { version, kind, restart } once installed / downloaded
     this.op = null;                  // AbortController of the running install, for cancel()
-    this.st = { phase: 'idle', kind: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
+    this.st = { phase: 'idle', kind: null, shellHint: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
     this.log = [];
     this.lastEmit = 0;
   }
@@ -252,27 +254,36 @@ class Updater {
     this.st.checkedAt = Date.now();
     if (compareVersions(info.version, current) <= 0) {
       this.pending = null;
-      this.set({ phase: 'latest', version: info.version, kind: null }, `Up to date: latest release is ${info.version}, running ${current}`);
+      this.set({ phase: 'latest', version: info.version, kind: null, shellHint: null }, `Up to date: latest release is ${info.version}, running ${current}`);
       if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: t('已是最新版本', 'You are up to date'), detail: t(`版本 ${current}`, `Version ${current}`) });
       return;
     }
-    const shellOk = compareVersions(info.min_shell || '0.0.0', app.getVersion()) <= 0;
+    const { required, recommended } = shellNeeds(info);
+    const shellOk = compareVersions(required, app.getVersion()) <= 0;
     const kind = shellOk ? 'code' : (process.platform === 'darwin' || this.loadShellUpdater() ? 'shell' : 'manual');
-    this.pending = { info, kind };
-    const what = { code: `code update, ${mb(info.app.size)}`, shell: `needs desktop app ${info.min_shell}+, installer update`, manual: `needs desktop app ${info.min_shell}+, download it from the release page` }[kind];
-    this.set({ phase: 'available', version: info.version, kind, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
+    // Optional: the code update still applies, the newer shell only adds fixes.
+    const shellHint = shellOk && compareVersions(recommended, app.getVersion()) > 0 ? recommended : null;
+    this.pending = { info, kind, required, shellHint };
+    const what = { code: `code update, ${mb(info.app.size)}`, shell: `needs desktop app ${required}+, installer update`, manual: `needs desktop app ${required}+, download it from the release page` }[kind];
+    this.set({ phase: 'available', version: info.version, kind, shellHint, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
       `Version ${info.version} is available (${what})`);
+    if (shellHint) this.note(`Desktop app ${shellHint} is recommended (optional reinstall); running ${app.getVersion()}`);
     if (ui || (silent && this.dismissed === info.version)) return;
     await this.offer(info, kind);
   }
 
   // Dialog flow (tray menu / background check). The settings page calls install() directly.
   async offer(info, kind) {
+    const { required, recommended } = shellNeeds(info);
+    const hint = compareVersions(recommended, app.getVersion()) > 0
+      ? t(`\n\n可选：桌面应用 ${recommended} 带有外壳修复，可稍后到发布页下载安装包；不装也能正常使用。`,
+        `\n\nOptional: desktop app ${recommended} has shell fixes; get the installer from the release page whenever convenient.`)
+      : '';
     const detail = kind === 'code'
       ? t(`当前版本：${this.backend.code.version}\n\n这是代码更新（${mb(info.app.size)}），桌面应用本身保持不变。`,
-        `Current: ${this.backend.code.version}\n\nThis is a code update (${mb(info.app.size)}); the desktop app itself stays as is.`)
-      : t(`当前应用：${app.getVersion()}；版本 ${info.version} 需要更新的桌面应用（${info.min_shell} 或更高）。`,
-        `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${info.min_shell} or later).`);
+        `Current: ${this.backend.code.version}\n\nThis is a code update (${mb(info.app.size)}); the desktop app itself stays as is.`) + hint
+      : t(`当前应用：${app.getVersion()}；版本 ${info.version} 需要更新的桌面应用（${required} 或更高）。`,
+        `Current app: ${app.getVersion()}; version ${info.version} needs a newer desktop app (${required} or later).`);
     const later = t('稍后', 'Later');
     const buttons = kind === 'manual' ? [t('打开发布页', 'Open release page'), later]
       : [kind === 'code' ? t('更新', 'Update') : t('下载', 'Download'), t('更新说明', 'Release notes'), later];
@@ -623,6 +634,16 @@ class Updater {
     else if (response === presets.length) this.opts.openSettings?.({ custom: true });
     return this.config();
   }
+}
+
+// Shell versions this platform needs for `info`. Releases before the per-platform "shell"
+// field only carry the global min_shell.
+function shellNeeds(info) {
+  const s = info && typeof info.shell === 'object' && info.shell ? info.shell : {};
+  const pick = (table) => (table && typeof table[process.platform] === 'string' ? table[process.platform] : null);
+  const required = pick(s.required) || info.min_shell || '0.0.0';
+  const rec = pick(s.recommended);
+  return { required, recommended: rec && compareVersions(rec, required) > 0 ? rec : required };
 }
 
 function mb(bytes) { return bytes ? `${(bytes / 1048576).toFixed(1)} MB` : 'size unknown'; }

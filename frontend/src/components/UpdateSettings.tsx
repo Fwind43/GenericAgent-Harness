@@ -12,7 +12,7 @@ type LogLine = { t: number; level: string; msg: string };
 type UpdateState = {
   shellVersion: string; codeVersion: string; codeSource: string; packaged: boolean;
   releasesPage: string; settingsFile: string; autoCheck: boolean; mirror: string; presets: Preset[];
-  phase: string; kind: string | null; version: string | null; received: number; total: number;
+  phase: string; kind: string | null; shellHint?: string | null; version: string | null; received: number; total: number;
   error: string | null; checkedAt: number | null; busy: boolean;
   cancellable?: boolean; log: LogLine[];
 };
@@ -135,6 +135,9 @@ export function UpdateSettings() {
               {s.phase === 'error' && <button type="button" className="gah-update-btn" onClick={() => run(api.check())}>{T('重试', 'Retry')}</button>}
               <button type="button" className="gah-update-link" onClick={() => desktop?.openExternal?.(s.releasesPage)}>{T('查看发布说明', 'Release notes')}</button>
             </div>
+            {s.phase === 'available' && s.kind === 'code' && s.shellHint && <span className="gah-update-hint">
+              {T(`可选：桌面应用 ${s.shellHint} 带有外壳修复，可到发布页下载安装包；不装也能正常更新和使用。`,
+                `Optional: desktop app ${s.shellHint} has shell fixes; get the installer from the release page whenever convenient.`)}</span>}
             {failure && <div className="gah-update-error">{failure}</div>}
           </div>
 

@@ -1,0 +1,20 @@
+{
+  "about": [
+    "Desktop shell versions the current code needs, per platform (win32, darwin, linux).",
+    "required: below it the code package is not applied and the user must reinstall. Raise it only",
+    "  when the new code cannot run on older shells (backend.js launch contract, bundled Python",
+    "  version or dependencies, preload API the code relies on) and only for the affected platforms.",
+    "recommended: older shells still get the small code update and only see an optional hint to",
+    "  reinstall. Use it for shell fixes and improvements that the code does not depend on."
+  ],
+  "required": {
+    "win32": "0.0.20",
+    "darwin": "0.0.20",
+    "linux": "0.0.20"
+  },
+  "recommended": {
+    "win32": "0.0.20",
+    "darwin": "0.0.20",
+    "linux": "0.0.20"
+  }
+}

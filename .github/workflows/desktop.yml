@@ -5,8 +5,9 @@ name: desktop
 # draft release. The release carries, besides the installers:
 #   update.json + ga-harness-app-<version>.zip   code-only update read by desktop/src/updater.js
 #   latest.yml / latest-linux.yml + *.blockmap   installer update (electron-updater, generic feed)
-# Bump desktop/MIN_SHELL when a release needs a newer desktop shell; otherwise desktop users
-# only download the small code package.
+# desktop/shell.json sets, per platform, the shell a release requires (raise only when the code
+# cannot run on older shells) and recommends (optional hint); otherwise desktop users only
+# download the small code package.
 on:
   push:
     branches: [main, desktop]
