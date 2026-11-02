@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
-          "usage", "usage.total", "llm.timed")
+          "usage", "usage.total", "llm.start", "llm.timed")
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
 # plugins come from run-store.worker_plugins or Runs.register_worker_plugin; they
 # are taken from the plugin catalog and need not be active in the host.

@@ -54,5 +54,7 @@ def apply_event(messages, name, data):
         turn["status"] = "done"
     elif name == "usage":
         turn["usage"] = {k: data.get(k) for k in USAGE_KEYS}
+    elif name == "llm.start":
+        turn["llm"] = {"started": data.get("started")}
     elif name == "llm.timed":
         turn["llm"] = {k: data.get(k) for k in ("seconds", "ttft")}

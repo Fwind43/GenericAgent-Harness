@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { T } from '../i18n';
 import type { Message, Turn, Usage } from '../types';
-import { duration } from './SessionStats';
+import { duration, useNow } from './SessionStats';
 
 const KEYS = ['input', 'output', 'cache_read', 'cache_write'] as const;
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
@@ -46,15 +46,6 @@ const ICON = {
   hit: icon('M3 8.5 6.5 12 13 4.5'),
 };
 
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => window.clearInterval(id);
-  }, [active]);
-  return now;
-}
 const Stat = ({ ic, label, value, title }: { ic?: ReactNode; label?: string; value: string; title?: string }) =>
   <span className="stat" title={title ?? (label ? label + ' ' + value : value)}>{ic}{label && <span className="stat-k">{label}</span>}<span className="stat-v">{value}</span></span>;
 

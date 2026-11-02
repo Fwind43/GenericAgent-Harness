@@ -6,7 +6,8 @@ export interface Turn {
   turn: number; summary?: string; thinking?: string; reply?: string;
   status?: Status; tools: ToolCall[]; usage?: Usage; llm?: LlmTiming;
 }
-export interface LlmTiming { seconds?: number; ttft?: number | null }
+/** ``started`` (Unix seconds) is set while the call is in flight; ``seconds``/``ttft`` once it ends. */
+export interface LlmTiming { seconds?: number; ttft?: number | null; started?: number }
 export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; run_id?: string;

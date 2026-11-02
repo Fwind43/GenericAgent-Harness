@@ -251,6 +251,7 @@ GA 内核只输出一段显示用的文本（`**LLM Running (Turn N) ...**`、`�
 | `assistant.delta` | 模型输出流式到达，每个片段发一次（顺序与 GA 一致） | `turn`、`part`（`summary` / `thinking` / `reply`）、`text`（本次增量） |
 | `assistant.text` | 模型回复完整（流式结束后再发一次整段，前端据此校正） | `turn`、`text`（原文）、`reply`（去掉 summary/thinking）、`summary` |
 | `tool.call` / `tool.result` | 工具调用开始/结束 | `id`、`turn`、`name`、`args`；结果另有 `ok`、`data`、`seconds` |
+| `llm.start` / `llm.timed` | 一次模型调用开始/结束（前端据 `started` 实时计时） | `turn`；开始有 `started`（Unix 秒），结束有 `seconds`、`ttft` |
 | `usage` | 每次模型调用之后（由 `ga-usage` 发出） | `turn`、`input`（含缓存）、`cache_read`、`cache_write`、`output` |
 | `usage.total` | 任务结束、`run.end` 之前 | `calls` 加上同样四项的累计值 |
 

@@ -50,7 +50,7 @@ from ga_harness.sessions import EFFORTS, apply_effort
 
 from .handler import _Handler, _clip
 
-EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.timed")
+EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.start", "llm.timed")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
@@ -640,6 +640,8 @@ class WebFrontend:
                 t["status"] = "done"
             elif name == "usage":
                 t["usage"] = {k: d.get(k) for k in USAGE_KEYS}
+            elif name == "llm.start":
+                t["llm"] = {"started": d.get("started")}
             elif name == "llm.timed":
                 t["llm"] = {"seconds": d.get("seconds"), "ttft": d.get("ttft")}
             self._push(turns, i)

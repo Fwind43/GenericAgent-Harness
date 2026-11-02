@@ -11,6 +11,7 @@ Events (emit, payload is one dict):
   assistant.text  {turn, text, reply, thinking, summary}   reply = text minus leading protocol blocks
   tool.call       {id, turn, index, name, args}
   tool.result     {id, turn, index, name, ok, data, seconds}
+  llm.start       {turn, started}        one LLM call began; started = unix seconds (live timers)
   llm.timed       {turn, seconds, ttft}   one LLM call: wall time and time to first chunk (None if not streamed;
                   prefers llmcore's own first-SSE-line time for the last attempt, else first visible chunk)
   turn.end        {turn, exit}
@@ -168,6 +169,7 @@ def apply(ctx, config):
     def on_llm_before(g, nxt):
         client, turn = g.get("client"), g.get("turn")
         llm.update(t0=time.monotonic(), w0=time.time(), first=None)
+        ctx.emit("llm.start", {"turn": turn, "started": round(llm["w0"], 3)})
         orig = getattr(client, "chat", None)
         if callable(orig) and not getattr(orig, "_ga_events_tap", False):
             def chat(*a, **k):
