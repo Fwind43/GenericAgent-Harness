@@ -3,6 +3,8 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
   const NEW = "新会话";
   const SECTION_COUNTS = [5, 10, 15, 20, 50, 100];
   const SECTION_KEYS = ["projects", "recent"];
+  const PROJECT_SORTS = ["custom", "recent", "name", "count"];
+  const sortName = (k) => k === "custom" ? sdk.T("自定义", "Custom") : k === "recent" ? sdk.T("最新会话时间", "Latest chat") : k === "name" ? sdk.T("名称", "Name") : sdk.T("会话数量", "Chat count");
   const LAYOUT_KEY = "gah.sessions.layout", DEFAULT_COUNT = { projects: 5, recent: 10 };
   const sectionName = (key) => key === "projects" ? sdk.T("项目", "Projects") : sdk.T("最近", "Recent");
   function normalizeLayout(value) {
@@ -17,7 +19,9 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         count: SECTION_COUNTS.includes(Number(old.count)) ? Number(old.count) : DEFAULT_COUNT[k]
       }];
     }));
-    return { order, sections };
+    const projectSort = PROJECT_SORTS.includes(raw.projectSort) ? raw.projectSort : "custom";
+    const projectOrder = Array.isArray(raw.projectOrder) ? [...new Set(raw.projectOrder.filter((x) => typeof x === "string"))] : [];
+    return { order, sections, projectSort, projectOrder };
   }
   const loadLayout = () => {
     try {
@@ -120,7 +124,24 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       [order[from], order[to]] = [order[to], order[from]];
       return { ...old, order };
     });
-    const scope = state.scope, projects = (scope == null ? void 0 : scope.projects) ?? [];
+    const scope = state.scope, rawProjects = (scope == null ? void 0 : scope.projects) ?? [];
+    const customRank = /* @__PURE__ */ new Map(), seenIds = new Set(rawProjects.map((p) => p.id));
+    [...layout.projectOrder.filter((id) => seenIds.has(id)), ...rawProjects.map((p) => p.id).filter((id) => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
+    const latest = /* @__PURE__ */ new Map(), counts = /* @__PURE__ */ new Map();
+    for (const s of state.sessions ?? []) if (s.project_id) {
+      latest.set(s.project_id, Math.max(latest.get(s.project_id) ?? 0, s.updated ?? 0));
+      counts.set(s.project_id, (counts.get(s.project_id) ?? 0) + 1);
+    }
+    const projects = [...rawProjects].sort((a, b) => {
+      const by = layout.projectSort === "recent" ? (latest.get(b.id) ?? 0) - (latest.get(a.id) ?? 0) : layout.projectSort === "count" ? (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) : layout.projectSort === "name" ? a.name.localeCompare(b.name, void 0, { numeric: true, sensitivity: "base" }) : 0;
+      return by || (customRank.get(a.id) ?? 0) - (customRank.get(b.id) ?? 0);
+    });
+    const moveProject = (id, delta) => updateLayout((old) => {
+      const ids = projects.map((p) => p.id), from = ids.indexOf(id), to = from + delta;
+      if (from < 0 || to < 0 || to >= ids.length) return old;
+      [ids[from], ids[to]] = [ids[to], ids[from]];
+      return { ...old, projectOrder: ids };
+    });
     const current = (scope == null ? void 0 : scope.project_id) ? `p:${scope.project_id}` : "recent", previous = react.useRef(current);
     react.useEffect(() => {
       if (previous.current !== current) {
@@ -258,6 +279,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const matchedProjects = projects.filter((p) => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
     const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
     const projectGroups = cappedProjects.map((p) => {
+      var _a, _b;
       const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
       const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
       return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group project${isCurrent ? " current" : ""}`, "data-key": key, children: [
@@ -267,6 +289,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-open", "data-i": "folder-open", "aria-hidden": "true" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-name", children: p.name }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-count", children: (byProject.get(p.id) ?? []).length })
+          ] }),
+          layout.projectSort === "custom" && !q && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_a = projects[0]) == null ? void 0 : _a.id) === p.id, "aria-label": `${sdk.T("上移", "Move up")}: ${p.name}`, title: sdk.T("上移", "Move up"), onClick: () => moveProject(p.id, -1), children: "▲" }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_b = projects[projects.length - 1]) == null ? void 0 : _b.id) === p.id, "aria-label": `${sdk.T("下移", "Move down")}: ${p.name}`, title: sdk.T("下移", "Move down"), onClick: () => moveProject(p.id, 1), children: "▼" })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${p.name}`, onClick: () => void (isCurrent ? act("new") : scoped({ action: "enter", id: p.id })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("项目设置", "Project settings")}: ${p.name}`, onClick: () => dialog("update", p.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
@@ -287,6 +313,11 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-menu", role: "menu", "aria-label": `${name}: ${sdk.T("编辑分区", "Edit section")}`, children: [
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-title", children: sdk.T("显示个数", "Display count") }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-counts", children: SECTION_COUNTS.map((n) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitemradio", "aria-checked": pref.count === n, className: `gah-sess-menu-count${pref.count === n ? " on" : ""}`, onClick: pick(() => setSection(key, { count: n })), children: n }, n)) }),
+        key === "projects" && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-title", children: sdk.T("项目排序", "Sort projects") }),
+          PROJECT_SORTS.map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitemradio", "aria-checked": layout.projectSort === k, className: `gah-sess-menu-item${layout.projectSort === k ? " on" : ""}`, onClick: pick(() => updateLayout((old) => ({ ...old, projectSort: k, projectOrder: k === "custom" && !old.projectOrder.length ? projects.map((p) => p.id) : old.projectOrder }))), children: (layout.projectSort === k ? "✓ " : "　") + sortName(k) }, k))
+        ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: !!q, onClick: pick(() => setSection(key, { open: !open })), children: open ? sdk.T("收起分区", "Collapse section") : sdk.T("展开分区", "Expand section") }),
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: index <= 0, onClick: pick(() => moveSection(key, -1)), children: sdk.T("上移", "Move up") }),
@@ -347,6 +378,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     ] }) });
   }
   sdk.defineReact("web-sessions", Sessions);
+  exports.PROJECT_SORTS = PROJECT_SORTS;
   exports.SECTION_COUNTS = SECTION_COUNTS;
   exports.Sessions = Sessions;
   exports.normalizeLayout = normalizeLayout;

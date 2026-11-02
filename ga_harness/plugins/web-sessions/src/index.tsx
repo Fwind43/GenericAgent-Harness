@@ -12,11 +12,14 @@ export const SECTION_COUNTS = [5, 10, 15, 20, 50, 100];
 const SECTION_KEYS = ['projects', 'recent'] as const;
 type SectionKey = typeof SECTION_KEYS[number];
 type SectionPref = { show: boolean; open: boolean; count: number };
-type Layout = { order: SectionKey[]; sections: Record<SectionKey, SectionPref> };
+export const PROJECT_SORTS = ['custom', 'recent', 'name', 'count'] as const;
+type ProjectSort = typeof PROJECT_SORTS[number];
+type Layout = { order: SectionKey[]; sections: Record<SectionKey, SectionPref>; projectSort: ProjectSort; projectOrder: string[] };
+const sortName = (k: ProjectSort) => k === 'custom' ? T('\u81ea\u5b9a\u4e49', 'Custom') : k === 'recent' ? T('\u6700\u65b0\u4f1a\u8bdd\u65f6\u95f4', 'Latest chat') : k === 'name' ? T('\u540d\u79f0', 'Name') : T('\u4f1a\u8bdd\u6570\u91cf', 'Chat count');
 const LAYOUT_KEY = 'gah.sessions.layout', DEFAULT_COUNT: Record<SectionKey, number> = { projects: 5, recent: 10 };
 const sectionName = (key: SectionKey) => key === 'projects' ? T('\u9879\u76ee', 'Projects') : T('\u6700\u8fd1', 'Recent');
 export function normalizeLayout(value?: unknown): Layout {
-  const raw = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as { order?: unknown; sections?: Record<string, Partial<SectionPref> | undefined> };
+  const raw = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as { order?: unknown; projectSort?: unknown; projectOrder?: unknown; sections?: Record<string, Partial<SectionPref> | undefined> };
   const valid = Array.isArray(raw.order) ? [...new Set(raw.order.filter((k): k is SectionKey => SECTION_KEYS.includes(k as SectionKey)))] : [];
   const order = [...valid, ...SECTION_KEYS.filter(k => !valid.includes(k))];
   const sections = Object.fromEntries(SECTION_KEYS.map(k => {
@@ -24,7 +27,9 @@ export function normalizeLayout(value?: unknown): Layout {
     return [k, { show: typeof old.show === 'boolean' ? old.show : true, open: typeof old.open === 'boolean' ? old.open : true,
       count: SECTION_COUNTS.includes(Number(old.count)) ? Number(old.count) : DEFAULT_COUNT[k] }];
   })) as Record<SectionKey, SectionPref>;
-  return { order, sections };
+  const projectSort = PROJECT_SORTS.includes(raw.projectSort as ProjectSort) ? raw.projectSort as ProjectSort : 'custom';
+  const projectOrder = Array.isArray(raw.projectOrder) ? [...new Set(raw.projectOrder.filter((x): x is string => typeof x === 'string'))] : [];
+  return { order, sections, projectSort, projectOrder };
 }
 const loadLayout = (): Layout => { try { return normalizeLayout(JSON.parse(saved(LAYOUT_KEY) ?? '{}')); } catch { return normalizeLayout(); } };
 const base = (path = '') => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
@@ -98,7 +103,26 @@ export function Sessions({ api }: { api: PluginAPI }) {
     if (to < 0 || to >= order.length) return old;
     [order[from], order[to]] = [order[to], order[from]]; return { ...old, order };
   });
-  const scope = state.scope, projects = scope?.projects ?? [];
+  const scope = state.scope, rawProjects = scope?.projects ?? [];
+  // Project order: custom = the user's saved order (new projects keep their store order after it);
+  // otherwise derived from the chats (latest activity / count) or the name. Ties fall back to the custom order.
+  const customRank = new Map<string, number>(), seenIds = new Set(rawProjects.map(p => p.id));
+  [...layout.projectOrder.filter(id => seenIds.has(id)), ...rawProjects.map(p => p.id).filter(id => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
+  const latest = new Map<string, number>(), counts = new Map<string, number>();
+  for (const s of state.sessions ?? []) if (s.project_id) {
+    latest.set(s.project_id, Math.max(latest.get(s.project_id) ?? 0, s.updated ?? 0)); counts.set(s.project_id, (counts.get(s.project_id) ?? 0) + 1);
+  }
+  const projects = [...rawProjects].sort((a, b) => {
+    const by = layout.projectSort === 'recent' ? (latest.get(b.id) ?? 0) - (latest.get(a.id) ?? 0)
+      : layout.projectSort === 'count' ? (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0)
+      : layout.projectSort === 'name' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : 0;
+    return by || (customRank.get(a.id) ?? 0) - (customRank.get(b.id) ?? 0);
+  });
+  const moveProject = (id: string, delta: number) => updateLayout(old => {
+    const ids = projects.map(p => p.id), from = ids.indexOf(id), to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return old;
+    [ids[from], ids[to]] = [ids[to], ids[from]]; return { ...old, projectOrder: ids };
+  });
   const current = scope?.project_id ? `p:${scope.project_id}` : 'recent', previous = useRef(current);
   useEffect(() => {
     if (previous.current !== current) { previous.current = current; setToggled(old => { const next = { ...old }; delete next[current]; return next; }); }
@@ -178,6 +202,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
     return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}`} data-key={key}>
       <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span><span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
+        {layout.projectSort === 'custom' && !q && <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
+        <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></>}
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}: ${p.name}`} onClick={() => dialog('update', p.id)}><Icon name="pencil" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u5220\u9664\u9879\u76ee', 'Delete project')}: ${p.name}`} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u9879\u76ee', 'Delete project'), danger: true, confirm: T('\u5220\u9664', 'Delete'), message: T('\u5220\u9664\u9879\u76ee\u201c', 'Delete project "') + p.name + T('\u201d\uff1f\u5176\u4e2d\u7684\u4f1a\u8bdd\u4f1a\u79fb\u5230\u201c\u6700\u8fd1\u201d\uff0c\u9879\u76ee\u8bb0\u5fc6\u6587\u4ef6\u4fdd\u7559\u5728\u78c1\u76d8\u4e0a\u3002', '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: 'delete', id: p.id }, isCurrent); }}><Icon name="trash" /></button></div>
@@ -191,6 +217,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
     return <div className="gah-sess-menu" role="menu" aria-label={`${name}: ${T('\u7f16\u8f91\u5206\u533a', 'Edit section')}`}>
       <div className="gah-sess-menu-title">{T('\u663e\u793a\u4e2a\u6570', 'Display count')}</div>
       <div className="gah-sess-menu-counts">{SECTION_COUNTS.map(n => <button key={n} type="button" role="menuitemradio" aria-checked={pref.count === n} className={`gah-sess-menu-count${pref.count === n ? ' on' : ''}`} onClick={pick(() => setSection(key, { count: n }))}>{n}</button>)}</div>
+      {key === 'projects' && <><div className="gah-sess-menu-sep" /><div className="gah-sess-menu-title">{T('\u9879\u76ee\u6392\u5e8f', 'Sort projects')}</div>
+        {PROJECT_SORTS.map(k => <button key={k} type="button" role="menuitemradio" aria-checked={layout.projectSort === k} className={`gah-sess-menu-item${layout.projectSort === k ? ' on' : ''}`} onClick={pick(() => updateLayout(old => ({ ...old, projectSort: k, projectOrder: k === 'custom' && !old.projectOrder.length ? projects.map(p => p.id) : old.projectOrder })))}>{(layout.projectSort === k ? '\u2713 ' : '\u3000') + sortName(k)}</button>)}</>}
       <div className="gah-sess-menu-sep" />
       <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={!!q} onClick={pick(() => setSection(key, { open: !open }))}>{open ? T('\u6536\u8d77\u5206\u533a', 'Collapse section') : T('\u5c55\u5f00\u5206\u533a', 'Expand section')}</button>
       <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={index <= 0} onClick={pick(() => moveSection(key, -1))}>{T('\u4e0a\u79fb', 'Move up')}</button>
