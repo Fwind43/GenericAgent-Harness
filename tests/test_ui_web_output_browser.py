@@ -202,7 +202,9 @@ def test_admin_style_tool_receipts(output_app, browser, width, locale):
     assert page.locator('.tool[data-state="ok"] .tst').count() == 0
     assert page.locator(".tool img, .tool script").count() == 0
     assert not page.evaluate("window.__receiptXSS || false")
-    assert page.locator(".tool-body:visible").count() == 0
+    # ask_user receipts open by default so the question is visible; every other receipt starts closed.
+    assert page.locator(".tool:not(.ask-user) .tool-body:visible").count() == 0
+    assert page.locator(".tool.ask-user .tool-body:visible").count() == 1
     for theme in ["light", "dark", "warm"]:
         page.evaluate("v => document.documentElement.dataset.theme=v", theme)
         assert_layout(page)
@@ -270,7 +272,10 @@ def test_markdown_safety_copy_and_themes(output_app, browser):
     assert page.locator('.body.md a[href="https://example.test/docs"]').get_attribute("rel") == "noopener noreferrer"
     assert page.locator('.body.md input:not([disabled])').count() == 0
     chip = page.locator(".step > summary .tok")
-    assert chip.count() == 1 and chip.text_content() == "\u219112k \u2193456"
+    # Input/output/cache counts render as icon + number spans (icons are SVG, so no arrow text).
+    assert chip.count() == 1
+    assert chip.locator(".tok-ico").all_text_contents() == ["12k", "456", "10k", "0"]
+    assert chip.locator(".tok-ico svg").count() == 4
     assert "12,345" in chip.get_attribute("title") and "10,000" in chip.get_attribute("title")
     page.locator(".md-code .output-copy").click()
     page.locator(".md-code .output-copy.copied").wait_for()
