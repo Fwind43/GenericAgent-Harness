@@ -369,6 +369,22 @@ def test_mykey_provider_reload_failure_restores_file_and_active_model(tmp_path):
     assert store.agent.llmclients is clients and store.agent.llmclient is active
 
 
+def test_mykey_provider_label_edit_and_noop_save_skip_reload(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    _native_provider_change(store, values={
+        "name": "Shared", "apibase": "https://shared.invalid/v1", "apikey": "test-shared-secret"})
+    change(store, key="native_oai_config_x", values={"provider": "shared"})
+    clients, active = store.agent.llmclients, store.agent.llmclient
+    store.agent.fail_reload = True  # any reload would raise
+    _native_provider_change(store, values={
+        "name": "Renamed", "protocol": "claude", "apibase": "https://shared.invalid/v1", "apikey": ""})
+    assert llmconfig.read_mykey_py(mykey)[llmconfig.PROVIDERS]["shared"]["name"] == "Renamed"
+    original = mykey.read_bytes()
+    change(store, key="native_oai_config_x", values={"provider": "shared"})
+    assert mykey.read_bytes() == original
+    assert store.agent.llmclients is clients and store.agent.llmclient is active
+
+
 @pytest.mark.parametrize("mapping", [
     [], {"native_oai_config_x": "missing"}, {"native_oai_config_missing": "shared"},
     {"native_oai_config_x": []},

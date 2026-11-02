@@ -111,6 +111,14 @@ def _is_mixin(key, value):
     return isinstance(value, dict) and llmconfig.is_llm_key(key) and "mixin" in key
 
 
+def _mixin_lists(data):
+    """Yield (key, llm_nos) for every failover group with a list of members."""
+    for key, value in data.items():
+        nos = value.get("llm_nos") if _is_mixin(key, value) else None
+        if isinstance(nos, list):
+            yield key, nos
+
+
 def _model_name(value):
     """GA's runtime model name (backend.name) as written in mykey.py."""
     return str(value.get("name") or value.get("model") or "")
@@ -582,6 +590,7 @@ class Models:
         if not isinstance(pid, str) or not _PID.fullmatch(pid):
             raise ValueError("provider id must be 1-40 lowercase letters, digits, - or _")
         used = [k for k, v in data.items() if _supported(k, v) and v.get("provider") == pid]
+        before = {k: dict(data[k]) for k in used}
         if action == "provider_delete":
             if pid not in providers:
                 raise ValueError("unknown provider")
@@ -614,7 +623,9 @@ class Models:
             data[llmconfig.PROVIDERS] = providers
         else:
             data.pop(llmconfig.PROVIDERS, None)
-        return bool(used)
+        # Renaming a provider or changing its default protocol leaves every
+        # resolved model untouched, so live sessions need no reload.
+        return any(before[k].get(f) != data[k].get(f) for k in used for f in ("apibase", "apikey"))
 
     def _provider_group(self, data):
         """Lift ungrouped models sharing an identical base URL + key into providers.
@@ -704,10 +715,7 @@ class Models:
                     if key not in data or not _supported(key, data[key]):
                         raise ValueError("unknown model configuration")
                     name = _model_name(data[key])
-                    for mk, mv in data.items():
-                        nos = mv.get("llm_nos") if _is_mixin(mk, mv) else None
-                        if not isinstance(nos, list):
-                            continue
+                    for mk, nos in _mixin_lists(data):
                         if any(isinstance(n, int) and not isinstance(n, bool) for n in nos):
                             raise ValueError(f"failover group {mk} references models by position; save it once in settings before deleting a model")
                         if name in nos:
@@ -719,7 +727,10 @@ class Models:
                     raise ValueError("unknown model action")
                 if not any(_supported(k, v) for k, v in data.items()):
                     raise ValueError("keep at least one model configuration")
-            payload = _mykey_source(original, before, self._mykey_data(data), str(path))
+            result = self._mykey_data(data)
+            if result == before:
+                return self.config()  # nothing changed: keep the file and live sessions as they are
+            payload = _mykey_source(original, before, result, str(path))
             agent = self.agent
             old = agent.llmclients, agent.llmclient, getattr(agent, "llm_no", 0)
             try:
@@ -729,7 +740,7 @@ class Models:
                     agent.load_llm_sessions()
                     if not agent.llmclients or any(not hasattr(c, "backend") for c in agent.llmclients):
                         raise RuntimeError()
-                    for item in ([] if expanded is None else expanded if isinstance(expanded, list) else [expanded]):
+                    for item in expanded if isinstance(expanded, list) else [expanded] if expanded else []:
                         wanted = item.get("name") or item["model"]
                         if not any(c.backend.name == wanted and c.backend.model == item["model"] for c in agent.llmclients):
                             raise RuntimeError()
@@ -796,9 +807,7 @@ class Models:
         old = _model_name(data[key]) if _supported(key, data.get(key)) else None
         new = _model_name(cfg)
         if old != new:
-            refs = {n for k, v in data.items() if _is_mixin(k, v)
-                    for n in (v.get("llm_nos") if isinstance(v.get("llm_nos"), list) else [])
-                    if isinstance(n, str)}
+            refs = {n for _, nos in _mixin_lists(data) for n in nos if isinstance(n, str)}
             others = [_model_name(v) for k, v in data.items() if k != key and _supported(k, v)]
             if new in refs and new in others:
                 raise ValueError("this name would make an existing failover group ambiguous")
