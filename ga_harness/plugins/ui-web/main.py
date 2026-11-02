@@ -36,6 +36,7 @@ import os
 import sys
 import html
 import json
+import time
 import re
 import threading
 import time
@@ -322,13 +323,17 @@ class WebFrontend:
 
     def snapshot(self):
         data = {"running": self.running, "messages": self.messages}
+        db_messages = False
+        selected_state = None
         if self.sessions:
-            data.update(session_id=self.sessions.current()["id"], sessions=self.sessions.listing(),
+            data.update(session_id=self.sessions.current(light=True)["id"], sessions=self.sessions.listing(),
                         persistence_error=self.persistence_error)
         if self.runs:
             with self.sessions.lock:
                 selected = self.sessions.current()
                 active = self.runs.active_for(selected["id"])
+                selected_state = selected["state"]
+                db_messages = True
                 data.update(session_id=selected["id"], messages=selected["messages"],
                             running=active is not None, run_id=active["id"] if active else None,
                             runs=self.runs.listing(), parallel_runs=True)
@@ -336,6 +341,7 @@ class WebFrontend:
                 # with its own stream position so no fragment is lost or doubled.
                 live = self.runs.live_snapshot(selected["id"]) if active else None
                 if live:
+                    db_messages = False
                     data["messages"] = live["messages"]
                     data["runs"] = [dict(run, seq=live["seq"]) if run["id"] == live["run_id"] else run
                                     for run in data["runs"]]
@@ -348,8 +354,12 @@ class WebFrontend:
         if self.sessions and agent is not None:
             data["effort"] = {"current": getattr(agent, "gah_reasoning_effort", None), "options": list(EFFORTS)}
         if self.sessions and self.runs:
-            data["presets"] = presets.catalog((self.sessions.current()["state"] or {}).get("preset"))
+            data["presets"] = presets.catalog(((selected_state if self.runs else None) or {}).get("preset"))
+        # Messages read from the DB are already private to this snapshot; only share-prone data needs copying.
+        fresh = data.pop("messages") if db_messages else None
         data = copy.deepcopy(data)
+        if fresh is not None:
+            data["messages"] = fresh
         data["web_plugins"] = self.web.manifest()
         return self.ctx.waterfall("web.snapshot", data)
 
@@ -359,6 +369,10 @@ class WebFrontend:
 
     def file_roots(self):
         """Directories a chat file reference may read from: every known workspace plus the GA root."""
+        now = time.monotonic()
+        cached = getattr(self, "_roots_cache", None)
+        if cached and now - cached[0] < 3.0:
+            return cached[1]
         with self.lock:
             scope = self.snapshot().get("scope") or {}
         found = [scope.get("workspace")] + [p.get("workspace") for p in scope.get("projects") or []
@@ -378,7 +392,8 @@ class WebFrontend:
                 continue
             if root.is_dir() and root not in roots:
                 roots.append(root)
-        return roots, scope.get("workspace")
+        self._roots_cache = (now, (roots, scope.get("workspace")))
+        return self._roots_cache[1]
 
     def resolve_file(self, raw):
         """-> (Path, root) for an existing regular file under an allowed root, else raise LookupError."""

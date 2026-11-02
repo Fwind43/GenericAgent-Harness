@@ -17,12 +17,12 @@ const replyOf = (m?: Message) => {
   return m.text || '';
 };
 
-export function MessageNav({ messages, scroll }: { messages: Message[]; scroll: RefObject<HTMLElement | null> }) {
+export function MessageNav({ messages, scroll, offset = 0 }: { messages: Message[]; scroll: RefObject<HTMLElement | null>; offset?: number }) {
   const nodes = messages.flatMap((m, index) => m.role === 'user' ? [{
     index,
     question: plain(m.text || (m.attachments?.length ? m.attachments.map(a => a.name).join(', ') : ''), 80) || T('(空消息)', '(empty message)'),
     answer: plain(replyOf(messages[index + 1]), 120),
-  }] : []);
+  }] : []).filter(n => n.index >= offset);
   const [active, setActive] = useState(-1), [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement | null>(null), closer = useRef<number | undefined>(undefined);
   const show = () => { window.clearTimeout(closer.current); setOpen(true); };
@@ -42,11 +42,11 @@ export function MessageNav({ messages, scroll }: { messages: Message[]; scroll: 
     const line = node.scrollTop + node.clientHeight / 3;
     let current = -1;
     for (const n of nodes) {
-      const el = items[n.index] as HTMLElement | undefined;
+      const el = items[n.index - offset] as HTMLElement | undefined;
       if (el && posOf(node, el) <= line) current = n.index; else if (el) break;
     }
     setActive(current < 0 && nodes.length ? nodes[0].index : current);
-  }, [scroll, nodes.length, messages.length]);
+  }, [scroll, nodes.length, messages.length, offset]);
   useEffect(() => {
     const node = scroll.current;
     measure();
@@ -58,7 +58,7 @@ export function MessageNav({ messages, scroll }: { messages: Message[]; scroll: 
   }, [measure]);
   if (nodes.length < 2 || !box) return null;
   const jump = (index: number) => {
-    const node = scroll.current, el = node?.querySelector('#thread')?.children[index] as HTMLElement | undefined;
+    const node = scroll.current, el = node?.querySelector('#thread')?.children[index - offset] as HTMLElement | undefined;
     if (node && el) node.scrollTo({ top: posOf(node, el) - 16, behavior: 'smooth' });
   };
   const label = (i: number, q: string) => T('跳到第 ', 'Jump to message ') + (i + 1) + T(' 条：', ': ') + q;

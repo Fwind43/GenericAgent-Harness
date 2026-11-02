@@ -166,14 +166,19 @@ class Sessions:
             raise ValueError("session not found")
         result = dict(row)
         for key in ("messages", "state"):
-            result[key] = json.loads(result[key])
+            if key in result:
+                result[key] = json.loads(result[key])
         return result
 
-    def current(self):
+    # Scalar columns only: skips parsing the (possibly huge) transcript and agent state.
+    LIGHT = "id,title,updated,workspace,project_id,parent_id,pinned,read_at,deleted"
+
+    def current(self, light=False):
         with self.lock:
             self._init()
+            cols = self.LIGHT if light else "*"
             with self._db() as db:
-                return self._decode(db.execute("SELECT * FROM sessions WHERE id=(SELECT value FROM meta WHERE key='current') AND deleted=0").fetchone())
+                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=(SELECT value FROM meta WHERE key='current') AND deleted=0").fetchone())
 
     # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
     # client of this host -- local or remote -- sees the same state. Values are JSON.
@@ -201,11 +206,12 @@ class Sessions:
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", ("pref:" + key, text))
 
-    def get(self, sid):
+    def get(self, sid, light=False):
         with self.lock:
             self._init()
+            cols = self.LIGHT if light else "*"
             with self._db() as db:
-                return self._decode(db.execute("SELECT * FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone())
+                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone())
 
     def listing(self):
         with self.lock:
@@ -299,7 +305,7 @@ class Sessions:
         with self.lock:
             if not self.parallel:
                 self._idle()
-            base = self.get(parent_id) if parent_id else self.current()
+            base = self.get(parent_id, light=True) if parent_id else self.current(light=True)
             if title is not None and (not isinstance(title, str) or not title.strip() or len(title.strip()) > 120):
                 raise ValueError("title must contain 1-120 characters")
             if parent_id and ((workspace is not None and workspace != base["workspace"]) or
@@ -324,14 +330,14 @@ class Sessions:
                 self._idle()
             if action == "new":
                 return self.create(parent_id=parent_id, workspace=workspace, project_id=project_id, title=title, select=True)
-            current = self.current()
+            current = self.current(light=True)
             if action == "read_all":
                 with self._db() as db:
                     db.execute("UPDATE sessions SET read_at=MAX(read_at,updated) WHERE deleted=0")
                 return current
             if action not in ("select", "rename", "delete", "pin", "unpin", "read", "unread"):
                 raise ValueError("unknown session action")
-            self.get(sid)
+            self.get(sid, light=True)
             fallback = (current["workspace"], current["project_id"])
             if action == "delete" and self.root_scope:
                 fallback = self.root_scope(current, None)

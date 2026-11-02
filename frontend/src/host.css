@@ -442,3 +442,6 @@ html body.app .gah-head-slot :is(span[data-gah-plugin="web-theme"],.gah-theme-pi
 html body.app .gah-head-slot :is(span[data-gah-plugin="web-theme"],.gah-theme-picker) select{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer;border:0;font-size:16px}
 /* a palette plugin supplies the shared picker: drop the built-in one entirely */
 html[data-gah-theme-picker="on"] body.app .gah-head-slot span[data-gah-plugin="web-theme"]:has(>select#theme){display:none}
+
+.gah-load-earlier{display:block;margin:8px auto;padding:6px 14px;border:1px solid var(--border,#8884);border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:12px;opacity:.75;cursor:pointer}
+.gah-load-earlier:hover{opacity:1}

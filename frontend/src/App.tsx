@@ -30,6 +30,8 @@ const clampSide = (value: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.
 const savedSide = () => { const value = Number(saved('gah-side-width')); return value ? clampSide(value) : SIDE_DEFAULT; };
 // The backend stores this default chat title untranslated; it is localized only for display.
 const NEW_TITLE = '\u65b0\u4f1a\u8bdd';
+const WINDOW = 40;
+
 export function App() {
   const { state, connected, changing, notice } = useHost();
   const [draft, setDraft] = useState(''), [sending, setSending] = useState(false);
@@ -64,6 +66,10 @@ export function App() {
   const page = pages.current(usePages());
   const busy = state.running || changing || sending;
   const stats = sessionStats(state.messages ?? []);
+  // Render only the newest messages; switching to a long session otherwise mounts every turn at once.
+  const [win, setWin] = useState({ sid: state.session_id, limit: WINDOW });
+  const limit = win.sid === state.session_id ? win.limit : WINDOW;
+  const first = Math.max(0, (state.messages?.length ?? 0) - limit);
   const currentSession = state.sessions?.find((session) => session.id === state.session_id);
   const sessionTitle = !currentSession ? '' : !currentSession.title || currentSession.title === NEW_TITLE ? T(NEW_TITLE, 'New chat') : currentSession.title;
   useEffect(() => host.connect(), []);
@@ -207,9 +213,10 @@ export function App() {
       <nav className="toolbar gah-bar" hidden={!!page} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
       <main id="scroll" ref={scroll} hidden={!!page || view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
-        <div id="thread">{state.messages.length ? state.messages.map((message, index) => <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />) : <EmptyState />}</div>
+        {first > 0 && <button type="button" className="gah-load-earlier" onClick={() => setWin({ sid: state.session_id, limit: limit + WINDOW })}>{T(`显示更早的 ${Math.min(first, WINDOW)} 条消息（还有 ${first} 条）`, `Show ${Math.min(first, WINDOW)} earlier messages (${first} hidden)`)}</button>}
+        <div id="thread">{state.messages.length ? state.messages.slice(first).map((message, i) => { const index = first + i; return <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />; }) : <EmptyState />}</div>
       </main>
-      {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} />}
+      {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
       <div className="gah-view-area" hidden={!!page || view === CHAT_VIEW}><Slot name="view" /></div>
       <div className="gah-page-area" hidden={!page}><Slot name="page" /></div>
       <footer hidden={!!page}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
