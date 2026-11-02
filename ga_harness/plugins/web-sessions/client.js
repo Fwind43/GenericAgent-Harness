@@ -170,6 +170,11 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const activity = /* @__PURE__ */ new Map();
     for (const item of state.runs ?? []) if (item.status === "running" || item.status === "cancelling") activity.set(item.session_id, item.status);
     if (state.running && state.session_id && !activity.has(state.session_id)) activity.set(state.session_id, "running");
+    const projectStatus = /* @__PURE__ */ new Map();
+    for (const s of state.sessions ?? []) {
+      const st = s.project_id ? activity.get(s.id) : void 0;
+      if (s.project_id && st && projectStatus.get(s.project_id) !== "running") projectStatus.set(s.project_id, st);
+    }
     const q = query.trim().toLowerCase();
     const known = new Set(projects.map((p) => p.id)), byProject = /* @__PURE__ */ new Map(), recentAll = [];
     const projectName = new Map(projects.map((p) => [p.id, p.name]));
@@ -288,6 +293,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-closed", "data-i": "folder", "aria-hidden": "true" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-open", "data-i": "folder-open", "aria-hidden": "true" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-name", children: p.name }),
+            projectStatus.has(p.id) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${projectStatus.get(p.id)}`, role: "status", title: projectStatus.get(p.id) === "cancelling" ? sdk.T("有会话正在停止", "A chat is stopping") : sdk.T("有会话运行中", "A chat is running"), "aria-label": projectStatus.get(p.id) === "cancelling" ? sdk.T("有会话正在停止", "A chat is stopping") : sdk.T("有会话运行中", "A chat is running") }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-count", children: (byProject.get(p.id) ?? []).length })
           ] }),
           layout.projectSort === "custom" && !q && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [

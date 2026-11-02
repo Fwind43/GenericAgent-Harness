@@ -139,6 +139,12 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const activity = new Map<string, string>();
   for (const item of state.runs ?? []) if (item.status === 'running' || item.status === 'cancelling') activity.set(item.session_id, item.status);
   if (state.running && state.session_id && !activity.has(state.session_id)) activity.set(state.session_id, 'running');
+  // A project shows the strongest state of any of its chats (running beats stopping), even while collapsed or filtered out.
+  const projectStatus = new Map<string, string>();
+  for (const s of state.sessions ?? []) {
+    const st = s.project_id ? activity.get(s.id) : undefined;
+    if (s.project_id && st && projectStatus.get(s.project_id) !== 'running') projectStatus.set(s.project_id, st);
+  }
   const q = query.trim().toLowerCase();
   const known = new Set(projects.map(p => p.id)), byProject = new Map<string, Session[]>(), recentAll: Session[] = [];
   const projectName = new Map(projects.map(p => [p.id, p.name]));
@@ -201,7 +207,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
     return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}`} data-key={key}>
-      <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span><span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
+      <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span>{projectStatus.has(p.id) && <span className={`gah-sess-status ${projectStatus.get(p.id)}`} role="status" title={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} aria-label={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} />}<span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
         {layout.projectSort === 'custom' && !q && <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
         <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></>}
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
