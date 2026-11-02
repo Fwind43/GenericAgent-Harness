@@ -1,0 +1,6 @@
+name = "web-mermaid"
+category = "ui"
+entry = "main:apply"
+description = "Render ```mermaid code blocks in chat messages as diagrams (bundled Mermaid, loaded on first use; source/diagram toggle)."
+description_zh = "把对话中的 ```mermaid 代码块渲染为图表（内置 Mermaid，首次使用时才加载；可在源码与图表间切换）。"
+inject = ["web.host"]

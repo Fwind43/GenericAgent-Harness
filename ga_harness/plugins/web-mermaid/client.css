@@ -1,0 +1,7 @@
+.md-code.mm-ok > pre { display: none; }
+.md-code.mm-ok.mm-src > pre { display: block; }
+.md-code.mm-ok.mm-src > .mm-view { display: none; }
+.mm-view { padding: 12px; overflow: auto; text-align: center; }
+.mm-view svg { max-width: 100%; height: auto; }
+.mm-toggle { font: inherit; font-size: 12px; margin-left: auto; padding: 0 8px; border: 1px solid var(--border, #8884);
+  border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }

@@ -86,6 +86,10 @@ name = "web-trace"
 [[plugins]]
 name = "web-usage"
 
+# render ```mermaid blocks in messages as diagrams; add-on for ui-web
+[[plugins]]
+name = "web-mermaid"
+
 # per-message edit/regenerate and branch switching; add-on for ui-web
 [[plugins]]
 name = "worldline"

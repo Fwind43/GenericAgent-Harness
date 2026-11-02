@@ -54,6 +54,8 @@ USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
                "style": "text/css; charset=utf-8"}
+FILE_TYPES = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
+              "json": "application/json; charset=utf-8", "svg": "image/svg+xml"}
 ASSET_FILES = {"script": "client.js", "head": "head.js", "style": "client.css"}
 WILDCARD_HOSTS = ("", "0.0.0.0", "::")
 LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
@@ -156,7 +158,7 @@ class WebHost:
         self.items = {}
         self.seq = 0
 
-    def register(self, name, *, script=None, style=None, head=None, routes=None, order=100):
+    def register(self, name, *, script=None, style=None, head=None, routes=None, files=None, order=100):
         if not isinstance(name, str) or not NAME_RE.match(name):
             raise ValueError(f"invalid web plugin name: {name!r}")
         assets = {}
@@ -166,6 +168,12 @@ class WebHost:
                 if not path.is_file():
                     raise FileNotFoundError(f"{name}: {kind} asset not found: {path}")
                 assets[kind] = path
+        extra = {}
+        for fname, path in (files or {}).items():  # lazily loaded extras: /web/<name>/<fname>
+            path = Path(path)
+            if not re.match(r"^[A-Za-z0-9._-]+\.(js|css|json|svg)$", str(fname)) or fname in ASSET_FILES.values() or not path.is_file():
+                raise ValueError(f"{name}: invalid file asset {fname!r}")
+            extra[fname] = path
         table = {}
         for key, fn in (routes or {}).items():
             method, sub = key
@@ -177,7 +185,7 @@ class WebHost:
             if name in self.items:
                 raise ValueError(f"web plugin already registered: {name}")
             self.seq += 1
-            item = {"name": name, "assets": assets, "routes": table, "order": int(order), "rev": self.seq}
+            item = {"name": name, "assets": assets, "files": extra, "routes": table, "order": int(order), "rev": self.seq}
             self.items[name] = item
         self.frontend.web_plugins_changed()
 
@@ -204,6 +212,8 @@ class WebHost:
         with self.lock:
             item = self.items.get(name)
         if item:
+            if filename in item["files"]:
+                return item["files"][filename], FILE_TYPES[filename.rsplit(".", 1)[1]]
             for kind, fname in ASSET_FILES.items():
                 if fname == filename and kind in item["assets"]:
                     return item["assets"][kind], ASSET_TYPES[kind]
