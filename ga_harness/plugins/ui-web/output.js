@@ -85,6 +85,8 @@
     raw = String(raw || '').trim();
     if (raw.startsWith('api/file?')) return new URLSearchParams(raw.slice(9)).get('path') || '';
     if (!raw || raw.startsWith('#') || raw.startsWith('//')) return '';
+    // marked percent-encodes backslashes: "E:\a\b.png" arrives as "E:%5Ca%5Cb.png".
+    if (/^[A-Za-z]:%5C/i.test(raw)) { try { raw = decodeURI(raw); } catch (_) { /* keep raw */ } }
     let path = raw;
     if (/^file:/i.test(raw)) {
       try { path = decodeURIComponent(new URL(raw).pathname).replace(/^\/([A-Za-z]:[\\/])/, '$1'); } catch (_) { return ''; }
