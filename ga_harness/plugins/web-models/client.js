@@ -787,12 +787,173 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       } })
     ] });
   }
+  const TEMPLATES = [
+    { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1", protocol: "oai", pick: ["deepseek-chat"] },
+    { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1", protocol: "oai" },
+    { id: "anthropic", name: "Anthropic Claude", base: "https://api.anthropic.com", protocol: "claude" },
+    { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1", protocol: "oai" },
+    { id: "siliconflow", name: "硅基流动 SiliconFlow", base: "https://api.siliconflow.cn/v1", protocol: "oai" },
+    { id: "moonshot", name: "Kimi / Moonshot", base: "https://api.moonshot.cn/v1", protocol: "oai" },
+    { id: "zhipu", name: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", protocol: "oai" },
+    { id: "dashscope", name: "阿里通义 DashScope", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", protocol: "oai" },
+    { id: "ollama", name: "Ollama (本机)", base: "http://localhost:11434/v1", protocol: "oai", key: "ollama", hint: "本机 Ollama 不校验密钥，保留默认值即可。" },
+    { id: "custom", name: "中转站 / 其他", base: "", protocol: "auto", hint: "填写服务商给你的地址，协议会自动识别。" }
+  ];
+  function QuickAdd({ config, disabled, post, onDone, onCancel }) {
+    const [tpl, setTpl] = react.useState(null);
+    const [base, setBase] = react.useState(""), [key, setKey] = react.useState(""), [show, setShow] = react.useState(false);
+    const [protocol, setProtocol] = react.useState("auto");
+    const [models, setModels] = react.useState(null), [picked, setPicked] = react.useState(/* @__PURE__ */ new Set());
+    const [manual, setManual] = react.useState(""), [query, setQuery] = react.useState("");
+    const [busy, setBusy] = react.useState(""), [error, setError] = react.useState(""), [tested, setTested] = react.useState("");
+    const choose = (t) => {
+      setTpl(t);
+      setBase(t.base);
+      setKey(t.key || "");
+      setProtocol(t.protocol);
+      setModels(null);
+      setError("");
+      setTested("");
+    };
+    const step = !tpl ? 1 : models === null ? 2 : 3;
+    const connect = async () => {
+      setBusy("connect");
+      setError("");
+      try {
+        const out = await post("/api/models/remote", { apibase: base.trim(), apikey: key.trim(), protocol });
+        setProtocol(out.protocol || protocol);
+        setModels(out.models || []);
+        const ids = new Set((out.models || []).map((m) => m.id));
+        setPicked(new Set(((tpl == null ? void 0 : tpl.pick) || []).filter((id) => ids.has(id))));
+      } catch (e) {
+        setError(errorText(e));
+      } finally {
+        setBusy("");
+      }
+    };
+    const chosen = () => {
+      const ids = [...picked];
+      for (const id of manual.split(/[\s,\uff0c]+/)) if (id && !ids.includes(id)) ids.push(id);
+      return ids;
+    };
+    const test = async () => {
+      const [model] = chosen();
+      if (!model) return;
+      setBusy("test");
+      setError("");
+      setTested("");
+      try {
+        const out = await post("/api/models/test", { apibase: base.trim(), apikey: key.trim(), protocol, model });
+        setProtocol(out.protocol || protocol);
+        setTested(sdk.T("连接成功：" + model + " 用时 " + out.ms + " ms", "Works: " + model + " answered in " + out.ms + " ms"));
+      } catch (e) {
+        setError(errorText(e));
+      } finally {
+        setBusy("");
+      }
+    };
+    const save = async () => {
+      const ids = chosen();
+      if (!ids.length) return;
+      const proto = protocol === "auto" ? "oai" : protocol, stamp = Date.now();
+      setBusy("save");
+      setError("");
+      try {
+        const result = await post("/api/models/config", {
+          action: "quick_add",
+          revision: config.revision,
+          provider: { values: { name: tpl && tpl.id !== "custom" ? tpl.name : "", protocol: proto, apibase: base.trim(), apikey: key.trim() } },
+          items: ids.map((model, i) => ({ key: "native_" + proto + "_config_" + stamp + "_" + i, values: { name: model, model } }))
+        });
+        onDone(result, ids.length);
+      } catch (e) {
+        setError(errorText(e));
+        setBusy("");
+      }
+    };
+    const lock = disabled || !!busy;
+    const shown = (models || []).filter((m) => sdk.matches(query, m.id, m.name));
+    const toggle = (id) => {
+      const next = new Set(picked);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setPicked(next);
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-quick", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("header", { className: "model-quick-head", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("h3", { children: sdk.T("快速添加模型", "Quick add") }),
+        /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "model-quick-steps", children: [sdk.T("选服务", "Service"), sdk.T("填密钥", "Key"), sdk.T("选模型", "Models")].map((label, i) => /* @__PURE__ */ jsxRuntime.jsx("li", { "aria-current": step === i + 1 ? "step" : void 0, className: step > i + 1 ? "is-done" : "", children: label }, label)) }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", onClick: onCancel, children: sdk.T("取消", "Cancel") })
+      ] }),
+      error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),
+      step === 1 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-quick-templates", children: TEMPLATES.map((t) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", disabled: lock, onClick: () => choose(t), children: [
+        /* @__PURE__ */ jsxRuntime.jsx("strong", { children: t.name }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { children: t.base ? t.base.replace(/^https?:\/\//, "") : sdk.T("自定义地址", "Custom URL") })
+      ] }, t.id)) }),
+      step === 2 && tpl && /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-grid", onSubmit: (event) => {
+        event.preventDefault();
+        void connect();
+      }, children: [
+        tpl.hint && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-quick-hint wide", children: tpl.hint }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: "API Base URL", wide: true, children: /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, disabled: lock, value: base, autoComplete: "off", spellCheck: false, placeholder: "https://api.example.com/v1", onChange: (event) => setBase(event.target.value) }) }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-field wide", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("label", { htmlFor: "quick-api-key", children: "API Key" }),
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-secret-input", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("input", { id: "quick-api-key", required: true, type: show ? "text" : "password", autoComplete: "new-password", spellCheck: false, disabled: lock, value: key, placeholder: "sk-...", onChange: (event) => setKey(event.target.value) }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", "aria-pressed": show, onClick: () => setShow(!show), children: show ? sdk.T("隐藏", "Hide") : sdk.T("显示", "Show") })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("密钥只保存在本机 mykey.py，不会发给除该服务商外的任何地方。", "The key is stored only in your local mykey.py and sent only to this provider.") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-quick-actions wide", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: lock, onClick: () => setTpl(null), children: sdk.T("上一步", "Back") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: lock || !base.trim() || !key.trim(), onClick: () => {
+            setModels([]);
+            setPicked(/* @__PURE__ */ new Set());
+          }, children: sdk.T("跳过，手动填模型名", "Skip, type model names") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: lock || !base.trim() || !key.trim(), children: busy === "connect" ? sdk.T("连接中...", "Connecting...") : sdk.T("连接并获取模型", "Connect") })
+        ] })
+      ] }),
+      step === 3 && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-grid", children: [
+        models && models.length > 0 ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-remote wide", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-remote-head", children: /* @__PURE__ */ jsxRuntime.jsx("strong", { children: sdk.T("勾选要用的模型（" + models.length + " 个可用）", "Pick models (" + models.length + " available)") }) }),
+          models.length > 8 && /* @__PURE__ */ jsxRuntime.jsx("input", { className: "model-search", type: "search", value: query, placeholder: sdk.T("筛选模型...", "Filter models..."), onChange: (event) => setQuery(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "model-remote-list", children: shown.map((m) => /* @__PURE__ */ jsxRuntime.jsx("li", { children: /* @__PURE__ */ jsxRuntime.jsxs("label", { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", disabled: lock, checked: picked.has(m.id), onChange: () => toggle(m.id) }),
+            /* @__PURE__ */ jsxRuntime.jsx("code", { children: m.id }),
+            m.name && m.name !== m.id && /* @__PURE__ */ jsxRuntime.jsx("span", { children: m.name })
+          ] }) }, m.id)) })
+        ] }) : /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-quick-hint wide", children: sdk.T("服务商没有返回模型列表，请在下面手动填写模型名。", "The provider did not list models; type model names below.") }),
+        /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("手动填写模型名（可选，多个用逗号分隔）", "Model names (optional, comma separated)"), wide: true, children: /* @__PURE__ */ jsxRuntime.jsx("input", { disabled: lock, value: manual, spellCheck: false, placeholder: "gpt-4o-mini, deepseek-chat", onChange: (event) => setManual(event.target.value) }) }),
+        tested && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-quick-ok wide", role: "status", children: tested }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-quick-actions wide", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: lock, onClick: () => {
+            setModels(null);
+            setTested("");
+          }, children: sdk.T("上一步", "Back") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: lock || !chosen().length, onClick: () => {
+            void test();
+          }, children: busy === "test" ? sdk.T("测试中...", "Testing...") : sdk.T("测试第一个模型", "Test first model") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: lock || !chosen().length, onClick: () => {
+            void save();
+          }, children: busy === "save" ? sdk.T("保存中...", "Saving...") : sdk.T("添加 " + chosen().length + " 个模型", "Add " + chosen().length + " models") })
+        ] })
+      ] })
+    ] });
+  }
   function Models({ api }) {
     var _a, _b, _c, _d;
     const { state, changing } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
     const [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
     const [edit, setEdit] = react.useState({ kind: "provider", serial: 0 }), [detail, setDetail] = react.useState(false);
+    const [quick, setQuick] = react.useState(false);
+    const [simple, setSimple] = react.useState(() => localStorage.getItem("gah.models.view") !== "advanced");
+    const toggleSimple = () => {
+      const next = !simple;
+      setSimple(next);
+      localStorage.setItem("gah.models.view", next ? "simple" : "advanced");
+      if (next && edit.kind === "mixin") switchView("provider");
+    };
     const draft = react.useRef(false), blocked = react.useRef(false), leaving = react.useRef(false), alive = react.useRef(true);
     const heading = react.useRef(null);
     const onDirtyChange = react.useCallback((value) => {
@@ -907,6 +1068,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         const next = await api.host.get("/api/models/config");
         setConfig(next);
         select("provider", (_a2 = next.providers[0]) == null ? void 0 : _a2.id, false);
+        setQuick(next.writable && !next.providers.length && !next.entries.length);
       }, setError, true);
     }
     const change = (action, id, values) => {
@@ -971,13 +1133,53 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         api.notice(sdk.T("已归组为 ", "Grouped into ") + next.config.providers.length + sdk.T(" 个服务商", " providers"));
       }, setError);
     };
+    const quickDone = (next, count) => {
+      var _a2;
+      setConfig(next.config);
+      api.setState(next.state);
+      setQuick(false);
+      setQuery("");
+      setSection("");
+      const added = next.config.entries[next.config.entries.length - 1];
+      select("provider", (added == null ? void 0 : added.provider) || ((_a2 = next.config.providers[0]) == null ? void 0 : _a2.id), true);
+      api.notice(sdk.T("已添加 " + count + " 个模型，可在顶部模型选择器中切换使用", "Added " + count + " models. Pick one from the model selector."));
+    };
+    const duplicates = /* @__PURE__ */ new Map();
+    for (const item of (config == null ? void 0 : config.providers) || []) if (item.same_as) duplicates.set(item.same_as, [...duplicates.get(item.same_as) || [], item.id]);
+    const mergeDuplicates = async () => {
+      if (!(config == null ? void 0 : config.writable) || busy || !duplicates.size) return;
+      const count = [...duplicates.values()].reduce((sum, ids) => sum + ids.length, 0);
+      if (!await sdk.confirmDialog({
+        title: sdk.T("合并重复的服务商？", "Merge duplicate providers?"),
+        message: sdk.T(
+          count + " 个服务商与其他服务商的地址和密钥完全相同，将合并到最早的那个，模型和故障转移组会跟着迁移，实际连接不变。",
+          count + " providers have exactly the same URL and key as another one. They will be merged into the first one; models and failover groups move with them and connections stay the same."
+        ),
+        confirm: sdk.T("合并", "Merge")
+      })) return;
+      setError("");
+      void run(async () => {
+        let next = null, revision = config.revision;
+        for (const [into, ids] of duplicates) {
+          next = await api.host.post("/api/models/config", { action: "provider_merge", revision, into, ids });
+          revision = next.config.revision;
+        }
+        if (!next) return;
+        setConfig(next.config);
+        api.setState(next.state);
+        setQuery("");
+        setSection("");
+        select("provider", [...duplicates.keys()][0], false);
+        api.notice(sdk.T("已合并 " + count + " 个重复服务商", "Merged " + count + " duplicate providers"));
+      }, setError);
+    };
     const locked = busy || !(config == null ? void 0 : config.writable), browsing = working || changing;
     const names = config ? providerNames(config) : /* @__PURE__ */ new Map();
     const isModel = edit.kind === "model", isMixin = edit.kind === "mixin";
     const title = isModel ? (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || (entry == null ? void 0 : entry.key) : isMixin ? mixin == null ? void 0 : mixin.key : (provider == null ? void 0 : provider.values.name) || (provider == null ? void 0 : provider.id);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModelPicker, { api }),
-      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : ""), children: [
+      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : "") + (simple ? " is-simple" : ""), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-workspace-head", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-view-switch", role: "group", "aria-label": sdk.T("模型与服务商", "Models and providers"), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": edit.kind === "provider", disabled: browsing, onClick: () => switchView("provider"), children: [
@@ -988,11 +1190,15 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               sdk.T("模型", "Models"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.entries.length) ?? 0 })
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isMixin, disabled: browsing, onClick: () => switchView("mixin"), children: [
+            !simple && /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isMixin, disabled: browsing, onClick: () => switchView("mixin"), children: [
               sdk.T("故障转移组", "Failover groups"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: ((_b = config == null ? void 0 : config.mixins) == null ? void 0 : _b.length) ?? 0 })
             ] })
           ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-quick-open", disabled: browsing || locked || quick, onClick: () => {
+            void navigate(() => setQuick(true));
+          }, children: sdk.T("+ 快速添加", "+ Quick add") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-mode", "aria-pressed": !simple, title: sdk.T("高级模式显示故障转移组和每个模型的调优参数", "Advanced mode shows failover groups and per-model tuning"), onClick: toggleSimple, children: simple ? sdk.T("简单模式", "Simple") : sdk.T("高级模式", "Advanced") }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-refresh", disabled: browsing, onClick: () => {
             void navigate(() => {
               void load();
@@ -1004,7 +1210,17 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         config && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
           !config.writable && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-readonly", role: "status", children: /* @__PURE__ */ jsxRuntime.jsx("span", { children: readonlyText(config) }) }),
           state.running && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help model-running", children: sdk.T("任务运行中，可查看配置，结束后可编辑。", "A run is active. You can browse; editing is available when it finishes.") }),
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-layout" + (detail ? " is-detail" : ""), children: [
+          !quick && config.writable && duplicates.size > 0 && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-duplicates", role: "status", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              sdk.T("发现地址和密钥完全相同的重复服务商：", "Duplicate providers with the same URL and key: "),
+              [...duplicates].map(([into, ids]) => [into, ...ids].map((id) => names.get(id) || id).join(" = ")).join("；")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: locked, onClick: () => {
+              void mergeDuplicates();
+            }, children: sdk.T("一键合并", "Merge") })
+          ] }),
+          quick && /* @__PURE__ */ jsxRuntime.jsx(QuickAdd, { config, disabled: locked, post: (path, body) => api.host.post(path, body), onDone: quickDone, onCancel: () => setQuick(false) }),
+          !quick && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-layout" + (detail ? " is-detail" : ""), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("aside", { className: "model-list-pane", children: [
               /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-browser-tools", children: [
                 /* @__PURE__ */ jsxRuntime.jsx("input", { className: "model-search", type: "search", value: query, disabled: browsing, placeholder: isModel ? sdk.T("搜索模型...", "Search models...") : isMixin ? sdk.T("搜索故障转移组...", "Search failover groups...") : sdk.T("搜索服务商...", "Search providers..."), "aria-label": sdk.T("搜索配置", "Search configurations"), onChange: (event) => setQuery(event.target.value) }),
