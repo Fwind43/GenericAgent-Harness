@@ -1,0 +1,35 @@
+html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+body {
+  font: 12px/1.35 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #f2f2f2; user-select: none; -webkit-user-select: none;
+  display: flex; justify-content: center; align-items: flex-start; padding: 8px;
+}
+.island {
+  display: inline-flex; flex-direction: column; gap: 6px;
+  min-width: 220px; max-width: 360px; box-sizing: border-box;
+  padding: 8px 14px; border-radius: 999px; background: rgba(18, 18, 20, .94);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .35); cursor: pointer;
+}
+.island[hidden] { display: none; }
+.island.expanded { border-radius: 18px; padding: 10px 12px; min-width: 280px; }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #4ade80; }
+.status-running .dot { animation: pulse 1.2s ease-in-out infinite; }
+.status-cancelling .dot { background: #fbbf24; }
+.status-done .dot { background: #4ade80; }
+.status-error .dot, .status-interrupted .dot { background: #f87171; }
+.status-aborted .dot { background: #a1a1aa; }
+@keyframes pulse { 50% { opacity: .35; } }
+.text { flex: 1; min-width: 0; }
+.title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.text .detail { color: #a1a1aa; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { display: flex; align-items: center; gap: 6px; flex: none; color: #a1a1aa; font-variant-numeric: tabular-nums; }
+.meta .detail { max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more { color: #e4e4e7; background: rgba(255, 255, 255, .12); border-radius: 8px; padding: 0 5px; }
+.stop {
+  width: 20px; height: 20px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
+  background: rgba(255, 255, 255, .12); position: relative;
+}
+.stop::before { content: ""; position: absolute; inset: 6px; border-radius: 2px; background: #f87171; }
+.stop:hover { background: rgba(248, 113, 113, .25); }
+.overflow { color: #a1a1aa; font-size: 11px; text-align: center; }

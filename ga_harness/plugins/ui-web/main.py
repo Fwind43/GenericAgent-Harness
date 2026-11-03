@@ -57,7 +57,8 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
                "style": "text/css; charset=utf-8"}
 FILE_TYPES = {"js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
-              "json": "application/json; charset=utf-8", "svg": "image/svg+xml"}
+              "json": "application/json; charset=utf-8", "svg": "image/svg+xml",
+              "html": "text/html; charset=utf-8"}
 ASSET_FILES = {"script": "client.js", "head": "head.js", "style": "client.css"}
 WILDCARD_HOSTS = ("", "0.0.0.0", "::")
 LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
@@ -173,7 +174,7 @@ class WebHost:
         extra = {}
         for fname, path in (files or {}).items():  # lazily loaded extras: /web/<name>/<fname>
             path = Path(path)
-            if not re.match(r"^[A-Za-z0-9._-]+\.(js|css|json|svg)$", str(fname)) or fname in ASSET_FILES.values() or not path.is_file():
+            if not re.match(r"^[A-Za-z0-9._-]+\.(js|css|json|svg|html)$", str(fname)) or fname in ASSET_FILES.values() or not path.is_file():
                 raise ValueError(f"{name}: invalid file asset {fname!r}")
             extra[fname] = path
         table = {}

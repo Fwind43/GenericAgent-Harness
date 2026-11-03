@@ -9,6 +9,7 @@ const { Updater } = require('./updater');
 const { t, setLanguage, initLanguage } = require('./i18n');
 const autostart = require('./autostart');
 const { openExternal, openExternalQuiet } = require('./external');
+const { Island, supported: islandSupported } = require('./island');
 
 let backend = null;
 let win = null;
@@ -16,6 +17,7 @@ let origin = null;
 let quitting = false;
 let tray = null;
 let updater = null;
+let island = null;
 // Started by the login item: stay in the tray until the user opens the window.
 const startHidden = autostart.launchedHidden();
 // Windows picks the matching frame from a multi-size .ico; downscaling the 512px PNG blurs it.
@@ -40,6 +42,12 @@ function registerBridge() {
   ipcMain.on('gah:set-lang', (event, lang) => {
     if (fromBackend(event) && setLanguage(lang)) refreshTrayMenu();
   });
+  // Dynamic island page (web-island) -> shell.
+  const fromIsland = (event) => island && island.win && !island.win.isDestroyed()
+    && event.sender === island.win.webContents && fromBackend(event);
+  ipcMain.on('gah:island-layout', (event, box) => { if (fromIsland(event)) island.layout(box || {}); });
+  ipcMain.on('gah:island-drag', (event, phase, x, y) => { if (fromIsland(event)) island.dragEvent(phase, Number(x) || 0, Number(y) || 0); });
+  ipcMain.on('gah:island-open-main', (event) => { if (fromIsland(event)) showWindow(); });
   ipcMain.handle('gah:pick-directory', async (event, opts = {}) => {
     if (!fromBackend(event)) throw new Error('forbidden');
     const res = await dialog.showOpenDialog(win, {
@@ -255,6 +263,10 @@ function refreshTrayMenu() {
     }, { type: 'separator' });
   }
   if (backend) items.push({ label: t('GenericAgent 目录…', 'GenericAgent folder...'), click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
+  if (island) {
+    items.push({ label: t('显示灵动岛', 'Show dynamic island'), type: 'checkbox', checked: island.enabled,
+      click: (item) => { island.setEnabled(item.checked); refreshTrayMenu(); } }, { type: 'separator' });
+  }
   if (autostart.supported()) {
     items.push({ label: t('开机自启', 'Launch at login'), type: 'checkbox', checked: autostart.isEnabled(),
       click: (item) => {
@@ -368,6 +380,12 @@ function createWindow(url) {
     win.hide();
   });
   win.on('closed', () => { win = null; });
+  // The island collapses while the main window is in front (the page then shows the same runs).
+  const islandState = () => { if (island && win) island.sendState({ mainFocused: win.isVisible() && win.isFocused() }); };
+  for (const ev of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(ev, islandState);
+  // Open the island once the main page has set the session cookie it authenticates with.
+  win.webContents.once('did-finish-load', () => { if (island) island.open(origin); });
+  win.webContents.on('did-finish-load', islandState);
   win.loadURL(`${url}?gah_token=${backend.token}`);
 }
 
@@ -431,6 +449,7 @@ async function boot() {
     const url = await backend.waitReady();
     origin = new URL(url).origin;
     updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState, openSettings: openMirrorSettings });
+    if (islandSupported()) island = new Island({ dataDir: app.getPath('userData'), preload: path.join(__dirname, 'preload.js'), icon: ICON });
     registerBridge();
     createTray();
     createWindow(url);
@@ -486,5 +505,6 @@ app.on('before-quit', (event) => {
   quitting = true;
   event.preventDefault();
   if (tray) { tray.destroy(); tray = null; }
+  if (island) island.close();
   backend.stop().finally(() => app.exit(0));
 });

@@ -41,4 +41,15 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
       return () => ipcRenderer.removeListener('gah:update-open', h);
     },
   }),
+  // Used by the web-island page inside the floating island window.
+  island: Object.freeze({
+    layout: (box) => ipcRenderer.send('gah:island-layout', box || {}),
+    drag: (phase, x, y) => ipcRenderer.send('gah:island-drag', String(phase), Number(x) || 0, Number(y) || 0),
+    openMain: () => ipcRenderer.send('gah:island-open-main'),
+    onState: (fn) => {
+      const h = (_e, s) => fn(s || {});
+      ipcRenderer.on('gah:island-state', h);
+      return () => ipcRenderer.removeListener('gah:island-state', h);
+    },
+  }),
 }));

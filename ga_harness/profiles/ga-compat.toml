@@ -94,6 +94,10 @@ name = "web-usage"
 [[plugins]]
 name = "web-mermaid"
 
+# desktop dynamic island page (floating task pill); only the desktop shell loads it
+[[plugins]]
+name = "web-island"
+
 # per-message edit/regenerate and branch switching; add-on for ui-web
 [[plugins]]
 name = "worldline"
