@@ -15,9 +15,11 @@ EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn
 # Host/UI/storage plugins must never be mounted in a worker. Additional execution
 # plugins come from run-store.worker_plugins or Runs.register_worker_plugin; they
 # are taken from the plugin catalog and need not be active in the host.
+# DEFAULT_PLUGINS only follow the host: each is mounted (with the host config) when
+# it is active there, so disabling e.g. vlm-tool in the host also drops vision_ask.
 DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
                              "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools",
-                             "project-memory"))
+                             "project-memory", "vlm-tool"))
 
 
 def recipe_for(ctx, extra=()):
