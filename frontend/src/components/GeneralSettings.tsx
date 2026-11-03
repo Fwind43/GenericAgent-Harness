@@ -11,6 +11,10 @@ const ID = 'general';
 type AutostartState = { supported: boolean; enabled: boolean };
 type AutostartApi = { get(): Promise<AutostartState>; set(on: boolean): Promise<AutostartState> };
 const autostartApi = (window as unknown as { gahDesktop?: { autostart?: AutostartApi } }).gahDesktop?.autostart;
+// Dynamic island switches, desktop shell only (window.gahDesktop.islandPrefs).
+type IslandState = { supported: boolean; enabled: boolean; pinned: boolean };
+type IslandApi = { get(): Promise<IslandState>; set(patch: Partial<Pick<IslandState, 'enabled' | 'pinned'>>): Promise<IslandState> };
+const islandApi = (window as unknown as { gahDesktop?: { islandPrefs?: IslandApi } }).gahDesktop?.islandPrefs;
 
 const LANGS = [{ id: 'zh', label: '\u4e2d\u6587' }, { id: 'en', label: 'English' }] as const;
 
@@ -41,6 +45,22 @@ export function GeneralSettings() {
       .catch((e: Error) => setAutostartError(e?.message || String(e)))
       .finally(() => setAutostartBusy(false));
   };
+  const [island, setIsland] = useState<IslandState | null>(null);
+  const [islandBusy, setIslandBusy] = useState(false);
+  const [islandError, setIslandError] = useState('');
+  useEffect(() => {
+    if (!islandApi || !visible) return;
+    let alive = true;
+    islandApi.get().then(s => { if (alive) setIsland(s); }).catch(() => {});
+    return () => { alive = false; };
+  }, [visible]);
+  const changeIsland = (patch: Partial<Pick<IslandState, 'enabled' | 'pinned'>>) => {
+    if (!islandApi) return;
+    setIslandError(''); setIslandBusy(true);
+    islandApi.set(patch).then(setIsland)
+      .catch((e: Error) => setIslandError(e?.message || String(e)))
+      .finally(() => setIslandBusy(false));
+  };
   useLayoutEffect(() => settings.register({ id: ID, label: T('\u901a\u7528', 'General'), icon: 'globe', order: -100 }), []);
   const choose = (lang: string) => { if (lang === language) return; save('gah-lang', lang); location.reload(); };
   return <section id={'gah-settings-panel-' + ID} role="tabpanel" aria-labelledby={'gah-settings-tab-' + ID}
@@ -63,6 +83,21 @@ export function GeneralSettings() {
           <label className="gah-switch"><input type="checkbox" aria-label={T('\u5f00\u673a\u81ea\u542f', 'Launch at login')}
             checked={autostart.enabled} disabled={autostartBusy}
             onChange={e => toggleAutostart(e.target.checked)} /><span /></label>
+        </div>}
+        {island?.supported && <div className="gah-setting-row gah-island">
+          <div className="gah-setting-text"><strong>{T('\u7075\u52a8\u5c9b', 'Dynamic island')}</strong>
+            <span>{T('\u4efb\u52a1\u8fd0\u884c\u6216\u6709\u672a\u8bfb\u4f1a\u8bdd\u65f6\u5728\u5c4f\u5e55\u4e0a\u65b9\u6d6e\u51fa\uff0c\u4e3b\u7a97\u53e3\u5728\u524d\u53f0\u65f6\u6536\u8d77', 'Floats at the top of the screen while tasks run or chats are unread; hides while the main window is in front')}</span>
+            {islandError && <span className="gah-update-error">{islandError}</span>}</div>
+          <label className="gah-switch"><input type="checkbox" aria-label={T('\u7075\u52a8\u5c9b', 'Dynamic island')}
+            checked={island.enabled} disabled={islandBusy}
+            onChange={e => changeIsland({ enabled: e.target.checked })} /><span /></label>
+        </div>}
+        {island?.supported && island.enabled && <div className="gah-setting-row gah-island-pinned">
+          <div className="gah-setting-text"><strong>{T('\u5e38\u9a7b\u663e\u793a', 'Always show')}</strong>
+            <span>{T('\u7a7a\u95f2\u65f6\u4e5f\u4fdd\u7559\u4e00\u4e2a\u5c0f\u80f6\u56ca\uff0c\u53ef\u62d6\u52a8\u4f4d\u7f6e\uff0c\u70b9\u51fb\u6253\u5f00\u4e3b\u7a97\u53e3', 'Keep a small pill on screen when idle; drag to move, click to open the main window')}</span></div>
+          <label className="gah-switch"><input type="checkbox" aria-label={T('\u5e38\u9a7b\u663e\u793a', 'Always show')}
+            checked={island.pinned} disabled={islandBusy}
+            onChange={e => changeIsland({ pinned: e.target.checked })} /><span /></label>
         </div>}
         {local && <div className="gah-setting-row gah-local-address">
           <div className="gah-setting-text"><strong>{T('\u672c\u5730\u5730\u5740', 'Local address')}</strong>

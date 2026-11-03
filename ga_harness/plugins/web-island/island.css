@@ -19,13 +19,20 @@ body {
 .status-done .dot { background: #4ade80; }
 .status-error .dot, .status-interrupted .dot { background: #f87171; }
 .status-aborted .dot { background: #a1a1aa; }
+.status-unread .dot { background: #60a5fa; }
+.status-idle .dot { background: #52525b; }
+.island.idle { min-width: 0; padding: 6px 12px; }
+.island.idle .title { font-weight: 500; color: #a1a1aa; }
 @keyframes pulse { 50% { opacity: .35; } }
 .text { flex: 1; min-width: 0; }
 .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .text .detail { color: #a1a1aa; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta { display: flex; align-items: center; gap: 6px; flex: none; color: #a1a1aa; font-variant-numeric: tabular-nums; }
 .meta .detail { max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.more { color: #e4e4e7; background: rgba(255, 255, 255, .12); border-radius: 8px; padding: 0 5px; }
+.badge { color: #fff; border-radius: 8px; padding: 0 5px; min-width: 8px; text-align: center; font-size: 11px; }
+.badge-running { background: rgba(74, 222, 128, .28); }
+.badge-unread { background: rgba(96, 165, 250, .45); }
+.row + .row { border-top: 1px solid rgba(255, 255, 255, .06); padding-top: 6px; }
 .stop {
   width: 20px; height: 20px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
   background: rgba(255, 255, 255, .12); position: relative;

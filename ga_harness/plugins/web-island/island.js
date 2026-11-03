@@ -1,5 +1,7 @@
 // web-island: the floating pill shown by the desktop shell. Follows /api/events like the main page
 // and asks the shell (window.gahDesktop.island) to size, show and move its window.
+// One row per chat: chats with a live (or just finished) run first, then unread chats. With the
+// "always show" preference an idle pill stays on screen when there is nothing else to show.
 'use strict';
 (() => {
   const bridge = window.gahDesktop && window.gahDesktop.island;
@@ -11,10 +13,12 @@
 
   const ACTIVE = new Set(['running', 'cancelling']);
   const FLASH_MS = 4000;
+  const MAX_ROWS = 4;
   const runs = new Map();       // run_id -> {id, session_id, status, started, ended, step, tool, error}
-  const titles = new Map();     // session_id -> title
+  const sessions = new Map();   // session_id -> {id, title, updated, unread, running, parent_id}
   let currentSession = null;
   let mainFocused = false;
+  let pinned = false;
   let hovered = false;
   let lastLayout = '';
 
@@ -23,7 +27,7 @@
     const prev = runs.get(record.id) || { step: 0, tool: '' };
     const run = Object.assign(prev, {
       id: record.id,
-      session_id: record.session_id,
+      session_id: record.session_id || prev.session_id,
       status: record.status || prev.status,
       started: record.created ? record.created * 1000 : (prev.started || Date.now()),
       error: record.error || prev.error || '',
@@ -36,17 +40,34 @@
   function onSnapshot(snap) {
     if (!snap || typeof snap !== 'object') return;
     if ('session_id' in snap) currentSession = snap.session_id;
-    for (const s of snap.sessions || []) titles.set(s.id, s.title || '');
-    const seen = new Set();
-    for (const r of snap.runs || []) {
-      seen.add(r.id);
-      const known = runs.has(r.id);
-      const run = track(r);
-      // Runs that already ended before we connected must not flash.
-      if (!known && run && !ACTIVE.has(run.status)) run.ended = 0;
+    if (Array.isArray(snap.sessions)) {
+      sessions.clear();
+      for (const s of snap.sessions) if (s && s.id) sessions.set(s.id, s);
     }
-    for (const [id, run] of runs) if (!seen.has(id) && !ACTIVE.has(run.status)) runs.delete(id);
+    if (Array.isArray(snap.runs)) {
+      const seen = new Set();
+      for (const r of snap.runs) {
+        seen.add(r.id);
+        const known = runs.has(r.id);
+        const run = track(r);
+        // Runs that already ended before we connected must not flash.
+        if (!known && run && !ACTIVE.has(run.status)) run.ended = 0;
+      }
+      for (const [id, run] of runs) if (!seen.has(id) && !ACTIVE.has(run.status)) runs.delete(id);
+    }
     render();
+  }
+
+  // Unread flags change when a run writes its transcript; re-read the state once it settles.
+  let refreshTimer = 0;
+  function refreshSoon(delay) {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/state', { cache: 'no-store' });
+        if (res.ok) onSnapshot(await res.json());
+      } catch { /* backend restarting */ }
+    }, delay);
   }
 
   function onRunEvent(env) {
@@ -71,53 +92,82 @@
         if (!env) return;
         const run = track(env.run || { id: env.run_id, session_id: env.session_id, status: kind === 'run.started' ? 'running' : undefined });
         if (run && kind === 'run.finished' && ACTIVE.has(run.status)) { run.status = 'done'; run.ended = Date.now(); }
-        if (run && kind === 'run.finished') setTimeout(render, FLASH_MS + 50);
+        if (kind === 'run.finished') { setTimeout(render, FLASH_MS + 50); refreshSoon(600); }
         render();
       });
     }
     es.addEventListener('run.event', (e) => { const env = parse(e.data); if (env) onRunEvent(env); });
+    es.addEventListener('open', () => refreshSoon(0));
   }
 
   function parse(text) { try { return JSON.parse(text); } catch { return null; } }
 
-  function elapsed(run) {
-    const end = ACTIVE.has(run.status) ? Date.now() : (run.ended || Date.now());
-    const s = Math.max(0, Math.floor((end - run.started) / 1000));
+  function clock(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
     const m = Math.floor(s / 60);
     const h = Math.floor(m / 60);
     const pad = (n) => String(n).padStart(2, '0');
     return h ? `${h}:${pad(m % 60)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
   }
 
-  function label(run) {
-    return titles.get(run.session_id) || T('新会话', 'New session');
+  function ago(sec) {
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - sec));
+    if (s < 60) return T('\u521a\u521a', 'now');
+    const m = Math.floor(s / 60);
+    if (m < 60) return T(`${m} \u5206\u949f\u524d`, `${m}m ago`);
+    const h = Math.floor(m / 60);
+    if (h < 24) return T(`${h} \u5c0f\u65f6\u524d`, `${h}h ago`);
+    return T(`${Math.floor(h / 24)} \u5929\u524d`, `${Math.floor(h / 24)}d ago`);
   }
 
-  function detail(run) {
+  function title(sid) {
+    const s = sessions.get(sid);
+    return (s && s.title) || T('\u65b0\u4f1a\u8bdd', 'New session');
+  }
+
+  function runDetail(run, count) {
+    let text;
     switch (run.status) {
-      case 'done': return T('已完成', 'Done');
-      case 'error': return T('出错', 'Failed');
-      case 'aborted': return T('已中止', 'Stopped');
-      case 'interrupted': return T('已中断', 'Interrupted');
-      case 'cancelling': return T('正在中止…', 'Stopping…');
+      case 'done': text = T('\u5df2\u5b8c\u6210', 'Done'); break;
+      case 'error': text = T('\u51fa\u9519', 'Failed'); break;
+      case 'aborted': text = T('\u5df2\u4e2d\u6b62', 'Stopped'); break;
+      case 'interrupted': text = T('\u5df2\u4e2d\u65ad', 'Interrupted'); break;
+      case 'cancelling': text = T('\u6b63\u5728\u4e2d\u6b62\u2026', 'Stopping\u2026'); break;
       default: {
         const parts = [];
-        if (run.step) parts.push(T(`第 ${run.step} 步`, `Step ${run.step}`));
+        if (run.step) parts.push(T(`\u7b2c ${run.step} \u6b65`, `Step ${run.step}`));
         if (run.tool) parts.push(run.tool);
-        return parts.join(' · ') || T('思考中…', 'Thinking…');
+        text = parts.join(' \u00b7 ') || T('\u601d\u8003\u4e2d\u2026', 'Thinking\u2026');
       }
     }
+    return count > 1 ? `${text} \u00b7 ${T(`${count} \u4e2a\u4efb\u52a1`, `${count} runs`)}` : text;
   }
 
-  function visibleRuns() {
+  // Rows to show: one per chat with a live or just-finished run, then unread chats.
+  function items() {
     const now = Date.now();
-    const list = [];
+    const bySession = new Map();
     for (const run of runs.values()) {
-      if (ACTIVE.has(run.status) || (run.ended && now - run.ended < FLASH_MS)) list.push(run);
+      const live = ACTIVE.has(run.status);
+      if (!live && !(run.ended && now - run.ended < FLASH_MS)) continue;
+      const key = run.session_id || run.id;
+      const cur = bySession.get(key);
+      if (!cur) { bySession.set(key, { kind: 'run', sid: run.session_id, run, count: live ? 1 : 0 }); continue; }
+      if (live) cur.count += 1;
+      // Prefer a live run, then the newest one.
+      const better = (ACTIVE.has(run.status) - ACTIVE.has(cur.run.status)) || (run.started - cur.run.started);
+      if (better > 0) cur.run = run;
     }
-    // Active first, newest first.
-    list.sort((a, b) => (ACTIVE.has(b.status) - ACTIVE.has(a.status)) || (b.started - a.started));
-    return list;
+    const list = [...bySession.values()];
+    list.sort((a, b) => (ACTIVE.has(b.run.status) - ACTIVE.has(a.run.status)) || (b.run.started - a.run.started));
+    const unread = [];
+    for (const s of sessions.values()) {
+      if (!s.unread || s.running || bySession.has(s.id)) continue;
+      if (mainFocused && s.id === currentSession) continue;
+      unread.push({ kind: 'unread', sid: s.id, updated: Number(s.updated) || 0 });
+    }
+    unread.sort((a, b) => b.updated - a.updated);
+    return list.concat(unread);
   }
 
   function el(tag, cls, text) {
@@ -127,46 +177,72 @@
     return n;
   }
 
-  function row(run, compact, extra) {
-    const item = el('div', `row status-${run.status}`);
-    item.dataset.session = run.session_id || '';
-    item.appendChild(el('span', 'dot'));
+  function row(item, compact, badges) {
+    const run = item.run;
+    const status = item.kind === 'run' ? run.status : item.kind;
+    const node = el('div', `row status-${status}`);
+    node.dataset.session = item.sid || '';
+    node.appendChild(el('span', 'dot'));
     const text = el('div', 'text');
-    text.appendChild(el('div', 'title', label(run)));
-    if (!compact) text.appendChild(el('div', 'detail', detail(run)));
-    item.appendChild(text);
+    let detail;
+    let time;
+    if (item.kind === 'run') {
+      detail = runDetail(run, item.count);
+      time = clock((ACTIVE.has(run.status) ? Date.now() : (run.ended || Date.now())) - run.started);
+    } else if (item.kind === 'unread') {
+      detail = T('\u6709\u65b0\u6d88\u606f', 'New messages');
+      time = item.updated ? ago(item.updated) : '';
+    } else {
+      detail = T('\u7a7a\u95f2', 'Idle');
+      time = '';
+    }
+    text.appendChild(el('div', 'title', item.kind === 'idle' ? 'GenericAgent' : title(item.sid)));
+    if (!compact) text.appendChild(el('div', 'detail', detail));
+    node.appendChild(text);
     const meta = el('div', 'meta');
-    if (compact) meta.appendChild(el('span', 'detail', detail(run)));
-    meta.appendChild(el('span', 'time', elapsed(run)));
-    if (extra) meta.appendChild(el('span', 'more', `+${extra}`));
-    if (!compact && run.status === 'running') {
+    if (compact) meta.appendChild(el('span', 'detail', detail));
+    if (time) meta.appendChild(el('span', 'time', time));
+    if (badges) {
+      if (badges.running) meta.appendChild(el('span', 'badge badge-running', `${badges.running}`));
+      if (badges.unread) meta.appendChild(el('span', 'badge badge-unread', `${badges.unread}`));
+    }
+    if (!compact && item.kind === 'run' && run.status === 'running') {
       const stop = el('button', 'stop');
       stop.type = 'button';
-      stop.title = T('中止', 'Stop');
+      stop.title = T('\u4e2d\u6b62', 'Stop');
       stop.setAttribute('aria-label', stop.title);
       stop.dataset.run = run.id;
       meta.appendChild(stop);
     }
-    item.appendChild(meta);
-    return item;
+    node.appendChild(meta);
+    return node;
   }
 
   function render() {
-    const list = visibleRuns();
-    const flashing = list.some((r) => !ACTIVE.has(r.status));
-    // The main window already shows the session being worked on.
-    const covered = mainFocused && list.length > 0 && list.every((r) => r.session_id === currentSession);
-    const show = list.length > 0 && !covered;
+    const list = items();
+    const flashing = list.some((i) => i.kind === 'run' && !ACTIVE.has(i.run.status));
+    // The main window already shows the chat being worked on and the unread markers.
+    const covered = mainFocused && list.every((i) => i.kind === 'unread' || i.sid === currentSession);
+    const busy = list.length > 0 && !covered;
+    const show = busy || pinned;
     root.replaceChildren();
     root.hidden = !show;
     if (show) {
-      const expanded = hovered || flashing;
+      const shown = busy ? list : [];
+      const expanded = shown.length > 0 && (hovered || flashing);
       root.classList.toggle('expanded', expanded);
-      if (expanded) {
-        for (const run of list.slice(0, 3)) root.appendChild(row(run, false, 0));
-        if (list.length > 3) root.appendChild(el('div', 'overflow', T(`还有 ${list.length - 3} 个任务`, `${list.length - 3} more`)));
+      root.classList.toggle('idle', !shown.length);
+      if (!shown.length) {
+        root.appendChild(row({ kind: 'idle' }, true, null));
+      } else if (expanded) {
+        for (const item of shown.slice(0, MAX_ROWS)) root.appendChild(row(item, false, null));
+        if (shown.length > MAX_ROWS) root.appendChild(el('div', 'overflow', T(`\u8fd8\u6709 ${shown.length - MAX_ROWS} \u4e2a\u4f1a\u8bdd`, `${shown.length - MAX_ROWS} more`)));
       } else {
-        root.appendChild(row(list[0], true, list.length - 1));
+        // Collapsed: the top row plus counters for everything else.
+        const rest = shown.slice(1);
+        const running = rest.filter((i) => i.kind === 'run' && ACTIVE.has(i.run.status)).length;
+        const unread = rest.filter((i) => i.kind === 'unread').length;
+        root.appendChild(row(shown[0], true, { running, unread }));
       }
     }
     layout(show);
@@ -185,8 +261,9 @@
 
   async function post(path, body) {
     try {
-      await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    } catch { /* backend restarting */ }
+      const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return res.ok;
+    } catch { return false; /* backend restarting */ }
   }
 
   // Drag anywhere on the pill; a press that barely moves is a click.
@@ -202,7 +279,7 @@
     if (Math.abs(e.screenX - drag.x) + Math.abs(e.screenY - drag.y) > 4) drag.moved = true;
     if (drag.moved && bridge) bridge.drag('move', e.screenX, e.screenY);
   });
-  root.addEventListener('pointerup', (e) => {
+  root.addEventListener('pointerup', async (e) => {
     if (!drag) return;
     const d = drag;
     drag = null;
@@ -216,14 +293,22 @@
     }
     const item = d.target.closest && d.target.closest('.row');
     const sid = item && item.dataset.session;
-    if (sid && sid !== currentSession) post('/api/sessions', { action: 'select', id: sid });
+    // Switching chats can be refused while a run is busy; the main window still opens.
+    if (sid && sid !== currentSession) await post('/api/sessions', { action: 'select', id: sid });
     if (bridge) bridge.openMain();
   });
   root.addEventListener('pointercancel', () => { if (drag && bridge) bridge.drag('end', 0, 0); drag = null; });
   root.addEventListener('mouseenter', () => { hovered = true; render(); });
   root.addEventListener('mouseleave', () => { if (!drag) { hovered = false; render(); } });
 
-  if (bridge) bridge.onState((state) => { mainFocused = !!(state && state.mainFocused); render(); });
+  if (bridge) {
+    bridge.onState((state) => {
+      mainFocused = !!(state && state.mainFocused);
+      pinned = !!(state && state.pinned);
+      render();
+    });
+  }
   setInterval(() => { if (!root.hidden) render(); }, 1000);
   connect();
+  render();
 })();

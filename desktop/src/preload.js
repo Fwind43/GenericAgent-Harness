@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
       return () => ipcRenderer.removeListener('gah:update-open', h);
     },
   }),
+  // Island preferences for the settings page; null when this shell has no island.
+  islandPrefs: Object.freeze({
+    get: () => ipcRenderer.invoke('gah:island-prefs-get'),
+    set: (patch) => ipcRenderer.invoke('gah:island-prefs-set', patch || {}),
+  }),
   // Used by the web-island page inside the floating island window.
   island: Object.freeze({
     layout: (box) => ipcRenderer.send('gah:island-layout', box || {}),

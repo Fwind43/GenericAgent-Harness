@@ -71,6 +71,14 @@ function registerBridge() {
     if (!fromBackend(event)) throw new Error('forbidden');
     return { supported: autostart.supported(), enabled: autostart.isEnabled() };
   });
+  ipcMain.handle('gah:island-prefs-get', (event) => {
+    if (!fromBackend(event)) throw new Error('forbidden');
+    return island ? island.getPrefs() : { supported: false, enabled: false, pinned: false };
+  });
+  ipcMain.handle('gah:island-prefs-set', (event, patch) => {
+    if (!fromBackend(event) || !island || !patch || typeof patch !== 'object') throw new Error('forbidden');
+    return island.setPrefs({ enabled: patch.enabled, pinned: patch.pinned });
+  });
   ipcMain.handle('gah:autostart-set', (event, on) => {
     if (!fromBackend(event) || typeof on !== 'boolean') throw new Error('forbidden');
     const enabled = autostart.setEnabled(on);
@@ -263,10 +271,6 @@ function refreshTrayMenu() {
     }, { type: 'separator' });
   }
   if (backend) items.push({ label: t('GenericAgent 目录…', 'GenericAgent folder...'), click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
-  if (island) {
-    items.push({ label: t('显示灵动岛', 'Show dynamic island'), type: 'checkbox', checked: island.enabled,
-      click: (item) => { island.setEnabled(item.checked); refreshTrayMenu(); } }, { type: 'separator' });
-  }
   if (autostart.supported()) {
     items.push({ label: t('开机自启', 'Launch at login'), type: 'checkbox', checked: autostart.isEnabled(),
       click: (item) => {

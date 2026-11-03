@@ -23,7 +23,9 @@ class Island {
     this.url = null;
     this.box = { visible: false, width: 0, height: 0 };
     this.drag = null;
-    this.prefs = { enabled: true, x: null, y: null };
+    this.state = { mainFocused: false };
+    // pinned: keep an idle pill on screen instead of showing only while something needs attention.
+    this.prefs = { enabled: true, pinned: false, x: null, y: null };
     try { Object.assign(this.prefs, JSON.parse(fs.readFileSync(this.file, 'utf8'))); } catch { /* defaults */ }
   }
 
@@ -42,6 +44,19 @@ class Island {
     if (this.enabled) this.open(this.url); else this.close();
   }
 
+  // Settings page view of the preferences.
+  getPrefs() { return { supported: supported(), enabled: this.enabled, pinned: !!this.prefs.pinned }; }
+
+  setPrefs(patch) {
+    if (typeof patch.pinned === 'boolean' && patch.pinned !== !!this.prefs.pinned) {
+      this.prefs.pinned = patch.pinned;
+      this.save();
+      this.sendState();
+    }
+    if (typeof patch.enabled === 'boolean' && patch.enabled !== this.enabled) this.setEnabled(patch.enabled);
+    return this.getPrefs();
+  }
+
   // `origin` is the backend origin; the page authenticates with the session cookie the main
   // window already obtained, so call this after the main page has loaded once.
   open(origin) {
@@ -52,13 +67,15 @@ class Island {
       movable: true, minimizable: false, maximizable: false, fullscreenable: false,
       skipTaskbar: true, hasShadow: false, focusable: false, alwaysOnTop: true,
       title: 'GenericAgent-Harness Island', icon: this.icon, backgroundColor: '#00000000',
-      webPreferences: { preload: this.preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
+      // The page renders while the window is hidden; throttling would show a blank pill at first.
+      webPreferences: { preload: this.preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false },
     });
     win.setAlwaysOnTop(true, 'floating');
     if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', (event) => event.preventDefault());
     win.on('closed', () => { if (this.win === win) this.win = null; });
+    win.webContents.on('did-finish-load', () => this.sendState());
     this.win = win;
     this.box = { visible: false, width: 0, height: 0 };
     win.loadURL(this.url + PAGE).catch((err) => console.error('island load:', err));
@@ -116,9 +133,11 @@ class Island {
     }
   }
 
+  // `state` is merged into the last known shell state; the page also gets the pinned preference.
   sendState(state) {
+    if (state) Object.assign(this.state, state);
     const win = this.win;
-    if (win && !win.isDestroyed()) win.webContents.send('gah:island-state', state);
+    if (win && !win.isDestroyed()) win.webContents.send('gah:island-state', { ...this.state, pinned: !!this.prefs.pinned });
   }
 }
 
