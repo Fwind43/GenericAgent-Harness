@@ -43,8 +43,8 @@ run metadata. Worker failures expose the exception class, not config values or
 tracebacks. Conversation and tool output are still persisted: they are not a
 credential-redaction boundary.
 
-At most one run owns a session at a time. `max_parallel` (default 0 = unlimited) can cap total
-active workers. Events `run.started`, `run.event`, `run.cancelling`, and
+At most one run owns a session at a time; runs in different sessions are not
+capped. Events `run.started`, `run.event`, `run.cancelling`, and
 `run.finished` carry run/session identity and a per-run sequence number. The Web
 host projects worker output into persisted messages; the React host filters by
 session and sequence, and refreshes state when a run finishes. Session switching
@@ -156,9 +156,8 @@ Host side (any plugin that injects `runs`):
   `host.on_push` listeners; returns False if the run is not live in this host.
 - `runs.wait(run_id, timeout=None)` blocks until the run is terminal or the timeout
   elapses and returns its record.
-- `runs.start` raises `SessionBusy` when the session already has an active run and
-  `RunLimitReached` at the parallel limit (both are `RuntimeError` subclasses, so
-  existing callers are unaffected).
+- `runs.start` raises `SessionBusy` when the session already has an active run (a
+  `RuntimeError` subclass, so existing callers are unaffected).
 
 Worker side (an execution plugin mounted in the worker):
 

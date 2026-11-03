@@ -15,7 +15,7 @@ def apply(ctx, config):
     service = Runs(store, ctx.get("workspaces"),
                    lambda mode=(): recipe_for(ctx, set(config.get("worker_plugins", ())) | service.extra_worker_plugins(),
                                               mode),
-                   emit=ctx.emit, max_parallel=config.get("max_parallel", 0),
+                   emit=ctx.emit,
                    cancel_grace=config.get("cancel_grace", 5),
                    plugin_handler=lambda body: _plugin_control(ctx, body))
     store.parallel = True

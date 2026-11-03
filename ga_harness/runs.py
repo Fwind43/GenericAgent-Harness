@@ -33,10 +33,6 @@ class SessionBusy(RuntimeError):
     """The session already has an active run."""
 
 
-class RunLimitReached(RuntimeError):
-    """The host's parallel run limit is reached."""
-
-
 class RpcCall:
     """One in-flight worker -> host request, handed to a registered RPC handler."""
 
@@ -47,7 +43,7 @@ class RpcCall:
 
 
 class Runs:
-    def __init__(self, sessions, workspaces, recipe, *, emit=None, max_parallel=0,
+    def __init__(self, sessions, workspaces, recipe, *, emit=None,
                  cancel_grace=5.0, process_context=None, worker=run_worker,
                  plugin_handler=None):
         self.sessions, self.workspaces, self.recipe = sessions, workspaces, recipe
@@ -57,8 +53,6 @@ class Runs:
         self.worker_plugins = {}
         self.lock = sessions.lock
         self.emit = emit or (lambda name, data: None)
-        # 0 (or less) means no host-wide limit on concurrent runs.
-        self.max_parallel = max(0, int(max_parallel or 0))
         self.cancel_grace = max(0.1, float(cancel_grace))
         self.process_context = process_context or multiprocessing.get_context("spawn")
         self.worker = worker
@@ -286,8 +280,6 @@ class Runs:
         with self.lock:
             if self.closed:
                 raise RuntimeError("run service is stopping")
-            if self.max_parallel and len(self.live) >= self.max_parallel:
-                raise RunLimitReached("parallel run limit reached")
             session = self.sessions.get(session_id) if session_id is not None else self.sessions.current()
             sid = session["id"]
             if self.active_for(sid):

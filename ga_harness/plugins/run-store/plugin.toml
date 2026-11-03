@@ -6,12 +6,6 @@ description_zh = "持久化的运行记录，按会话归属并在隔离的 work
 inject = ["sessions", "workspaces", "plugin.catalog"]
 provides = ["runs"]
 
-[settings.max_parallel]
-type = "integer"
-label = "Maximum concurrent runs (0 = unlimited)"
-label_zh = "最大并行运行数（0 为不限制）"
-default = 0
-
 [settings.cancel_grace]
 type = "number"
 label = "Cancellation grace period (seconds)"
