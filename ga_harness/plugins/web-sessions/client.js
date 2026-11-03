@@ -72,6 +72,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const [query, setQuery] = react.useState(""), [moving, setMoving] = react.useState("");
     const [layout, setLayout] = react.useState(loadLayout), [menu, setMenu] = react.useState("");
     const [reordering, setReordering] = react.useState(false);
+    const [drag, setDrag] = react.useState(null);
     const menuRef = react.useRef(null);
     react.useEffect(() => {
       if (!menu) return;
@@ -143,6 +144,20 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       [ids[from], ids[to]] = [ids[to], ids[from]];
       return { ...old, projectOrder: ids };
     });
+    const dropProject = (id, target, after) => updateLayout((old) => {
+      if (id === target) return old;
+      const ids = projects.map((p) => p.id).filter((x) => x !== id), at = ids.indexOf(target);
+      if (at < 0) return old;
+      ids.splice(at + (after ? 1 : 0), 0, id);
+      return { ...old, projectOrder: ids };
+    });
+    const dragSlot = (x, y) => {
+      var _a;
+      const el = (_a = document.elementFromPoint(x, y)) == null ? void 0 : _a.closest(".gah-group.project"), key = el == null ? void 0 : el.dataset.key;
+      if (!el || !(key == null ? void 0 : key.startsWith("p:"))) return null;
+      const box = el.getBoundingClientRect();
+      return { target: key.slice(2), after: y > box.top + box.height / 2 };
+    };
     const current = (scope == null ? void 0 : scope.project_id) ? `p:${scope.project_id}` : "recent", previous = react.useRef(current);
     react.useEffect(() => {
       if (previous.current !== current) {
@@ -289,9 +304,30 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       var _a, _b;
       const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
       const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
-      return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group project${isCurrent ? " current" : ""}`, "data-key": key, children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-group-head", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-group-toggle", title: p.workspace, "aria-expanded": open, onClick: () => toggle(key, open), children: [
+      const dropCls = drag && drag.id !== p.id && drag.target === p.id ? drag.after ? " drop-after" : " drop-before" : "";
+      return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group project${isCurrent ? " current" : ""}${(drag == null ? void 0 : drag.id) === p.id ? " dragging" : ""}${dropCls}`, "data-key": key, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-group-head${sorting ? " sortable" : ""}`, ...sorting ? {
+          onPointerDown: (e) => {
+            if (e.button !== 0 || e.target.closest(".gah-group-move")) return;
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDrag({ id: p.id, target: p.id, after: false });
+          },
+          onPointerMove: (e) => {
+            if (!drag) return;
+            const slot = dragSlot(e.clientX, e.clientY);
+            if (slot && (slot.target !== drag.target || slot.after !== drag.after)) setDrag({ ...drag, ...slot });
+          },
+          onPointerUp: () => {
+            if (drag) dropProject(drag.id, drag.target, drag.after);
+            setDrag(null);
+          },
+          onPointerCancel: () => setDrag(null)
+        } : {}, children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-group-toggle", title: sorting ? sdk.T("拖动以排序", "Drag to reorder") : p.workspace, "aria-expanded": open, onClick: () => {
+            if (!sorting) toggle(key, open);
+          }, children: [
+            sorting && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-grip", "aria-hidden": "true", children: "⠇" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-closed", "data-i": "folder", "aria-hidden": "true" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-ico gah-ico-open", "data-i": "folder-open", "aria-hidden": "true" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-name", children: p.name }),

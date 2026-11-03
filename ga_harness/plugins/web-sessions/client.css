@@ -108,3 +108,10 @@
 .gah-sess-row-menu .gah-sess-menu-item{display:flex;align-items:center;gap:8px}
 .gah-sess-row-menu .gah-sess-menu-item .gah-ico{width:15px;height:15px;color:var(--muted)}
 .gah-sess-menu-item.danger,.gah-sess-menu-item.danger .gah-ico{color:var(--danger,#d93025)}
+.gah-group-head.sortable{cursor:grab;touch-action:none;user-select:none}
+.gah-group-head.sortable .gah-group-toggle{cursor:grab}
+.gah-group-grip{flex:none;width:12px;margin-right:2px;color:var(--muted);font-size:14px;line-height:1;text-align:center}
+.gah-group.project.dragging{opacity:.5}
+.gah-group.project.dragging .gah-group-head,.gah-group.project.dragging .gah-group-toggle{cursor:grabbing}
+.gah-group.project.drop-before>.gah-group-head{box-shadow:inset 0 2px 0 var(--accent,var(--text))}
+.gah-group.project.drop-after>.gah-group-head{box-shadow:inset 0 -2px 0 var(--accent,var(--text))}

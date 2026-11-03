@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, PageNav, pages, useOperation, defineReact } from '@gah/sdk';
 
 // Sidebar layout: projects first (each a collapsible group of its chats), then Recent:
@@ -73,6 +73,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<string>('');
   // Project reorder mode: the move arrows only appear after it is switched on from the Projects menu.
   const [reordering, setReordering] = useState(false);
+  // Pointer drag in reorder mode (mouse, pen and touch): the dragged project id and the drop slot under the pointer.
+  const [drag, setDrag] = useState<{ id: string; target: string; after: boolean } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!menu) return;
@@ -125,6 +127,17 @@ export function Sessions({ api }: { api: PluginAPI }) {
     if (from < 0 || to < 0 || to >= ids.length) return old;
     [ids[from], ids[to]] = [ids[to], ids[from]]; return { ...old, projectOrder: ids };
   });
+  const dropProject = (id: string, target: string, after: boolean) => updateLayout(old => {
+    if (id === target) return old;
+    const ids = projects.map(p => p.id).filter(x => x !== id), at = ids.indexOf(target);
+    if (at < 0) return old;
+    ids.splice(at + (after ? 1 : 0), 0, id); return { ...old, projectOrder: ids };
+  });
+  const dragSlot = (x: number, y: number) => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.gah-group.project'), key = el?.dataset.key;
+    if (!el || !key?.startsWith('p:')) return null;
+    const box = el.getBoundingClientRect(); return { target: key.slice(2), after: y > box.top + box.height / 2 };
+  };
   const current = scope?.project_id ? `p:${scope.project_id}` : 'recent', previous = useRef(current);
   useEffect(() => {
     if (previous.current !== current) { previous.current = current; setToggled(old => { const next = { ...old }; delete next[current]; return next; }); }
@@ -209,8 +222,17 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const projectGroups = cappedProjects.map(p => {
     const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
-    return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}`} data-key={key}>
-      <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span>{projectStatus.has(p.id) && <span className={`gah-sess-status ${projectStatus.get(p.id)}`} role="status" title={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} aria-label={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} />}<span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
+    const dropCls = drag && drag.id !== p.id && drag.target === p.id ? (drag.after ? ' drop-after' : ' drop-before') : '';
+    return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}${drag?.id === p.id ? ' dragging' : ''}${dropCls}`} data-key={key}>
+      <div className={`gah-group-head${sorting ? ' sortable' : ''}`} {...(sorting ? {
+        onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (e.button !== 0 || (e.target as HTMLElement).closest('.gah-group-move')) return;
+          e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setDrag({ id: p.id, target: p.id, after: false });
+        },
+        onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => { if (!drag) return; const slot = dragSlot(e.clientX, e.clientY); if (slot && (slot.target !== drag.target || slot.after !== drag.after)) setDrag({ ...drag, ...slot }); },
+        onPointerUp: () => { if (drag) dropProject(drag.id, drag.target, drag.after); setDrag(null); },
+        onPointerCancel: () => setDrag(null),
+      } : {})}><button type="button" className="gah-group-toggle" title={sorting ? T('\u62d6\u52a8\u4ee5\u6392\u5e8f', 'Drag to reorder') : p.workspace} aria-expanded={open} onClick={() => { if (!sorting) toggle(key, open); }}>{sorting && <span className="gah-group-grip" aria-hidden="true">{'\u2807'}</span>}<span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span>{projectStatus.has(p.id) && <span className={`gah-sess-status ${projectStatus.get(p.id)}`} role="status" title={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} aria-label={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} />}<span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
         {sorting ? <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
         <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></> : <>
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
