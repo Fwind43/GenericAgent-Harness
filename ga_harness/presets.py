@@ -12,7 +12,9 @@ Fields (all optional except a usable file stem as id)::
     name / name_zh               display name
     plugins = ["..."]            plugins mounted in the run; one that also runs in the
                                  host is skipped while disabled there, a worker_only
-                                 one is mounted with its default config
+                                 one is mounted with its default config; "*" adds
+                                 every agent plugin enabled in the host when the run
+                                 starts (worker.host_agent_plugins)
     description / description_zh
     prompt = "..."               appended to the system prompt (ga-prompt ``append``);
                                  ``{data_dir}`` becomes the absolute ga-harness data

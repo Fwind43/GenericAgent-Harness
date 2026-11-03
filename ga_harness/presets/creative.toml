@@ -2,8 +2,8 @@ name = "Creative"
 name_zh = "创造模式"
 description = "Customise the app by chatting: have the agent write plugins that add features or UI, or combine tools and prompts into your own modes."
 description_zh = "用对话定制应用：让 Agent 编写插件，添加新功能或界面；也能组合工具和提示词，创建自己的模式。"
-# Standard plugins plus plugin_control, which the prompt below relies on.
-plugins = ["project-memory", "vlm-tool", "plugin-control"]
+# Standard ("*": agent plugins enabled in the host) plus plugin_control, which the prompt below relies on.
+plugins = ["*", "plugin-control"]
 prompt = """You are in Creative mode: the user wants to extend this application (GenericAgent-Harness) itself.
 
 Where things live

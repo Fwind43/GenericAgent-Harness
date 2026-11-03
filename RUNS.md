@@ -107,16 +107,19 @@ A preset (mode) is a named, per-session choice applied to each isolated worker r
 Modes differ by the plugins they enable: every run mounts only the infrastructure in
 `worker.DEFAULT_PLUGINS`, and all agent tools and prompt additions come from the
 mode's `plugins` list. A session without a preset runs the built-in `standard`
-preset (`project-memory`, `vlm-tool`), which the catalog does not list separately.
+preset (`plugins = ["*"]`), which the catalog does not list separately. `"*"` expands
+at each run start to every plugin active in the host that can run in a worker (not
+host-only, required capabilities available there, e.g. `project-memory`, `vlm-tool`,
+user tool plugins), so enabling or disabling a plugin affects the next run.
 Built-in presets live in `ga_harness/presets/*.toml`; user presets in
 `~/.ga-harness/presets/*.toml` (same id overrides the built-in one).
 Built-ins: `standard` (the default), `native` (GA Native: no mode plugins, so only
 GA's own tools and prompt) and `creative` (extend the app by writing plugins/modes;
-adds `plugin-control`). User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
+`["*", "plugin-control"]`). User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
 built-in). Keys:
 `name`, `name_zh`, `description`, `description_zh`, `plugins` (mounted in the run; a
 plugin that also runs in the host is skipped while disabled there, a `worker_only`
-one is mounted with its default config), `prompt` (appended through
+one is mounted with its default config; `"*"` as above), `prompt` (appended through
 `ga-prompt`) and `disable_tools` (passed to `ga-tools.disable`). Host and
 storage plugins are never touched.
 

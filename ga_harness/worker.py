@@ -17,14 +17,54 @@ EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn
 # the host config while active there). Everything the agent can do beyond that,
 # tools and prompt additions alike, comes from the run's mode: an agent preset
 # lists its plugins (``plugins``), and the Standard mode is the built-in
-# ``standard`` preset. Further execution plugins come from run-store.worker_plugins
-# or Runs.register_worker_plugin.
+# ``standard`` preset (``plugins = ["*"]``: whatever the host has enabled).
+# Further execution plugins come from run-store.worker_plugins or
+# Runs.register_worker_plugin.
 DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
                              "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools"))
+# A mode listing HOST_PLUGINS ("*") also gets every agent plugin enabled in the
+# host at run start (live: toggling a plugin affects the next run). That is how the
+# Standard mode works.
+HOST_PLUGINS = "*"
+HOST_ONLY = frozenset(("frontend", "web.host", "sessions", "runs", "workspaces", "models"))
+
+
+def host_only(manifest):
+    return bool(set(manifest.provides) & HOST_ONLY
+                or "web.host" in {key.rstrip("?") for key in manifest.inject})
+
+
+def host_agent_plugins(ctx, manifests):
+    """Names of plugins active in the host right now that can run inside a worker.
+
+    Host-only plugins (UI, storage, services) are excluded, and so is any plugin
+    whose required capabilities a worker cannot provide (e.g. ``runs``,
+    ``plugin.catalog``, ``channel_manager``); what remains are agent extensions
+    such as tools, prompt additions and hooks.
+    """
+    active = {name for name, handle in ctx.runtime.handles.items()
+              if handle.state == "active" and name in manifests}
+    caps = set()
+    for name in DEFAULT_PLUGINS & active:
+        caps.update(manifests[name].provides)
+    pending = {name for name in active - DEFAULT_PLUGINS
+               if not host_only(manifests[name]) and not getattr(manifests[name], "worker_only", False)}
+    chosen = set()
+    while True:
+        ready = {name for name in pending
+                 if {k for k in manifests[name].inject if not k.endswith("?")} <= caps}
+        if not ready:
+            return chosen
+        chosen |= ready
+        pending -= ready
+        for name in ready:
+            caps.update(manifests[name].provides)
 
 
 def recipe_for(ctx, extra=(), mode=()):
     """Plugins for one run: infrastructure, the mode's plugins and ``extra``.
+
+    ``HOST_PLUGINS`` in ``mode`` expands to ``host_agent_plugins`` at call time.
 
     A mode plugin that also runs in the host follows the host: it is mounted
     with the host config while active there and skipped when the user disabled
@@ -36,12 +76,13 @@ def recipe_for(ctx, extra=(), mode=()):
         raise RuntimeError("run-store requires the plugin catalog")
     manifests = catalog["preferences"].manifests
     mode = set(mode)
+    if HOST_PLUGINS in mode:
+        mode = (mode - {HOST_PLUGINS}) | host_agent_plugins(ctx, manifests)
     wanted = DEFAULT_PLUGINS | mode | set(extra)
     recipe = []
 
     def add(manifest, config):
-        if (set(manifest.provides) & {"frontend", "web.host", "sessions", "runs", "workspaces", "models"}
-                or "web.host" in {key.rstrip("?") for key in manifest.inject}):
+        if host_only(manifest):
             raise ValueError(f"host plugin {manifest.name!r} cannot run in a worker")
         recipe.append((manifest, config))
 
