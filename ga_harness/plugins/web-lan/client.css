@@ -14,6 +14,9 @@
 .ts-dialog .ts-spacer{flex:1}
 .ts-dialog .ts-dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
 .ts-dialog .ts-dot.on{background:#22a06b}
+.ts-dialog .ts-dot.wait{background:#d97706;animation:ts-pulse 1.2s ease-in-out infinite}
+@keyframes ts-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.ts-dialog .ts-dot.wait{animation:none}}
 .ts-dialog .ts-meta{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:14px 0 0;font-size:13px}
 .ts-dialog .ts-meta dt{color:var(--muted)}
 .ts-dialog .ts-meta dd{margin:0;word-break:break-all}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type PluginAPI, useHost, T, SettingsPanel, useOperation, confirmDialog, defineReact, QrCode, copyText } from '@gah/sdk';
 
 // Tailscale/Headscale remote access panel backed by main.py (TCP forwarder on tailnet IPs).
@@ -6,6 +6,7 @@ type TsInfo = { installed: boolean; running: boolean; backend?: string; ips: str
 type Status = {
   active: boolean; enabled: boolean; urls: string[]; entries: string[]; error: string;
   token_required: boolean; web_port?: number; port?: number; tailscale: TsInfo;
+  reconnecting?: boolean; retry_in?: number; restarts?: number;
 };
 
 export function TailscalePanel({ api }: { api: PluginAPI }) {
@@ -17,6 +18,7 @@ export function TailscalePanel({ api }: { api: PluginAPI }) {
   const busy = working || changing;
   const load = () => run(async () => { setError(''); setData(await api.get<Status>('')); }, setError, true);
   const act = (action: string) => run(async () => { setError(''); setData(await api.post<Status>('', { action })); }, setError, true);
+  const reconnecting = !!data?.reconnecting;
   const resetToken = async () => {
     if (!(await confirmDialog({ title: T('重置访问 token', 'Reset access token'), danger: true,
       message: T('旧链接和所有已登录的设备都会失效，需要用新链接重新打开。继续？',
@@ -29,10 +31,13 @@ export function TailscalePanel({ api }: { api: PluginAPI }) {
   const entry = entries[index] || '';
   const state = !data ? T('加载中…', 'Loading…')
     : data.active ? T('转发中', 'Forwarding')
+    : data.reconnecting ? T(`正在自动重连${data.retry_in ? `（${data.retry_in} 秒后重试）` : '…'}`,
+      `Reconnecting automatically${data.retry_in ? ` (retry in ${data.retry_in}s)` : '…'}`)
     : !ts?.installed ? T('未找到 tailscale', 'tailscale not found')
     : !ts.running ? T(`Tailscale 未连接（${ts.backend || '未知'}）`, `Tailscale not connected (${ts.backend || 'unknown'})`)
     : T('未开启', 'Off');
   return <SettingsPanel api={api} label={T('远程访问', 'Remote access')} icon="globe" order={40} className="ts-dialog" onOpen={load}>
+    <Poll api={api} fast={reconnecting} onData={setData} />
     <div className="dialog-head ts-head"><div>
       <h2>Tailscale</h2>
       <p>{T('通过 tailnet 从手机或其他电脑访问本机网页界面；只监听 tailnet IP，强制 token。',
@@ -40,16 +45,17 @@ export function TailscalePanel({ api }: { api: PluginAPI }) {
     </div><button type="button" className="btn" disabled={busy} onClick={() => void load()}>{T('刷新', 'Refresh')}</button></div>
     <div className="ts-body">
       <section className="ts-card">
-        <div className="ts-row"><span className={`ts-dot${data?.active ? ' on' : ''}`} /><b>{state}</b>
+        <div className="ts-row"><span className={`ts-dot${data?.active ? ' on' : reconnecting ? ' wait' : ''}`} /><b>{state}</b>
           <span className="ts-spacer" />
-          {data?.active
-            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}>{T('停止', 'Stop')}</button>
+          {data?.active || reconnecting
+            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}>{reconnecting ? T('停止重试', 'Stop retrying') : T('停止', 'Stop')}</button>
             : <button type="button" className="btn primary" disabled={busy || !ts?.running} onClick={() => void act('start')}>{T('开启远程访问', 'Enable remote access')}</button>}
         </div>
         {ts && <dl className="ts-meta">
           {ts.hostname && <><dt>{T('设备', 'Device')}</dt><dd>{ts.hostname}</dd></>}
           {ts.dns && <><dt>MagicDNS</dt><dd>{ts.dns}</dd></>}
           {ts.ips.length > 0 && <><dt>Tailnet IP</dt><dd>{ts.ips.join(' · ')}</dd></>}
+          {!!data?.restarts && <><dt>{T('自动恢复', 'Auto-recovered')}</dt><dd>{T(`${data.restarts} 次`, `${data.restarts}×`)}</dd></>}
           {data?.port && <><dt>{T('端口', 'Port')}</dt><dd>{data.port}{data.web_port && data.port !== data.web_port ? ` → 127.0.0.1:${data.web_port}` : ''}</dd></>}
         </dl>}
         {(error || data?.error) && <p className="ts-error">{error || data?.error}</p>}
@@ -70,6 +76,18 @@ export function TailscalePanel({ api }: { api: PluginAPI }) {
       </section>}
     </div>
   </SettingsPanel>;
+}
+
+// Rendered only while the panel is visible: poll quietly so self-healing (reconnect / rebind)
+// shows up without pressing Refresh.
+function Poll({ api, fast, onData }: { api: PluginAPI; fast: boolean; onData: (s: Status) => void }) {
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') api.get<Status>('').then(onData, () => undefined);
+    }, fast ? 3000 : 15000);
+    return () => window.clearInterval(timer);
+  }, [api, fast, onData]);
+  return null;
 }
 
 defineReact('web-tailscale', TailscalePanel);

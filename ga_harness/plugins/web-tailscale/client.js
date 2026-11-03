@@ -15,6 +15,7 @@ var GAHPlugin_web_tailscale = (function(exports, jsxRuntime, react, sdk) {
       setError("");
       setData(await api.post("", { action }));
     }, setError, true);
+    const reconnecting = !!(data == null ? void 0 : data.reconnecting);
     const resetToken = async () => {
       if (!await sdk.confirmDialog({
         title: sdk.T("重置访问 token", "Reset access token"),
@@ -30,8 +31,12 @@ var GAHPlugin_web_tailscale = (function(exports, jsxRuntime, react, sdk) {
     const entries = (data == null ? void 0 : data.entries) || [], urls = (data == null ? void 0 : data.urls) || [];
     const index = Math.min(pick, Math.max(entries.length - 1, 0));
     const entry = entries[index] || "";
-    const state = !data ? sdk.T("加载中…", "Loading…") : data.active ? sdk.T("转发中", "Forwarding") : !(ts == null ? void 0 : ts.installed) ? sdk.T("未找到 tailscale", "tailscale not found") : !ts.running ? sdk.T(`Tailscale 未连接（${ts.backend || "未知"}）`, `Tailscale not connected (${ts.backend || "unknown"})`) : sdk.T("未开启", "Off");
+    const state = !data ? sdk.T("加载中…", "Loading…") : data.active ? sdk.T("转发中", "Forwarding") : data.reconnecting ? sdk.T(
+      `正在自动重连${data.retry_in ? `（${data.retry_in} 秒后重试）` : "…"}`,
+      `Reconnecting automatically${data.retry_in ? ` (retry in ${data.retry_in}s)` : "…"}`
+    ) : !(ts == null ? void 0 : ts.installed) ? sdk.T("未找到 tailscale", "tailscale not found") : !ts.running ? sdk.T(`Tailscale 未连接（${ts.backend || "未知"}）`, `Tailscale not connected (${ts.backend || "unknown"})`) : sdk.T("未开启", "Off");
     return /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("远程访问", "Remote access"), icon: "globe", order: 40, className: "ts-dialog", onOpen: load, children: [
+      /* @__PURE__ */ jsxRuntime.jsx(Poll, { api, fast: reconnecting, onData: setData }),
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-head ts-head", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntime.jsx("h2", { children: "Tailscale" }),
@@ -45,10 +50,10 @@ var GAHPlugin_web_tailscale = (function(exports, jsxRuntime, react, sdk) {
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "ts-body", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "ts-card", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "ts-row", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: `ts-dot${(data == null ? void 0 : data.active) ? " on" : ""}` }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: `ts-dot${(data == null ? void 0 : data.active) ? " on" : reconnecting ? " wait" : ""}` }),
             /* @__PURE__ */ jsxRuntime.jsx("b", { children: state }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "ts-spacer" }),
-            (data == null ? void 0 : data.active) ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "btn", disabled: busy, onClick: () => void act("stop"), children: sdk.T("停止", "Stop") }) : /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "btn primary", disabled: busy || !(ts == null ? void 0 : ts.running), onClick: () => void act("start"), children: sdk.T("开启远程访问", "Enable remote access") })
+            (data == null ? void 0 : data.active) || reconnecting ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "btn", disabled: busy, onClick: () => void act("stop"), children: reconnecting ? sdk.T("停止重试", "Stop retrying") : sdk.T("停止", "Stop") }) : /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "btn primary", disabled: busy || !(ts == null ? void 0 : ts.running), onClick: () => void act("start"), children: sdk.T("开启远程访问", "Enable remote access") })
           ] }),
           ts && /* @__PURE__ */ jsxRuntime.jsxs("dl", { className: "ts-meta", children: [
             ts.hostname && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
@@ -62,6 +67,10 @@ var GAHPlugin_web_tailscale = (function(exports, jsxRuntime, react, sdk) {
             ts.ips.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
               /* @__PURE__ */ jsxRuntime.jsx("dt", { children: "Tailnet IP" }),
               /* @__PURE__ */ jsxRuntime.jsx("dd", { children: ts.ips.join(" · ") })
+            ] }),
+            !!(data == null ? void 0 : data.restarts) && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+              /* @__PURE__ */ jsxRuntime.jsx("dt", { children: sdk.T("自动恢复", "Auto-recovered") }),
+              /* @__PURE__ */ jsxRuntime.jsx("dd", { children: sdk.T(`${data.restarts} 次`, `${data.restarts}×`) })
             ] }),
             (data == null ? void 0 : data.port) && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
               /* @__PURE__ */ jsxRuntime.jsx("dt", { children: sdk.T("端口", "Port") }),
@@ -90,6 +99,15 @@ var GAHPlugin_web_tailscale = (function(exports, jsxRuntime, react, sdk) {
         ] })
       ] })
     ] });
+  }
+  function Poll({ api, fast, onData }) {
+    react.useEffect(() => {
+      const timer = window.setInterval(() => {
+        if (document.visibilityState === "visible") api.get("").then(onData, () => void 0);
+      }, fast ? 3e3 : 15e3);
+      return () => window.clearInterval(timer);
+    }, [api, fast, onData]);
+    return null;
   }
   sdk.defineReact("web-tailscale", TailscalePanel);
   exports.TailscalePanel = TailscalePanel;

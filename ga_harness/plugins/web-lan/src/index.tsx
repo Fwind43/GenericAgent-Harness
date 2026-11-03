@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type PluginAPI, useHost, T, SettingsPanel, useOperation, confirmDialog, defineReact, QrCode, copyText } from '@gah/sdk';
 
 // LAN access panel backed by main.py (TCP forwarder on a LAN IPv4, private peers only).
@@ -7,6 +7,7 @@ type LanInfo = { ips: string[]; binds: string[]; hosts: string[]; fixed: boolean
 type Status = {
   active: boolean; enabled: boolean; urls: string[]; entries: string[]; error: string;
   token_required: boolean; web_port?: number; port?: number; lan: LanInfo;
+  reconnecting?: boolean; retry_in?: number; restarts?: number;
 };
 
 export function LanPanel({ api }: { api: PluginAPI }) {
@@ -19,6 +20,7 @@ export function LanPanel({ api }: { api: PluginAPI }) {
   const busy = working || changing;
   const load = () => run(async () => { setError(''); setData(await api.get<Status>('')); }, setError, true);
   const act = (action: string, extra: Record<string, unknown> = {}) => run(async () => { setError(''); setData(await api.post<Status>('', { action, ...extra })); }, setError, true);
+  const reconnecting = !!data?.reconnecting;
   const resetToken = async () => {
     if (!(await confirmDialog({ title: T('重置访问 token', 'Reset access token'), danger: true,
       message: T('旧链接和所有已登录的设备都会失效，需要用新链接重新打开。继续？',
@@ -32,9 +34,12 @@ export function LanPanel({ api }: { api: PluginAPI }) {
   const entry = entries[index] || '';
   const state = !data ? T('加载中…', 'Loading…')
     : data.active ? T('转发中', 'Forwarding')
+    : data.reconnecting ? T(`正在自动重连${data.retry_in ? `（${data.retry_in} 秒后重试）` : '…'}`,
+      `Reconnecting automatically${data.retry_in ? ` (retry in ${data.retry_in}s)` : '…'}`)
     : !chosen ? T('未找到局域网地址', 'No LAN address')
     : T('未开启', 'Off');
   return <SettingsPanel api={api} label={T('局域网访问', 'LAN access')} icon="globe" order={41} className="ts-dialog" onOpen={load}>
+    <Poll api={api} fast={reconnecting} onData={setData} />
     <div className="dialog-head ts-head"><div>
       <h2>{T('局域网', 'LAN')}</h2>
       <p>{T('让同一 Wi-Fi / 局域网内的手机或电脑访问本机网页界面；只监听所选局域网 IP，仅放行内网地址，强制 token。',
@@ -42,10 +47,10 @@ export function LanPanel({ api }: { api: PluginAPI }) {
     </div><button type="button" className="btn" disabled={busy} onClick={() => void load()}>{T('刷新', 'Refresh')}</button></div>
     <div className="ts-body">
       <section className="ts-card">
-        <div className="ts-row"><span className={`ts-dot${data?.active ? ' on' : ''}`} /><b>{state}</b>
+        <div className="ts-row"><span className={`ts-dot${data?.active ? ' on' : reconnecting ? ' wait' : ''}`} /><b>{state}</b>
           <span className="ts-spacer" />
-          {data?.active
-            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}>{T('停止', 'Stop')}</button>
+          {data?.active || reconnecting
+            ? <button type="button" className="btn" disabled={busy} onClick={() => void act('stop')}>{reconnecting ? T('停止重试', 'Stop retrying') : T('停止', 'Stop')}</button>
             : <button type="button" className="btn primary" disabled={busy || !chosen} onClick={() => void act('start', lan?.fixed ? {} : { bind: chosen })}>{T('开启局域网访问', 'Enable LAN access')}</button>}
         </div>
         {lan && <dl className="ts-meta">
@@ -57,6 +62,7 @@ export function LanPanel({ api }: { api: PluginAPI }) {
                 {lan.ips.map(ip => <option key={ip} value={ip}>{ip}</option>)}
                 <option value={ANY}>{T('0.0.0.0（所有网卡）', '0.0.0.0 (all interfaces)')}</option></select>}
           </dd></>}
+          {!!data?.restarts && <><dt>{T('自动恢复', 'Auto-recovered')}</dt><dd>{T(`${data.restarts} 次`, `${data.restarts}×`)}</dd></>}
           {data?.port && <><dt>{T('端口', 'Port')}</dt><dd>{data.port}{data.web_port && data.port !== data.web_port ? ` → 127.0.0.1:${data.web_port}` : ''}</dd></>}
         </dl>}
         {chosen === ANY && !data?.active && !lan?.fixed && <p className="ts-hint">{T('监听所有网卡（含虚拟网卡）；仍只放行内网来源。',
@@ -79,6 +85,18 @@ export function LanPanel({ api }: { api: PluginAPI }) {
       </section>}
     </div>
   </SettingsPanel>;
+}
+
+// Rendered only while the panel is visible: poll quietly so self-healing (reconnect / rebind)
+// shows up without pressing Refresh.
+function Poll({ api, fast, onData }: { api: PluginAPI; fast: boolean; onData: (s: Status) => void }) {
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') api.get<Status>('').then(onData, () => undefined);
+    }, fast ? 3000 : 15000);
+    return () => window.clearInterval(timer);
+  }, [api, fast, onData]);
+  return null;
 }
 
 defineReact('web-lan', LanPanel);

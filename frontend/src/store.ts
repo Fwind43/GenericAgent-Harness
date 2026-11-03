@@ -133,43 +133,88 @@ export class HostStore {
   }
   connect() {
     if (this.source) return () => {};
-    const es = this.source = new EventSource('/api/events');
-    const listen = <D,>(name: string, fn: (data: D) => void) => es.addEventListener(name, event => {
-      try { fn(JSON.parse((event as MessageEvent<string>).data) as D); }
-      catch (e) { console.error(`[gah ${name}]`, e); this.notice(T('同步数据失败，请刷新页面。', 'Unable to sync data. Please reload.')); }
-    });
-    es.onopen = () => this.update({ connected: true });
-    es.onerror = () => this.update({ connected: false });
-    listen<HostState>('snapshot', state => { this.update({ connected: true }); this.setState(state); this.emit('snapshot', state); });
-    for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
-    listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
-    listen<unknown>('plugin', data => this.emit('plugin', data));
-    listen<{ task: string; model?: string; reasoning_effort?: string; created_at?: number }>('start', data => {
-      const state = this.snapshot.state;
-      this.setState({ ...state, running: true, messages: [...state.messages,
-        { role: 'user', text: data.task, status: 'done', created_at: data.created_at },
-        { role: 'assistant', text: '', status: 'running', model: data.model, reasoning_effort: data.reasoning_effort, created_at: data.created_at },
-      ] });
-    });
-    listen<{ text: string }>('chunk', data => this.last(m => ({ ...m, text: (m.text ?? '') + data.text }), true));
-    listen<{ index: number; turn: Turn }>('turn', data => this.last(m => {
-      const turns = [...(m.turns ?? [])]; turns[data.index] = data.turn; return { ...m, turns };
-    }));
-    listen<{ index: number; turn: number; part: 'reply' | 'summary' | 'thinking'; text: string }>('delta', data => {
-      if (!['reply', 'summary', 'thinking'].includes(data.part)) return;
-      this.last(m => {
-        const turns = [...(m.turns ?? [])];
-        const turn = turns[data.index] ?? { turn: data.turn, status: 'running', tools: [] };
-        turns[data.index] = { ...turn, [data.part]: (turn[data.part] ?? '') + data.text };
-        return { ...m, turns };
-      }, true);
-    });
-    listen<Usage>('usage', usage => this.last(m => ({ ...m, usage }), true));
-    listen<{ status: Message['status']; error?: string }>('done', data => {
-      this.last(m => ({ ...m, status: data.status, error: data.error }), true);
-      this.setState({ ...this.snapshot.state, running: false }); this.emit('done', data);
-    });
-    return () => { es.close(); if (this.source === es) this.source = null; clearTimeout(this.flushTimer); this.flushTimer = undefined; };
+    // EventSource only retries on its own while CONNECTING; once it is CLOSED (an error
+    // response from the server/tunnel) it never comes back, and a half-open path (tailnet or
+    // LAN hiccup, sleeping laptop) can look OPEN forever without delivering data. So reopen
+    // with backoff after CLOSED, treat silence > STALE_MS as dead (the server pings every 15s),
+    // and retry at once when the network returns or the tab becomes visible again.
+    const STALE_MS = 45000;
+    let stopped = false, retry: number | undefined, delay = 1000, seen = Date.now();
+    const reopen = (wait: number) => {
+      if (stopped) return;
+      clearTimeout(retry);
+      retry = window.setTimeout(() => { retry = undefined; open(); }, wait);
+    };
+    const fail = () => {
+      this.source?.close(); this.update({ connected: false });
+      reopen(delay); delay = Math.min(delay * 2, 30000);
+    };
+    const wake = () => {
+      if (stopped || document.visibilityState === 'hidden') return;
+      const es = this.source;
+      if (!es || es.readyState === EventSource.CLOSED || Date.now() - seen > STALE_MS) { delay = 1000; es?.close(); reopen(0); }
+    };
+    const watchdog = window.setInterval(() => {
+      if (this.source?.readyState === EventSource.OPEN && Date.now() - seen > STALE_MS) fail();
+    }, 10000);
+    const open = () => {
+      if (stopped) return;
+      const es = this.source = new EventSource('/api/events');
+      seen = Date.now();
+      const alive = () => { if (this.source === es) seen = Date.now(); };
+      const listen = <D,>(name: string, fn: (data: D) => void) => es.addEventListener(name, event => {
+        alive();
+        try { fn(JSON.parse((event as MessageEvent<string>).data) as D); }
+        catch (e) { console.error(`[gah ${name}]`, e); this.notice(T('同步数据失败，请刷新页面。', 'Unable to sync data. Please reload.')); }
+      });
+      es.addEventListener('ping', alive);
+      es.onopen = () => { alive(); this.update({ connected: true }); };
+      es.onerror = () => {
+        if (this.source !== es) return;
+        this.update({ connected: false });
+        if (es.readyState === EventSource.CLOSED) fail();
+      };
+      // A full snapshot follows every (re)connect, so state missed while offline is replaced.
+      listen<HostState>('snapshot', state => { delay = 1000; this.update({ connected: true }); this.setState(state); this.emit('snapshot', state); });
+      for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
+      listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
+      listen<unknown>('plugin', data => this.emit('plugin', data));
+      listen<{ task: string; model?: string; reasoning_effort?: string; created_at?: number }>('start', data => {
+        const state = this.snapshot.state;
+        this.setState({ ...state, running: true, messages: [...state.messages,
+          { role: 'user', text: data.task, status: 'done', created_at: data.created_at },
+          { role: 'assistant', text: '', status: 'running', model: data.model, reasoning_effort: data.reasoning_effort, created_at: data.created_at },
+        ] });
+      });
+      listen<{ text: string }>('chunk', data => this.last(m => ({ ...m, text: (m.text ?? '') + data.text }), true));
+      listen<{ index: number; turn: Turn }>('turn', data => this.last(m => {
+        const turns = [...(m.turns ?? [])]; turns[data.index] = data.turn; return { ...m, turns };
+      }));
+      listen<{ index: number; turn: number; part: 'reply' | 'summary' | 'thinking'; text: string }>('delta', data => {
+        if (!['reply', 'summary', 'thinking'].includes(data.part)) return;
+        this.last(m => {
+          const turns = [...(m.turns ?? [])];
+          const turn = turns[data.index] ?? { turn: data.turn, status: 'running', tools: [] };
+          turns[data.index] = { ...turn, [data.part]: (turn[data.part] ?? '') + data.text };
+          return { ...m, turns };
+        }, true);
+      });
+      listen<Usage>('usage', usage => this.last(m => ({ ...m, usage }), true));
+      listen<{ status: Message['status']; error?: string }>('done', data => {
+        this.last(m => ({ ...m, status: data.status, error: data.error }), true);
+        this.setState({ ...this.snapshot.state, running: false }); this.emit('done', data);
+      });
+    };
+    open();
+    window.addEventListener('online', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      stopped = true; clearTimeout(retry); clearInterval(watchdog);
+      window.removeEventListener('online', wake);
+      document.removeEventListener('visibilitychange', wake);
+      this.source?.close(); this.source = null;
+      clearTimeout(this.flushTimer); this.flushTimer = undefined;
+    };
   }
   async refresh() {
     const version = this.refreshVersion;
