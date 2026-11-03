@@ -21,7 +21,8 @@ allowed_origins (extra browser origins allowed to POST, e.g. a tunnel/reverse-pr
 allow_no_token (false; binding a non-loopback host without a token is refused unless true).
 Environment overrides for embedding (the desktop shell sets these):
   GAH_WEB_PORT, GAH_WEB_OPEN_BROWSER (0/1), GAH_WEB_TOKEN (require this token; the page is
-  entered once via ``/?gah_token=...`` which sets an HttpOnly cookie), GAH_WEB_READY_FILE
+  entered via ``/?gah_token=...`` (reusable) which sets an HttpOnly cookie valid 30 days,
+  renewed on each page load; the token itself never expires), GAH_WEB_READY_FILE
   (JSON {"url", "pid"} written atomically once listening; never contains the token),
   GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed),
   GAH_WEB_ALLOWED_ORIGINS (comma-separated, added to allowed_origins), GAH_WEB_ALLOW_NO_TOKEN=1.

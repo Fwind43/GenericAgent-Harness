@@ -19,6 +19,8 @@ DIST = Path(__file__).with_name("dist")
 UNBUILT = ("<!doctype html><meta charset=\"utf-8\"><title>GenericAgent-Harness</title>"
            "<p>Web UI is not built. Run <code>npm install</code> and <code>npm run build</code> in <code>frontend/</code>.</p>")
 MAX_BODY = 1 << 20
+COOKIE_MAX_AGE = 30 * 24 * 3600  # login cookie lifetime; renewed on each page load
+
 MAX_TOOL_DATA = 20000
 
 
@@ -226,7 +228,22 @@ class _Handler(BaseHTTPRequestHandler):
             morsel = SimpleCookie(self.headers.get("Cookie") or "").get(self.frontend.cookie_name)
         except CookieError:
             return False
-        return bool(morsel) and hmac.compare_digest(morsel.value, token)
+        if morsel and hmac.compare_digest(morsel.value, token):
+            # Sliding expiry: a page load through the cookie pushes it another COOKIE_MAX_AGE out.
+            self._renew_cookie = urlsplit(self.path).path in ("/", "/index.html")
+            return True
+        return False
+
+    def _cookie_header(self):
+        token = self.frontend.token
+        secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https" else ""
+        return f"{self.frontend.cookie_name}={token}; Path=/; Max-Age={COOKIE_MAX_AGE}; HttpOnly; SameSite=Strict{secure}"
+
+    def end_headers(self):
+        if getattr(self, "_renew_cookie", False):
+            self._renew_cookie = False
+            self.send_header("Set-Cookie", self._cookie_header())
+        super().end_headers()
 
     def _enter_with_token(self, path):
         """``/?gah_token=X`` -> set the HttpOnly cookie and drop the token from the address bar."""
@@ -236,8 +253,7 @@ class _Handler(BaseHTTPRequestHandler):
             return False
         self.send_response(303)
         self.send_header("Location", "/")
-        secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https" else ""
-        self.send_header("Set-Cookie", f"{self.frontend.cookie_name}={token}; Path=/; HttpOnly; SameSite=Strict{secure}")
+        self.send_header("Set-Cookie", self._cookie_header())
         self.send_header("Content-Length", "0")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

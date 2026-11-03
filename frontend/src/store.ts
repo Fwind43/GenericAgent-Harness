@@ -145,12 +145,20 @@ export class HostStore {
       clearTimeout(retry);
       retry = window.setTimeout(() => { retry = undefined; open(); }, wait);
     };
+    // A CLOSED stream may mean the login cookie is gone (expired, cleared, token reset): the
+    // server answers 401 and retrying can never succeed, so probe once and stop with a hint.
+    let unauthorized = false;
     const fail = () => {
       this.source?.close(); this.update({ connected: false });
-      reopen(delay); delay = Math.min(delay * 2, 30000);
+      const wait = delay; delay = Math.min(delay * 2, 30000);
+      fetch('/api/state', { cache: 'no-store' }).then(r => {
+        if (r.status !== 401) return reopen(wait);
+        unauthorized = true; this.source = null;
+        this.notice(T('登录已失效，请重新打开带 token 的入口链接。', 'Session expired. Reopen the access link with the token.'));
+      }, () => reopen(wait));
     };
     const wake = () => {
-      if (stopped || document.visibilityState === 'hidden') return;
+      if (stopped || unauthorized || document.visibilityState === 'hidden') return;
       const es = this.source;
       if (!es || es.readyState === EventSource.CLOSED || Date.now() - seen > STALE_MS) { delay = 1000; es?.close(); reopen(0); }
     };
