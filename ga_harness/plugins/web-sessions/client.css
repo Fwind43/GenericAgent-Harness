@@ -91,6 +91,7 @@
 @media (hover:hover){
 .gah-sess-label>.gah-sess-head-btn{opacity:0;transition:opacity .12s}
 .gah-sess-label:hover>.gah-sess-head-btn,.gah-sess-label:focus-within>.gah-sess-head-btn,.gah-sess-label:has(.gah-sess-edit.on)>.gah-sess-head-btn{opacity:1}
+.gah-sess-label>.gah-sess-head-btn.gah-sess-done{opacity:1;width:auto;padding:0 8px;font-size:12px;font-weight:600;color:var(--accent,var(--text))}
 }
 /* Pinned chats: a small pin before the title; the pin action stays tinted while active. */
 .gah-sess-pin{flex:none;display:inline-flex;color:var(--muted);margin-right:4px}

@@ -71,6 +71,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const [toggled, setToggled] = react.useState(loadToggles), [expanded, setExpanded] = react.useState({});
     const [query, setQuery] = react.useState(""), [moving, setMoving] = react.useState("");
     const [layout, setLayout] = react.useState(loadLayout), [menu, setMenu] = react.useState("");
+    const [reordering, setReordering] = react.useState(false);
     const menuRef = react.useRef(null);
     react.useEffect(() => {
       if (!menu) return;
@@ -280,7 +281,8 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         !q && rows.length > limit && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, [key]: !all })), children: all ? sdk.T("收起", "Show less") : `${sdk.T("显示全部", "Show all")} (${rows.length})` })
       ] });
     };
-    const projectCap = layout.sections.projects.count, allProjects = !!q || !!expanded["projects:all"];
+    const sorting = reordering && layout.projectSort === "custom" && !q;
+    const projectCap = layout.sections.projects.count, allProjects = !!q || sorting || !!expanded["projects:all"];
     const matchedProjects = projects.filter((p) => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
     const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
     const projectGroups = cappedProjects.map((p) => {
@@ -296,15 +298,16 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             projectStatus.has(p.id) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${projectStatus.get(p.id)}`, role: "status", title: projectStatus.get(p.id) === "cancelling" ? sdk.T("有会话正在停止", "A chat is stopping") : sdk.T("有会话运行中", "A chat is running"), "aria-label": projectStatus.get(p.id) === "cancelling" ? sdk.T("有会话正在停止", "A chat is stopping") : sdk.T("有会话运行中", "A chat is running") }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-count", children: (byProject.get(p.id) ?? []).length })
           ] }),
-          layout.projectSort === "custom" && !q && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+          sorting ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_a = projects[0]) == null ? void 0 : _a.id) === p.id, "aria-label": `${sdk.T("上移", "Move up")}: ${p.name}`, title: sdk.T("上移", "Move up"), onClick: () => moveProject(p.id, -1), children: "▲" }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_b = projects[projects.length - 1]) == null ? void 0 : _b.id) === p.id, "aria-label": `${sdk.T("下移", "Move down")}: ${p.name}`, title: sdk.T("下移", "Move down"), onClick: () => moveProject(p.id, 1), children: "▼" })
-          ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${p.name}`, onClick: () => void (isCurrent ? act("new") : scoped({ action: "enter", id: p.id })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("项目设置", "Project settings")}: ${p.name}`, onClick: () => dialog("update", p.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("删除项目", "Delete project")}: ${p.name}`, onClick: async () => {
-            if (await sdk.confirmDialog({ title: sdk.T("删除项目", "Delete project"), danger: true, confirm: sdk.T("删除", "Delete"), message: sdk.T("删除项目“", 'Delete project "') + p.name + sdk.T("”？其中的会话会移到“最近”，项目记忆文件保留在磁盘上。", '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: "delete", id: p.id }, isCurrent);
-          }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }) })
+          ] }) : /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${p.name}`, onClick: () => void (isCurrent ? act("new") : scoped({ action: "enter", id: p.id })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("项目设置", "Project settings")}: ${p.name}`, onClick: () => dialog("update", p.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("删除项目", "Delete project")}: ${p.name}`, onClick: async () => {
+              if (await sdk.confirmDialog({ title: sdk.T("删除项目", "Delete project"), danger: true, confirm: sdk.T("删除", "Delete"), message: sdk.T("删除项目“", 'Delete project "') + p.name + sdk.T("”？其中的会话会移到“最近”，项目记忆文件保留在磁盘上。", '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: "delete", id: p.id }, isCurrent);
+            }, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "trash" }) })
+          ] })
         ] }),
         open && list(key, items, p.workspace || (scope == null ? void 0 : scope.default_workspace), projectCap)
       ] }, key);
@@ -322,7 +325,19 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         key === "projects" && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-title", children: sdk.T("项目排序", "Sort projects") }),
-          PROJECT_SORTS.map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitemradio", "aria-checked": layout.projectSort === k, className: `gah-sess-menu-item${layout.projectSort === k ? " on" : ""}`, onClick: pick(() => updateLayout((old) => ({ ...old, projectSort: k, projectOrder: k === "custom" && !old.projectOrder.length ? projects.map((p) => p.id) : old.projectOrder }))), children: (layout.projectSort === k ? "✓ " : "　") + sortName(k) }, k))
+          PROJECT_SORTS.map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitemradio", "aria-checked": layout.projectSort === k, className: `gah-sess-menu-item${layout.projectSort === k ? " on" : ""}`, onClick: pick(() => {
+            if (k !== "custom") setReordering(false);
+            updateLayout((old) => ({ ...old, projectSort: k, projectOrder: k === "custom" && !old.projectOrder.length ? projects.map((p) => p.id) : old.projectOrder }));
+          }), children: (layout.projectSort === k ? "✓ " : "　") + sortName(k) }, k)),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: !!q || projects.length < 2, onClick: pick(() => {
+            if (sorting) {
+              setReordering(false);
+              return;
+            }
+            updateLayout((old) => ({ ...old, projectSort: "custom", projectOrder: projects.map((p) => p.id) }));
+            setReordering(true);
+            if (!open) setSection("projects", { open: true });
+          }), children: sorting ? sdk.T("完成排序", "Done reordering") : sdk.T("调整项目顺序…", "Reorder projects…") })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: !!q, onClick: pick(() => setSection(key, { open: !open })), children: open ? sdk.T("收起分区", "Collapse section") : sdk.T("展开分区", "Expand section") }),
@@ -348,10 +363,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       projects: () => {
         const open = !!q || layout.sections.projects.open;
         return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sess-section", "data-section": "projects", children: [
-          sectionHead("projects", open, /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn", disabled: busy, "aria-label": sdk.T("新建项目", "New project"), onClick: () => dialog("create"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder-plus" }) })),
+          sectionHead("projects", open, sorting ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn gah-sess-done", "aria-label": sdk.T("完成排序", "Done reordering"), title: sdk.T("完成排序", "Done reordering"), onClick: () => setReordering(false), children: sdk.T("完成", "Done") }) : /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn", disabled: busy, "aria-label": sdk.T("新建项目", "New project"), onClick: () => dialog("create"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder-plus" }) })),
           open && (projects.length ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
             projectGroups,
-            !q && matchedProjects.length > projectCap && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, "projects:all": !allProjects })), children: allProjects ? sdk.T("收起项目", "Show fewer projects") : `${sdk.T("显示全部项目", "Show all projects")} (${matchedProjects.length})` })
+            !q && !sorting && matchedProjects.length > projectCap && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, "projects:all": !allProjects })), children: allProjects ? sdk.T("收起项目", "Show fewer projects") : `${sdk.T("显示全部项目", "Show all projects")} (${matchedProjects.length})` })
           ] }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: sdk.T("还没有项目", "No projects yet") }))
         ] }, "projects");
       },

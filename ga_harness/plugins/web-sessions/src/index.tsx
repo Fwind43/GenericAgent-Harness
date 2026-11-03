@@ -71,6 +71,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState(''), [moving, setMoving] = useState('');
   const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<string>('');
+  // Project reorder mode: the move arrows only appear after it is switched on from the Projects menu.
+  const [reordering, setReordering] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!menu) return;
@@ -200,7 +202,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
     </div>;
   };
   // Projects matching the search; the Projects count caps how many groups render (the open project always stays).
-  const projectCap = layout.sections.projects.count, allProjects = !!q || !!expanded['projects:all'];
+  const sorting = reordering && layout.projectSort === 'custom' && !q;
+  const projectCap = layout.sections.projects.count, allProjects = !!q || sorting || !!expanded['projects:all'];
   const matchedProjects = projects.filter(p => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
   const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
   const projectGroups = cappedProjects.map(p => {
@@ -208,11 +211,11 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
     return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}`} data-key={key}>
       <div className="gah-group-head"><button type="button" className="gah-group-toggle" title={p.workspace} aria-expanded={open} onClick={() => toggle(key, open)}><span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span>{projectStatus.has(p.id) && <span className={`gah-sess-status ${projectStatus.get(p.id)}`} role="status" title={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} aria-label={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} />}<span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
-        {layout.projectSort === 'custom' && !q && <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
-        <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></>}
+        {sorting ? <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
+        <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></> : <>
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}: ${p.name}`} onClick={() => dialog('update', p.id)}><Icon name="pencil" /></button>
-        <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u5220\u9664\u9879\u76ee', 'Delete project')}: ${p.name}`} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u9879\u76ee', 'Delete project'), danger: true, confirm: T('\u5220\u9664', 'Delete'), message: T('\u5220\u9664\u9879\u76ee\u201c', 'Delete project "') + p.name + T('\u201d\uff1f\u5176\u4e2d\u7684\u4f1a\u8bdd\u4f1a\u79fb\u5230\u201c\u6700\u8fd1\u201d\uff0c\u9879\u76ee\u8bb0\u5fc6\u6587\u4ef6\u4fdd\u7559\u5728\u78c1\u76d8\u4e0a\u3002', '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: 'delete', id: p.id }, isCurrent); }}><Icon name="trash" /></button></div>
+        <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u5220\u9664\u9879\u76ee', 'Delete project')}: ${p.name}`} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u9879\u76ee', 'Delete project'), danger: true, confirm: T('\u5220\u9664', 'Delete'), message: T('\u5220\u9664\u9879\u76ee\u201c', 'Delete project "') + p.name + T('\u201d\uff1f\u5176\u4e2d\u7684\u4f1a\u8bdd\u4f1a\u79fb\u5230\u201c\u6700\u8fd1\u201d\uff0c\u9879\u76ee\u8bb0\u5fc6\u6587\u4ef6\u4fdd\u7559\u5728\u78c1\u76d8\u4e0a\u3002', '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: 'delete', id: p.id }, isCurrent); }}><Icon name="trash" /></button></>}</div>
       {open && list(key, items, p.workspace || scope?.default_workspace, projectCap)}
     </section>;
   });
@@ -224,7 +227,8 @@ export function Sessions({ api }: { api: PluginAPI }) {
       <div className="gah-sess-menu-title">{T('\u663e\u793a\u4e2a\u6570', 'Display count')}</div>
       <div className="gah-sess-menu-counts">{SECTION_COUNTS.map(n => <button key={n} type="button" role="menuitemradio" aria-checked={pref.count === n} className={`gah-sess-menu-count${pref.count === n ? ' on' : ''}`} onClick={pick(() => setSection(key, { count: n }))}>{n}</button>)}</div>
       {key === 'projects' && <><div className="gah-sess-menu-sep" /><div className="gah-sess-menu-title">{T('\u9879\u76ee\u6392\u5e8f', 'Sort projects')}</div>
-        {PROJECT_SORTS.map(k => <button key={k} type="button" role="menuitemradio" aria-checked={layout.projectSort === k} className={`gah-sess-menu-item${layout.projectSort === k ? ' on' : ''}`} onClick={pick(() => updateLayout(old => ({ ...old, projectSort: k, projectOrder: k === 'custom' && !old.projectOrder.length ? projects.map(p => p.id) : old.projectOrder })))}>{(layout.projectSort === k ? '\u2713 ' : '\u3000') + sortName(k)}</button>)}</>}
+        {PROJECT_SORTS.map(k => <button key={k} type="button" role="menuitemradio" aria-checked={layout.projectSort === k} className={`gah-sess-menu-item${layout.projectSort === k ? ' on' : ''}`} onClick={pick(() => { if (k !== 'custom') setReordering(false); updateLayout(old => ({ ...old, projectSort: k, projectOrder: k === 'custom' && !old.projectOrder.length ? projects.map(p => p.id) : old.projectOrder })); })}>{(layout.projectSort === k ? '\u2713 ' : '\u3000') + sortName(k)}</button>)}
+        <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={!!q || projects.length < 2} onClick={pick(() => { if (sorting) { setReordering(false); return; } updateLayout(old => ({ ...old, projectSort: 'custom', projectOrder: projects.map(p => p.id) })); setReordering(true); if (!open) setSection('projects', { open: true }); })}>{sorting ? T('\u5b8c\u6210\u6392\u5e8f', 'Done reordering') : T('\u8c03\u6574\u9879\u76ee\u987a\u5e8f\u2026', 'Reorder projects\u2026')}</button></>}
       <div className="gah-sess-menu-sep" />
       <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={!!q} onClick={pick(() => setSection(key, { open: !open }))}>{open ? T('\u6536\u8d77\u5206\u533a', 'Collapse section') : T('\u5c55\u5f00\u5206\u533a', 'Expand section')}</button>
       <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={index <= 0} onClick={pick(() => moveSection(key, -1))}>{T('\u4e0a\u79fb', 'Move up')}</button>
@@ -245,9 +249,9 @@ export function Sessions({ api }: { api: PluginAPI }) {
     projects: () => {
       const open = !!q || layout.sections.projects.open;
       return <div key="projects" className="gah-sess-section" data-section="projects">
-        {sectionHead('projects', open, <button type="button" className="gah-sess-head-btn" disabled={busy} aria-label={T('\u65b0\u5efa\u9879\u76ee', 'New project')} onClick={() => dialog('create')}><Icon name="folder-plus" /></button>)}
+        {sectionHead('projects', open, sorting ? <button type="button" className="gah-sess-head-btn gah-sess-done" aria-label={T('\u5b8c\u6210\u6392\u5e8f', 'Done reordering')} title={T('\u5b8c\u6210\u6392\u5e8f', 'Done reordering')} onClick={() => setReordering(false)}>{T('\u5b8c\u6210', 'Done')}</button> : <button type="button" className="gah-sess-head-btn" disabled={busy} aria-label={T('\u65b0\u5efa\u9879\u76ee', 'New project')} onClick={() => dialog('create')}><Icon name="folder-plus" /></button>)}
         {open && (projects.length ? <>{projectGroups}
-          {!q && matchedProjects.length > projectCap && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, 'projects:all': !allProjects }))}>{allProjects ? T('\u6536\u8d77\u9879\u76ee', 'Show fewer projects') : `${T('\u663e\u793a\u5168\u90e8\u9879\u76ee', 'Show all projects')} (${matchedProjects.length})`}</button>}</>
+          {!q && !sorting && matchedProjects.length > projectCap && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, 'projects:all': !allProjects }))}>{allProjects ? T('\u6536\u8d77\u9879\u76ee', 'Show fewer projects') : `${T('\u663e\u793a\u5168\u90e8\u9879\u76ee', 'Show all projects')} (${matchedProjects.length})`}</button>}</>
           : <div className="gah-sess-empty">{T('\u8fd8\u6ca1\u6709\u9879\u76ee', 'No projects yet')}</div>)}
       </div>;
     },
