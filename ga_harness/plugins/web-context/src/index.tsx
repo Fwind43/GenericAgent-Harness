@@ -40,7 +40,7 @@ function Text({ text }: { text: string }) {
 }
 
 function BlockRow({ block }: { block: Block }) {
-  const [open, setOpen] = useState(block.type === 'text' && block.chars < 600);
+  const [open, setOpen] = useState(false);
   const title = block.type === 'tool_use' || block.type === 'tool_result' ? block.name || '' : '';
   const head = block.type === 'image' ? `${block.media || 'image'} · ${fmt(block.bytes || 0)}B`
     : (block.text || '').replace(/\s+/g, ' ').slice(0, 140);
@@ -93,7 +93,7 @@ function Context({ api }: { api: PluginAPI }) {
     {data && <>
       {(Object.keys(data.working).length > 0 || data.history.length > 0) && <section className="gah-ctx-sec">
         <h3>{T('工作记忆与历史摘要', 'Working memory & history')}</h3>
-        {Object.entries(data.working).filter(([, v]) => v).map(([k, v]) => <details key={k} className="gah-ctx-card" open={k === 'key_info'}>
+        {Object.entries(data.working).filter(([, v]) => v).map(([k, v]) => <details key={k} className="gah-ctx-card">
           <summary>{k} <span>{fmt(v.length)}</span></summary><Text text={v} /></details>)}
         {data.history.length > 0 && <details className="gah-ctx-card"><summary>history <span>{data.history.length} {T('条', 'lines')}</span></summary>
           <ol className="gah-ctx-hist">{data.history.map((h, i) => <li key={i}>{h}</li>)}</ol></details>}

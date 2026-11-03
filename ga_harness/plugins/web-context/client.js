@@ -24,7 +24,7 @@
     ] });
   }
   function BlockRow({ block }) {
-    const [open, setOpen] = react.useState(block.type === "text" && block.chars < 600);
+    const [open, setOpen] = react.useState(false);
     const title = block.type === "tool_use" || block.type === "tool_result" ? block.name || "" : "";
     const head = block.type === "image" ? `${block.media || "image"} · ${fmt(block.bytes || 0)}B` : (block.text || "").replace(/\s+/g, " ").slice(0, 140);
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-ctx-block k-" + block.type + (block.error ? " err" : ""), children: [
@@ -99,7 +99,7 @@
       data && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
         (Object.keys(data.working).length > 0 || data.history.length > 0) && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "gah-ctx-sec", children: [
           /* @__PURE__ */ jsxRuntime.jsx("h3", { children: sdk.T("工作记忆与历史摘要", "Working memory & history") }),
-          Object.entries(data.working).filter(([, v]) => v).map(([k, v]) => /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "gah-ctx-card", open: k === "key_info", children: [
+          Object.entries(data.working).filter(([, v]) => v).map(([k, v]) => /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "gah-ctx-card", children: [
             /* @__PURE__ */ jsxRuntime.jsxs("summary", { children: [
               k,
               " ",
