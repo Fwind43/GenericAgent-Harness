@@ -177,7 +177,7 @@ export function Models({ api }: { api: PluginAPI }) {
               </div>
               {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} />
                 : isMixin ? <MixinForm key={edit.serial} entry={mixin} config={config} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('mixin', edit.id)} />
-                : <ProviderForm key={edit.serial} entry={provider} models={provider ? config.entries.filter(item => item.provider === provider.id) : []} disabled={locked} onSave={change} onQuickSave={quickSave}
+                : <ProviderForm key={edit.serial} entry={provider} taken={config.providers.map(item => item.id)} models={provider ? config.entries.filter(item => item.provider === provider.id) : []} disabled={locked} onSave={change} onQuickSave={quickSave}
                   onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onOpenModel={openModel} onNewModel={() => openModel()} fetchModels={fetchModels} onAddModels={addModels} />}
             </section>
           </div>

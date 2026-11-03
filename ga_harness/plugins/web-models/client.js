@@ -1,6 +1,6 @@
 var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) {
   "use strict";
-  const providerId = (model) => model.provider_id || model.provider || "__standalone";
+  const providerId$1 = (model) => model.provider_id || model.provider || "__standalone";
   function ModelPicker({ api }) {
     const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
     const [open, setOpen] = react.useState(false), [query, setQuery] = react.useState(""), [provider, setProvider] = react.useState("");
@@ -9,12 +9,12 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const current = catalog == null ? void 0 : catalog.items.find((item) => item.id === catalog.current);
     const groups = /* @__PURE__ */ new Map();
     for (const item of (catalog == null ? void 0 : catalog.items) || []) {
-      const id = providerId(item), group = groups.get(id) || { name: item.provider || sdk.T("独立配置", "Standalone"), count: 0 };
+      const id = providerId$1(item), group = groups.get(id) || { name: item.provider || sdk.T("独立配置", "Standalone"), count: 0 };
       group.count++;
       groups.set(id, group);
     }
     const filter = groups.has(provider) ? provider : "";
-    const items = (catalog == null ? void 0 : catalog.items.filter((item) => (!filter || filter === providerId(item)) && sdk.matches(query, item.name, item.model, item.provider))) || [];
+    const items = (catalog == null ? void 0 : catalog.items.filter((item) => (!filter || filter === providerId$1(item)) && sdk.matches(query, item.name, item.model, item.provider))) || [];
     const close = (focus = false) => {
       var _a;
       setOpen(false);
@@ -625,12 +625,30 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   }
   const noop = () => {
   };
-  function ProviderForm({ entry, models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }) {
+  const slug = (text) => text.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 32);
+  const hostSlug = (url) => {
+    try {
+      const host = new URL(url.includes("://") ? url : `https://${url}`).hostname;
+      if (host === "localhost" || /^[\d.]+$|:/.test(host)) return "local";
+      const parts = host.split(".").filter((part) => !["www", "api"].includes(part));
+      return slug(parts.length > 1 ? parts[parts.length - 2] : parts[0] || "");
+    } catch {
+      return "";
+    }
+  };
+  function providerId(name, base, taken) {
+    const used = new Set(taken), root = slug(name) || hostSlug(base) || "provider";
+    let id = root;
+    for (let n = 2; used.has(id); n++) id = `${root}-${n}`;
+    return id;
+  }
+  function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }) {
     const [id, setId] = react.useState((entry == null ? void 0 : entry.id) || ""), [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || "");
     const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.values.protocol) || "oai");
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
     const used = models.length, existing = new Set(models.map((item) => item.values.model || ""));
     const [modelDirty, setModelDirty] = react.useState(false), onModelDirty = react.useCallback((value) => setModelDirty(value), []);
+    const auto = entry ? entry.id : providerId(name, base, taken), finalId = id.trim() || auto;
     const dirty = useDraft([id, name, protocol, base, secret], noop);
     react.useLayoutEffect(() => {
       onDirtyChange(dirty || modelDirty);
@@ -643,7 +661,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       return (_a = event.target.closest("details")) == null ? void 0 : _a.setAttribute("open", "");
     }, onSubmit: (event) => {
       event.preventDefault();
-      if (!disabled) onSave("provider_save", id.trim(), { name: name.trim(), protocol, apibase: base.trim(), apikey: secret });
+      if (!disabled) onSave("provider_save", finalId, { name: name.trim(), protocol, apibase: base.trim(), apikey: secret });
     }, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
         /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("服务商", "Provider"), hint: sdk.T("地址和密钥会同步到使用此服务商的所有模型。", "URL and key are synced to every model that uses this provider."), children: [
@@ -667,13 +685,13 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
           /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("服务商标识", "Provider ID"), wide: true, children: [
-            /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[a-z0-9_-]+", disabled: disabled || !!entry, value: id, placeholder: "openai", spellCheck: false, onChange: (event) => setId(event.target.value) }),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("小写字母、数字、_ 或 -，创建后不可修改。", "Lowercase letters, digits, _ or -; fixed after creation.") })
+            /* @__PURE__ */ jsxRuntime.jsx("input", { pattern: "[a-z0-9][a-z0-9_\\-]{0,39}", disabled: disabled || !!entry, value: id, placeholder: auto, spellCheck: false, onChange: (event) => setId(event.target.value) }),
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: entry ? sdk.T("创建后不可修改。", "Fixed after creation.") : sdk.T("可留空，将根据名称或地址自动生成；创建后不可修改。", "Optional; generated from the name or URL. Fixed after creation.") })
           ] }) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, canDelete: used === 0, onReset, onDelete: async () => {
-        if (await sdk.confirmDialog({ title: sdk.T("删除这个服务商？", "Delete this provider?"), message: (entry == null ? void 0 : entry.values.name) || id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("provider_delete", id);
+        if (await sdk.confirmDialog({ title: sdk.T("删除这个服务商？", "Delete this provider?"), message: (entry == null ? void 0 : entry.values.name) || id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("provider_delete", finalId);
       } })
     ] });
   }
@@ -1066,6 +1084,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                 ProviderForm,
                 {
                   entry: provider,
+                  taken: config.providers.map((item) => item.id),
                   models: provider ? config.entries.filter((item) => item.provider === provider.id) : [],
                   disabled: locked,
                   onSave: change,

@@ -5,8 +5,23 @@ import { RemoteModels, type FetchModels } from './RemoteModels';
 import { ProviderModels, type QuickSave } from './ProviderModels';
 
 const noop = () => {};
-export function ProviderForm({ entry, models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }: {
-  entry?: ProviderEntry; models: ModelEntry[]; disabled: boolean; onSave: SaveModel; onQuickSave: QuickSave;
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 32);
+const hostSlug = (url: string) => {
+  try {
+    const host = new URL(url.includes('://') ? url : `https://${url}`).hostname;
+    if (host === 'localhost' || /^[\d.]+$|:/.test(host)) return 'local';
+    const parts = host.split('.').filter(part => !['www', 'api'].includes(part));
+    return slug(parts.length > 1 ? parts[parts.length - 2] : parts[0] || '');
+  } catch { return ''; }
+};
+export function providerId(name: string, base: string, taken: Iterable<string>) {
+  const used = new Set(taken), root = slug(name) || hostSlug(base) || 'provider';
+  let id = root;
+  for (let n = 2; used.has(id); n++) id = `${root}-${n}`;
+  return id;
+}
+export function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }: {
+  entry?: ProviderEntry; taken?: string[]; models: ModelEntry[]; disabled: boolean; onSave: SaveModel; onQuickSave: QuickSave;
   onDirtyChange: (dirty: boolean) => void; onReset: () => void; onOpenModel: (key: string) => void; onNewModel: () => void;
   fetchModels: FetchModels; onAddModels: (provider: string, protocol: string, ids: string[]) => void;
 }) {
@@ -15,10 +30,11 @@ export function ProviderForm({ entry, models, disabled, onSave, onQuickSave, onD
   const [base, setBase] = useState(entry?.values.apibase || ''), [secret, setSecret] = useState('');
   const used = models.length, existing = new Set(models.map(item => item.values.model || ''));
   const [modelDirty, setModelDirty] = useState(false), onModelDirty = useCallback((value: boolean) => setModelDirty(value), []);
+  const auto = entry ? entry.id : providerId(name, base, taken), finalId = id.trim() || auto;
   const dirty = useDraft([id, name, protocol, base, secret], noop);
   useLayoutEffect(() => { onDirtyChange(dirty || modelDirty); }, [dirty, modelDirty, onDirtyChange]);
   useLayoutEffect(() => () => { onDirtyChange(false); }, [onDirtyChange]);
-  return <form className="model-provider-form" onInvalidCapture={event => (event.target as HTMLElement).closest('details')?.setAttribute('open', '')} onSubmit={event => { event.preventDefault(); if (!disabled) onSave('provider_save', id.trim(), { name: name.trim(), protocol, apibase: base.trim(), apikey: secret }); }}>
+  return <form className="model-provider-form" onInvalidCapture={event => (event.target as HTMLElement).closest('details')?.setAttribute('open', '')} onSubmit={event => { event.preventDefault(); if (!disabled) onSave('provider_save', finalId, { name: name.trim(), protocol, apibase: base.trim(), apikey: secret }); }}>
     <div className="model-form-content">
       <Section title={T('\u670d\u52a1\u5546', 'Provider')} hint={T('\u5730\u5740\u548c\u5bc6\u94a5\u4f1a\u540c\u6b65\u5230\u4f7f\u7528\u6b64\u670d\u52a1\u5546\u7684\u6240\u6709\u6a21\u578b\u3002', 'URL and key are synced to every model that uses this provider.')}>
         <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input disabled={disabled} value={name} maxLength={120} placeholder={T('\u4f8b\u5982 OpenAI', 'For example, OpenAI')} onChange={event => setName(event.target.value)} autoFocus={!entry} /></Field>
@@ -33,12 +49,12 @@ export function ProviderForm({ entry, models, disabled, onSave, onQuickSave, onD
       <details className="model-advanced">
         <summary>{T('\u9ad8\u7ea7', 'Advanced')}</summary>
         <div className="model-grid">
-          <Field label={T('\u670d\u52a1\u5546\u6807\u8bc6', 'Provider ID')} wide><input required pattern="[a-z0-9_-]+" disabled={disabled || !!entry} value={id} placeholder="openai" spellCheck={false} onChange={event => setId(event.target.value)} /><small>{T('\u5c0f\u5199\u5b57\u6bcd\u3001\u6570\u5b57\u3001_ \u6216 -\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Lowercase letters, digits, _ or -; fixed after creation.')}</small></Field>
+          <Field label={T('\u670d\u52a1\u5546\u6807\u8bc6', 'Provider ID')} wide><input pattern="[a-z0-9][a-z0-9_\-]{0,39}" disabled={disabled || !!entry} value={id} placeholder={auto} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{entry ? T('\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Fixed after creation.') : T('\u53ef\u7559\u7a7a\uff0c\u5c06\u6839\u636e\u540d\u79f0\u6216\u5730\u5740\u81ea\u52a8\u751f\u6210\uff1b\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Optional; generated from the name or URL. Fixed after creation.')}</small></Field>
         </div>
       </details>
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} canDelete={used === 0} onReset={onReset} onDelete={async () => {
-      if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u670d\u52a1\u5546\uff1f', 'Delete this provider?'), message: entry?.values.name || id, danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('provider_delete', id);
+      if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u670d\u52a1\u5546\uff1f', 'Delete this provider?'), message: entry?.values.name || id, danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('provider_delete', finalId);
     }} />
   </form>;
 }
