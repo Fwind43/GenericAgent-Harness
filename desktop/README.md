@@ -149,10 +149,19 @@ Two kinds, both checked from the tray menu (Updates > Check for updates) and aut
   - `required`: raise only when the new code cannot run on older shells (backend launch contract,
     bundled Python or its dependencies, preload API the code uses), and only for the affected
     platforms. This forces the full download, so keep it rare.
-  - `recommended`: for shell fixes the code does not depend on. Older shells still take the code
-    update and only show an optional reinstall hint.
+  - `recommended`: for shell fixes or features the code does not depend on. Code and shell
+    versions are checked independently: Settings > Updates offers a separate **Update desktop
+    shell** action, including when the code is already current. A code update does not enable
+    features that require a newer shell. The optional shell action uses the same installer flow
+    as a required shell update, without forcing users to download it to update code.
   `update.json` also keeps `min_shell` (highest `required` across platforms) for shells released
   before per-platform requirements; those shells see the stricter global value.
+
+The settings page feature-detects `updates.installShell`. On older shells without that bridge,
+**Download desktop installer** always opens the release page (even after a code-only update).
+Those shells cannot gain the native shell-update action through a code update alone; install
+one newer shell manually first. "Code is up to date" on an older shell is not a claim that the
+shell is current. Once an update is staged, restart before checking or staging another update.
 
 GitHub mirror: Updates > Download mirror offers direct, `https://ghfast.top/` and
 `https://gh-proxy.com/`, or edit `<userData>/desktop.json`:

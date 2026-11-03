@@ -119,7 +119,7 @@ class Updater {
     this.pending = null;             // { info, kind } found by the last check
     this.ready = null;               // { version, kind, restart } once installed / downloaded
     this.op = null;                  // AbortController of the running install, for cancel()
-    this.st = { phase: 'idle', kind: null, shellHint: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
+    this.st = { phase: 'idle', kind: null, shellHint: null, shellUpdate: null, version: null, received: 0, total: 0, error: null, checkedAt: null };
     this.log = [];
     this.lastEmit = 0;
   }
@@ -217,7 +217,7 @@ class Updater {
   // silent: background check, only speaks up when something new is available.
   // ui: called from the settings page, which shows state itself, so no dialogs at all.
   async check({ silent = false, ui = false } = {}) {
-    if (this.busy) return this.snapshot();
+    if (this.busy || this.ready) return this.snapshot();
     this.busy = true;
     try {
       await this.checkInner(silent, ui);
@@ -250,26 +250,29 @@ class Updater {
       if (dialogs) await this.offerRestart();
       return;
     }
-    this.set({ phase: 'checking', error: null }, `Checking for updates (${silent ? 'background' : 'manual'}) via ${this.config().mirror || 'GitHub'}`);
+    this.pending = null;
+    this.set({ phase: 'checking', error: null, shellHint: null, shellUpdate: null }, `Checking for updates (${silent ? 'background' : 'manual'}) via ${this.config().mirror || 'GitHub'}`);
     const info = await this.fetchInfo();
     const current = this.backend.code.version;
-    this.st.checkedAt = Date.now();
-    if (compareVersions(info.version, current) <= 0) {
-      this.pending = null;
-      this.set({ phase: 'latest', version: info.version, kind: null, shellHint: null }, `Up to date: latest release is ${info.version}, running ${current}`);
-      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: t('已是最新版本', 'You are up to date'), detail: t(`版本 ${current}`, `Version ${current}`) });
-      return;
-    }
     const { required, recommended } = shellNeeds(info);
     const shellOk = compareVersions(required, app.getVersion()) <= 0;
-    const kind = shellOk ? 'code' : (process.platform === 'darwin' || this.linuxTarball() || this.loadShellUpdater() ? 'shell' : 'manual');
-    // Optional: the code update still applies, the newer shell only adds fixes.
-    const shellHint = shellOk && compareVersions(recommended, app.getVersion()) > 0 ? recommended : null;
-    this.pending = { info, kind, required, shellHint };
-    const what = { code: `code update, ${mb(info.app.size)}`, shell: `needs desktop app ${required}+, installer update`, manual: `needs desktop app ${required}+, download it from the release page` }[kind];
-    this.set({ phase: 'available', version: info.version, kind, shellHint, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
+    const codeAvailable = compareVersions(info.version, current) > 0;
+    // Check the shell independently, even after the code package has already been updated.
+    const shellUpdate = compareVersions(recommended, app.getVersion()) > 0
+      ? { version: info.version, kind: this.shellInstallKind(), required: !shellOk } : null;
+    const shellHint = shellOk && shellUpdate ? recommended : null;
+    this.st.checkedAt = Date.now();
+    if (!codeAvailable && !shellUpdate) {
+      this.set({ phase: 'latest', version: info.version, kind: null, shellHint: null, shellUpdate: null }, `Up to date: latest release is ${info.version}, running code ${current}, shell ${app.getVersion()}`);
+      if (dialogs) await this.message({ type: 'info', title: 'GenericAgent-Harness', message: t('已是最新版本', 'You are up to date'), detail: t(`代码 ${current}，桌面壳 ${app.getVersion()}`, `Code ${current}, desktop shell ${app.getVersion()}`) });
+      return;
+    }
+    const kind = codeAvailable && shellOk ? 'code' : shellUpdate.kind;
+    this.pending = { info, kind, required, shellHint, shellUpdate };
+    const what = kind === 'code' ? `code update, ${mb(info.app.size)}` : `${shellOk ? 'recommended' : 'required'} desktop shell update (${kind})`;
+    this.set({ phase: 'available', version: info.version, kind, shellHint, shellUpdate, received: 0, total: kind === 'code' ? info.app.size || 0 : 0 },
       `Version ${info.version} is available (${what})`);
-    if (shellHint) this.note(`Desktop app ${shellHint} is recommended (optional reinstall); running ${app.getVersion()}`);
+    if (shellHint) this.note(`Desktop shell ${recommended} is recommended; running ${app.getVersion()}. Use the separate shell update action.`);
     if (ui || (silent && this.dismissed === info.version)) return;
     await this.offer(info, kind);
   }
@@ -305,11 +308,24 @@ class Updater {
     await this.offerRestart();
   }
 
-  // Settings page: download + install what the last check found, reporting progress.
-  async install() {
-    if (this.busy) return this.snapshot();
-    const p = this.pending;
+  // Settings page: the optional shell update is a separate, explicit user action.
+  shellInstallKind() {
+    return process.platform === 'darwin' || this.linuxTarball() || this.loadShellUpdater() ? 'shell' : 'manual';
+  }
+
+  async installShell() {
+    return this.install({ shell: true });
+  }
+
+  // Download + install what the last check found, reporting progress.
+  async install({ shell = false } = {}) {
+    if (this.busy || this.ready) return this.snapshot();
+    let p = this.pending;
     if (!p) throw new Error('no update available; check first');
+    if (shell) {
+      if (!p.shellUpdate) throw new Error('no desktop shell update available; check first');
+      p = { ...p, kind: p.shellUpdate.kind };
+    }
     if (p.kind === 'manual') { openExternalQuiet(RELEASES_PAGE); this.note('Opened the release page'); this.emit(true); return this.snapshot(); }
     this.busy = true;
     try {
@@ -326,6 +342,7 @@ class Updater {
 
   async installInner(p) {
     this.op = new AbortController();
+    this.set({ kind: p.kind, version: p.info.version, error: null, received: 0, total: p.kind === 'code' ? p.info.app.size || 0 : 0 });
     try {
       if (p.kind === 'code') await this.installCode(p.info);
       else if (process.platform === 'darwin') await this.downloadMacShell(p.info);

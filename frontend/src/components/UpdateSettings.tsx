@@ -14,12 +14,14 @@ type UpdateState = {
   releasesPage: string; settingsFile: string; autoCheck: boolean; mirror: string; presets: Preset[];
   phase: string; kind: string | null; shellHint?: string | null; version: string | null; received: number; total: number;
   error: string | null; checkedAt: number | null; busy: boolean;
+  shellUpdate?: { version: string; kind: 'shell' | 'manual'; required: boolean } | null;
   cancellable?: boolean; log: LogLine[];
 };
 type UpdatesApi = {
   state(): Promise<UpdateState>;
   check(): Promise<unknown>;
   install(): Promise<unknown>;
+  installShell?(): Promise<unknown>;
   cancel?(): Promise<unknown>;
   restart(): Promise<unknown>;
   configure(patch: Partial<Pick<UpdateState, 'autoCheck' | 'mirror'>>): Promise<unknown>;
@@ -38,10 +40,14 @@ const clock = (t: number) => new Date(t).toLocaleTimeString();
 function phaseText(s: UpdateState) {
   switch (s.phase) {
     case 'checking': return T('正在检查更新…', 'Checking for updates…');
-    case 'latest': return T('已是最新版本', 'You are up to date');
+    case 'latest': return api?.installShell
+      ? T('代码和桌面壳均已是最新版本', 'Code and desktop shell are up to date')
+      : T('代码已是最新版本；桌面壳请查看下载页', 'Code is up to date; check the download page for desktop shell updates');
     case 'available': return s.kind === 'manual'
-      ? T(`发现新版本 ${s.version}，需要手动下载安装包`, `Version ${s.version} is available; download the installer manually`)
-      : T(`发现新版本 ${s.version}`, `Version ${s.version} is available`);
+      ? T(`桌面壳 ${s.version} 可用，需要手动下载安装包`, `Desktop shell ${s.version} is available; download the installer manually`)
+      : s.kind === 'shell'
+        ? T(`桌面壳 ${s.version} 可更新`, `Desktop shell ${s.version} is available`)
+        : T(`代码 ${s.version} 可更新`, `Code ${s.version} is available`);
     case 'downloading': return T('正在下载…', 'Downloading…');
     case 'verifying': return T('正在校验文件…', 'Verifying…');
     case 'installing': return T('正在安装…', 'Installing…');
@@ -92,6 +98,10 @@ export function UpdateSettings() {
   const run = (p: Promise<unknown>) => { setFailure(''); p.catch((e: Error) => setFailure(e?.message || String(e))); };
   const s = state;
   const working = !!s && (s.busy || ACTIVE.has(s.phase));
+  const staged = s?.phase === 'ready';
+  const openReleases = () => {
+    if (s && desktop?.openExternal) run(desktop.openExternal(s.releasesPage));
+  };
   const pct = s && s.total > 0 ? Math.min(100, Math.round(s.received / s.total * 100)) : null;
   const isPreset = !!s && s.presets.some(p => p.value === s.mirror);
   const custom = !!s && (editing || !isPreset);
@@ -111,7 +121,7 @@ export function UpdateSettings() {
           <div className="gah-setting-row">
             <div className="gah-setting-text"><strong>{T('当前版本', 'Current version')}</strong>
               <span>{T('应用', 'App')} {s.codeVersion}{s.codeSource === 'update' ? T('（已在线更新）', ' (updated)') : ''} · {T('外壳', 'Shell')} {s.shellVersion}</span></div>
-            <button type="button" className="gah-update-btn" disabled={working} onClick={() => run(api.check())}>
+            <button type="button" className="gah-update-btn" disabled={working || staged} onClick={() => run(api.check())}>
               {s.phase === 'checking' ? T('检查中…', 'Checking…') : T('检查更新', 'Check now')}</button>
           </div>
 
@@ -129,16 +139,30 @@ export function UpdateSettings() {
             </div>}
             <div className="gah-update-actions">
               {s.phase === 'available' && <button type="button" className="gah-update-btn primary" disabled={working} onClick={() => run(api.install())}>
-                {s.kind === 'manual' ? T('打开下载页', 'Open download page') : s.kind === 'shell' ? T('下载安装包', 'Download installer') : T('下载并安装', 'Download and install')}</button>}
+                {s.kind === 'manual' ? T('下载桌面安装包', 'Download desktop installer') : s.kind === 'shell' ? T('更新桌面壳', 'Update desktop shell') : T('更新代码', 'Update code')}</button>}
               {s.cancellable && api.cancel && <button type="button" className="gah-update-btn" onClick={() => run(api.cancel!())}>{T('取消下载', 'Cancel download')}</button>}
               {s.phase === 'ready' && <button type="button" className="gah-update-btn primary" onClick={() => run(api.restart())}>{T('立即重启', 'Restart now')}</button>}
-              {s.phase === 'error' && <button type="button" className="gah-update-btn" onClick={() => run(api.check())}>{T('重试', 'Retry')}</button>}
-              <button type="button" className="gah-update-link" onClick={() => desktop?.openExternal?.(s.releasesPage)}>{T('查看发布说明', 'Release notes')}</button>
+              {s.phase === 'error' && <button type="button" className="gah-update-btn" disabled={working} onClick={() => run(api.check())}>{T('重试', 'Retry')}</button>}
+              <button type="button" className="gah-update-link" onClick={openReleases}>{T('查看发布说明', 'Release notes')}</button>
             </div>
-            {s.phase === 'available' && s.kind === 'code' && s.shellHint && <span className="gah-update-hint">
-              {T(`可选：桌面应用 ${s.shellHint} 带有外壳修复，可到发布页下载安装包；不装也能正常更新和使用。`,
-                `Optional: desktop app ${s.shellHint} has shell fixes; get the installer from the release page whenever convenient.`)}</span>}
+            {staged && <span className="gah-update-hint">{T('请先重启应用，再检查或安装其他更新。', 'Restart the app before checking for or installing another update.')}</span>}
             {failure && <div className="gah-update-error">{failure}</div>}
+          </div>
+
+          <div className="gah-setting-row">
+            <div className="gah-setting-text"><strong>{T('桌面壳更新', 'Desktop shell update')}</strong>
+              <span>{T('当前桌面壳', 'Current shell')} {s.shellVersion}
+                {(s.shellUpdate?.version || s.shellHint) && <> · {s.shellUpdate?.required ? T('需要升级至', 'Requires') : T('推荐升级至', 'Recommended')} {s.shellUpdate?.version || s.shellHint}</>}</span>
+              <span>{T('仅更新代码不会升级桌面壳；新壳功能需要下载安装完整桌面应用。', 'Code-only updates do not upgrade the shell; new shell features require the full desktop app.')}</span>
+              {!api.installShell && <span>{T('当前壳不支持独立在线升级，请下载桌面安装包手动更新。', 'This shell cannot update itself independently; download the desktop installer to update manually.')}</span>}
+            </div>
+            <div className="gah-update-actions">
+              {api.installShell && s.shellUpdate && <button type="button" className="gah-update-btn" disabled={working || staged || !s.packaged}
+                onClick={() => run(api.installShell!())}>
+                {s.shellUpdate.kind === 'manual' ? T('下载桌面安装包', 'Download desktop installer') : T('更新桌面壳', 'Update desktop shell')}</button>}
+              {(!api.installShell || !s.shellUpdate || s.shellUpdate.kind !== 'manual') && <button type="button" className="gah-update-btn" disabled={working || staged} onClick={openReleases}>
+                {T('下载桌面安装包', 'Download desktop installer')}</button>}
+            </div>
           </div>
 
           <div className="gah-setting-row">
