@@ -1,0 +1,6 @@
+name = "web-context"
+category = "ui"
+entry = "main:apply"
+description = "Context view for ui-web: shows what the model will see next turn -- raw message history by block type, working memory and history summary, with size estimates."
+description_zh = "ui-web 的上下文视图：展示模型下一轮将看到的内容——按块类型拆分的原始消息历史、工作记忆与历史摘要，并估算体量。"
+inject = ["web.host"]

@@ -1,0 +1,50 @@
+/* web-context: context view */
+.gah-ctx-view{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-ctx{max-width:1100px;width:100%;margin:0 auto;padding:0 20px 32px;box-sizing:border-box}
+.gah-ctx-top{position:sticky;top:0;z-index:2;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--border)}
+.gah-ctx-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.gah-ctx-sum{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gah-ctx-refresh,.gah-ctx-more{margin-left:auto;border:1px solid var(--border);background:none;border-radius:8px;padding:4px 12px;cursor:pointer;color:inherit;font:inherit;font-size:12.5px;flex:none}
+.gah-ctx-refresh:disabled{opacity:.6;cursor:default}
+.gah-ctx-more{margin:6px 0 0;display:block}
+.gah-ctx-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface-muted);min-width:40px}
+.gah-ctx-bar i{display:block;height:100%}
+.gah-ctx .k-text{background:#4c8bf5}.gah-ctx .k-thinking{background:#a77bea}.gah-ctx .k-tool_use{background:#f0a23b}
+.gah-ctx .k-tool_result{background:#3fb37f}.gah-ctx .k-image{background:#e5687a}.gah-ctx .k-other{background:#9aa0a6}
+.gah-ctx-legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.gah-ctx-legend button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:none;border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;color:var(--text);cursor:pointer}
+.gah-ctx-legend button[aria-pressed="true"]{background:var(--surface-muted);font-weight:600}
+.gah-ctx-legend button i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.gah-ctx-legend button span{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:400}
+.gah-ctx-note{margin-top:8px;color:var(--muted);font-size:12px}
+.gah-ctx-error{margin-top:8px;color:#c0392b;font-size:13px}
+.gah-ctx-empty{color:var(--muted);text-align:center;margin-top:16vh}
+.gah-ctx-empty b{display:block;color:var(--text);font-size:18px;font-weight:600;margin-bottom:6px}
+.gah-ctx-sec h3{font-size:13.5px;margin:20px 0 8px}
+.gah-ctx-card{border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.gah-ctx-card summary{cursor:pointer;font-size:13px;font-weight:600}
+.gah-ctx-card summary span{color:var(--muted);font-weight:400;margin-left:6px;font-size:12px}
+.gah-ctx-hist{margin:6px 0 0;padding-left:22px;font-size:12.5px;max-height:320px;overflow:auto}
+.gah-ctx-hist li{margin:2px 0;white-space:pre-wrap;word-break:break-word}
+.gah-ctx-pre{margin:6px 0 0;padding:8px 10px;background:var(--surface-muted);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:480px;overflow:auto}
+.gah-ctx-tools{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.gah-ctx-tools td{padding:3px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.gah-ctx-tools td.w{width:60%}
+.gah-ctx-tools td.w i{display:block;height:8px;border-radius:4px;background:#3fb37f}
+.gah-ctx-msgs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.gah-ctx-msgs>li{border:1px solid var(--border);border-radius:10px;padding:8px 10px;border-left-width:3px}
+.gah-ctx-msgs>li.role-user{border-left-color:#4c8bf5}
+.gah-ctx-msgs>li.role-assistant{border-left-color:#a77bea}
+.gah-ctx-mhead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-bottom:4px}
+.gah-ctx-mhead .role{font-size:12px;font-weight:600}
+.gah-ctx-mhead .size,.gah-ctx-bhead .size{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.gah-ctx-block{margin-top:4px}
+.gah-ctx-bhead{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;width:100%;border:0;background:none;padding:3px 0;cursor:pointer;font:inherit;color:inherit;text-align:left}
+.gah-ctx-bhead:disabled{cursor:default}
+.gah-ctx-bhead .tag{font-size:11.5px;padding:1px 7px;border-radius:5px;color:#fff;white-space:nowrap}
+.gah-ctx-block.k-text .tag{background:#4c8bf5}.gah-ctx-block.k-thinking .tag{background:#a77bea}.gah-ctx-block.k-tool_use .tag{background:#f0a23b}
+.gah-ctx-block.k-tool_result .tag{background:#3fb37f}.gah-ctx-block.k-image .tag{background:#e5687a}.gah-ctx-block.k-other .tag{background:#9aa0a6}
+.gah-ctx-block.err .tag{background:#c0392b}
+.gah-ctx-block{background:none!important}
+.gah-ctx-bhead .tag b{margin-left:6px;font-weight:600}
+.gah-ctx-bhead .peek{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

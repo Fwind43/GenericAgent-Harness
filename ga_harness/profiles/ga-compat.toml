@@ -82,6 +82,10 @@ name = "web-channels"
 [[plugins]]
 name = "web-trace"
 
+# "Context" view: the saved LLM context of the chat (messages by block type, working memory)
+[[plugins]]
+name = "web-context"
+
 # "Usage" page under New chat: token totals by day, model and chat
 [[plugins]]
 name = "web-usage"
