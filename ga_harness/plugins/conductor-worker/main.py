@@ -40,10 +40,12 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   (1 to @RUNNING_CAP@): raise it when many small independent tasks are ready, lower it
   when tasks compete for the same files, ports or rate-limited resources. Lowering
   it does not stop running tasks. If the user asks for a concurrency level, set it.
-- Model scheduling: a task runs on your own model and reasoning effort unless you
-  pass `model`/`effort` to `conductor_dispatch` (or to `conductor_instruct` for a
-  follow-up run of a finished task). `conductor_models` lists the configured models
-  (use only those names) and your current model policy. Pick per task: stronger models
+- Model scheduling: a task runs on the model/effort you pass to `conductor_dispatch`
+  (or to `conductor_instruct` for a follow-up run of a finished task); otherwise on
+  your default set with `conductor_set_default`; otherwise on your own model and
+  reasoning effort. `conductor_models` lists the configured models (use only those
+  names), your default and your current model policy. When the user asks for a
+  standing default model/effort for tasks, use `conductor_set_default`. Pick per task: stronger models
   or higher effort for hard or risky work, cheaper/faster ones for simple, mechanical
   work. If the user names a model or effort, follow it.
 - Model policy: when the user tells you how models should be chosen in general (e.g.
@@ -100,9 +102,9 @@ TASK_IDS = {"task_ids": {"type": "array", "items": {"type": "string"},
                          "description": "Several task ids (instead of task_id)."}}
 
 MODEL = {"model": {"type": "string", "description": "Configured model name (see conductor_models). "
-                                               "Omit to use the policy default or your own model."},
+                                               "Omit to use your default (conductor_set_default) or your own model."},
          "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"],
-                    "description": "Reasoning effort. Omit to use the policy default or your own effort."}}
+                    "description": "Reasoning effort. Omit to use your default (conductor_set_default) or your own effort."}}
 
 TOOLS = {
     "conductor_dispatch": (_tool(
@@ -147,7 +149,18 @@ TOOLS = {
     "conductor_models": (_tool(
         "conductor_models",
         "List the configured models (use the name field), the reasoning efforts, your own "
-        "model/effort (the default for tasks) and your model-selection policy."), "models"),
+        "model/effort, your default for tasks (default; effective_default is what a task "
+        "without model/effort runs on) and your model-selection policy."), "models"),
+    "conductor_set_default": (_tool(
+        "conductor_set_default",
+        "Set the default model and/or reasoning effort for tasks you dispatch from now on "
+        "when no model/effort is given per task. Kept for this session; running tasks keep "
+        "their model. Pass \"inherit\" for a field to clear it so tasks follow your own "
+        "model/effort again; omitted fields stay unchanged.",
+        {"model": {"type": "string", "description": "Configured model name (see conductor_models), "
+                   "or \"inherit\" to follow your own model."},
+         "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max", "inherit"],
+                    "description": "Reasoning effort, or \"inherit\" to follow your own effort."}}), "set_default"),
     "conductor_set_policy": (_tool(
         "conductor_set_policy",
         "Replace your model-selection policy: written rules for which model and reasoning "

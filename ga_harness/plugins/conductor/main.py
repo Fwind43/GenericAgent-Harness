@@ -77,7 +77,7 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}}
+        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -85,6 +85,8 @@ class Store:
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
                     self.data["limits"] = dict(loaded.get("limits") or {})
+                    self.data["defaults"] = {k: v for k, v in dict(loaded.get("defaults") or {}).items()
+                                          if isinstance(v, dict) and v}
                     self.data["policies"] = {k: v for k, v in dict(loaded.get("policies") or {}).items()
                                           if isinstance(v, str) and v.strip()}
         except Exception as error:
@@ -116,6 +118,7 @@ def apply(ctx, config):
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
     policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
+    defaults = store.data["defaults"]  # parent -> {"model": name, "effort": level}; absent = inherit
 
     # ---- helpers ---------------------------------------------------------
     def _sid(body, key="session_id"):
@@ -242,10 +245,13 @@ def apply(ctx, config):
         return model, effort
 
     def _selection(parent, model=None, effort=None):
-        """Per-call choice > the conductor's own selection. The policy is prose for the
-        conductor's prompt; it never picks a model by itself."""
+        """Per-call choice > this conductor's default > the conductor's own selection.
+        The policy is prose for the conductor's prompt; it never picks a model itself."""
+        with lock:
+            default = dict(defaults.get(parent) or {})
         own_model, own_effort = _parent_selection(parent)
-        return model or own_model, effort or own_effort
+        return (model or default.get("model") or own_model,
+                effort or default.get("effort") or own_effort)
 
     def _apply_selection(task, model, effort):
         values = {}
@@ -506,11 +512,14 @@ def apply(ctx, config):
         own_model, own_effort = _parent_selection(parent)
         with lock:
             policy = policies.get(parent)
+            default = dict(defaults.get(parent) or {})
+        model, effort = _selection(parent)
         return {"models": [{"name": r["name"], "model": r.get("model"), "provider": r.get("provider")}
                            for r in rows] if rows is not None else None,
                 "efforts": list(EFFORTS),
                 "conductor": {"model": own_model, "effort": own_effort},
-                "default_for_tasks": "the conductor's own model/effort unless model/effort is given per task",
+                "default": {"model": default.get("model"), "effort": default.get("effort")},
+                "effective_default": {"model": model, "effort": effort},
                 "policy": policy}
 
     def set_policy(body):
@@ -534,7 +543,41 @@ def apply(ctx, config):
                 "note": "added to your system prompt from your next turn on; follow it from now"
                         if text else "policy cleared"}
 
-    OPS = {"set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
+    def set_default(body):
+        """Set this conductor's default model/effort for new tasks. "inherit" (or null)
+        for a field clears it so tasks follow the conductor's own choice again."""
+        parent = _sid(body)
+        if "model" not in body and "effort" not in body:
+            raise ValueError("give model and/or effort")
+        updates = {}
+        for key, check in (("model", _model_name), ("effort", _effort)):
+            if key not in body:
+                continue
+            value = body.get(key)
+            if value is None or (isinstance(value, str) and value.strip().lower() in ("", "inherit", "default")):
+                updates[key] = None
+            else:
+                updates[key] = check(value)
+        with lock:
+            previous = dict(defaults.get(parent) or {})
+            default = dict(previous)
+            for key, value in updates.items():
+                if value is None:
+                    default.pop(key, None)
+                else:
+                    default[key] = value
+            if default:
+                defaults[parent] = default
+            else:
+                defaults.pop(parent, None)
+        _publish()
+        out = models_op({"session_id": parent})
+        out.pop("models", None)
+        out["previous"] = {"model": previous.get("model"), "effort": previous.get("effort")}
+        out["note"] = "applies to tasks dispatched from now on; running tasks keep their model"
+        return out
+
+    OPS = {"set_default": set_default, "set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve}
 
     def _require_parent(body):
