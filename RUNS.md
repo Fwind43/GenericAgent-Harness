@@ -110,8 +110,9 @@ mode's `plugins` list. A session without a preset runs the built-in `standard`
 preset (`project-memory`, `vlm-tool`), which the catalog does not list separately.
 Built-in presets live in `ga_harness/presets/*.toml`; user presets in
 `~/.ga-harness/presets/*.toml` (same id overrides the built-in one).
-Built-ins: `standard` (the default) and `creative` (extend the app by writing
-plugins/modes; adds `plugin-control`). User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
+Built-ins: `standard` (the default), `native` (GA Native: no mode plugins, so only
+GA's own tools and prompt) and `creative` (extend the app by writing plugins/modes;
+adds `plugin-control`). User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
 built-in). Keys:
 `name`, `name_zh`, `description`, `description_zh`, `plugins` (mounted in the run; a
 plugin that also runs in the host is skipped while disabled there, a `worker_only`

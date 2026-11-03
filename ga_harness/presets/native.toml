@@ -1,0 +1,6 @@
+name = "GA Native"
+name_zh = "GA \u539f\u751f\u6a21\u5f0f"
+description = "Plain GenericAgent: only GA's own tools and prompt, no harness plugins (no layered project memory, no image viewing)."
+description_zh = "\u539f\u6c41\u539f\u5473\u7684 GenericAgent\uff1a\u53ea\u6709 GA \u81ea\u5e26\u7684\u5de5\u5177\u548c\u63d0\u793a\u8bcd\uff0c\u4e0d\u52a0\u8f7d\u4efb\u4f55 harness \u63d2\u4ef6\uff08\u6ca1\u6709\u5206\u5c42\u9879\u76ee\u8bb0\u5fc6\u548c\u770b\u56fe\uff09\u3002"
+# No mode plugins: a run mounts only worker.DEFAULT_PLUGINS (runtime infrastructure).
+plugins = []
