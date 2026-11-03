@@ -594,17 +594,33 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             void save();
           }, children: sdk.T("保存", "Save") })
         ] })
-      ] }, item.key) : /* @__PURE__ */ jsxRuntime.jsx("li", { children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-owned-row", disabled, title: sdk.T("点击编辑", "Click to edit"), onClick: () => {
-        void start(item);
-      }, children: [
-        /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.values.model || item.key }),
-        item.values.name && item.values.model && item.values.name !== item.values.model && /* @__PURE__ */ jsxRuntime.jsx("code", { children: item.values.model }),
-        item.values.context_win ? /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
-          Math.round(Number(item.values.context_win) / 1e3),
-          "K"
-        ] }) : null,
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-owned-edit", "aria-hidden": "true", children: sdk.T("编辑", "Edit") })
-      ] }) }, item.key)) })
+      ] }, item.key) : /* @__PURE__ */ jsxRuntime.jsxs("li", { className: "model-owned-item", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-owned-row", disabled, title: sdk.T("点击编辑", "Click to edit"), onClick: () => {
+          void start(item);
+        }, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.values.model || item.key }),
+          item.values.name && item.values.model && item.values.name !== item.values.model && /* @__PURE__ */ jsxRuntime.jsx("code", { children: item.values.model }),
+          item.values.context_win ? /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+            Math.round(Number(item.values.context_win) / 1e3),
+            "K"
+          ] }) : null,
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-owned-edit", "aria-hidden": "true", children: sdk.T("编辑", "Edit") })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(
+          "button",
+          {
+            type: "button",
+            className: "model-owned-delete",
+            disabled,
+            title: sdk.T("删除", "Delete"),
+            "aria-label": sdk.T("删除 ", "Delete ") + (item.values.name || item.values.model || item.key),
+            onClick: () => {
+              void remove(item);
+            },
+            children: sdk.T("删除", "Delete")
+          }
+        )
+      ] }, item.key)) })
     ] });
   }
   const noop = () => {

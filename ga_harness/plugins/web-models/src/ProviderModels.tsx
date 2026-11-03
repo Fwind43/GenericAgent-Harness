@@ -52,13 +52,15 @@ export function ProviderModels({ provider, models, disabled, onSave, onOpen, onA
           <button type="button" className="secondary" onClick={() => setEditing('')}>{T('\u53d6\u6d88', 'Cancel')}</button>
           <button type="button" disabled={disabled || !dirty || !model.trim()} onClick={() => { void save(); }}>{T('\u4fdd\u5b58', 'Save')}</button>
         </div>
-      </li> : <li key={item.key}>
+      </li> : <li key={item.key} className="model-owned-item">
         <button type="button" className="model-owned-row" disabled={disabled} title={T('\u70b9\u51fb\u7f16\u8f91', 'Click to edit')} onClick={() => { void start(item); }}>
           <strong>{item.values.name || item.values.model || item.key}</strong>
           {item.values.name && item.values.model && item.values.name !== item.values.model && <code>{item.values.model}</code>}
           {item.values.context_win ? <small>{Math.round(Number(item.values.context_win) / 1000)}K</small> : null}
           <span className="model-owned-edit" aria-hidden="true">{T('\u7f16\u8f91', 'Edit')}</span>
         </button>
+        <button type="button" className="model-owned-delete" disabled={disabled} title={T('\u5220\u9664', 'Delete')}
+          aria-label={T('\u5220\u9664 ', 'Delete ') + (item.values.name || item.values.model || item.key)} onClick={() => { void remove(item); }}>{T('\u5220\u9664', 'Delete')}</button>
       </li>)}</ul>}
   </div>;
 }
