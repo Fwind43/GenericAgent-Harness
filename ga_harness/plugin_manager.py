@@ -229,7 +229,10 @@ class PluginPreferences:
 
     def issues(self, tree):
         dormant = frontend_capabilities(self.manifests)
-        enabled = {e["name"] for e in tree if not e["disabled"]}
+        # worker_only plugins never mount in the host (their deps, e.g. run.host,
+        # exist only inside a run), so a stale enabled entry must not block saves.
+        enabled = {e["name"] for e in tree if not e["disabled"]
+                   and not getattr(self.manifests.get(e["name"]), "worker_only", False)}
         available = set(HOST_CAPABILITIES)
         ready = set()
         while True:

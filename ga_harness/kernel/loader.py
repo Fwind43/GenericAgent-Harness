@@ -188,6 +188,8 @@ def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest]) ->
             continue
         if e["name"] not in manifests:
             raise KeyError(f"plugin {e['name']!r} has no manifest")
+        if manifests[e["name"]].worker_only:
+            continue  # mounted per run by the worker, never in the host
         lack = missing_for(manifests[e["name"]])
         if lack:
             unmet[e["name"]] = lack

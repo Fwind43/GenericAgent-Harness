@@ -127,6 +127,28 @@ def test_dependencies_and_stale_revision_do_not_write(tmp_path):
         rt.dispose()
 
 
+def test_enabled_worker_only_entry_does_not_block_saves(tmp_path):
+    rt, m = make_manager(tmp_path)
+    try:
+        p = m.preferences
+        p.manifests["purge-worker"] = Manifest("purge-worker", "main:apply", tmp_path,
+                                               inject=["run.host"], worker_only=True)
+        data, _ = p.read()
+        data["profiles"].setdefault(p.profile, {})["purge-worker"] = {"enabled": True, "config": {}}
+        p.write(data)
+        assert p.issues(p.resolve(data)) == []
+        assert item(change(m, config={"limit": 13}))["config"]["limit"] == 13
+        host = Runtime()
+        try:
+            assert mount(host, [{"name": "purge-worker", "disabled": False, "config": {}}],
+                         p.manifests) == []
+            assert "purge-worker" not in host.handles
+        finally:
+            host.dispose()
+    finally:
+        rt.dispose()
+
+
 def test_corruption_and_write_failure_preserve_state(tmp_path, monkeypatch):
     rt, m = make_manager(tmp_path)
     try:
