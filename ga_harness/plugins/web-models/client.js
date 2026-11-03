@@ -516,11 +516,112 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       } })
     ] });
   }
-  function ProviderForm({ entry, used, existing, disabled, onSave, onDirtyChange, onReset, onModels, fetchModels, onAddModels }) {
+  function ProviderModels({ provider, models, disabled, onSave, onOpen, onAdd, onDirtyChange }) {
+    const [editing, setEditing] = react.useState(""), [model, setModel] = react.useState(""), [name, setName] = react.useState(""), [context, setContext] = react.useState("");
+    const current = models.find((item) => item.key === editing);
+    const dirty = !!current && (model !== (current.values.model || "") || name !== (current.values.name || "") || context !== String(current.values.context_win ?? ""));
+    react.useLayoutEffect(() => {
+      onDirtyChange(dirty);
+    }, [dirty, onDirtyChange]);
+    react.useLayoutEffect(() => () => {
+      onDirtyChange(false);
+    }, [onDirtyChange]);
+    const start = async (item) => {
+      if (dirty && !await sdk.confirmDialog({
+        title: sdk.T("放弃未保存的更改？", "Discard unsaved changes?"),
+        message: (current == null ? void 0 : current.values.name) || (current == null ? void 0 : current.values.model) || editing,
+        confirm: sdk.T("放弃更改", "Discard changes"),
+        cancel: sdk.T("继续编辑", "Keep editing"),
+        danger: true
+      })) return;
+      setEditing(item.key);
+      setModel(item.values.model || "");
+      setName(item.values.name || "");
+      setContext(String(item.values.context_win ?? ""));
+    };
+    const save = async () => {
+      if (!current || disabled || !dirty || !model.trim()) return;
+      const values = { name: name.trim(), model: model.trim(), provider };
+      if (context) values.context_win = Number(context);
+      if (await onSave("save", current.key, values)) setEditing("");
+    };
+    const remove = async (item) => {
+      if (await sdk.confirmDialog({ title: sdk.T("删除这个模型？", "Delete this model?"), message: item.values.name || item.values.model || item.key, danger: true, confirm: sdk.T("删除", "Delete") }) && await onSave("delete", item.key) && editing === item.key) setEditing("");
+    };
+    const keys = (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void save();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setEditing("");
+      }
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-owned wide", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-remote-head", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("strong", { children: [
+          sdk.T("已添加的模型", "Configured models"),
+          " (",
+          models.length,
+          ")"
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: onAdd, children: sdk.T("+ 手动添加", "+ Add manually") })
+      ] }),
+      !models.length ? /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", children: sdk.T("还没有模型，可从下方获取列表批量添加，或手动添加。", "No models yet. Fetch the list below to add in bulk, or add one manually.") }) : /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "model-owned-list", children: models.map((item) => item.key === editing ? /* @__PURE__ */ jsxRuntime.jsxs("li", { className: "is-editing", onKeyDown: keys, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-owned-fields", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field", children: [
+            sdk.T("模型 ID", "Model ID"),
+            /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, autoFocus: true, value: model, disabled, spellCheck: false, autoComplete: "off", onChange: (event) => setModel(event.target.value) })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field", children: [
+            sdk.T("显示名称", "Display name"),
+            /* @__PURE__ */ jsxRuntime.jsx("input", { value: name, disabled, maxLength: 120, placeholder: model || sdk.T("默认使用模型 ID", "Defaults to model ID"), onChange: (event) => setName(event.target.value) })
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field", children: [
+            sdk.T("上下文窗口", "Context window"),
+            /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-owned-actions", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled, onClick: () => {
+            void remove(item);
+          }, children: sdk.T("删除", "Delete") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-text-button", disabled, onClick: () => onOpen(item.key), children: sdk.T("更多设置", "More settings") }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", {}),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", onClick: () => setEditing(""), children: sdk.T("取消", "Cancel") }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: disabled || !dirty || !model.trim(), onClick: () => {
+            void save();
+          }, children: sdk.T("保存", "Save") })
+        ] })
+      ] }, item.key) : /* @__PURE__ */ jsxRuntime.jsx("li", { children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "model-owned-row", disabled, title: sdk.T("点击编辑", "Click to edit"), onClick: () => {
+        void start(item);
+      }, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("strong", { children: item.values.name || item.values.model || item.key }),
+        item.values.name && item.values.model && item.values.name !== item.values.model && /* @__PURE__ */ jsxRuntime.jsx("code", { children: item.values.model }),
+        item.values.context_win ? /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+          Math.round(Number(item.values.context_win) / 1e3),
+          "K"
+        ] }) : null,
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "model-owned-edit", "aria-hidden": "true", children: sdk.T("编辑", "Edit") })
+      ] }) }, item.key)) })
+    ] });
+  }
+  const noop = () => {
+  };
+  function ProviderForm({ entry, models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }) {
     const [id, setId] = react.useState((entry == null ? void 0 : entry.id) || ""), [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || "");
     const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.values.protocol) || "oai");
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
-    const dirty = useDraft([id, name, protocol, base, secret], onDirtyChange);
+    const used = models.length, existing = new Set(models.map((item) => item.values.model || ""));
+    const [modelDirty, setModelDirty] = react.useState(false), onModelDirty = react.useCallback((value) => setModelDirty(value), []);
+    const dirty = useDraft([id, name, protocol, base, secret], noop);
+    react.useLayoutEffect(() => {
+      onDirtyChange(dirty || modelDirty);
+    }, [dirty, modelDirty, onDirtyChange]);
+    react.useLayoutEffect(() => () => {
+      onDirtyChange(false);
+    }, [onDirtyChange]);
     return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-provider-form", onInvalidCapture: (event) => {
       var _a;
       return (_a = event.target.closest("details")) == null ? void 0 : _a.setAttribute("open", "");
@@ -534,13 +635,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled, onChange: setProtocol }),
           /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
         ] }),
-        entry && /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Models"), hint: used ? sdk.T("此服务商下有 " + used + " 个模型，有模型时不能删除。", used + " models use this provider; it cannot be deleted while in use.") : sdk.T("还没有模型使用此服务商。", "No models use this provider yet."), children: [
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-provider-usage wide", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "secondary", disabled: disabled || !used, onClick: onModels, children: [
-            sdk.T("查看已有模型", "Show its models"),
-            " (",
-            used,
-            ")"
-          ] }) }),
+        entry && /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Models"), hint: used ? sdk.T("点击模型可直接编辑；有模型时不能删除服务商。", "Click a model to edit it here; a provider with models cannot be deleted.") : sdk.T("还没有模型使用此服务商。", "No models use this provider yet."), children: [
+          /* @__PURE__ */ jsxRuntime.jsx(ProviderModels, { provider: entry.id, models, disabled, onSave: onQuickSave, onOpen: onOpenModel, onAdd: onNewModel, onDirtyChange: onModelDirty }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "wide", children: /* @__PURE__ */ jsxRuntime.jsx(
             RemoteModels,
             {
@@ -748,14 +844,23 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         select("provider", id || ((_a2 = config == null ? void 0 : config.providers[0]) == null ? void 0 : _a2.id));
       });
     };
-    const viewModels = () => {
+    const openModel = (key) => {
       if (!provider) return;
       void navigate(() => {
-        var _a2;
         setQuery("");
         setSection("provider:" + provider.id);
-        select("model", (_a2 = config == null ? void 0 : config.entries.find((item) => item.provider === provider.id)) == null ? void 0 : _a2.key, false);
+        select("model", key);
       });
+    };
+    const quickSave = async (action, key, values) => {
+      if (!(config == null ? void 0 : config.writable) || busy) return false;
+      setError("");
+      return run(async () => {
+        const next = await api.host.post("/api/models/config", { action, revision: config.revision, key, ...values ? { values } : {} });
+        setConfig(next.config);
+        api.setState(next.state);
+        api.notice(sdk.T("配置已保存并生效", "Configuration saved and applied"));
+      }, setError);
     };
     async function load() {
       setConfig(null);
@@ -945,13 +1050,14 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                 ProviderForm,
                 {
                   entry: provider,
-                  used: provider ? config.entries.filter((item) => item.provider === provider.id).length : 0,
+                  models: provider ? config.entries.filter((item) => item.provider === provider.id) : [],
                   disabled: locked,
                   onSave: change,
+                  onQuickSave: quickSave,
                   onDirtyChange,
                   onReset: () => choose("provider", edit.id),
-                  onModels: viewModels,
-                  existing: new Set(config.entries.filter((item) => item.provider === (provider == null ? void 0 : provider.id)).map((item) => item.values.model || "")),
+                  onOpenModel: openModel,
+                  onNewModel: () => openModel(),
                   fetchModels,
                   onAddModels: addModels
                 },

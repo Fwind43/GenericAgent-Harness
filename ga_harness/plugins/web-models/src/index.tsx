@@ -3,6 +3,7 @@ import { type PluginAPI, type ModelConfig, type ModelResult, useHost, T, Setting
 import { ModelPicker } from './ModelPicker';
 import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
+import type { QuickSave } from './ProviderModels';
 import { MixinForm } from './MixinForm';
 import type { FetchModels, RemoteModel } from './RemoteModels';
 import { endpoint, sections as modelSections, readonlyText, sectionKey, providerNames } from './helpers';
@@ -66,10 +67,19 @@ export function Models({ api }: { api: PluginAPI }) {
   const openProvider = (id: string) => { void navigate(() => {
     setQuery(''); setSection(''); select('provider', id || config?.providers[0]?.id);
   }); };
-  const viewModels = () => { if (!provider) return; void navigate(() => {
-    setQuery(''); setSection('provider:' + provider.id);
-    select('model', config?.entries.find(item => item.provider === provider.id)?.key, false);
+  const openModel = (key?: string) => { if (!provider) return; void navigate(() => {
+    setQuery(''); setSection('provider:' + provider.id); select('model', key);
   }); };
+  // Inline edits from the provider editor: save in place without leaving or remounting the provider form.
+  const quickSave: QuickSave = async (action, key, values) => {
+    if (!config?.writable || busy) return false;
+    setError('');
+    return run(async () => {
+      const next = await api.host.post<ModelResult>('/api/models/config', { action, revision: config.revision, key, ...(values ? { values } : {}) });
+      setConfig(next.config); api.setState(next.state);
+      api.notice(T('\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u751f\u6548', 'Configuration saved and applied'));
+    }, setError);
+  };
   async function load() {
     setConfig(null); setError(''); setQuery(''); setSection(''); draft.current = false;
     await run(async () => {
@@ -167,8 +177,8 @@ export function Models({ api }: { api: PluginAPI }) {
               </div>
               {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} />
                 : isMixin ? <MixinForm key={edit.serial} entry={mixin} config={config} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('mixin', edit.id)} />
-                : <ProviderForm key={edit.serial} entry={provider} used={provider ? config.entries.filter(item => item.provider === provider.id).length : 0} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onModels={viewModels}
-                  existing={new Set(config.entries.filter(item => item.provider === provider?.id).map(item => item.values.model || ''))} fetchModels={fetchModels} onAddModels={addModels} />}
+                : <ProviderForm key={edit.serial} entry={provider} models={provider ? config.entries.filter(item => item.provider === provider.id) : []} disabled={locked} onSave={change} onQuickSave={quickSave}
+                  onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onOpenModel={openModel} onNewModel={() => openModel()} fetchModels={fetchModels} onAddModels={addModels} />}
             </section>
           </div>
         </>}
