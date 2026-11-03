@@ -11,7 +11,7 @@ import qrcode from 'qrcode-generator';
 
 export const matches = (query: string, ...values: (string | undefined)[]) => query.trim().toLowerCase().split(/\s+/).filter(Boolean).every(word => values.join(' ').toLowerCase().includes(word));
 export function PluginSlot({ api, name, children }: { api: PluginAPI; name: SlotName; children: ReactNode }) {
-  const [container] = useState(() => document.createElement('div'));
+  const [container] = useState(() => Object.assign(document.createElement('div'), { className: 'gah-slot-wrap' }));
   useLayoutEffect(() => { api.slot(name, container); return () => container.remove(); }, [api, name, container]);
   return createPortal(children, container);
 }
