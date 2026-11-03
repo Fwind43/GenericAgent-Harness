@@ -30,6 +30,8 @@ from pathlib import Path
 
 from ga_harness.sessions import EFFORTS
 
+POLICY_MAX = 4000  # characters of model-selection policy text
+
 HERE = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "models": {}}
+        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -83,7 +85,8 @@ class Store:
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
                     self.data["limits"] = dict(loaded.get("limits") or {})
-                    self.data["models"] = dict(loaded.get("models") or {})
+                    self.data["policies"] = {k: v for k, v in dict(loaded.get("policies") or {}).items()
+                                          if isinstance(v, str) and v.strip()}
         except Exception as error:
             log.warning("conductor: could not load %s: %s", self.path, error)
         # A task that was running when the server stopped cannot be followed any more.
@@ -112,7 +115,7 @@ def apply(ctx, config):
     scheduled, waking = set(), set()  # parents with a pending / in-flight wake-up
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
-    policies = store.data["models"]  # parent -> {"model": name, "effort": level}; absent = inherit
+    policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
 
     # ---- helpers ---------------------------------------------------------
     def _sid(body, key="session_id"):
@@ -239,11 +242,10 @@ def apply(ctx, config):
         return model, effort
 
     def _selection(parent, model=None, effort=None):
-        """Per-call choice > this conductor's policy > the conductor's own selection."""
-        policy = policies.get(parent) or {}
+        """Per-call choice > the conductor's own selection. The policy is prose for the
+        conductor's prompt; it never picks a model by itself."""
         own_model, own_effort = _parent_selection(parent)
-        return (model or policy.get("model") or own_model,
-                effort or policy.get("effort") or own_effort)
+        return model or own_model, effort or own_effort
 
     def _apply_selection(task, model, effort):
         values = {}
@@ -275,7 +277,7 @@ def apply(ctx, config):
         sid = _sid(body)
         with lock:
             if enabled.get(sid):
-                return {"role": "parent", **_counts(sid)}
+                return {"role": "parent", **_counts(sid), "policy": policies.get(sid)}
             task = _task_of_child(sid)
             if task is not None:
                 return {"role": "worker", "task_id": task["id"], "parent": task["parent"]}
@@ -498,51 +500,39 @@ def apply(ctx, config):
         return out
 
     def models_op(body):
-        """Configured models plus this conductor's scheduling policy."""
+        """Configured models, the conductor's own selection and its model policy."""
         parent = _sid(body)
         rows = _catalog()
         own_model, own_effort = _parent_selection(parent)
         with lock:
-            policy = dict(policies.get(parent) or {})
-        model, effort = _selection(parent)
+            policy = policies.get(parent)
         return {"models": [{"name": r["name"], "model": r.get("model"), "provider": r.get("provider")}
                            for r in rows] if rows is not None else None,
                 "efforts": list(EFFORTS),
                 "conductor": {"model": own_model, "effort": own_effort},
-                "policy": {"model": policy.get("model"), "effort": policy.get("effort")},
-                "effective_default": {"model": model, "effort": effort}}
+                "default_for_tasks": "the conductor's own model/effort unless model/effort is given per task",
+                "policy": policy}
 
     def set_policy(body):
-        """Set this conductor's default model/effort for new tasks. "inherit" (or
-        null) for a field clears it so tasks follow the conductor's own choice."""
+        """Set this conductor's model-selection policy: free text added to its system
+        prompt (which models/efforts to use for which kinds of task). Empty clears it."""
         parent = _sid(body)
-        if "model" not in body and "effort" not in body:
-            raise ValueError("give model and/or effort")
-        updates = {}
-        for key, check in (("model", _model_name), ("effort", _effort)):
-            if key not in body:
-                continue
-            value = body.get(key)
-            if value is None or (isinstance(value, str) and value.strip().lower() in ("", "inherit", "default")):
-                updates[key] = None
-            else:
-                updates[key] = check(value)
+        text = body.get("policy")
+        if text is not None and not isinstance(text, str):
+            raise ValueError("policy must be text")
+        text = (text or "").strip()
+        if len(text) > POLICY_MAX:
+            raise ValueError(f"policy is too long ({len(text)} > {POLICY_MAX} characters)")
         with lock:
-            policy = dict(policies.get(parent) or {})
-            for key, value in updates.items():
-                if value is None:
-                    policy.pop(key, None)
-                else:
-                    policy[key] = value
-            if policy:
-                policies[parent] = policy
+            previous = policies.get(parent)
+            if text:
+                policies[parent] = text
             else:
                 policies.pop(parent, None)
         _publish()
-        out = models_op({"session_id": parent})
-        out.pop("models", None)
-        out["note"] = "applies to tasks dispatched from now on; running tasks keep their model"
-        return out
+        return {"previous": previous, "policy": text or None,
+                "note": "added to your system prompt from your next turn on; follow it from now"
+                        if text else "policy cleared"}
 
     OPS = {"set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve}

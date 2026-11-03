@@ -40,14 +40,16 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   (1 to @RUNNING_CAP@): raise it when many small independent tasks are ready, lower it
   when tasks compete for the same files, ports or rate-limited resources. Lowering
   it does not stop running tasks. If the user asks for a concurrency level, set it.
-- Model scheduling: tasks run on your own model and reasoning effort unless you
-  choose otherwise. `conductor_models` lists the configured models and your current
-  policy; `conductor_set_policy` sets the default model/effort for tasks dispatched
-  from now on ("inherit" clears a field). Override per task with `model`/`effort` on
-  `conductor_dispatch`, or on `conductor_instruct` for a follow-up run of a finished
-  task. Use stronger models or higher effort for hard or risky work and cheaper/faster
-  ones for simple, mechanical tasks. If the user names a model or effort, follow it.
-  Use only names returned by `conductor_models`.
+- Model scheduling: a task runs on your own model and reasoning effort unless you
+  pass `model`/`effort` to `conductor_dispatch` (or to `conductor_instruct` for a
+  follow-up run of a finished task). `conductor_models` lists the configured models
+  (use only those names) and your current model policy. Pick per task: stronger models
+  or higher effort for hard or risky work, cheaper/faster ones for simple, mechanical
+  work. If the user names a model or effort, follow it.
+- Model policy: when the user tells you how models should be chosen in general (e.g.
+  "use X for coding, Y for research"), save it with `conductor_set_policy` as clear
+  written rules; it is added to your system prompt in later turns. Follow the policy
+  below, if any, whenever you dispatch.
 - After dispatching, do not wait, sleep or poll. End your turn with a short status
   for the user (what was dispatched, what happens next). When tasks finish you are
   woken automatically with a `[Conductor]` message that already contains a clipped
@@ -145,15 +147,16 @@ TOOLS = {
     "conductor_models": (_tool(
         "conductor_models",
         "List the configured models (use the name field), the reasoning efforts, your own "
-        "model/effort, your scheduling policy and the effective default for new tasks."), "models"),
+        "model/effort (the default for tasks) and your model-selection policy."), "models"),
     "conductor_set_policy": (_tool(
         "conductor_set_policy",
-        "Set the default model and/or reasoning effort for tasks dispatched from now on. "
-        "Pass \"inherit\" for a field to follow your own model/effort again. Running tasks "
-        "are not changed.",
-        {"model": {"type": "string", "description": "Configured model name, or \"inherit\"."},
-         "effort": {"type": "string", "description": "low, medium, high, xhigh, max, or \"inherit\"."}}),
-        "set_policy"),
+        "Replace your model-selection policy: written rules for which model and reasoning "
+        "effort to use for which kind of task. It is added to your system prompt from your "
+        "next turn on and kept for this session. It does not change any model by itself; "
+        "you apply it via model/effort on conductor_dispatch. Empty text clears it.",
+        {"policy": {"type": "string", "description": "The full policy text (replaces the old one), "
+                    "using model names from conductor_models; empty to clear."}},
+        ("policy",)), "set_policy"),
     "conductor_resolve": (_tool(
         "conductor_resolve", "Close reviewed task(s) (task_id or task_ids).",
         {**TASK_ID, **TASK_IDS}), "resolve"),
@@ -197,6 +200,7 @@ def apply(ctx, config):
             return
         state["role"] = info.get("role")
         state["limits"] = info.get("limits")
+        state["policy"] = info.get("policy")
         if state["role"] != "parent":
             return
         for schema, op in TOOLS.values():
@@ -218,7 +222,14 @@ def apply(ctx, config):
             setup()
         text = nxt(text)
         if state["role"] == "parent":
-            return text + "\n" + _parent_prompt(state["limits"])
+            out = text + "\n" + _parent_prompt(state["limits"])
+            policy = state.get("policy")
+            if isinstance(policy, str) and policy.strip():
+                out += ("\n### Model selection policy\n"
+                        "Set earlier in this session (via conductor_set_policy). Follow it when "
+                        "choosing model/effort for tasks; the user's explicit request overrides it.\n"
+                        + policy.strip() + "\n")
+            return out
         if state["role"] == "worker":
             return text + "\n" + WORKER_PROMPT
         return text
