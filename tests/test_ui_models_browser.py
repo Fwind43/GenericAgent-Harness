@@ -221,6 +221,7 @@ def test_picker_pending_error_and_busy_states(browser, models_app):
 def test_search_and_provider_filter_crud(browser, models_app):
     store, base = models_app
     page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 1000})
+    page.add_init_script("localStorage.setItem('gah.models.view', 'advanced')")
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     try:

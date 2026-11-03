@@ -40,7 +40,7 @@ def test_empty_provider_is_saved_but_invisible_to_ga(tmp_path):
     assert [c.backend.name for c in store.agent.llmclients] == before
     assert cfg["providers"] == [{"id": "acme", "values": {"name": "Acme", "protocol": "oai",
                                  "apibase": "https://acme.invalid/v1"}, "has_key": True,
-                                 "url_hidden": False, "models": 0}]
+                                 "url_hidden": False, "models": 0, "same_as": None}]
     assert "test-secret" not in json.dumps(cfg)
     assert "providers" not in store.source.load()
     assert read_cfg(store.source.file)["providers"]["acme"]["apikey"] == "test-secret-acme"
