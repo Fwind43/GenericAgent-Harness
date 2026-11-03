@@ -9,15 +9,17 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import re
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from . import paths
 
-from .packages import install_for as install_packages, missing_for as missing_packages
+from .packages import index_url as package_index, install_for as install_packages, missing_for as missing_packages, set_index_url
 
 HOST_CAPABILITIES = {"plugin.catalog"}
 PROTECTED = {"plugin-manager", "ga-core"}
@@ -331,29 +333,78 @@ class PluginManager:
                               "overridden": name in data["profiles"].get(p.profile, {})})
             return {"items": items, "revision": revision, "profile": p.profile,
                     "restart_required": any(i["restart_required"] for i in items),
-                    "issues": p.issues(list(desired.values()))}
+                    "issues": p.issues(list(desired.values())),
+                    "install_job": self.install_status(), "package_index": package_index()}
 
     _install_lock = threading.Lock()
+    _install_job = None
+    _JOB_LOG_LINES = 400
+
+    def install_status(self):
+        """Snapshot of the current/last background package install, or None."""
+        job = self._install_job
+        if job is None:
+            return None
+        return {**{k: v for k, v in job.items() if k != "log"}, "log": "\n".join(list(job["log"]))}
 
     def install(self, body):
-        """Install a plugin's declared ``packages`` (explicit user action).
+        """Start installing a plugin's declared ``packages`` (explicit user action).
 
-        A hot plugin can then be re-enabled/saved to activate without a restart.
+        The install runs in a background thread and returns at once; progress (state
+        and the installer's output, line by line) is reported as ``install_job`` in
+        :meth:`catalog`, which the UI polls. ``index_url`` in ``body`` (may be "")
+        saves the package index (mirror) first; a body with only ``index_url`` just
+        saves it. A hot plugin can then be re-enabled/saved to activate without a
+        restart.
         """
-        name = body.get("name") if isinstance(body, dict) else None
+        if not isinstance(body, dict):
+            raise ValueError("unknown plugin")
+        if "index_url" in body:
+            if self._install_job is not None and self._install_job["state"] == "running":
+                raise RuntimeError("another package installation is running")
+            set_index_url(body.get("index_url"))
+        name = body.get("name")
+        if name is None and "index_url" in body:
+            return {"ok": True, "catalog": self.catalog()}
         m = self.preferences.manifests.get(name) if isinstance(name, str) else None
         if m is None:
             raise ValueError("unknown plugin")
         lack = missing_packages(m)
         if not lack:
-            return {"ok": True, "output": "", "catalog": self.catalog()}
+            return {"ok": True, "started": False, "catalog": self.catalog()}
         if not self._install_lock.acquire(blocking=False):
             raise RuntimeError("another package installation is running")
         try:
-            result = install_packages(m, lack)
-        finally:
+            index = package_index()
+            job = {"name": name, "packages": list(lack), "index_url": index, "state": "running",
+                   "ok": None, "started": time.time(), "finished": None, "log": []}
+            log_lines = job["log"]
+
+            def on_line(line):
+                log_lines.append(line.rstrip("\r\n"))
+                if len(log_lines) > self._JOB_LOG_LINES:
+                    del log_lines[:len(log_lines) - self._JOB_LOG_LINES]
+
+            def work():
+                ok = False
+                try:
+                    result = install_packages(m, lack, on_line=on_line, index_url=index)
+                    ok = bool(result.get("ok"))
+                    if not ok and not log_lines:
+                        on_line(result.get("output") or "")
+                except Exception as e:  # never leave the job "running"
+                    logging.getLogger(__name__).exception("package install for %s failed", name)
+                    on_line(f"error: {e!r}")
+                finally:
+                    job.update(ok=ok, state="ok" if ok else "failed", finished=time.time())
+                    self._install_lock.release()
+
+            type(self)._install_job = job
+            threading.Thread(target=work, name=f"gah-install-{name}", daemon=True).start()
+        except BaseException:
             self._install_lock.release()
-        return {"ok": result["ok"], "output": result["output"], "catalog": self.catalog()}
+            raise
+        return {"ok": True, "started": True, "catalog": self.catalog()}
 
     def run_safe(self, name):
         """True if ``name`` may be changed while a task is running."""

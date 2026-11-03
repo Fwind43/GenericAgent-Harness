@@ -73,3 +73,5 @@
 .gah-plugin-dialog .plugin-sources .plugin-filter{border-color:transparent;padding:3px 10px}
 .gah-plugin-dialog .plugin-lock{position:absolute;top:14px;right:14px;width:36px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--muted);opacity:.7}
 .gah-plugin-dialog .plugin-tag[data-tag="user"]{color:var(--accent);border-color:var(--accent)}
+.plugin-install{align-items:center}.plugin-mirror{display:flex;align-items:center;gap:6px;flex:1 1 260px;min-width:0}.plugin-mirror input{flex:1;min-width:0}
+.plugin-install-log{margin:8px 0;border:1px solid var(--border,#8884);border-radius:8px;overflow:hidden}.plugin-install-status{padding:6px 10px;font-size:12px}.plugin-install-log[data-state=failed] .plugin-install-status{color:var(--danger,#d33)}.plugin-install-log pre{margin:0;max-height:240px;overflow:auto;padding:8px 10px;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-all;background:var(--code-bg,#0001)}

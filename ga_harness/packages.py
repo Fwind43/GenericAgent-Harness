@@ -14,6 +14,7 @@ installing them can never replace a file the running app has loaded.
 from __future__ import annotations
 
 import importlib.metadata as md
+import json
 import logging
 import os
 import re
@@ -21,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import threading
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -124,21 +126,99 @@ def python_for(env: str, specs=()) -> str:
     return sys.executable
 
 
-def install_for(manifest, specs=None, timeout: int = 600) -> dict:
+def install_for(manifest, specs=None, timeout: int = 600, on_line=None, index_url=None) -> dict:
     specs = missing_for(manifest) if specs is None else specs
-    return install(specs, timeout=timeout, env=isolated_env(manifest))
+    return install(specs, timeout=timeout, env=isolated_env(manifest), on_line=on_line,
+                   index_url=index_url)
 
 
-def _run(cmd, timeout, env):
+# --- package index (mirror) -------------------------------------------------------
+
+_INDEX_FILE = "packages.json"
+
+
+def valid_index(url) -> bool:
+    """An http(s) simple-index URL with no whitespace; never an installer option."""
+    return (isinstance(url, str) and re.match(r"^https?://[^\s/]+(/\S*)?$", url) is not None
+            and len(url) <= 500)
+
+
+def index_url() -> str:
+    """Configured package index (mirror) for plugin installs; "" means the installer
+    default (PyPI, or whatever pip/uv configuration and environment variables say)."""
+    from .paths import home
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout, env=env)
-        return r.returncode, (r.stdout or "") + (r.stderr or "")
-    except (OSError, subprocess.TimeoutExpired) as e:
+        data = json.loads((home() / _INDEX_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    url = data.get("index_url", "") if isinstance(data, dict) else ""
+    return url if valid_index(url) else ""
+
+
+def set_index_url(url: str) -> str:
+    url = (url or "").strip()
+    if url and not valid_index(url):
+        raise ValueError("package index must be an http(s) URL")
+    from .paths import home
+    path = home() / _INDEX_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps({"index_url": url}, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    return url
+
+
+def _index_args(url) -> list[str]:
+    if not url:
+        return []
+    args = ["--index-url", url]
+    host = re.match(r"^http://([^/:]+)", url)
+    if host and not shutil.which("uv"):
+        args += ["--trusted-host", host.group(1)]  # pip refuses plain-http indexes otherwise
+    return args
+
+
+def _run(cmd, timeout, env, on_line=None):
+    """Run ``cmd``, streaming merged stdout/stderr lines to ``on_line`` as they arrive."""
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                errors="replace", env=env, bufsize=1,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError as e:
+        if on_line:
+            on_line(repr(e))
         return None, repr(e)
+    expired = threading.Event()
+
+    def _kill():
+        expired.set()
+        proc.kill()
+    killer = threading.Timer(timeout, _kill)
+    killer.daemon = True
+    killer.start()
+    out = []
+    try:
+        for line in proc.stdout:
+            out.append(line)
+            if on_line:
+                try:
+                    on_line(line.rstrip("\r\n"))
+                except Exception:
+                    pass
+        rc = proc.wait()
+    finally:
+        killer.cancel()
+    if expired.is_set():
+        note = f"timed out after {timeout}s"
+        out.append(note + "\n")
+        if on_line:
+            on_line(note)
+        return None, "".join(out)
+    return rc, "".join(out)
 
 
-def _install_env(env: str, specs: list[str], timeout: int) -> dict:
+def _install_env(env: str, specs: list[str], timeout: int, on_line=None, index=()) -> dict:
     """Create plugin ``env`` if needed and install ``specs`` into it. The app's own
     interpreter is never touched, so no in-use file can be replaced."""
     target, py = env_dir(env), env_python(env)
@@ -152,15 +232,17 @@ def _install_env(env: str, specs: list[str], timeout: int) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         make = ([uv, "venv", "--python", sys.executable, str(target)] if uv
                 else [sys.executable, "-m", "venv", str(target)])
-        rc, out = _run(make, timeout, run_env)
+        rc, out = _run(make, timeout, run_env, on_line)
         if rc != 0 or not py.is_file():
             log.warning("plugin env create failed rc=%s cmd=%s\n%s", rc,
                         subprocess.list2cmdline(make), out[-1500:])
             return {"ok": False, "command": make, "output": out[-4000:]}
     cmd = ([uv, "pip", "install", "--python", str(py)] if uv
            else [str(py), "-m", "pip", "install", "--disable-pip-version-check", "--no-input"])
-    cmd += specs
-    rc, more = _run(cmd, timeout, run_env)
+    cmd += list(index) + specs
+    if on_line:
+        on_line("$ " + subprocess.list2cmdline(cmd))
+    rc, more = _run(cmd, timeout, run_env, on_line)
     out += more
     ok = rc == 0 and not missing(specs, env=env)
     log.log(logging.INFO if ok else logging.WARNING, "plugin env %s install rc=%s ok=%s cmd=%s\n%s",
@@ -168,17 +250,23 @@ def _install_env(env: str, specs: list[str], timeout: int) -> dict:
     return {"ok": ok, "command": cmd, "output": out[-4000:], "env": str(target)}
 
 
-def install(specs, timeout: int = 600, env: str | None = None) -> dict:
+def install(specs, timeout: int = 600, env: str | None = None, on_line=None,
+            index_url=None) -> dict:
     """Install ``specs`` into the running interpreter, or into plugin ``env``.
-    Returns ok/command/output."""
+    ``on_line`` receives installer output as it is produced; ``index_url`` (default:
+    the configured mirror, see ``index_url()``) replaces PyPI. Returns ok/command/output."""
     specs = list(specs or ())
     bad = [s for s in specs if not valid(s)]
     if bad:
         raise ValueError("invalid package requirement: " + ", ".join(map(str, bad)))
     if not specs:
         return {"ok": True, "command": [], "output": ""}
+    url = globals()["index_url"]() if index_url is None else index_url
+    if url and not valid_index(url):
+        raise ValueError("package index must be an http(s) URL")
+    index = _index_args(url)
     if env:
-        return _install_env(env, specs, timeout)
+        return _install_env(env, specs, timeout, on_line, index)
     uv = shutil.which("uv")
     cmd = ([uv, "pip", "install", "--python", sys.executable] if uv
            else [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input"])
@@ -187,6 +275,7 @@ def install(specs, timeout: int = 600, env: str | None = None) -> dict:
         # EXTERNALLY-MANAGED marker; it is the app's private, writable runtime, so both uv
         # and pip must be told to override it or every plugin package install fails.
         cmd.append("--break-system-packages")
+    cmd += index
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1")
     blocked = loaded_changes(cmd, specs, env)
     cmd += specs
@@ -201,13 +290,12 @@ def install(specs, timeout: int = 600, env: str | None = None) -> dict:
                + "Installing would change packages already in use by this process: " + change
                + ". Quit the app and run manually: " + manual)
         log.warning("package install refused: %s", out)
+        if on_line:
+            on_line(out)
         return {"ok": False, "command": cmd, "output": out, "blocked": [list(b) for b in blocked]}
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout, env=env)
-        rc, out = r.returncode, (r.stdout or "") + (r.stderr or "")
-    except (OSError, subprocess.TimeoutExpired) as e:
-        rc, out = None, repr(e)
+    if on_line:
+        on_line("$ " + subprocess.list2cmdline(cmd))
+    rc, out = _run(cmd, timeout, env, on_line)
     importlib_invalidate()
     ok = rc == 0 and not missing(specs)
     log.log(logging.INFO if ok else logging.WARNING, "package install rc=%s ok=%s cmd=%s\n%s",

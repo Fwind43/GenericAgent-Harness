@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type PluginAPI, type PluginCatalog, type PluginInfo, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
 import { categories, categoryOf, descriptionOf, filters, inFilter, inSource, PluginTags, sources, stateLabel, Switch } from './helpers';
@@ -50,14 +50,34 @@ export function PluginManager({ api }: { api: PluginAPI }) {
       api.notice(live ? T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u5df2\u5373\u65f6\u751f\u6548', 'Plugin settings saved and applied') : T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Plugin settings saved; they apply on next start'));
     }, setError);
   };
-  const install = () => {
-    if (!selected?.missing_packages?.length || busy || lockedByRun(selected)) return;
+  // Package installs run in the background on the server; poll the catalog for progress
+  // without the busy overlay so the panel stays usable.
+  const job = config?.install_job, installing = job?.state === 'running';
+  const reported = useRef<number | null>(null);
+  useEffect(() => {
+    if (!installing) return;
+    let alive = true;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await api.host.get<PluginCatalog>('/api/plugins');
+        if (!alive) return;
+        setConfig(next);
+        const done = next.install_job;
+        if (done && done.state !== 'running' && reported.current !== done.started) {
+          reported.current = done.started;
+          if (done.ok) api.notice(done.name + T('\uff1a\u4f9d\u8d56\u5df2\u5b89\u88c5', ': packages installed'));
+          else setError(done.name + T('\uff1a\u4f9d\u8d56\u5b89\u88c5\u5931\u8d25\uff0c\u89c1\u4e0b\u65b9\u65e5\u5fd7', ': package installation failed; see the log below'));
+        }
+      } catch { /* transient; keep polling */ }
+    }, 1000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [installing]);
+  const install = (indexUrl: string) => {
+    if (!selected?.missing_packages?.length || busy || installing || lockedByRun(selected)) return;
     setError('');
     void run(async () => {
-      const result = await api.host.post<{ ok: boolean; output: string; catalog: PluginCatalog }>('/api/plugins', { action: 'install', name: selected.name });
+      const result = await api.host.post<{ ok: boolean; started?: boolean; catalog: PluginCatalog }>('/api/plugins', { action: 'install', name: selected.name, index_url: indexUrl });
       setConfig(result.catalog);
-      if (result.ok) api.notice(T('\u4f9d\u8d56\u5df2\u5b89\u88c5\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Packages installed; they apply on next start'));
-      else setError(T('\u5b89\u88c5\u5931\u8d25\uff1a', 'Installation failed: ') + (result.output || '').slice(-800));
     }, setError);
   };
   return <>
@@ -82,7 +102,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
           })}</div>
           {!shown.length && <p className="plugin-empty">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : config?.items.length ? T('\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u63d2\u4ef6', 'No matching plugins') : T('\u6ca1\u6709\u53d1\u73b0\u53ef\u7ba1\u7406\u7684\u63d2\u4ef6', 'No manageable plugins found')}</p>}
         </section>
-        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={lockedByRun(selected)} error={error} onChange={change} onToggle={next => toggle(selected, next)} onInstall={install} /></section>}
+        {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={lockedByRun(selected)} error={error} onChange={change} onToggle={next => toggle(selected, next)} job={job?.name === selected.name ? job : null} installing={installing} packageIndex={config?.package_index || ''} onInstall={install} /></section>}
       </div>
     </SettingsPanel>}
   </>;

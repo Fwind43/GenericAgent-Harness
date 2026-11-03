@@ -76,7 +76,8 @@ export interface PluginInfo {
   packages?: string[]; missing_packages?: string[]; worker_only?: boolean; workers?: string[];
   error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;
 }
-export interface PluginCatalog { items: PluginInfo[]; revision: string; profile: string; restart_required: boolean }
+export interface PluginInstallJob { name: string; packages: string[]; index_url: string; state: 'running' | 'ok' | 'failed'; ok: boolean; started: number; finished?: number | null; log: string }
+export interface PluginCatalog { items: PluginInfo[]; revision: string; profile: string; restart_required: boolean; install_job?: PluginInstallJob | null; package_index?: string }
 
 declare global {
   interface Window {
