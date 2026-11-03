@@ -1,6 +1,7 @@
 // web-island: the floating pill shown by the desktop shell. Follows /api/events like the main page
 // and asks the shell (window.gahDesktop.island) to size, show and move its window.
-// One row per chat: chats with a live (or just finished) run first, then unread chats. With the
+// One row per chat: chats waiting for an ask_user reply first, then chats with a live (or just
+// finished) run, then unread chats. With the
 // "always show" preference an idle pill stays on screen when there is nothing else to show.
 'use strict';
 (() => {
@@ -21,6 +22,22 @@
   let pinned = false;
   let hovered = false;
   let lastLayout = '';
+
+  // GA ends a run when the agent calls ask_user, so the question would look like a finished run.
+  // Remember chats whose run ended on ask_user until the user opens them or a new run starts there.
+  const WAIT_KEY = 'gah-island-waiting';
+  const waiting = new Map();    // session_id -> {question, at}
+  try {
+    for (const [sid, w] of Object.entries(JSON.parse(localStorage.getItem(WAIT_KEY) || '{}'))) {
+      if (w && typeof w === 'object') waiting.set(sid, { question: String(w.question || ''), at: Number(w.at) || 0 });
+    }
+  } catch { /* storage unavailable or corrupt */ }
+  function saveWaiting() {
+    try { localStorage.setItem(WAIT_KEY, JSON.stringify(Object.fromEntries(waiting))); } catch { /* ignore */ }
+  }
+  function clearWaiting(sid) {
+    if (sid && waiting.delete(sid)) saveWaiting();
+  }
 
   function track(record) {
     if (!record || !record.id) return null;
@@ -43,6 +60,9 @@
     if (Array.isArray(snap.sessions)) {
       sessions.clear();
       for (const s of snap.sessions) if (s && s.id) sessions.set(s.id, s);
+      let dropped = false;
+      for (const sid of waiting.keys()) if (!sessions.has(sid)) { waiting.delete(sid); dropped = true; }
+      if (dropped) saveWaiting();
     }
     if (Array.isArray(snap.runs)) {
       const seen = new Set();
@@ -77,8 +97,11 @@
     if (env.name === 'turn.start') {
       run.step = Number(data.turn) || run.step + 1;
       run.tool = '';
+      run.asked = null;
     } else if (env.name === 'tool.call') {
       run.tool = String(data.name || data.tool || '');
+      const args = data.args && typeof data.args === 'object' ? data.args : {};
+      run.asked = run.tool === 'ask_user' ? String(args.question || '') : null;
     }
     render();
   }
@@ -92,6 +115,11 @@
         if (!env) return;
         const run = track(env.run || { id: env.run_id, session_id: env.session_id, status: kind === 'run.started' ? 'running' : undefined });
         if (run && kind === 'run.finished' && ACTIVE.has(run.status)) { run.status = 'done'; run.ended = Date.now(); }
+        if (run && run.session_id && kind === 'run.started') clearWaiting(run.session_id);
+        if (run && run.session_id && kind === 'run.finished' && run.status === 'done' && run.asked != null) {
+          waiting.set(run.session_id, { question: run.asked, at: Date.now() });
+          saveWaiting();
+        }
         if (kind === 'run.finished') { setTimeout(render, FLASH_MS + 50); refreshSoon(600); }
         render();
       });
@@ -158,16 +186,26 @@
       const better = (ACTIVE.has(run.status) - ACTIVE.has(cur.run.status)) || (run.started - cur.run.started);
       if (better > 0) cur.run = run;
     }
+    // Opening the chat in the focused main window counts as having seen the question.
+    if (mainFocused && currentSession && waiting.has(currentSession)) clearWaiting(currentSession);
+    const asks = [];
+    for (const [sid, w] of waiting) {
+      const cur = bySession.get(sid);
+      if (cur && ACTIVE.has(cur.run.status)) continue;
+      bySession.delete(sid);
+      asks.push({ kind: 'waiting', sid, question: w.question, at: w.at });
+    }
+    asks.sort((a, b) => b.at - a.at);
     const list = [...bySession.values()];
     list.sort((a, b) => (ACTIVE.has(b.run.status) - ACTIVE.has(a.run.status)) || (b.run.started - a.run.started));
     const unread = [];
     for (const s of sessions.values()) {
-      if (!s.unread || s.running || bySession.has(s.id)) continue;
+      if (!s.unread || s.running || bySession.has(s.id) || waiting.has(s.id)) continue;
       if (mainFocused && s.id === currentSession) continue;
       unread.push({ kind: 'unread', sid: s.id, updated: Number(s.updated) || 0 });
     }
     unread.sort((a, b) => b.updated - a.updated);
-    return list.concat(unread);
+    return asks.concat(list, unread);
   }
 
   function el(tag, cls, text) {
@@ -189,6 +227,10 @@
     if (item.kind === 'run') {
       detail = runDetail(run, item.count);
       time = clock((ACTIVE.has(run.status) ? Date.now() : (run.ended || Date.now())) - run.started);
+    } else if (item.kind === 'waiting') {
+      const q = item.question.replace(/\s+/g, ' ').trim();
+      detail = q ? `${T('\u7b49\u4f60\u56de\u590d', 'Needs your reply')}: ${q}` : T('\u7b49\u4f60\u56de\u590d', 'Needs your reply');
+      time = item.at ? ago(item.at / 1000) : '';
     } else if (item.kind === 'unread') {
       detail = T('\u6709\u65b0\u6d88\u606f', 'New messages');
       time = item.updated ? ago(item.updated) : '';
@@ -203,6 +245,7 @@
     if (compact) meta.appendChild(el('span', 'detail', detail));
     if (time) meta.appendChild(el('span', 'time', time));
     if (badges) {
+      if (badges.waiting) meta.appendChild(el('span', 'badge badge-waiting', `${badges.waiting}`));
       if (badges.running) meta.appendChild(el('span', 'badge badge-running', `${badges.running}`));
       if (badges.unread) meta.appendChild(el('span', 'badge badge-unread', `${badges.unread}`));
     }
@@ -220,7 +263,8 @@
 
   function render() {
     const list = items();
-    const flashing = list.some((i) => i.kind === 'run' && !ACTIVE.has(i.run.status));
+    const now = Date.now();
+    const flashing = list.some((i) => (i.kind === 'run' && !ACTIVE.has(i.run.status)) || (i.kind === 'waiting' && now - i.at < FLASH_MS));
     // The main window already shows the chat being worked on and the unread markers.
     const covered = mainFocused && list.every((i) => i.kind === 'unread' || i.sid === currentSession);
     const busy = list.length > 0 && !covered;
@@ -242,7 +286,8 @@
         const rest = shown.slice(1);
         const running = rest.filter((i) => i.kind === 'run' && ACTIVE.has(i.run.status)).length;
         const unread = rest.filter((i) => i.kind === 'unread').length;
-        root.appendChild(row(shown[0], true, { running, unread }));
+        const waits = rest.filter((i) => i.kind === 'waiting').length;
+        root.appendChild(row(shown[0], true, { waiting: waits, running, unread }));
       }
     }
     layout(show);
