@@ -210,6 +210,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--muted);outline
 .gah-view-menu button span{width:16px;text-align:center;color:var(--muted)}
 .gah-view-area{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .gah-view-area[hidden],main[hidden]{display:none}
+.gah-view-area>.gah-slot>[data-gah-plugin]{display:contents}
 .gah-view-area .gah-view{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-view[hidden]{display:none}
 
