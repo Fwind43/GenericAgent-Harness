@@ -298,8 +298,10 @@
     if (bridge) bridge.openMain();
   });
   root.addEventListener('pointercancel', () => { if (drag && bridge) bridge.drag('end', 0, 0); drag = null; });
-  root.addEventListener('mouseenter', () => { hovered = true; render(); });
-  root.addEventListener('mouseleave', () => { if (!drag) { hovered = false; render(); } });
+  // Rendering replaces the rows under the cursor, which makes Chromium fire mouseenter again;
+  // only re-render when the hover state actually changes or the pill loops and drops clicks.
+  root.addEventListener('mouseenter', () => { if (!hovered) { hovered = true; render(); } });
+  root.addEventListener('mouseleave', () => { if (!drag && hovered) { hovered = false; render(); } });
 
   if (bridge) {
     bridge.onState((state) => {
