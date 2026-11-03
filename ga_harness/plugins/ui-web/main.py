@@ -610,6 +610,17 @@ class WebFrontend:
         except Exception:
             return 500, {"error": "could not list provider models"}
 
+    def model_test(self, body):
+        """Send one tiny request to check URL, key and model; network-bound, so the lock is not held."""
+        if not self.models:
+            return 404, {"error": "model-store is not enabled"}
+        try:
+            return 200, self.models.test(body)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except Exception:
+            return 500, {"error": "could not test the model"}
+
     def model_action(self, body, configure=False):
         if not self.models:
             return 404, {"error": "model-store is not enabled"}

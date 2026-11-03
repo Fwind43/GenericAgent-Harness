@@ -165,6 +165,74 @@ def _models_url(base):
     return f"{b}/models" if raw or re.search(r"/v\d+(/|$)", b) else f"{b}/v1/models"
 
 
+def _chat_url(base, protocol):
+    """Like llmcore.auto_make_url: `$` keeps the URL as-is, /vN keeps the version path."""
+    b = base.strip()
+    if b.endswith("$"):
+        return b[:-1]
+    b = b.rstrip("/")
+    path = "messages" if protocol == "claude" else "chat/completions"
+    if b.endswith("/" + path):
+        return b
+    b = re.sub(r"/(chat/completions|completions|responses|messages|models)$", "", b)
+    return f"{b}/{path}" if re.search(r"/v\d+(/|$)", b) else f"{b}/v1/{path}"
+
+
+def _probe_chat(base, apikey, protocol, model, header=None, timeout=30):
+    """One tiny non-streaming request. Returns {"ok", "ms", "reply"}; raises ValueError with a readable reason."""
+    import time
+    url = _chat_url(base, protocol)
+    headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "ga-harness"}
+    msg = [{"role": "user", "content": "Reply with: ok"}]
+    if protocol == "claude":
+        headers["anthropic-version"] = "2023-06-01"
+        if header == "x-api-key" or (header != "bearer" and apikey.startswith("sk-ant-")):
+            headers["x-api-key"] = apikey
+        else:
+            headers["Authorization"] = f"Bearer {apikey}"
+        payload = {"model": model, "max_tokens": 16, "messages": msg}
+    else:
+        headers["Authorization"] = f"Bearer {apikey}"
+        payload = {"model": model, "max_tokens": 16, "messages": msg, "stream": False}
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+    t0 = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read(1 << 20)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read(2000).decode("utf-8", "replace")
+        except Exception:
+            pass
+        detail = re.sub(r"\s+", " ", detail.replace(apikey, "***")).strip()[:200]
+        hint = {401: "API key rejected", 403: "API key has no access", 404: "endpoint or model not found",
+                429: "rate limited or out of quota"}.get(e.code, f"provider returned HTTP {e.code}")
+        raise ValueError(hint + (f": {detail}" if detail else "")) from None
+    except (urllib.error.URLError, OSError) as e:
+        reason = str(getattr(e, "reason", e)).replace(apikey, "***")[:200]
+        raise ValueError(f"could not reach the provider: {reason}") from None
+    ms = int((time.monotonic() - t0) * 1000)
+    reply = ""
+    try:
+        data = json.loads(raw or b"null")
+    except Exception:
+        data = None
+        if "data:" not in raw[:2000].decode("utf-8", "replace"):  # some relays always stream; that still proves the key works
+            raise ValueError("the provider returned an unexpected response") from None
+    if isinstance(data, dict):
+        if data.get("error"):
+            raise ValueError(str(data["error"]).replace(apikey, "***")[:200])
+        try:
+            if protocol == "claude":
+                reply = "".join(b.get("text", "") for b in data.get("content") or [] if isinstance(b, dict))
+            else:
+                reply = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        except Exception:
+            reply = ""
+    return {"ok": True, "ms": ms, "reply": str(reply)[:80]}
+
+
 def _model_ids(payload):
     items = payload.get("data", payload.get("models")) if isinstance(payload, dict) else payload
     if not isinstance(items, list):
@@ -441,6 +509,38 @@ class Models:
         Source: an existing provider (`provider`) or model (`key`); unsaved form
         values `apibase` / `apikey` / `protocol` override it (empty key keeps the stored one).
         """
+        base, apikey, protocol, header = self._connection(body)
+        if protocol != "auto":
+            return {"models": _fetch_models(base, apikey, protocol, header), "protocol": protocol}
+        errors = []
+        for proto in ("oai", "claude"):  # most relays speak OpenAI; fall back to Anthropic
+            try:
+                return {"models": _fetch_models(base, apikey, proto, header), "protocol": proto}
+            except ValueError as e:
+                errors.append(str(e))
+        raise ValueError(errors[0])
+
+    def test(self, body):
+        """Send one tiny chat request to check URL/key/model. Never returns the key."""
+        base, apikey, protocol, header = self._connection(body)
+        model = body.get("model")
+        if not isinstance(model, str) or not model.strip():
+            if isinstance(body.get("key"), str):
+                with self.lock:
+                    _, _, data, _ = self._read()
+                model = (data.get(body["key"]) or {}).get("model")
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model name is required")
+        protos = ("oai", "claude") if protocol == "auto" else (protocol,)
+        errors = []
+        for proto in protos:
+            try:
+                return dict(_probe_chat(base, apikey, proto, model.strip(), header), protocol=proto)
+            except ValueError as e:
+                errors.append(str(e))
+        raise ValueError(errors[0])
+
+    def _connection(self, body):
         with self.lock:
             _, _, data, _ = self._read()
             providers = self._providers(data)
@@ -456,8 +556,10 @@ class Models:
                     src = llmconfig.resolve_providers({llmconfig.PROVIDERS: providers, key: data[key]})[key]
                 except llmconfig.ConfigError as e:
                     raise ValueError(str(e)) from None
-        protocol = body.get("protocol") or src.get("protocol") or (_protocol(key) if isinstance(key, str) and key else "oai")
-        if protocol not in _PROTOCOLS:
+        protocol = (None if body.get("protocol") == "auto" else body.get("protocol")) or src.get("protocol") or (_protocol(key) if isinstance(key, str) and key else "oai")
+        if body.get("protocol") == "auto" and not src.get("protocol"):
+            protocol = "auto"
+        elif protocol not in _PROTOCOLS:
             raise ValueError("protocol must be oai or claude")
         base, apikey = src.get("apibase"), src.get("apikey")
         for k in ("apibase", "apikey"):
@@ -476,7 +578,7 @@ class Models:
         if not _safe_url(base.rstrip("$")):
             raise ValueError("base URL must be HTTP(S), without credentials, query or fragment")
         header = src.get("api_key_header")
-        return {"models": _fetch_models(base, apikey, protocol, header if isinstance(header, str) else None)}
+        return base, apikey, protocol, header if isinstance(header, str) else None
 
     def config(self):
         with self.lock:
@@ -505,14 +607,18 @@ class Models:
                 entries.append({"key": key, "values": public, "provider": pid, "protocol": _protocol(key),
                                 "has_key": bool(value.get("apikey")), "url_hidden": hidden,
                                 "options": options, "options_hidden": opt_hidden})
-            plist = []
+            plist, first = [], {}
             for pid, pv in providers.items():
+                # duplicates (same literal URL + key) point at the first one; the key itself never leaves
+                ident = (pv.get("apibase", ""), pv.get("apikey", ""))
+                same_as = first.setdefault(ident, pid) if all(ident) else pid
                 url, hidden = _public_url(pv.get("apibase", ""))
                 values = {"name": pv.get("name", ""), "protocol": pv.get("protocol", "oai")}
                 if url is not None:
                     values["apibase"] = url
                 plist.append({"id": pid, "values": values, "has_key": bool(pv.get("apikey")),
-                              "url_hidden": hidden, "models": count.get(pid, 0)})
+                              "url_hidden": hidden, "models": count.get(pid, 0),
+                              "same_as": same_as if same_as != pid else None})
             return {"writable": True, "revision": revision, "entries": entries, "providers": plist,
                     "mixins": self._mixins(data), "format": "mykey"}
 
@@ -677,6 +783,74 @@ class Models:
             raise ValueError("grouping would change a model's connection; nothing was changed")
         return False
 
+    def _save_many(self, data, items):
+        if not isinstance(items, list) or not 0 < len(items) <= 200:
+            raise ValueError("add between 1 and 200 models at once")
+        expanded = []
+        for item in items:
+            key = item.get("key") if isinstance(item, dict) else None
+            if not isinstance(key, str) or not _KEY.fullmatch(key):
+                raise ValueError("invalid configuration identifier")
+            if key in data:
+                raise ValueError("configuration identifier already exists")
+            expanded.append(self._model_save(data, key, item))
+        return expanded
+
+    def _quick_provider(self, data, spec):
+        """Resolve the quick-add provider: an existing id, an identical URL + key, or a new one."""
+        if not isinstance(spec, dict):
+            raise ValueError("choose or enter a provider")
+        providers = self._providers(data)
+        pid = spec.get("id")
+        if pid:
+            if not isinstance(pid, str) or pid not in providers:
+                raise ValueError("unknown provider")
+            return pid
+        values = spec.get("values")
+        if not isinstance(values, dict):
+            raise ValueError("invalid provider fields")
+        base = values.get("apibase").strip() if isinstance(values.get("apibase"), str) else ""
+        key = values.get("apikey").strip() if isinstance(values.get("apikey"), str) else ""
+        for old, p in providers.items():  # never create a duplicate of an existing provider
+            if p.get("apibase") == base and p.get("apikey") == key and base and key:
+                return old
+        pid = llmconfig._provider_id(base, set(providers)) if base else "provider"
+        while pid in providers:
+            pid += "_"
+        values = dict(values)
+        if not values.get("name"):
+            try:
+                values["name"] = urlsplit(llmconfig._expand(base)).hostname or pid
+            except Exception:
+                values["name"] = pid
+            names = {p.get("name") for p in providers.values()}
+            name, n = values["name"], 2
+            while name in names:
+                name, n = f"{values['name']} ({n})", n + 1
+            values["name"] = name
+        self._provider_change(data, "provider_save", {"id": pid, "values": values})
+        return pid
+
+    def _provider_merge(self, data, body):
+        """Fold providers sharing one literal URL + key into `into`; resolved models stay identical."""
+        providers = dict(self._providers(data))  # never mutate live mykey dicts
+        into, ids = body.get("into"), body.get("ids")
+        if not isinstance(into, str) or into not in providers:
+            raise ValueError("unknown provider")
+        if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or i not in providers or i == into for i in ids):
+            raise ValueError("choose providers to merge")
+        target = providers[into]
+        for i in ids:
+            if (providers[i].get("apibase"), providers[i].get("apikey")) != (target.get("apibase"), target.get("apikey")):
+                raise ValueError("only providers with the same base URL and API key can be merged")
+        for k, v in list(data.items()):
+            if _supported(k, v) and v.get("provider") in ids:
+                data[k] = dict(v, provider=into)
+        for i in ids:
+            del providers[i]
+        data[llmconfig.PROVIDERS] = providers
+        return False
+
     def change(self, body):
         with self.lock:
             self._idle()
@@ -694,18 +868,17 @@ class Models:
             elif action in ("mixin_save", "mixin_delete"):
                 affects_models = True
                 self._mixin_change(data, action, body)
+            elif action == "provider_merge":
+                affects_models = self._provider_merge(data, body)
             elif action == "save_many":
-                affects_models, expanded = True, []
+                affects_models, expanded = True, self._save_many(data, body.get("items"))
+            elif action == "quick_add":
+                # One atomic write: create or reuse the provider, then add its models.
+                pid = self._quick_provider(data, body.get("provider"))
                 items = body.get("items")
-                if not isinstance(items, list) or not 0 < len(items) <= 200:
-                    raise ValueError("add between 1 and 200 models at once")
-                for item in items:
-                    key = item.get("key") if isinstance(item, dict) else None
-                    if not isinstance(key, str) or not _KEY.fullmatch(key):
-                        raise ValueError("invalid configuration identifier")
-                    if key in data:
-                        raise ValueError("configuration identifier already exists")
-                    expanded.append(self._model_save(data, key, item))
+                if isinstance(items, list):
+                    items = [dict(i, values=dict(i.get("values") or {}, provider=pid)) if isinstance(i, dict) else i for i in items]
+                affects_models, expanded = True, self._save_many(data, items)
             else:
                 affects_models = True
                 key = body.get("key")

@@ -195,3 +195,26 @@
 .model-owned-item .model-owned-row{flex:1}
 .model-owned-delete{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;padding:6px 8px;margin-right:2px;border-radius:6px;cursor:pointer}
 .model-owned-delete:hover:not(:disabled),.model-owned-delete:focus-visible{color:var(--danger,#d64545);background:color-mix(in srgb,var(--danger,#d64545) 10%,transparent)}
+/* Quick add wizard, duplicate banner and simple view. */
+.gah-model-dialog .model-workspace-head{justify-content:flex-start}
+.gah-model-dialog .model-quick-open{margin-left:auto;padding:7px 12px;font-size:12px}
+.gah-model-dialog .model-mode{padding:7px 10px;font-size:12px}
+.gah-model-dialog .model-mode[aria-pressed=true]{color:var(--accent)}
+.gah-model-dialog .model-workspace.is-simple .model-advanced{display:none}
+.gah-model-dialog .model-duplicates{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted);font-size:13px}
+.gah-model-dialog .model-duplicates span{min-width:0;overflow-wrap:anywhere}
+.gah-model-dialog .model-duplicates button{flex:none;padding:6px 12px;font-size:12px}
+.gah-model-dialog .model-quick{flex:1;min-height:0;overflow:auto;margin-top:12px;padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.gah-model-dialog .model-quick-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.gah-model-dialog .model-quick-head h3{margin:0;font-size:15px}
+.gah-model-dialog .model-quick-steps{display:flex;gap:6px;list-style:none;margin:0 0 14px;padding:0;font-size:12px;color:var(--muted)}
+.gah-model-dialog .model-quick-steps .step{padding:4px 10px;border-radius:12px;background:var(--surface-muted)}
+.gah-model-dialog .model-quick-steps .step[aria-current=step]{background:var(--accent);color:#fff}
+.gah-model-dialog .model-quick-steps .step.is-done{color:var(--text)}
+.gah-model-dialog .model-quick-templates{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:0 0 14px}
+.gah-model-dialog .model-quick-templates button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.gah-model-dialog .model-quick-templates button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.gah-model-dialog .model-quick-templates small{font-size:11px;color:var(--muted)}
+.gah-model-dialog .model-quick-hint{font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0}
+.gah-model-dialog .model-quick-ok{font-size:13px;color:var(--success,#2a7);margin:8px 0}
+.gah-model-dialog .model-quick-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}

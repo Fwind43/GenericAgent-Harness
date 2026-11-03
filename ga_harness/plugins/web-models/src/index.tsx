@@ -5,6 +5,7 @@ import { ModelForm, type SaveModel } from './ModelForm';
 import { ProviderForm } from './ProviderForm';
 import type { QuickSave } from './ProviderModels';
 import { MixinForm } from './MixinForm';
+import { QuickAdd } from './QuickAdd';
 import type { FetchModels, RemoteModel } from './RemoteModels';
 import { endpoint, sections as modelSections, readonlyText, sectionKey, providerNames } from './helpers';
 
@@ -14,6 +15,10 @@ export function Models({ api }: { api: PluginAPI }) {
   const [config, setConfig] = useState<ModelConfig | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [section, setSection] = useState('');
   const [edit, setEdit] = useState<Edit>({ kind: 'provider', serial: 0 }), [detail, setDetail] = useState(false);
+  const [quick, setQuick] = useState(false);
+  // Simple view hides failover groups and per-model tuning; advanced users opt in once and it sticks.
+  const [simple, setSimple] = useState(() => localStorage.getItem('gah.models.view') !== 'advanced');
+  const toggleSimple = () => { const next = !simple; setSimple(next); localStorage.setItem('gah.models.view', next ? 'simple' : 'advanced'); if (next && edit.kind === 'mixin') switchView('provider'); };
   const draft = useRef(false), blocked = useRef(false), leaving = useRef(false), alive = useRef(true);
   const heading = useRef<HTMLHeadingElement>(null);
   const onDirtyChange = useCallback((value: boolean) => { draft.current = value; }, []);
@@ -85,6 +90,7 @@ export function Models({ api }: { api: PluginAPI }) {
     await run(async () => {
       const next = await api.host.get<ModelConfig>('/api/models/config');
       setConfig(next); select('provider', next.providers[0]?.id, false);
+      setQuick(next.writable && !next.providers.length && !next.entries.length);
     }, setError, true);
   }
   const change: SaveModel = (action, id, values) => {
@@ -133,6 +139,32 @@ export function Models({ api }: { api: PluginAPI }) {
     select('provider', next.config.providers[0]?.id, false);
     api.notice(T('\u5df2\u5f52\u7ec4\u4e3a ', 'Grouped into ') + next.config.providers.length + T(' \u4e2a\u670d\u52a1\u5546', ' providers'));
   }, setError); };
+  const quickDone = (next: ModelResult, count: number) => {
+    setConfig(next.config); api.setState(next.state); setQuick(false); setQuery(''); setSection('');
+    const added = next.config.entries[next.config.entries.length - 1];
+    select('provider', added?.provider || next.config.providers[0]?.id, true);
+    api.notice(T('\u5df2\u6dfb\u52a0 ' + count + ' \u4e2a\u6a21\u578b\uff0c\u53ef\u5728\u9876\u90e8\u6a21\u578b\u9009\u62e9\u5668\u4e2d\u5207\u6362\u4f7f\u7528', 'Added ' + count + ' models. Pick one from the model selector.'));
+  };
+  // Providers sharing the same URL + key (detected server-side; keys never reach the browser).
+  const duplicates = new Map<string, string[]>();
+  for (const item of config?.providers || []) if (item.same_as) duplicates.set(item.same_as, [...(duplicates.get(item.same_as) || []), item.id]);
+  const mergeDuplicates = async () => { if (!config?.writable || busy || !duplicates.size) return;
+    const count = [...duplicates.values()].reduce((sum, ids) => sum + ids.length, 0);
+    if (!await confirmDialog({ title: T('\u5408\u5e76\u91cd\u590d\u7684\u670d\u52a1\u5546\uff1f', 'Merge duplicate providers?'),
+      message: T(count + ' \u4e2a\u670d\u52a1\u5546\u4e0e\u5176\u4ed6\u670d\u52a1\u5546\u7684\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\uff0c\u5c06\u5408\u5e76\u5230\u6700\u65e9\u7684\u90a3\u4e2a\uff0c\u6a21\u578b\u548c\u6545\u969c\u8f6c\u79fb\u7ec4\u4f1a\u8ddf\u7740\u8fc1\u79fb\uff0c\u5b9e\u9645\u8fde\u63a5\u4e0d\u53d8\u3002',
+        count + ' providers have exactly the same URL and key as another one. They will be merged into the first one; models and failover groups move with them and connections stay the same.'),
+      confirm: T('\u5408\u5e76', 'Merge') })) return;
+    setError(''); void run(async () => {
+      let next: ModelResult | null = null, revision = config.revision;
+      for (const [into, ids] of duplicates) {
+        next = await api.host.post<ModelResult>('/api/models/config', { action: 'provider_merge', revision, into, ids });
+        revision = next.config.revision;
+      }
+      if (!next) return;
+      setConfig(next.config); api.setState(next.state); setQuery(''); setSection('');
+      select('provider', [...duplicates.keys()][0], false);
+      api.notice(T('\u5df2\u5408\u5e76 ' + count + ' \u4e2a\u91cd\u590d\u670d\u52a1\u5546', 'Merged ' + count + ' duplicate providers'));
+    }, setError); };
   const locked = busy || !config?.writable, browsing = working || changing;
   const names = config ? providerNames(config) : new Map<string, string>();
   const isModel = edit.kind === 'model', isMixin = edit.kind === 'mixin';
@@ -140,13 +172,15 @@ export function Models({ api }: { api: PluginAPI }) {
   return <>
     <ModelPicker api={api} />
     {state.models && <SettingsPanel api={api} label={T('\u6a21\u578b', 'Models')} icon="cpu" order={10} className="gah-model-dialog" onOpen={load} onBeforeLeave={canLeave}>
-      <div className={'dialog-content model-workspace' + (detail ? ' is-detail' : '')}>
+      <div className={'dialog-content model-workspace' + (detail ? ' is-detail' : '') + (simple ? ' is-simple' : '')}>
         <div className="model-workspace-head">
           <div className="model-view-switch" role="group" aria-label={T('\u6a21\u578b\u4e0e\u670d\u52a1\u5546', 'Models and providers')}>
             <button type="button" aria-pressed={edit.kind === 'provider'} disabled={browsing} onClick={() => switchView('provider')}>{T('\u670d\u52a1\u5546', 'Providers')}<span>{config?.providers.length ?? 0}</span></button>
             <button type="button" aria-pressed={isModel} disabled={browsing} onClick={() => switchView('model')}>{T('\u6a21\u578b', 'Models')}<span>{config?.entries.length ?? 0}</span></button>
-            <button type="button" aria-pressed={isMixin} disabled={browsing} onClick={() => switchView('mixin')}>{T('故障转移组', 'Failover groups')}<span>{config?.mixins?.length ?? 0}</span></button>
+            {!simple && <button type="button" aria-pressed={isMixin} disabled={browsing} onClick={() => switchView('mixin')}>{T('\u6545\u969c\u8f6c\u79fb\u7ec4', 'Failover groups')}<span>{config?.mixins?.length ?? 0}</span></button>}
           </div>
+          <button type="button" className="model-quick-open" disabled={browsing || locked || quick} onClick={() => { void navigate(() => setQuick(true)); }}>{T('+ \u5feb\u901f\u6dfb\u52a0', '+ Quick add')}</button>
+          <button type="button" className="secondary model-mode" aria-pressed={!simple} title={T('\u9ad8\u7ea7\u6a21\u5f0f\u663e\u793a\u6545\u969c\u8f6c\u79fb\u7ec4\u548c\u6bcf\u4e2a\u6a21\u578b\u7684\u8c03\u4f18\u53c2\u6570', 'Advanced mode shows failover groups and per-model tuning')} onClick={toggleSimple}>{simple ? T('\u7b80\u5355\u6a21\u5f0f', 'Simple') : T('\u9ad8\u7ea7\u6a21\u5f0f', 'Advanced')}</button>
           <button type="button" className="secondary model-refresh" disabled={browsing} onClick={() => { void navigate(() => { void load(); }); }}>{T('\u5237\u65b0', 'Refresh')}</button>
         </div>
         {error && <p className="model-error" role="alert">{error}</p>}
@@ -154,7 +188,12 @@ export function Models({ api }: { api: PluginAPI }) {
         {config && <>
           {!config.writable && <div className="model-readonly" role="status"><span>{readonlyText(config)}</span></div>}
           {state.running && <p className="model-help model-running">{T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u53ef\u67e5\u770b\u914d\u7f6e\uff0c\u7ed3\u675f\u540e\u53ef\u7f16\u8f91\u3002', 'A run is active. You can browse; editing is available when it finishes.')}</p>}
-          <div className={'model-layout' + (detail ? ' is-detail' : '')}>
+          {!quick && config.writable && duplicates.size > 0 && <div className="model-duplicates" role="status">
+            <span>{T('\u53d1\u73b0\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\u7684\u91cd\u590d\u670d\u52a1\u5546\uff1a', 'Duplicate providers with the same URL and key: ')}{[...duplicates].map(([into, ids]) => [into, ...ids].map(id => names.get(id) || id).join(' = ')).join('\uff1b')}</span>
+            <button type="button" className="secondary" disabled={locked} onClick={() => { void mergeDuplicates(); }}>{T('\u4e00\u952e\u5408\u5e76', 'Merge')}</button>
+          </div>}
+          {quick && <QuickAdd config={config} disabled={locked} post={(path, body) => api.host.post(path, body)} onDone={quickDone} onCancel={() => setQuick(false)} />}
+          {!quick && <div className={'model-layout' + (detail ? ' is-detail' : '')}>
             <aside className="model-list-pane">
               <div className="model-browser-tools">
                 <input className="model-search" type="search" value={query} disabled={browsing} placeholder={isModel ? T('搜索模型...', 'Search models...') : isMixin ? T('搜索故障转移组...', 'Search failover groups...') : T('搜索服务商...', 'Search providers...')} aria-label={T('搜索配置', 'Search configurations')} onChange={event => setQuery(event.target.value)} />
@@ -180,7 +219,7 @@ export function Models({ api }: { api: PluginAPI }) {
                 : <ProviderForm key={edit.serial} entry={provider} taken={config.providers.map(item => item.id)} models={provider ? config.entries.filter(item => item.provider === provider.id) : []} disabled={locked} onSave={change} onQuickSave={quickSave}
                   onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onOpenModel={openModel} onNewModel={() => openModel()} fetchModels={fetchModels} onAddModels={addModels} />}
             </section>
-          </div>
+          </div>}
         </>}
       </div>
     </SettingsPanel>}
