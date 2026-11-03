@@ -78,7 +78,7 @@ def test_spawn_failure_settles_without_emitting_under_session_lock(stores):
         assert not sessions.lock._is_owned()
         emitted.append((name, data))
 
-    runs = Runs(sessions, scope, lambda: [], emit=emit, process_context=FailedSpawn())
+    runs = Runs(sessions, scope, lambda *mode: [], emit=emit, process_context=FailedSpawn())
     sid = sessions.current()["id"]
     record = runs.start("task", session_id=sid)
     assert record["status"] == "error"
@@ -108,7 +108,7 @@ def reserve(sessions, sid, run_id):
 
 def test_active_session_requires_owner_and_cannot_be_deleted(stores):
     sessions, scope = stores
-    runs = Runs(sessions, scope, lambda: [])
+    runs = Runs(sessions, scope, lambda *mode: [])
     sid = sessions.current()["id"]
     reserve(sessions, sid, "owner")
     with pytest.raises(RuntimeError):
@@ -127,12 +127,12 @@ def test_recovery_settles_unselected_sessions_without_retry(stores):
     messages = [{"role": "assistant", "text": "partial", "status": "running",
                  "turns": [{"status": "running", "tools": []}]}]
     sessions.save_for(first["id"], messages, {})
-    runs = Runs(sessions, scope, lambda: [])
+    runs = Runs(sessions, scope, lambda *mode: [])
     reserve(sessions, first["id"], "interrupted-run")
     sessions.active.clear()  # A new host has no in-memory worker reservations.
     recovered = Sessions(make_agent(), sessions.path)
     recovered_scope = Workspaces(recovered, scope.default_workspace)
-    recovered_runs = Runs(recovered, recovered_scope, lambda: [])
+    recovered_runs = Runs(recovered, recovered_scope, lambda *mode: [])
     assert recovered.current()["id"] == second["id"]
     assert recovered.get(first["id"])["messages"][-1]["status"] == "interrupted"
     assert recovered_runs.get("interrupted-run")["status"] == "interrupted"

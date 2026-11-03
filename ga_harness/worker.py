@@ -12,22 +12,31 @@ from types import SimpleNamespace
 EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.start", "llm.timed")
-# Host/UI/storage plugins must never be mounted in a worker. Additional execution
-# plugins come from run-store.worker_plugins or Runs.register_worker_plugin; they
-# are taken from the plugin catalog and need not be active in the host.
-# DEFAULT_PLUGINS only follow the host: each is mounted (with the host config) when
-# it is active there, so disabling e.g. vlm-tool in the host also drops vision_ask.
+# Host/UI/storage plugins must never be mounted in a worker. DEFAULT_PLUGINS are
+# the runtime infrastructure every run needs; they follow the host (mounted with
+# the host config while active there). Everything the agent can do beyond that,
+# tools and prompt additions alike, comes from the run's mode: an agent preset
+# lists its plugins (``plugins``), and the Standard mode is the built-in
+# ``standard`` preset. Further execution plugins come from run-store.worker_plugins
+# or Runs.register_worker_plugin.
 DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
-                             "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools",
-                             "project-memory", "vlm-tool"))
+                             "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools"))
 
 
-def recipe_for(ctx, extra=()):
+def recipe_for(ctx, extra=(), mode=()):
+    """Plugins for one run: infrastructure, the mode's plugins and ``extra``.
+
+    A mode plugin that also runs in the host follows the host: it is mounted
+    with the host config while active there and skipped when the user disabled
+    it. A ``worker_only`` mode plugin has no host state and is mounted from the
+    catalog with its default config.
+    """
     catalog = ctx.get("plugin.catalog")
     if catalog is None:
         raise RuntimeError("run-store requires the plugin catalog")
     manifests = catalog["preferences"].manifests
-    wanted = DEFAULT_PLUGINS | set(extra)
+    mode = set(mode)
+    wanted = DEFAULT_PLUGINS | mode | set(extra)
     recipe = []
 
     def add(manifest, config):
@@ -52,21 +61,14 @@ def recipe_for(ctx, extra=()):
             add(manifests[name], {})
         else:
             missing.append(name)
+    for name in sorted(mode - present - set(extra)):
+        if name not in manifests:
+            missing.append(name)
+        elif getattr(manifests[name], "worker_only", False):
+            add(manifests[name], {})
     if missing:
         raise ValueError("worker plugins are not installed: " + ", ".join(missing))
     return recipe
-
-
-PLUGIN_TOOL = {"type": "function", "function": {
-    "name": "plugin_control",
-    "description": ("List, enable, disable or rescan ga-harness plugins. Changes apply immediately "
-                    "in the host without a restart. Only user plugins in $GAH_HOME/plugins can "
-                    "be toggled; after writing a new plugin there, call rescan, then enable it."),
-    "parameters": {"type": "object", "properties": {
-        "action": {"type": "string", "enum": ["list", "enable", "disable", "rescan"]},
-        "name": {"type": "string", "description": "Plugin name, required for enable/disable"},
-    }, "required": ["action"]},
-}}
 
 
 class RpcError(RuntimeError):
@@ -171,28 +173,6 @@ class WorkerHost:
         self._queue.put((None, None))
 
 
-def _register_plugin_tool(tools, host, timeout=60.0):
-    """Expose host plugin control to the agent through the ``plugin_control`` RPC."""
-    if tools is None or not hasattr(tools, "register"):
-        return None
-    import importlib
-    import json
-
-    def plugin_control(handler, args, response):
-        StepOutcome = importlib.import_module("agent_loop").StepOutcome
-        args = args if isinstance(args, dict) else {}
-        body = {"action": args.get("action", "list")}
-        if args.get("name"):
-            body["name"] = args["name"]
-        try:
-            msg = json.dumps(host.call("plugin_control", body, timeout), ensure_ascii=False, indent=1)
-        except RpcError as exc:
-            msg = f"[Error] plugin_control: {exc}"
-        return StepOutcome(msg, next_prompt=msg + "\n")
-
-    return tools.register(PLUGIN_TOOL, plugin_control)
-
-
 def run_worker(connection, recipe, payload):
     # Importing/mounting GA only happens after spawn, never in the host's thread.
     from . import logfile
@@ -274,7 +254,6 @@ def run_worker(connection, recipe, payload):
             agent.abort()
 
         threading.Thread(target=control, name="run-control", daemon=True).start()
-        _register_plugin_tool(runtime.ctx.get("ga.tools"), host)
         # Snapshot the worker's actual selection after restore/apply_effort, not
         # the host's currently selected session or its model defaults.
         backend = getattr(getattr(raw, "llmclient", None), "backend", None)

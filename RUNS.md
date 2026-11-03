@@ -103,13 +103,19 @@ performed.
 
 ## Agent presets
 
-A preset is a named, per-session adjustment applied to each isolated worker run.
+A preset (mode) is a named, per-session choice applied to each isolated worker run.
+Modes differ by the plugins they enable: every run mounts only the infrastructure in
+`worker.DEFAULT_PLUGINS`, and all agent tools and prompt additions come from the
+mode's `plugins` list. A session without a preset runs the built-in `standard`
+preset (`project-memory`, `vlm-tool`), which the catalog does not list separately.
 Built-in presets live in `ga_harness/presets/*.toml`; user presets in
 `~/.ga-harness/presets/*.toml` (same id overrides the built-in one).
-Built-ins: `creative` (extend the app by writing plugins/modes); no preset is the standard
-agent. User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
+Built-ins: `standard` (the default) and `creative` (extend the app by writing
+plugins/modes; adds `plugin-control`). User plugins are discovered from `~/.ga-harness/plugins/` (same name overrides a
 built-in). Keys:
-`name`, `name_zh`, `description`, `description_zh`, `prompt` (appended through
+`name`, `name_zh`, `description`, `description_zh`, `plugins` (mounted in the run; a
+plugin that also runs in the host is skipped while disabled there, a `worker_only`
+one is mounted with its default config), `prompt` (appended through
 `ga-prompt`) and `disable_tools` (passed to `ga-tools.disable`). Host and
 storage plugins are never touched.
 
@@ -137,7 +143,8 @@ Host side (any plugin that injects `runs`):
   `service`, `run_id`, `session_id`, `body` and `cancelled` (an Event set when the
   calling run finishes or is cancelled). The return value must be picklable;
   exceptions are returned to the worker as errors. A service name can be registered
-  once; the built-in `plugin_control` service is registered this way.
+  once; the built-in `plugin_control` service is registered this way (the
+  `plugin-control` worker plugin, enabled by the creative mode, calls it).
 - `runs.register_worker_plugin(name)` -> disposer. Mounts an execution plugin in
   every worker started afterwards (reference counted), in addition to
   `run-store.worker_plugins`. Host/UI/storage plugins are still refused.

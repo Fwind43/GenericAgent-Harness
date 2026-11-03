@@ -292,12 +292,14 @@ class Runs:
             if self.active_for(sid):
                 raise SessionBusy("this session already has an active run")
             scope = self.workspaces.context(sid)
-            recipe = self.recipe()
+            # The session's mode decides which plugins (tools, prompts) the run gets;
+            # no stored preset means the built-in standard mode.
             preset_id = (session["state"] or {}).get("preset")
-            if preset_id:
-                preset = presets.get(preset_id)
-                if preset is None:
-                    raise ValueError(f"agent preset {preset_id!r} is not available")
+            preset = presets.get(preset_id)
+            if preset is None and preset_id:
+                raise ValueError(f"agent preset {preset_id!r} is not available")
+            recipe = self.recipe(preset["plugins"] if preset else ())
+            if preset:
                 recipe = presets.apply(recipe, preset)
             rid = uuid.uuid4().hex
             created_at = time.time()

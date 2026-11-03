@@ -1,0 +1,7 @@
+name = "plugin-control"
+category = "extension"
+entry = "main:apply"
+description = "Gives the agent the plugin_control tool (list, enable, disable or rescan plugins; changes apply in the host immediately). Enabled by the modes that need it, such as Creative."
+description_zh = "\u8ba9 Agent \u5217\u51fa\u3001\u542f\u7528\u3001\u505c\u7528\u6216\u91cd\u65b0\u626b\u63cf\u63d2\u4ef6\uff08plugin_control \u5de5\u5177\uff09\uff0c\u6539\u52a8\u5373\u65f6\u751f\u6548\u3002\u7531\u9700\u8981\u5b83\u7684\u6a21\u5f0f\uff08\u5982\u521b\u9020\u6a21\u5f0f\uff09\u542f\u7528\u3002"
+inject = ["ga.tools"]
+worker_only = true

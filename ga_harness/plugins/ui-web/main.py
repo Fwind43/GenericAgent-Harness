@@ -581,6 +581,8 @@ class WebFrontend:
         if not self.sessions or not self.runs:
             return 404, {"error": "agent presets require session-store and run-store"}
         value = body.get("preset", body.get("value")) or None
+        if value == presets.STANDARD:  # standard is what "no preset" means
+            value = None
         if value is not None and presets.get(value) is None:
             return 400, {"error": "unknown agent preset"}
         with self.lock:

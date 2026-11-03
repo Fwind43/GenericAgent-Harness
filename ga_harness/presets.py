@@ -1,10 +1,18 @@
-"""Agent presets: named, per-session adjustments to an isolated worker run.
+"""Agent presets (modes): what an isolated worker run can do beyond the runtime.
+
+A mode is defined by the plugins it enables. Every run mounts the infrastructure
+in ``worker.DEFAULT_PLUGINS``; all agent capabilities (tools, prompt additions)
+come from the mode's ``plugins``. Sessions without a preset use the built-in
+``standard`` preset (shown as "Standard" and not listed as a separate mode).
 
 A preset is a TOML file in the built-in ``ga_harness/presets/`` directory or in
 ``~/.ga-harness/presets/`` (user files override built-ins with the same id).
 Fields (all optional except a usable file stem as id)::
 
     name / name_zh               display name
+    plugins = ["..."]            plugins mounted in the run; one that also runs in the
+                                 host is skipped while disabled there, a worker_only
+                                 one is mounted with its default config
     description / description_zh
     prompt = "..."               appended to the system prompt (ga-prompt ``append``);
                                  ``{data_dir}`` becomes the absolute ga-harness data
@@ -13,7 +21,7 @@ Fields (all optional except a usable file stem as id)::
     [config.<plugin>]            shallow-merged into the config of a plugin that is
                                  already part of the worker recipe
 
-Presets never add or remove plugins and cannot touch protected plugins.
+Presets cannot remove or configure protected plugins.
 """
 from __future__ import annotations
 
@@ -26,6 +34,7 @@ from . import paths
 BUILTIN_DIR = Path(__file__).with_name("presets")
 USER_DIR = paths.home() / "presets"
 PROTECTED = frozenset(("ga-core", "ga-hooks", "ga-events", "ga-stdout"))
+STANDARD = "standard"
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
@@ -34,6 +43,9 @@ def _parse(path):
     tools = data.get("disable_tools", [])
     if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
         raise ValueError("disable_tools must be a list of strings")
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list) or not all(isinstance(p, str) and p for p in plugins):
+        raise ValueError("plugins must be a list of plugin names")
     if not isinstance(data.get("prompt", ""), str):
         raise ValueError("prompt must be a string")
     config = data.get("config", {})
@@ -47,6 +59,7 @@ def _parse(path):
             "description": str(data.get("description") or ""),
             "description_zh": str(data.get("description_zh") or ""),
             "prompt": data.get("prompt", ""), "disable_tools": list(tools), "config": config,
+            "plugins": list(dict.fromkeys(plugins)),
             "builtin": path.parent == BUILTIN_DIR}
 
 
@@ -70,8 +83,10 @@ def load(dirs=None):
 
 def catalog(current=None, dirs=None):
     presets, errors = load(dirs)
+    # The standard preset is what "no preset" means; the UI shows it as Standard.
     items = [{k: p[k] for k in ("id", "name", "name_zh", "description", "description_zh", "builtin")}
-             for p in presets.values()]
+             for p in presets.values() if p["id"] != STANDARD]
+    current = None if current == STANDARD else current
     # ``missing``: the session stored a preset whose file is gone or invalid; runs refuse it,
     # so the UI must not present the session as Standard.
     return {"current": current if current in presets else None,
@@ -80,10 +95,9 @@ def catalog(current=None, dirs=None):
 
 
 def get(preset_id, dirs=None):
-    if not preset_id:
-        return None
+    """The preset for a session; no id means the standard mode (None if absent)."""
     presets, _ = load(dirs)
-    return presets.get(preset_id)
+    return presets.get(preset_id or STANDARD)
 
 
 def apply(recipe, preset):

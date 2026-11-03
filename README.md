@@ -70,6 +70,7 @@ ga-harness 自身的数据（配置、插件设置、上传文件、聊天记录
 | `web-context` | 会话“上下文”视图：展示模型下一轮实际收到的上下文——按文本/思考/工具调用/工具结果拆分的消息、按工具统计的占用、工作记忆与历史摘要，并估算 token |
 | `worldline` | 消息编辑、重新生成、分支切换与在新对话中分支 |
 | `run-queue` | 运行中发送的消息进入队列，可编辑、取消，或“引导”在下一轮非打断注入当前任务（worker 侧由 `ga-steer` 实现） |
+| `plugin-control` | 新增 `plugin_control` 工具：Agent 列出、启用、停用或重新扫描插件，即时生效；仅由需要它的模式（如创造模式）启用 |
 | `vlm-tool` | 新增 `vision_ask` 工具：自带视觉请求（Claude `/messages`、OpenAI `chat/completions`/`responses`），模型可选“跟随当前模型”（故障转移组依次尝试）或 mykey.py 中任一模型 |
 | `ui-cli` | 单次任务：流式输出后退出（默认前端） |
 | `ui-tui` | 终端多轮对话；Ctrl+C 中止当前任务，`/exit` 退出 |
