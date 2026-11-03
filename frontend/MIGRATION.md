@@ -85,6 +85,12 @@ the host renders a fallback list when no plugin places one). The route is the UR
 hidden. `pages.open(id)` / `pages.home()` navigate programmatically; opening or creating a
 chat returns to the chat.
 
+Session views: `ViewPanel({ api, label, order, composer })` adds a tab next to the built-in
+"Chat" view. The host composer (input, attachments, `composer-top`/`composer` slots,
+send/stop) stays visible by default; pass `composer={false}` to hide it while the view is
+active. The draft and pending attachments are kept, and a `draft` event switches back to
+Chat so the text is visible.
+
 The host owns one Settings entry and dialog. Built-in model, channel and plugin
 management panels register with the shared `SettingsPanel` component exported by
 `@gah/sdk`, rather than adding their own sidebar buttons or modal shells:

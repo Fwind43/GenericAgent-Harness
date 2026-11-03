@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 // Session views: the host owns the built-in "chat" view; plugins register more (e.g. trace).
-export type View = { id: string; label: string; order?: number };
+// composer: false hides the host composer (input, attachments, send/stop) while the view is active.
+export type View = { id: string; label: string; order?: number; composer?: boolean };
 type Snapshot = { active: string; views: readonly View[] };
 export const CHAT_VIEW = 'chat';
 
@@ -28,3 +29,6 @@ class ViewStore {
 
 export const views = new ViewStore();
 export const useViews = () => useSyncExternalStore(views.subscribe, views.getSnapshot);
+// Whether the host composer is shown for the active view (always for chat; plugin views opt out).
+export const showsComposer = (snapshot: Snapshot) => snapshot.active === CHAT_VIEW
+  || snapshot.views.find(item => item.id === snapshot.active)?.composer !== false;

@@ -33,12 +33,13 @@ export function SettingsPanel({ api, label, icon, order = 0, className = '', onO
   </section></PluginSlot>;
 }
 // A session view tab next to the built-in chat view; children render only while the view is active.
-export function ViewPanel({ api, label, order = 0, className = '', children }: {
-  api: PluginAPI; label: string; order?: number; className?: string; children: ReactNode;
+// composer={false} hides the host composer while this view is active (default: shown).
+export function ViewPanel({ api, label, order = 0, composer = true, className = '', children }: {
+  api: PluginAPI; label: string; order?: number; composer?: boolean; className?: string; children: ReactNode;
 }) {
   const id = api.name;
   const { active } = useViews();
-  useLayoutEffect(() => views.register({ id, label, order }), [id, label, order]);
+  useLayoutEffect(() => views.register({ id, label, order, composer }), [id, label, order, composer]);
   const visible = active === id;
   return <PluginSlot api={api} name="view"><section id={'gah-view-' + id} role="tabpanel" aria-labelledby={'gah-view-tab-' + id}
     className={'gah-view ' + className} hidden={!visible}>{visible && children}</section></PluginSlot>;

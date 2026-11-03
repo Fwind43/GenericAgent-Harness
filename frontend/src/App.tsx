@@ -15,7 +15,7 @@ import { ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
 import { ViewTabs } from './components/ViewTabs';
-import { CHAT_VIEW, useViews } from './views';
+import { CHAT_VIEW, showsComposer, useViews, views } from './views';
 import { pages, usePages } from './pages';
 import { PageNav } from './plugin-kit';
 
@@ -61,7 +61,7 @@ export function App() {
   function removeFile(key: string) {
     setFiles(list => { const gone = list.find(p => p.key === key); if (gone?.preview) URL.revokeObjectURL(gone.preview); return list.filter(p => p.key !== key); });
   }
-  const { active: view } = useViews();
+  const viewState = useViews(), view = viewState.active, composer = showsComposer(viewState);
   // A plugin page route replaces the whole chat column; slots stay mounted (hidden) for plugins.
   const page = pages.current(usePages());
   const busy = state.running || changing || sending;
@@ -77,7 +77,8 @@ export function App() {
     plugins.sync(state.web_plugins ?? []);
   }, [state.web_plugins]);
   useEffect(() => () => plugins.dispose(), []);
-  useEffect(() => host.on('draft', value => { setDraft(String(value)); input.current?.focus(); }), []);
+  // A draft must land somewhere visible: leave a view that hides the composer.
+  useEffect(() => host.on('draft', value => { if (!showsComposer(views.getSnapshot())) views.select(CHAT_VIEW); setDraft(String(value)); requestAnimationFrame(() => input.current?.focus()); }), []);
   useEffect(() => { host.emit('composer-draft', draft); }, [draft]);
   // Paste files anywhere on the page (e.g. an empty new chat before the composer has
   // focus); text pastes and pastes into other editable fields are left alone.
@@ -219,7 +220,7 @@ export function App() {
       {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
       <div className="gah-view-area" hidden={!!page || view === CHAT_VIEW}><Slot name="view" /></div>
       <div className="gah-page-area" hidden={!page}><Slot name="page" /></div>
-      <footer hidden={!!page}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
+      <footer hidden={!!page || !composer}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
         onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); input.current?.focus(); }}>
