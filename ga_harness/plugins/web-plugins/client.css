@@ -10,6 +10,10 @@
 .gah-plugin-dialog .plugin-toolbar{display:flex;gap:8px;align-items:center}
 .gah-plugin-dialog .plugin-search{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
 .gah-plugin-dialog .plugin-search:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
+.gah-plugin-dialog .plugin-categories{display:flex;gap:2px;margin:12px 0 0;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.gah-plugin-dialog .plugin-category{flex:none;display:inline-flex;align-items:center;gap:6px;margin-bottom:-1px;padding:8px 12px;border:none;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+.gah-plugin-dialog .plugin-category:hover{color:var(--text)}
+.gah-plugin-dialog .plugin-category[aria-selected="true"]{color:var(--text);font-weight:600;border-bottom-color:var(--accent)}
 .gah-plugin-dialog .plugin-filter-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:12px 0 16px}
 .gah-plugin-dialog .plugin-filters{display:flex;flex-wrap:wrap;gap:6px}
 .gah-plugin-dialog .plugin-filter{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}

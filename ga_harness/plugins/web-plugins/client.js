@@ -134,14 +134,17 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     const lockedByRun = (plugin) => state.running && !plugin.run_safe;
     const [config, setConfig] = react.useState(null);
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
-    const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all"), [source, setSource] = react.useState("all");
+    const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all"), [source, setSource] = react.useState("all"), [category, setCategory] = react.useState("all");
     const cards = react.useRef(null), back = react.useRef(null);
     const selected = config == null ? void 0 : config.items.find((plugin) => plugin.name === editing);
     const visible = ((config == null ? void 0 : config.items) || []).filter((plugin) => !plugin.worker_only);
-    const shown = visible.filter((plugin) => {
+    const base = visible.filter((plugin) => {
       var _a, _b;
       return inFilter(plugin, filter) && inSource(plugin, source) && sdk.matches(query, plugin.name, descriptionOf(plugin), categoryOf(plugin)[1], (_a = plugin.requires) == null ? void 0 : _a.join(" "), (_b = plugin.provides) == null ? void 0 : _b.join(" "));
     });
+    const inCategory = (plugin, key) => key === "all" || categoryOf(plugin)[0] === key;
+    const shown = base.filter((plugin) => inCategory(plugin, category));
+    const present = categories.filter(([key]) => visible.some((plugin) => categoryOf(plugin)[0] === key));
     const toGrid = () => {
       if (working) return;
       setEditing(null);
@@ -201,6 +204,10 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") })
           ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-categories", role: "tablist", "aria-label": sdk.T("按分类筛选", "Filter by category"), children: [["all", sdk.T("全部分类", "All categories")], ...present].map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-category", "data-category": key, "aria-selected": category === key, onClick: () => setCategory(key), children: [
+            label,
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: base.filter((plugin) => inCategory(plugin, key)).length })
+          ] }, key)) }),
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-filter-bar", children: [
             /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
               label,
