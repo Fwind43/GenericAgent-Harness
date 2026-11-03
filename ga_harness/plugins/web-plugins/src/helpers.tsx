@@ -17,11 +17,12 @@ export function Switch({ checked, disabled, label, onToggle }: { checked: boolea
   return <button type="button" role="switch" className="plugin-switch" aria-checked={checked} aria-label={label} title={label} disabled={disabled}
     onClick={event => { event.stopPropagation(); onToggle(!checked); }}><span className="plugin-switch-knob" /></button>;
 }
-export function PluginTags({ plugin }: { plugin: PluginInfo }) {
+// compact (cards) hides the common defaults (built-in, hot-pluggable, protected) that the switch/lock already convey.
+export function PluginTags({ plugin, compact }: { plugin: PluginInfo; compact?: boolean }) {
   return <>
-    {plugin.source === 'user' ? <span className="plugin-tag" data-tag="user">{T('\u6211\u7684\u63d2\u4ef6', 'My plugin')}</span> : <span className="plugin-tag" data-tag="builtin">{T('\u5185\u7f6e', 'Built-in')}</span>}
-    {plugin.protected && <span className="plugin-tag" data-tag="protected">{T('\u53d7\u4fdd\u62a4', 'Protected')}</span>}
-    {plugin.hot && <span className="plugin-tag" data-tag="hot">{T('\u70ed\u63d2\u62d4', 'Hot-pluggable')}</span>}
+    {plugin.source === 'user' ? <span className="plugin-tag" data-tag="user">{T('\u6211\u7684\u63d2\u4ef6', 'My plugin')}</span> : !compact && <span className="plugin-tag" data-tag="builtin">{T('\u5185\u7f6e', 'Built-in')}</span>}
+    {plugin.protected && !compact && <span className="plugin-tag" data-tag="protected">{T('\u53d7\u4fdd\u62a4', 'Protected')}</span>}
+    {plugin.hot && !compact && <span className="plugin-tag" data-tag="hot">{T('\u70ed\u63d2\u62d4', 'Hot-pluggable')}</span>}
     {plugin.restart_required && <span className="plugin-tag" data-tag="pending">{T('\u5f85\u91cd\u542f', 'Restart pending')}</span>}
     {plugin.overridden && <span className="plugin-tag" data-tag="override">{T('\u7f51\u9875\u8986\u76d6', 'Web override')}</span>}
     {!plugin.enabled && plugin.state === 'active' && <span className="plugin-tag" data-tag="pending">{T('\u4e0b\u6b21\u505c\u7528', 'Off next start')}</span>}

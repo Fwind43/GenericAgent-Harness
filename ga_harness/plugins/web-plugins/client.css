@@ -10,16 +10,19 @@
 .gah-plugin-dialog .plugin-toolbar{display:flex;gap:8px;align-items:center}
 .gah-plugin-dialog .plugin-search{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
 .gah-plugin-dialog .plugin-search:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
-.gah-plugin-dialog .plugin-filters{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 14px}
+.gah-plugin-dialog .plugin-filter-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:12px 0 16px}
+.gah-plugin-dialog .plugin-filters{display:flex;flex-wrap:wrap;gap:6px}
 .gah-plugin-dialog .plugin-filter{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
 .gah-plugin-dialog .plugin-filter:hover{color:var(--text);background:var(--surface-muted)}
-.gah-plugin-dialog .plugin-filter[aria-selected="true"]{background:var(--text);border-color:var(--text);color:var(--bg)}
+.gah-plugin-dialog .plugin-filter[aria-selected="true"]{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);font-weight:600}
 .gah-plugin-dialog .plugin-count{font-variant-numeric:tabular-nums;opacity:.7}
 .gah-plugin-dialog .plugin-groups{display:flex;flex-direction:column;gap:18px}
-.gah-plugin-dialog .plugin-group-title{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.gah-plugin-dialog .plugin-group-title{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px;font-weight:600;color:var(--text);letter-spacing:.02em}
+.gah-plugin-dialog .plugin-group-title .plugin-count{font-size:11px;font-weight:500;line-height:18px;padding:0 7px;border-radius:999px;background:var(--surface-muted);color:var(--muted);opacity:1}
+.gah-plugin-dialog .plugin-group-title::after{content:"";flex:1;height:1px;background:var(--border)}
 .gah-plugin-dialog .plugin-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
 .gah-plugin-dialog .plugin-grid>li{display:flex;min-width:0}
-.gah-plugin-dialog .plugin-card{display:flex;flex-direction:column;gap:8px;width:100%;min-width:0;min-height:132px;padding:14px;text-align:left;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.gah-plugin-dialog .plugin-card{display:flex;flex-direction:column;gap:8px;width:100%;min-width:0;min-height:112px;padding:14px;text-align:left;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
 .gah-plugin-dialog .plugin-card:hover:not(:disabled){border-color:color-mix(in srgb,var(--text) 28%,var(--border));background:var(--surface-muted)}
 .gah-plugin-dialog .plugin-card:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 .gah-plugin-dialog .plugin-card[data-state="disabled"],.gah-plugin-dialog .plugin-card[data-state="removed"]{background:var(--surface-muted)}
@@ -41,7 +44,7 @@
 .gah-plugin-dialog .plugin-detail-card{border:1px solid var(--border);border-radius:12px;padding:18px}
 .gah-plugin-dialog .plugin-title{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;overflow-wrap:anywhere}
 .gah-plugin-dialog .plugin-tags{margin-top:10px}
-.gah-plugin-dialog .plugin-tags:empty{display:none}
+.gah-plugin-dialog .plugin-tags:empty,.gah-plugin-dialog .plugin-card-foot:empty{display:none}
 .plugin-description{margin:10px 0 12px;font-size:13px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
 .plugin-deps{margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--surface-muted);display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;font-size:12px}
 .plugin-deps dt{color:var(--muted)}.plugin-deps dd{margin:0;overflow-wrap:anywhere}
@@ -62,5 +65,7 @@
 .gah-plugin-dialog .plugin-switch:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
 .gah-plugin-dialog .plugin-switch-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
 .gah-plugin-dialog .plugin-switch[aria-checked="true"] .plugin-switch-knob{transform:translateX(16px)}
-.gah-plugin-dialog .plugin-sources{margin-top:-4px}
+.gah-plugin-dialog .plugin-sources{gap:2px;padding:2px;border:1px solid var(--border);border-radius:999px}
+.gah-plugin-dialog .plugin-sources .plugin-filter{border-color:transparent;padding:3px 10px}
+.gah-plugin-dialog .plugin-lock{position:absolute;top:14px;right:14px;width:36px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--muted);opacity:.7}
 .gah-plugin-dialog .plugin-tag[data-tag="user"]{color:var(--accent);border-color:var(--accent)}
