@@ -1,0 +1,40 @@
+name = "vlm-tool"
+category = "extension"
+entry = "main:apply"
+description = "Adds the vision_ask tool: send local images to a vision model (the current model or one picked from mykey.py) and return its answer."
+description_zh = "新增 vision_ask 工具：把本地图片发给视觉模型（跟随当前模型或从 mykey.py 选择），返回识别/分析结果。"
+inject = ["ga.tools", "ga.agent"]
+
+[settings.model]
+type = "choice"
+default = ""
+options = [{ value = "", label = "Follow current model", label_zh = "跟随当前模型" }]
+options_from = "mykey-models"
+label = "Vision model"
+label_zh = "视觉模型"
+description = "Model used by vision_ask. Follow current model uses the chat's active model (each member of a failover group in turn)."
+description_zh = "vision_ask 使用的模型。跟随当前模型时使用对话当前模型（故障转移组会依次尝试成员）。"
+
+[settings.max_pixels]
+type = "integer"
+default = 1440000
+label = "Max pixels"
+label_zh = "最大像素"
+description = "Images larger than this are downscaled before upload."
+description_zh = "超过此像素数的图片上传前缩小。"
+
+[settings.max_tokens]
+type = "integer"
+default = 2048
+label = "Max output tokens"
+label_zh = "最大输出 token"
+description = "Output limit of each answer."
+description_zh = "每次回答的输出上限。"
+
+[settings.timeout]
+type = "integer"
+default = 120
+label = "Timeout (s)"
+label_zh = "超时（秒）"
+description = "Read timeout of each request."
+description_zh = "每次请求的读取超时。"

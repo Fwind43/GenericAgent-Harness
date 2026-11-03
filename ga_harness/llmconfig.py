@@ -188,3 +188,26 @@ def read_mykey_py(path: str | os.PathLike) -> dict:
         else:
             skipped.append(k)
     return data | ({"_skipped": skipped} if skipped else {})
+
+
+def model_entries() -> dict:
+    """Concrete (non-mixin) LLM entries of the loaded mykey.py, providers resolved.
+
+    Values are returned unexpanded; ``${ENV}`` references stay as written.
+    """
+    path = mykey_path()
+    if path is None or not path.is_file():
+        return {}
+    data = resolve_providers(read_mykey_py(path))
+    return {k: v for k, v in data.items()
+            if isinstance(v, dict) and is_llm_key(k) and "mixin" not in k
+            and ("oai" in k or "claude" in k) and v.get("apibase")}
+
+
+def model_choices() -> list:
+    """``[(key, label)]`` for pickers: label = display name and model id."""
+    out = []
+    for k, v in model_entries().items():
+        name, model = str(v.get("name") or k), str(v.get("model") or "")
+        out.append((k, f"{name} ({model})" if model and model != name else name))
+    return out

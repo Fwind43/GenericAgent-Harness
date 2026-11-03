@@ -105,3 +105,7 @@ name = "worldline"
 # queue messages sent while a task runs; edit/cancel/steer (non-interrupting injection via ga-steer)
 [[plugins]]
 name = "run-queue"
+
+# vision_ask tool: send local images to the current model or a mykey.py model
+[[plugins]]
+name = "vlm-tool"

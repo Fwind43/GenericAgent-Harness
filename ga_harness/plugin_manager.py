@@ -112,11 +112,29 @@ def protected(manifest):
     return manifest.name in PROTECTED or bool(set(manifest.provides) & {"agent", "frontend", "plugin.manager", "plugin.catalog"})
 
 
+def _dynamic_options(source):
+    """Extra choice options computed at read time (``options_from`` in a manifest)."""
+    if source == "mykey-models":
+        try:
+            from .llmconfig import model_choices
+            return [{"value": k, "label": label} for k, label in model_choices()]
+        except Exception:
+            return []
+    return []
+
+
 def choice_options(spec):
-    """Normalise ``options`` of a choice field to ``[{value, label, label_zh}]``; None if malformed."""
+    """Normalise ``options`` of a choice field to ``[{value, label, label_zh}]``; None if malformed.
+
+    ``options_from`` appends options computed on every read (e.g. ``"mykey-models"``:
+    the models currently configured in mykey.py), after the static ``options``.
+    """
     raw = spec.get("options")
     if not isinstance(raw, list) or not raw:
         return None
+    if spec.get("options_from"):
+        seen = {o if isinstance(o, str) else (o or {}).get("value") for o in raw}
+        raw = raw + [o for o in _dynamic_options(spec["options_from"]) if o["value"] not in seen]
     out = []
     for o in raw:
         o = {"value": o} if isinstance(o, str) else o
