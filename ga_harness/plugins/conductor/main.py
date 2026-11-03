@@ -9,7 +9,7 @@ finished task (``verified`` / ``needs_work`` with a mandatory basis) and resolve
 it. When a child finishes while the parent is idle, the parent is woken with a
 short summary so it can continue.
 
-Limits per parent session: 3 running, 12 unresolved, 48 in total. The conductor
+Limits per parent session: 5 running, 12 unresolved, 48 in total. The conductor
 may change its own running limit (1..RUNNING_CAP) with ``conductor_set_limit``;
 the value is kept per parent session in ``conductor.json``.
 
@@ -35,7 +35,7 @@ POLICY_MAX = 4000  # characters of model-selection policy text
 HERE = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
 
-MAX_RUNNING = 3
+MAX_RUNNING = 5
 MAX_OPEN = 12
 MAX_TOTAL = 48
 RUNNING_CAP = 8  # highest running limit a conductor may set for itself
