@@ -9,7 +9,9 @@ finished task (``verified`` / ``needs_work`` with a mandatory basis) and resolve
 it. When a child finishes while the parent is idle, the parent is woken with a
 short summary so it can continue.
 
-Limits per parent session: 3 running, 12 unresolved, 48 in total.
+Limits per parent session: 3 running, 12 unresolved, 48 in total. The conductor
+may change its own running limit (1..RUNNING_CAP) with ``conductor_set_limit``;
+the value is kept per parent session in ``conductor.json``.
 
 The worker side (tool registration and tool fencing) lives in the worker-only
 ``conductor-worker`` plugin; it talks to this plugin through the ``conductor``
@@ -32,6 +34,7 @@ log = logging.getLogger(__name__)
 MAX_RUNNING = 3
 MAX_OPEN = 12
 MAX_TOTAL = 48
+RUNNING_CAP = 8  # highest running limit a conductor may set for itself
 MAX_TEXT = 20_000
 RESULT_LIMIT = 4_000
 WAKE_RESULT_LIMIT = 1_500  # per task in the wake-up message; full text via collect/inspect
@@ -70,13 +73,14 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"enabled": {}, "tasks": {}}
+        self.data = {"enabled": {}, "tasks": {}, "limits": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
+                    self.data["limits"] = dict(loaded.get("limits") or {})
         except Exception as error:
             log.warning("conductor: could not load %s: %s", self.path, error)
         # A task that was running when the server stopped cannot be followed any more.
@@ -104,7 +108,7 @@ def apply(ctx, config):
     changed = threading.Condition(lock)
     scheduled, waking = set(), set()  # parents with a pending / in-flight wake-up
     store = Store(_store_path(sessions))
-    tasks, enabled = store.data["tasks"], store.data["enabled"]
+    tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
 
     # ---- helpers ---------------------------------------------------------
     def _sid(body, key="session_id"):
@@ -148,12 +152,20 @@ def apply(ctx, config):
                 out["error"] = task["error"]
         return out
 
+    def _max_running(parent):
+        value = (overrides.get(parent) or {}).get("running") if isinstance(parent, str) else None
+        return value if isinstance(value, int) and 1 <= value <= RUNNING_CAP else MAX_RUNNING
+
+    def _limits(parent):
+        return {"running": _max_running(parent), "open": MAX_OPEN, "total": MAX_TOTAL,
+                "running_cap": RUNNING_CAP}
+
     def _counts(parent):
         items = _children(parent)
         return {"running": sum(t["status"] == "running" for t in items),
                 "open": sum(not t["resolved"] for t in items),
                 "total": len(items),
-                "limits": {"running": MAX_RUNNING, "open": MAX_OPEN, "total": MAX_TOTAL},
+                "limits": _limits(parent),
                 "awaiting_review": [t["id"] for t in items
                                     if t["status"] in TERMINAL and not t["resolved"]
                                     and t.get("review") == "pending"]}
@@ -195,8 +207,8 @@ def apply(ctx, config):
                 raise RuntimeError(f"task limit reached ({MAX_TOTAL} per conductor session)")
             if counts["open"] >= MAX_OPEN:
                 raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
-            if counts["running"] >= MAX_RUNNING:
-                raise RuntimeError(f"{MAX_RUNNING} tasks are already running; end your turn and "
+            if counts["running"] >= _max_running(parent):
+                raise RuntimeError(f"{_max_running(parent)} tasks are already running (the running limit); end your turn and "
                                    "dispatch more after you are woken by a finished task")
             child = sessions.create(parent_id=parent, title=title)
             task = {"id": "t" + uuid.uuid4().hex[:8], "parent": parent, "child": child["id"],
@@ -267,8 +279,8 @@ def apply(ctx, config):
             if ok:
                 return {"delivered": "steered into the running task at its next turn boundary"}
             raise RuntimeError("the running task could not take the instruction; retry after it finishes")
-        if sum(t["status"] == "running" for t in _children(parent)) >= MAX_RUNNING:
-            raise RuntimeError(f"{MAX_RUNNING} tasks are already running; send this "
+        if sum(t["status"] == "running" for t in _children(parent)) >= _max_running(parent):
+            raise RuntimeError(f"{_max_running(parent)} tasks are already running; send this "
                                "instruction after you are woken by a finished task")
         _start(task, text)
         return {"delivered": "started a follow-up run in the task session", "task": _public(task)}
@@ -370,7 +382,30 @@ def apply(ctx, config):
         _publish()
         return {"enabled": on}
 
-    OPS = {"dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
+    def set_limit(body):
+        """Change this conductor session's own running (concurrency) limit. Lowering it
+        never stops running tasks; it only blocks new starts until fewer are running."""
+        parent = _sid(body)
+        value = body.get("running")
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= RUNNING_CAP:
+            raise ValueError(f"running must be an integer from 1 to {RUNNING_CAP}")
+        with lock:
+            previous = _max_running(parent)
+            if value == MAX_RUNNING:
+                overrides.pop(parent, None)
+            else:
+                overrides[parent] = {"running": value}
+            counts = _counts(parent)
+        _publish()
+        out = {"previous": previous, **counts}
+        if counts["running"] > value:
+            out["note"] = (f"{counts['running']} tasks are running, above the new limit; they keep "
+                           "running and no new task starts until fewer than the limit are running")
+        return out
+
+    OPS = {"set_limit": set_limit, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve}
 
     def _require_parent(body):
@@ -499,7 +534,7 @@ def apply(ctx, config):
                     "tasks": [_public(t) for t in sorted(tasks.values(), key=lambda t: t["created"])
                               if enabled.get(t["parent"]) or not t["resolved"]],
                     "children": {t["child"]: {"task_id": t["id"], "parent": t["parent"]} for t in tasks.values()},
-                    "limits": {"running": MAX_RUNNING, "open": MAX_OPEN, "total": MAX_TOTAL},
+                    "limits": _limits(current),
                     "current": current}
         except Exception:
             pass

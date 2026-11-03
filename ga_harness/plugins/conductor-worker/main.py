@@ -23,7 +23,7 @@ KEEP = ("ask_user", "update_working_checkpoint", "no_tool",
 RPC_TIMEOUT = 150.0
 
 # Limits are filled in from the host's ``role`` reply (fallbacks match the host).
-DEFAULT_LIMITS = {"running": 3, "open": 12, "total": 48}
+DEFAULT_LIMITS = {"running": 3, "open": 12, "total": 48, "running_cap": 8}
 
 PARENT_PROMPT = """
 ### Conductor mode
@@ -36,6 +36,10 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
 - Limits: at most @RUNNING@ tasks run at once, @OPEN@ may be unresolved, @TOTAL@ per
   session. If the running limit is reached, end your turn and dispatch the rest after
   you are woken; do not retry in a loop.
+- You may change your own running (concurrency) limit with `conductor_set_limit`
+  (1 to @RUNNING_CAP@): raise it when many small independent tasks are ready, lower it
+  when tasks compete for the same files, ports or rate-limited resources. Lowering
+  it does not stop running tasks. If the user asks for a concurrency level, set it.
 - After dispatching, do not wait, sleep or poll. End your turn with a short status
   for the user (what was dispatched, what happens next). When tasks finish you are
   woken automatically with a `[Conductor]` message that already contains a clipped
@@ -116,6 +120,14 @@ TOOLS = {
                      "be closed when they failed or were cancelled."},
          "instruction": {"type": "string", "description": "needs_work only: continue the task with this instruction."}},
         ("verdict", "basis")), "review"),
+    "conductor_set_limit": (_tool(
+        "conductor_set_limit",
+        "Change this conductor session's own running (concurrency) limit: how many child "
+        "tasks may run at once. Lowering it does not stop running tasks; it only delays "
+        "new starts. The reply shows the previous and current limits.",
+        {"running": {"type": "integer", "minimum": 1,
+                     "description": "New running limit (1 up to limits.running_cap, default cap 8)."}},
+        ("running",)), "set_limit"),
     "conductor_resolve": (_tool(
         "conductor_resolve", "Close reviewed task(s) (task_id or task_ids).",
         {**TASK_ID, **TASK_IDS}), "resolve"),
