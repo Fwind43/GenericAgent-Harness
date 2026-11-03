@@ -40,6 +40,14 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   (1 to @RUNNING_CAP@): raise it when many small independent tasks are ready, lower it
   when tasks compete for the same files, ports or rate-limited resources. Lowering
   it does not stop running tasks. If the user asks for a concurrency level, set it.
+- Model scheduling: tasks run on your own model and reasoning effort unless you
+  choose otherwise. `conductor_models` lists the configured models and your current
+  policy; `conductor_set_policy` sets the default model/effort for tasks dispatched
+  from now on ("inherit" clears a field). Override per task with `model`/`effort` on
+  `conductor_dispatch`, or on `conductor_instruct` for a follow-up run of a finished
+  task. Use stronger models or higher effort for hard or risky work and cheaper/faster
+  ones for simple, mechanical tasks. If the user names a model or effort, follow it.
+  Use only names returned by `conductor_models`.
 - After dispatching, do not wait, sleep or poll. End your turn with a short status
   for the user (what was dispatched, what happens next). When tasks finish you are
   woken automatically with a `[Conductor]` message that already contains a clipped
@@ -89,12 +97,17 @@ TASK_ID = {"task_id": {"type": "string", "description": "Task id returned by con
 TASK_IDS = {"task_ids": {"type": "array", "items": {"type": "string"},
                          "description": "Several task ids (instead of task_id)."}}
 
+MODEL = {"model": {"type": "string", "description": "Configured model name (see conductor_models). "
+                                               "Omit to use the policy default or your own model."},
+         "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"],
+                    "description": "Reasoning effort. Omit to use the policy default or your own effort."}}
+
 TOOLS = {
     "conductor_dispatch": (_tool(
         "conductor_dispatch",
         "Start a child task in its own session. The objective must be self-contained.",
         {"objective": {"type": "string", "description": "Complete task brief: context, scope, deliverable, verification."},
-         "title": {"type": "string", "description": "Short title (optional)."}},
+         "title": {"type": "string", "description": "Short title (optional)."}, **MODEL},
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
         "conductor_collect",
@@ -106,8 +119,9 @@ TOOLS = {
         TASK_ID, ("task_id",)), "inspect"),
     "conductor_instruct": (_tool(
         "conductor_instruct",
-        "Send an instruction to a task: steers it if running, otherwise continues it.",
-        {**TASK_ID, "instruction": {"type": "string"}}, ("task_id", "instruction")), "instruct"),
+        "Send an instruction to a task: steers it if running, otherwise continues it. "
+        "model/effort only apply to a follow-up run of a task that is not running.",
+        {**TASK_ID, "instruction": {"type": "string"}, **MODEL}, ("task_id", "instruction")), "instruct"),
     "conductor_cancel": (_tool("conductor_cancel", "Cancel a running task.", TASK_ID, ("task_id",)), "cancel"),
     "conductor_review": (_tool(
         "conductor_review",
@@ -128,6 +142,18 @@ TOOLS = {
         {"running": {"type": "integer", "minimum": 1,
                      "description": "New running limit (1 up to limits.running_cap, default cap 8)."}},
         ("running",)), "set_limit"),
+    "conductor_models": (_tool(
+        "conductor_models",
+        "List the configured models (use the name field), the reasoning efforts, your own "
+        "model/effort, your scheduling policy and the effective default for new tasks."), "models"),
+    "conductor_set_policy": (_tool(
+        "conductor_set_policy",
+        "Set the default model and/or reasoning effort for tasks dispatched from now on. "
+        "Pass \"inherit\" for a field to follow your own model/effort again. Running tasks "
+        "are not changed.",
+        {"model": {"type": "string", "description": "Configured model name, or \"inherit\"."},
+         "effort": {"type": "string", "description": "low, medium, high, xhigh, max, or \"inherit\"."}}),
+        "set_policy"),
     "conductor_resolve": (_tool(
         "conductor_resolve", "Close reviewed task(s) (task_id or task_ids).",
         {**TASK_ID, **TASK_IDS}), "resolve"),

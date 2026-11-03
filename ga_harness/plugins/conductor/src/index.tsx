@@ -4,7 +4,7 @@ import { useHost, T, defineReact, type PluginAPI } from '@gah/sdk';
 type Task = {
   id: string; title: string; status: string; review?: string | null; basis?: string | null;
   resolved?: boolean; child: string; run_id?: string | null; objective: string;
-  result?: string; error?: string; runs?: number;
+  result?: string; error?: string; runs?: number; model?: string | null; effort?: string | null;
 };
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
@@ -51,6 +51,11 @@ function TaskRow({ task, busy, act }: { task: Task; busy: boolean; act: (path: s
         <span className="gah-cd-title" title={task.objective}>{task.title || task.id}</span>
         <span className="gah-cd-tag">{label(STATUS, task.status)}</span>
         {task.review ? <span className={`gah-cd-tag review ${task.review}`}>{label(REVIEW, task.review)}</span> : null}
+        {task.model || task.effort ? (
+          <span className="gah-cd-tag model" title={T('\u5b50\u4efb\u52a1\u6a21\u578b / \u63a8\u7406\u5f3a\u5ea6', 'Task model / reasoning effort')}>
+            {[task.model, task.effort].filter(Boolean).join(' \u00b7 ')}
+          </span>
+        ) : null}
         {task.resolved ? <span className="gah-cd-tag">{T('\u5df2\u7ed3\u6848', 'Resolved')}</span> : null}
       </button>
       {open ? (

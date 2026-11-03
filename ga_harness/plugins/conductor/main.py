@@ -28,6 +28,8 @@ import time
 import uuid
 from pathlib import Path
 
+from ga_harness.sessions import EFFORTS
+
 HERE = Path(__file__).resolve().parent
 log = logging.getLogger(__name__)
 
@@ -73,7 +75,7 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"enabled": {}, "tasks": {}, "limits": {}}
+        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "models": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -81,6 +83,7 @@ class Store:
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
                     self.data["limits"] = dict(loaded.get("limits") or {})
+                    self.data["models"] = dict(loaded.get("models") or {})
         except Exception as error:
             log.warning("conductor: could not load %s: %s", self.path, error)
         # A task that was running when the server stopped cannot be followed any more.
@@ -109,6 +112,7 @@ def apply(ctx, config):
     scheduled, waking = set(), set()  # parents with a pending / in-flight wake-up
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
+    policies = store.data["models"]  # parent -> {"model": name, "effort": level}; absent = inherit
 
     # ---- helpers ---------------------------------------------------------
     def _sid(body, key="session_id"):
@@ -144,7 +148,8 @@ def apply(ctx, config):
 
     def _public(task, full=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
-                                        "child", "run_id", "created", "finished", "runs")}
+                                        "child", "run_id", "created", "finished", "runs",
+                                        "model", "effort")}
         out["objective"] = task["objective"] if full else _clip(task["objective"], 300)
         if task.get("status") in TERMINAL:
             out["result"] = task.get("result", "") if full else _clip(task.get("result", ""))
@@ -169,6 +174,86 @@ def apply(ctx, config):
                 "awaiting_review": [t["id"] for t in items
                                     if t["status"] in TERMINAL and not t["resolved"]
                                     and t.get("review") == "pending"]}
+
+    # ---- model scheduling ----------------------------------------------
+    def _catalog():
+        try:
+            service = ctx.get("models")
+        except Exception:
+            service = None
+        if service is None:
+            return None
+        try:
+            return [row for row in (service.catalog().get("items") or []) if row.get("name")]
+        except Exception as error:
+            log.warning("conductor: model catalog unavailable: %s", error)
+            return None
+
+    def _model_name(value):
+        """Resolve a requested model to its configured name (exact name, then
+        case-insensitive name, then a unique model id)."""
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("model must be a configured model name")
+        value = value.strip()
+        rows = _catalog()
+        if rows is None:
+            raise RuntimeError("model selection is unavailable (no model catalog)")
+        names = [row["name"] for row in rows]
+        if value in names:
+            return value
+        folded = [n for n in names if n.lower() == value.lower()]
+        if len(folded) == 1:
+            return folded[0]
+        by_id = [row["name"] for row in rows if str(row.get("model") or "").lower() == value.lower()]
+        if len(set(by_id)) == 1:
+            return by_id[0]
+        raise ValueError(f"unknown model {value!r}; call conductor_models for the configured names")
+
+    def _effort(value):
+        if not isinstance(value, str) or value.strip().lower() not in EFFORTS:
+            raise ValueError(f"effort must be one of {', '.join(EFFORTS)}")
+        return value.strip().lower()
+
+    def _parent_selection(parent):
+        """The conductor session's own model/effort (what tasks inherit)."""
+        state = {}
+        try:
+            state = dict((sessions.get(parent, light=False) or {}).get("state") or {})
+        except Exception:
+            pass
+        model = state.get("model")
+        if not isinstance(model, str) or not model:
+            backend = getattr(getattr(getattr(sessions, "agent", None), "llmclient", None), "backend", None)
+            model = getattr(backend, "name", None)
+        effort = state.get("effort") if "effort" in state else getattr(getattr(sessions, "agent", None),
+                                                                        "gah_reasoning_effort", None)
+        return (model if isinstance(model, str) and model else None,
+                effort if effort in EFFORTS else None)
+
+    def _requested(body):
+        """Validated per-call model/effort overrides (None = not given)."""
+        model = body.get("model")
+        effort = body.get("effort")
+        model = None if model in (None, "") else _model_name(model)
+        effort = None if effort in (None, "") else _effort(effort)
+        return model, effort
+
+    def _selection(parent, model=None, effort=None):
+        """Per-call choice > this conductor's policy > the conductor's own selection."""
+        policy = policies.get(parent) or {}
+        own_model, own_effort = _parent_selection(parent)
+        return (model or policy.get("model") or own_model,
+                effort or policy.get("effort") or own_effort)
+
+    def _apply_selection(task, model, effort):
+        values = {}
+        if model:
+            values["model"] = model
+        if effort:
+            values["effort"] = effort
+        if values:
+            sessions.remember_for(task["child"], **values)
+            task.update(values)
 
     def _publish():
         with lock:
@@ -200,6 +285,7 @@ def apply(ctx, config):
         parent = _sid(body)
         objective = _text(body, "objective")
         title = _text(body, "title", required=False, limit=100) or objective.splitlines()[0][:60]
+        model, effort = _requested(body)
         failed = None
         with lock:
             counts = _counts(parent)
@@ -215,6 +301,7 @@ def apply(ctx, config):
                     "title": title, "objective": objective, "created": time.time(), "runs": 0}
             tasks[task["id"]] = task
             try:
+                _apply_selection(task, *_selection(parent, model, effort))
                 _start(task, objective)
             except Exception as error:
                 failed = error
@@ -261,17 +348,21 @@ def apply(ctx, config):
     def instruct(body):
         parent = _sid(body)
         text = _text(body, "instruction")
+        model, effort = _requested(body)
         with lock:
             task = _owned(parent, body.get("task_id"))
-            out = _instruct(parent, task, text)
+            out = _instruct(parent, task, text, model, effort)
         _publish()
         return out
 
-    def _instruct(parent, task, text):
+    def _instruct(parent, task, text, model=None, effort=None):
         # Caller holds the lock and publishes.
         if task["resolved"]:
             raise RuntimeError("task is resolved; dispatch a new task instead")
         if task["status"] == "running":
+            if model or effort:
+                raise RuntimeError("the task is running; its model can only change for a follow-up run "
+                                   "after it finishes (or cancel it first)")
             try:
                 ok = runs.push(task["run_id"], "steer", {"id": "c" + uuid.uuid4().hex[:10], "text": text})
             except Exception:
@@ -282,6 +373,7 @@ def apply(ctx, config):
         if sum(t["status"] == "running" for t in _children(parent)) >= _max_running(parent):
             raise RuntimeError(f"{_max_running(parent)} tasks are already running; send this "
                                "instruction after you are woken by a finished task")
+        _apply_selection(task, model, effort)
         _start(task, text)
         return {"delivered": "started a follow-up run in the task session", "task": _public(task)}
 
@@ -405,7 +497,54 @@ def apply(ctx, config):
                            "running and no new task starts until fewer than the limit are running")
         return out
 
-    OPS = {"set_limit": set_limit, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
+    def models_op(body):
+        """Configured models plus this conductor's scheduling policy."""
+        parent = _sid(body)
+        rows = _catalog()
+        own_model, own_effort = _parent_selection(parent)
+        with lock:
+            policy = dict(policies.get(parent) or {})
+        model, effort = _selection(parent)
+        return {"models": [{"name": r["name"], "model": r.get("model"), "provider": r.get("provider")}
+                           for r in rows] if rows is not None else None,
+                "efforts": list(EFFORTS),
+                "conductor": {"model": own_model, "effort": own_effort},
+                "policy": {"model": policy.get("model"), "effort": policy.get("effort")},
+                "effective_default": {"model": model, "effort": effort}}
+
+    def set_policy(body):
+        """Set this conductor's default model/effort for new tasks. "inherit" (or
+        null) for a field clears it so tasks follow the conductor's own choice."""
+        parent = _sid(body)
+        if "model" not in body and "effort" not in body:
+            raise ValueError("give model and/or effort")
+        updates = {}
+        for key, check in (("model", _model_name), ("effort", _effort)):
+            if key not in body:
+                continue
+            value = body.get(key)
+            if value is None or (isinstance(value, str) and value.strip().lower() in ("", "inherit", "default")):
+                updates[key] = None
+            else:
+                updates[key] = check(value)
+        with lock:
+            policy = dict(policies.get(parent) or {})
+            for key, value in updates.items():
+                if value is None:
+                    policy.pop(key, None)
+                else:
+                    policy[key] = value
+            if policy:
+                policies[parent] = policy
+            else:
+                policies.pop(parent, None)
+        _publish()
+        out = models_op({"session_id": parent})
+        out.pop("models", None)
+        out["note"] = "applies to tasks dispatched from now on; running tasks keep their model"
+        return out
+
+    OPS = {"set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve}
 
     def _require_parent(body):

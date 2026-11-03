@@ -39,6 +39,7 @@
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-title", title: task.objective, children: task.title || task.id }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(STATUS, task.status) }),
         task.review ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-tag review ${task.review}`, children: label(REVIEW, task.review) }) : null,
+        task.model || task.effort ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag model", title: sdk.T("子任务模型 / 推理强度", "Task model / reasoning effort"), children: [task.model, task.effort].filter(Boolean).join(" · ") }) : null,
         task.resolved ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: sdk.T("已结案", "Resolved") }) : null
       ] }),
       open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
