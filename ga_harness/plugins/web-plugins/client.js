@@ -48,9 +48,16 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       !plugin.enabled && plugin.state === "active" && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": "pending", children: sdk.T("下次停用", "Off next start") })
     ] });
   }
-  function PluginDetails({ plugin, busy, running, error, onChange, onToggle, onInstall }) {
+  const MIRRORS = [
+    ["https://pypi.tuna.tsinghua.edu.cn/simple", "清华 Tsinghua"],
+    ["https://mirrors.aliyun.com/pypi/simple/", "阿里云 Aliyun"],
+    ["https://mirrors.cloud.tencent.com/pypi/simple", "腾讯云 Tencent"],
+    ["https://pypi.mirrors.ustc.edu.cn/simple", "中科大 USTC"]
+  ];
+  function PluginDetails({ plugin, busy, running, error, onChange, onToggle, onInstall, job, installing = false, packageIndex = "" }) {
     var _a, _b, _c, _d;
     const [enabled, setEnabled] = react.useState(plugin.enabled);
+    const [mirror, setMirror] = react.useState(packageIndex);
     const [values, setValues] = react.useState({ ...plugin.config });
     const locked = busy || running || plugin.protected;
     const update = (key, value) => setValues((previous) => ({ ...previous, [key]: value }));
@@ -91,8 +98,27 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       !!((_c = plugin.workers) == null ? void 0 : _c.length) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-workers", children: sdk.T("依赖 ", "Depends on ") + plugin.workers.join(sdk.T("、", ", ")) + sdk.T("（任务进程内自动加载）", " (loaded automatically inside task workers)") }),
       warning && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-warning", children: warning }),
       !!((_d = plugin.missing_packages) == null ? void 0 : _d.length) && onInstall && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-actions plugin-install", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-install-button", disabled: busy || running, onClick: onInstall, children: sdk.T("安装依赖（pip）", "Install packages (pip)") }),
-        /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("安装到当前 Python 环境，下次启动生效", "Installs into the current Python environment; applies on next start") })
+        /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-mirror", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("镜像源", "Package index") }),
+          /* @__PURE__ */ jsxRuntime.jsx("input", { type: "url", list: "gah-pip-mirrors", value: mirror, placeholder: sdk.T("默认（PyPI / pip 配置）", "Default (PyPI / pip config)"), disabled: busy || installing, onChange: (event) => setMirror(event.target.value.trim()) }),
+          /* @__PURE__ */ jsxRuntime.jsx("datalist", { id: "gah-pip-mirrors", children: MIRRORS.map(([url, label]) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: url, children: label }, url)) })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-install-button", disabled: busy || running || installing, onClick: () => onInstall(mirror), children: installing && job ? sdk.T("安装中...", "Installing...") : sdk.T("安装依赖（pip）", "Install packages (pip)") }),
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: installing && !job ? sdk.T("另一个插件正在安装依赖", "Another plugin is installing packages") : sdk.T("后台安装，可关闭面板；完成后重新启用或下次启动生效", "Runs in the background; you can close this panel. Re-enable or restart to apply") })
+      ] }),
+      job && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-install-log", "data-state": job.state, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-install-status", children: [
+          job.state === "running" ? sdk.T("正在安装：", "Installing: ") : job.ok ? sdk.T("已安装：", "Installed: ") : sdk.T("安装失败：", "Failed: "),
+          job.packages.join(" "),
+          job.index_url && /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+            " (",
+            job.index_url,
+            ")"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("pre", { ref: (node) => {
+          if (node) node.scrollTop = node.scrollHeight;
+        }, children: job.log || "..." })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsxs("form", { onSubmit: (event) => {
         event.preventDefault();
@@ -183,15 +209,37 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         api.notice(live ? sdk.T("插件配置已保存并已即时生效", "Plugin settings saved and applied") : sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));
       }, setError);
     };
-    const install = () => {
+    const job = config == null ? void 0 : config.install_job, installing = (job == null ? void 0 : job.state) === "running";
+    const reported = react.useRef(null);
+    react.useEffect(() => {
+      if (!installing) return;
+      let alive = true;
+      const timer = window.setInterval(async () => {
+        try {
+          const next = await api.host.get("/api/plugins");
+          if (!alive) return;
+          setConfig(next);
+          const done = next.install_job;
+          if (done && done.state !== "running" && reported.current !== done.started) {
+            reported.current = done.started;
+            if (done.ok) api.notice(done.name + sdk.T("：依赖已安装", ": packages installed"));
+            else setError(done.name + sdk.T("：依赖安装失败，见下方日志", ": package installation failed; see the log below"));
+          }
+        } catch {
+        }
+      }, 1e3);
+      return () => {
+        alive = false;
+        window.clearInterval(timer);
+      };
+    }, [installing]);
+    const install = (indexUrl) => {
       var _a;
-      if (!((_a = selected == null ? void 0 : selected.missing_packages) == null ? void 0 : _a.length) || busy || lockedByRun(selected)) return;
+      if (!((_a = selected == null ? void 0 : selected.missing_packages) == null ? void 0 : _a.length) || busy || installing || lockedByRun(selected)) return;
       setError("");
       void run(async () => {
-        const result = await api.host.post("/api/plugins", { action: "install", name: selected.name });
+        const result = await api.host.post("/api/plugins", { action: "install", name: selected.name, index_url: indexUrl });
         setConfig(result.catalog);
-        if (result.ok) api.notice(sdk.T("依赖已安装；下次启动时生效", "Packages installed; they apply on next start"));
-        else setError(sdk.T("安装失败：", "Installation failed: ") + (result.output || "").slice(-800));
       }, setError);
     };
     return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("插件", "Plugins"), icon: "puzzle", order: 30, className: "gah-plugin-dialog", onOpen: load, children: [
@@ -252,7 +300,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         ] }),
         selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
-          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: lockedByRun(selected), error, onChange: change, onToggle: (next) => toggle(selected, next), onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
+          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: lockedByRun(selected), error, onChange: change, onToggle: (next) => toggle(selected, next), job: (job == null ? void 0 : job.name) === selected.name ? job : null, installing, packageIndex: (config == null ? void 0 : config.package_index) || "", onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
         ] })
       ] })
     ] }) });
