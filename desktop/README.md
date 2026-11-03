@@ -116,8 +116,14 @@ Two kinds, both checked from the tray menu (Updates > Check for updates) and aut
   falling back to the legacy `min_shell`) is newer than the installed app, the
   code package is not applied; Windows/Linux (AppImage) download the new installer through
   electron-updater (`latest.yml` / `latest-linux.yml` + blockmap, generic feed on
-  `releases/latest/download`) and install on restart. macOS builds are only ad-hoc signed, so they open
-  the release page instead.
+  `releases/latest/download`) and install on restart. macOS builds are only ad-hoc signed, so they
+  download `GenericAgent-Harness-<version>-mac-<arch>.zip` and swap the `.app` bundle after quitting.
+  The Linux tar.gz (unpacked folder writable by the user) downloads
+  `GenericAgent-Harness-<version>-linux-<arch>.tar.gz` into `<folder>/.gah-shell-update`; on restart a
+  shell script waits for the app to exit, replaces each top-level entry the archive ships (`data/` and
+  any other files of yours stay; a setuid-root `chrome-sandbox` is kept), restores the old files if a
+  move fails, and starts the app again. It logs to `<folder>/.gah-shell-update.log`. A read-only
+  folder (e.g. a system install) still opens the release page.
 - **Shell versions** live in `desktop/shell.json`, per platform (`win32`, `darwin`, `linux`):
   - `required`: raise only when the new code cannot run on older shells (backend launch contract,
     bundled Python or its dependencies, preload API the code uses), and only for the affected

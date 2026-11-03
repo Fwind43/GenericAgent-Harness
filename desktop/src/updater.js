@@ -12,7 +12,8 @@
 // we download the small app bundle into <userData>/app/<version> and restart; backend.js
 // prefers it over the code the installer shipped (and falls back if it fails to start).
 // Otherwise the shell itself needs updating: Windows/Linux(AppImage) use electron-updater,
-// unsigned macOS builds just open the release page.
+// macOS (unsigned) and the Linux tar.gz download their archive and swap the program files
+// after the app exits.
 //
 // Downloads go to GitHub "releases/latest/download/<file>", optionally through a mirror set in
 // desktop.json: {"update": {"mirror": "https://ghfast.top/", "auto_check": true}}. A mirror is a
@@ -102,7 +103,8 @@ const LOG_MAX = 200;
 const EMIT_EVERY = 120;   // ms between progress pushes to the renderer
 
 // phase: idle | checking | latest | available | downloading | verifying | installing | ready | error | source
-// kind:  code (app bundle) | shell (installer via electron-updater) | manual (open the release page)
+// kind:  code (app bundle) | shell (new desktop app: electron-updater, or archive swap on macOS /
+//        Linux tar.gz) | manual (open the release page)
 class Updater {
   // opts: { getBackend: () => Backend, getWindow: () => BrowserWindow|null,
   //         relaunch: () => void (restart the whole app), prepareQuit: async () => void,
@@ -260,7 +262,7 @@ class Updater {
     }
     const { required, recommended } = shellNeeds(info);
     const shellOk = compareVersions(required, app.getVersion()) <= 0;
-    const kind = shellOk ? 'code' : (process.platform === 'darwin' || this.loadShellUpdater() ? 'shell' : 'manual');
+    const kind = shellOk ? 'code' : (process.platform === 'darwin' || this.linuxTarball() || this.loadShellUpdater() ? 'shell' : 'manual');
     // Optional: the code update still applies, the newer shell only adds fixes.
     const shellHint = shellOk && compareVersions(recommended, app.getVersion()) > 0 ? recommended : null;
     this.pending = { info, kind, required, shellHint };
@@ -327,6 +329,7 @@ class Updater {
     try {
       if (p.kind === 'code') await this.installCode(p.info);
       else if (process.platform === 'darwin') await this.downloadMacShell(p.info);
+      else if (this.linuxTarball()) await this.downloadLinuxShell(p.info);
       else await this.downloadShell(p.info);
     } finally {
       this.op = null;
@@ -544,6 +547,90 @@ class Updater {
       restart: async () => {
         await this.opts.prepareQuit();
         spawn('/bin/sh', [script, String(process.pid), bundle, fresh, work], { detached: true, stdio: 'ignore' }).unref();
+        app.exit(0);
+      },
+    };
+    this.set({ phase: 'ready', version, kind: 'shell' }, `App ${version} downloaded; restart to install it`);
+  }
+
+  // ---- Linux tar.gz update (electron-updater only handles the AppImage) --------------------
+
+  // The unpacked tar.gz folder when this app runs from one and can replace its own files,
+  // else null (AppImage, from source, or a read-only location such as a system install).
+  linuxTarball() {
+    if (process.platform !== 'linux' || process.env.APPIMAGE || !app.isPackaged) return null;
+    const dir = path.dirname(process.execPath);
+    if (!fs.existsSync(path.join(dir, 'resources'))) return null;
+    try { fs.accessSync(dir, fs.constants.W_OK); } catch { return null; }
+    return dir;
+  }
+
+  async downloadLinuxShell(info) {
+    const dir = this.linuxTarball();
+    if (!dir) throw new Error('not running from a writable tar.gz folder');
+    const exe = path.basename(process.execPath);
+    const version = info.version;
+    const file = `GenericAgent-Harness-${version}-linux-${process.arch}.tar.gz`;
+    // Inside the program folder, so the swap is a rename on the same filesystem.
+    const work = path.join(dir, '.gah-shell-update');
+    fs.rmSync(work, { recursive: true, force: true });
+    fs.mkdirSync(work, { recursive: true });
+    const buf = await this.download(this.url(file), 0);
+    this.set({ phase: 'installing' }, `Downloaded ${mb(buf.length)}; extracting ${file}`);
+    const archive = path.join(work, file);
+    const out = path.join(work, 'new');
+    fs.mkdirSync(out);
+    fs.writeFileSync(archive, buf);
+    await run('tar', ['-xzf', archive, '-C', out]);
+    fs.rmSync(archive, { force: true });
+    // electron-builder puts the files in one top-level folder; accept a flat archive too.
+    const hasApp = (d) => fs.existsSync(path.join(d, exe)) && fs.existsSync(path.join(d, 'resources'));
+    let fresh = out;
+    if (!hasApp(fresh)) {
+      const subs = fs.readdirSync(out, { withFileTypes: true }).filter((e) => e.isDirectory());
+      fresh = subs.length === 1 ? path.join(out, subs[0].name) : null;
+      if (!fresh || !hasApp(fresh)) throw new Error(`${file} contains no ${exe}`);
+    }
+    // After this process exits, replace each top-level entry the archive ships (data/ and
+    // anything else the user added stay as they are), roll back on failure, start the app.
+    // A setuid-root chrome-sandbox (set up by hand with sudo) is kept: the new one could not
+    // get that bit back without root.
+    const script = path.join(work, 'swap.sh');
+    fs.writeFileSync(script, [
+      '#!/bin/sh',
+      'pid="$1"; dir="$2"; new="$3"; work="$4"; exe="$5"',
+      'exec >>"$dir/.gah-shell-update.log" 2>&1',
+      'echo "$(date) update from $new"',
+      'while kill -0 "$pid" 2>/dev/null; do sleep 0.3; done',
+      'old="$work/old"; rm -rf "$old"; mkdir -p "$old" || exit 1',
+      'moved=""; ok=1',
+      'for src in "$new"/* "$new"/.[!.]*; do',
+      '  [ -e "$src" ] || [ -L "$src" ] || continue',
+      '  name=$(basename "$src")',
+      '  case "$name" in data|.gah-shell-update|.gah-shell-update.log) continue;; esac',
+      '  if [ "$name" = chrome-sandbox ] && [ -u "$dir/chrome-sandbox" ]; then echo "keeping setuid chrome-sandbox"; continue; fi',
+      '  if [ -e "$dir/$name" ] || [ -L "$dir/$name" ]; then mv "$dir/$name" "$old/$name" || { ok=0; break; }; fi',
+      '  moved="$moved $name"',
+      '  mv "$src" "$dir/$name" || { ok=0; break; }',
+      'done',
+      'if [ "$ok" = 1 ]; then',
+      '  echo "replaced:$moved"',
+      'else',
+      '  echo "update failed, restoring the previous files"',
+      '  for name in $moved; do',
+      '    rm -rf "$dir/$name"',
+      '    if [ -e "$old/$name" ] || [ -L "$old/$name" ]; then mv "$old/$name" "$dir/$name"; fi',
+      '  done',
+      'fi',
+      'cd "$dir" && rm -rf "$work"',
+      'nohup "$dir/$exe" >/dev/null 2>&1 &',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    this.ready = {
+      version, kind: 'shell',
+      restart: async () => {
+        await this.opts.prepareQuit();
+        spawn('/bin/sh', [script, String(process.pid), dir, fresh, work, exe], { detached: true, stdio: 'ignore' }).unref();
         app.exit(0);
       },
     };
