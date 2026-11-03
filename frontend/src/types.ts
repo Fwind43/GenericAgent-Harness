@@ -40,7 +40,12 @@ export interface RuntimeCatalog { current: string; items: RuntimeModel[] }
 export interface Effort { current: string; options: string[] }
 export interface AgentPreset { id: string; name: string; name_zh?: string; description?: string; description_zh?: string; builtin?: boolean }
 export interface PresetCatalog { current: string | null; missing?: string | null; items: AgentPreset[]; errors?: string[] }
-export interface WebManifest { name: string; rev: number; script?: string; style?: string; head?: string; order?: number }
+// A desktop window a web plugin declares (register(desktop=[...])); only the desktop shell opens it.
+export interface DesktopWindow {
+  id: string; page: string; url: string; kind: 'overlay' | 'window'; anchor?: string; title?: string;
+  width?: number; height?: number; focusable?: boolean; tray?: string; data?: Record<string, unknown>;
+}
+export interface WebManifest { name: string; rev: number; script?: string; style?: string; head?: string; order?: number; desktop?: DesktopWindow[] }
 export interface HostState {
   running: boolean; messages: Message[]; session_id?: string; sessions?: Session[];
   web_plugins?: WebManifest[]; scope?: Scope; plugins_enabled?: boolean;

@@ -152,6 +152,53 @@ def _peek_pipe_until_closed(stream, interval=0.5):
         time.sleep(interval)
 
 
+DESKTOP_KINDS = ("overlay", "window")
+DESKTOP_ANCHORS = ("top", "top-left", "top-right", "bottom", "bottom-left", "bottom-right", "center")
+
+
+def _desktop_windows(name, desktop, files):
+    """Validate ``register(desktop=[...])``: windows the desktop shell opens for a web plugin.
+
+    Each entry is a dict with ``id`` and ``page`` (an ``.html`` name from ``files``), plus optional
+    ``kind`` ("overlay": frameless transparent always-on-top pill sized by the page; "window": a
+    normal window opened on demand), ``title``, ``width``/``height``, ``anchor`` (overlay start
+    position), ``focusable``, ``tray`` (menu label that opens it) and ``data`` (small JSON value
+    handed to the page). Browsers ignore all of it; only the desktop shell reads it.
+    """
+    out, seen = [], set()
+    for raw in desktop or ():
+        if not isinstance(raw, dict):
+            raise ValueError(f"{name}: desktop window must be a dict")
+        unknown = set(raw) - {"id", "page", "kind", "title", "width", "height", "anchor", "focusable", "tray", "data"}
+        if unknown:
+            raise ValueError(f"{name}: unknown desktop window keys {sorted(unknown)}")
+        wid, page = str(raw.get("id", "")), str(raw.get("page", ""))
+        if not re.match(r"^[a-z0-9][a-z0-9-]{0,31}$", wid) or wid in seen:
+            raise ValueError(f"{name}: invalid desktop window id {wid!r}")
+        if page not in files or not page.endswith(".html"):
+            raise ValueError(f"{name}: desktop page {page!r} must be an .html entry of files")
+        kind = raw.get("kind", "overlay")
+        anchor = raw.get("anchor", "top")
+        if kind not in DESKTOP_KINDS or anchor not in DESKTOP_ANCHORS:
+            raise ValueError(f"{name}: invalid desktop window kind/anchor")
+        default = (240, 48) if kind == "overlay" else (480, 640)
+        item = {"id": wid, "page": page, "kind": kind, "anchor": anchor,
+                "title": str(raw.get("title") or name)[:80],
+                "width": max(40, min(1600, int(raw.get("width") or default[0]))),
+                "height": max(24, min(1200, int(raw.get("height") or default[1]))),
+                "focusable": bool(raw.get("focusable", kind == "window"))}
+        if raw.get("tray"):
+            item["tray"] = str(raw["tray"])[:40]
+        if raw.get("data") is not None:
+            data = json.loads(json.dumps(raw["data"]))
+            if len(json.dumps(data)) > 8192:
+                raise ValueError(f"{name}: desktop window data is too large")
+            item["data"] = data
+        seen.add(wid)
+        out.append(item)
+    return out
+
+
 class WebHost:
     """Registry of browser-side plugins (the ``web.host`` capability)."""
 
@@ -161,7 +208,7 @@ class WebHost:
         self.items = {}
         self.seq = 0
 
-    def register(self, name, *, script=None, style=None, head=None, routes=None, files=None, order=100):
+    def register(self, name, *, script=None, style=None, head=None, routes=None, files=None, order=100, desktop=None):
         if not isinstance(name, str) or not NAME_RE.match(name):
             raise ValueError(f"invalid web plugin name: {name!r}")
         assets = {}
@@ -184,11 +231,13 @@ class WebHost:
             if method not in ("GET", "POST") or not callable(fn):
                 raise ValueError(f"{name}: invalid route {key!r}")
             table[(method, str(sub).strip("/"))] = fn
+        windows = _desktop_windows(name, desktop, extra)
         with self.lock:
             if name in self.items:
                 raise ValueError(f"web plugin already registered: {name}")
             self.seq += 1
-            item = {"name": name, "assets": assets, "files": extra, "routes": table, "order": int(order), "rev": self.seq}
+            item = {"name": name, "assets": assets, "files": extra, "routes": table, "order": int(order),
+                    "rev": self.seq, "desktop": windows}
             self.items[name] = item
         self.frontend.web_plugins_changed()
 
@@ -207,9 +256,15 @@ class WebHost:
     def manifest(self):
         with self.lock:
             items = sorted(self.items.values(), key=lambda i: (i["order"], i["name"]))
-            return [{"name": i["name"], "rev": i["rev"],
+            out = []
+            for i in items:
+                m = {"name": i["name"], "rev": i["rev"],
                      **{k: f"/web/{i['name']}/{ASSET_FILES[k]}?v={i['rev']}" for k in i["assets"]}}
-                    for i in items]
+                if i["desktop"]:
+                    m["desktop"] = [{**{k: v for k, v in w.items() if k != "page"},
+                                     "url": f"/web/{i['name']}/{w['page']}?v={i['rev']}"} for w in i["desktop"]]
+                out.append(m)
+            return out
 
     def asset(self, name, filename):
         with self.lock:

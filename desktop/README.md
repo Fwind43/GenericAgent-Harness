@@ -81,6 +81,27 @@ Quit: stdin is closed first (graceful stop), then the process tree is killed aft
 Plugins must feature-detect it and keep a browser fallback. Native work beyond this belongs in the
 plugin's Python side, reached over HTTP.
 
+### Plugin windows
+
+A web plugin can get its own desktop window without any shell change by declaring it in
+`web.host.register(..., desktop=[...])`. Each entry: `id` (`[a-z0-9-]`), `page` (an `.html` entry of
+`files`), optional `kind` (`"overlay"` default, or `"window"`), `title`, `width`/`height`, `anchor`
+(`top`, `top-left`, `top-right`, `bottom`, `bottom-left`, `bottom-right`, `center`; overlay start
+position), `focusable`, `tray` (label of a tray item that opens it) and `data` (JSON <= 8 KiB handed to
+the page, e.g. plugin settings). The declarations reach the shell through `/api/state`
+(`web_plugins[].desktop`), so enabling, disabling or reconfiguring the plugin opens, reloads or closes
+its windows live. Browsers ignore them.
+
+- `overlay`: frameless, transparent, always on top, not focusable by default; hidden until the page
+  calls `gahDesktop.plugin.layout({visible, width, height})`. Dragged positions are remembered in
+  `<userData>/plugin-windows.json`. Windows and macOS only.
+- `window`: an ordinary window opened from its tray item or `gahDesktop.openPluginWindow("<plugin>/<id>")`.
+
+Pages are served from `/web/<plugin>/` and get the same preload. Bridge for them:
+`gahDesktop.plugin.layout(box)`, `.drag(phase, screenX, screenY)` (`start`/`move`/`end`),
+`.openMain()`, `.notify({title, body, silent})`, `.flashFrame(on)` and
+`.onState(fn)` with `{mainFocused, plugin, window, kind, data}`. `web-island` is the reference user.
+
 ## Packaging
 
 ```

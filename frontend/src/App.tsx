@@ -4,6 +4,7 @@ import { MAX_FILES, PendingStrip, pendingOf, upload, type Pending } from './comp
 import { save, saved, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
+import type { WebManifest } from './types';
 import { Settings } from './components/Settings';
 import { GeneralSettings } from './components/GeneralSettings';
 import { UpdateSettings } from './components/UpdateSettings';
@@ -18,6 +19,8 @@ import { ViewTabs } from './components/ViewTabs';
 import { CHAT_VIEW, showsComposer, useViews, views } from './views';
 import { pages, usePages } from './pages';
 import { PageNav } from './plugin-kit';
+// Desktop shell bridge (preload); absent in a normal browser.
+const desktopShell = (window as unknown as { gahDesktop?: { setPluginWindows?: (list: Pick<WebManifest, 'name' | 'desktop'>[]) => void } }).gahDesktop;
 
 // React never reconciles the children owned by a plugin.
 const Slot = memo(function Slot({ name }: { name: SlotName }) {
@@ -75,6 +78,8 @@ export function App() {
   useEffect(() => host.connect(), []);
   useEffect(() => {
     plugins.sync(state.web_plugins ?? []);
+    // Desktop shell: hand over the windows active web plugins declare; it opens/closes them to match.
+    desktopShell?.setPluginWindows?.((state.web_plugins ?? []).filter(p => p.desktop?.length).map(p => ({ name: p.name, desktop: p.desktop })));
   }, [state.web_plugins]);
   useEffect(() => () => plugins.dispose(), []);
   // A draft must land somewhere visible: leave a view that hides the composer.

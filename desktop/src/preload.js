@@ -41,20 +41,22 @@ contextBridge.exposeInMainWorld('gahDesktop', Object.freeze({
       return () => ipcRenderer.removeListener('gah:update-open', h);
     },
   }),
-  // Island preferences for the settings page; null when this shell has no island.
-  islandPrefs: Object.freeze({
-    get: () => ipcRenderer.invoke('gah:island-prefs-get'),
-    set: (patch) => ipcRenderer.invoke('gah:island-prefs-set', patch || {}),
-  }),
-  // Used by the web-island page inside the floating island window.
-  island: Object.freeze({
-    layout: (box) => ipcRenderer.send('gah:island-layout', box || {}),
-    drag: (phase, x, y) => ipcRenderer.send('gah:island-drag', String(phase), Number(x) || 0, Number(y) || 0),
-    openMain: () => ipcRenderer.send('gah:island-open-main'),
+  // Main page: hand the shell the desktop windows that active web plugins declare
+  // (web_plugins[].desktop from /api/state); the shell opens/closes windows to match.
+  setPluginWindows: (plugins) => ipcRenderer.send('gah:plugin-windows', Array.isArray(plugins) ? plugins : []),
+  openPluginWindow: (key) => ipcRenderer.send('gah:plugin-open', String(key || '')),
+  // Plugin pages inside shell windows (also usable from the main page: notify/flashFrame).
+  plugin: Object.freeze({
+    layout: (box) => ipcRenderer.send('gah:plugin-layout', box || {}),
+    drag: (phase, x, y) => ipcRenderer.send('gah:plugin-drag', String(phase), Number(x) || 0, Number(y) || 0),
+    openMain: () => ipcRenderer.send('gah:plugin-open-main'),
+    notify: (opts) => ipcRenderer.send('gah:plugin-notify', opts && typeof opts === 'object' ? { title: String(opts.title || ''), body: String(opts.body || ''), silent: !!opts.silent } : {}),
+    flashFrame: (on) => ipcRenderer.send('gah:plugin-flash', on !== false),
+    // State: { mainFocused, plugin, window, kind, data } where data is the declaration's data.
     onState: (fn) => {
       const h = (_e, s) => fn(s || {});
-      ipcRenderer.on('gah:island-state', h);
-      return () => ipcRenderer.removeListener('gah:island-state', h);
+      ipcRenderer.on('gah:plugin-state', h);
+      return () => ipcRenderer.removeListener('gah:plugin-state', h);
     },
   }),
 }));

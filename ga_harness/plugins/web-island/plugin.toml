@@ -4,3 +4,11 @@ entry = "main:apply"
 description = "Desktop dynamic island: a floating always-on-top pill showing running tasks (step, elapsed time, abort, jump to session). Desktop app only."
 description_zh = "桌面灵动岛：置顶悬浮胶囊显示运行中的任务（步骤、计时、中止、跳转会话）。仅桌面端生效。"
 inject = ["web.host"]
+
+[settings.pinned]
+type = "boolean"
+default = false
+label = "Always show"
+label_zh = "常驻显示"
+description = "Keep the island visible even when no task is running."
+description_zh = "没有任务运行时也保持显示灵动岛。"

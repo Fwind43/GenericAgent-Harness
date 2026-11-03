@@ -1,11 +1,12 @@
 // web-island: the floating pill shown by the desktop shell. Follows /api/events like the main page
-// and asks the shell (window.gahDesktop.island) to size, show and move its window.
+// and asks the shell (window.gahDesktop.plugin, the generic plugin-window bridge) to size, show
+// and move its window. The window itself is declared in main.py; `pinned` arrives as state.data.
 // One row per chat: chats waiting for an ask_user reply first, then chats with a live (or just
 // finished) run, then unread chats. With the
 // "always show" preference an idle pill stays on screen when there is nothing else to show.
 'use strict';
 (() => {
-  const bridge = window.gahDesktop && window.gahDesktop.island;
+  const bridge = window.gahDesktop && window.gahDesktop.plugin;
   const root = document.getElementById('island');
   let pref = null;
   try { pref = localStorage.getItem('gah-lang'); } catch { /* storage unavailable */ }
@@ -351,7 +352,7 @@
   if (bridge) {
     bridge.onState((state) => {
       mainFocused = !!(state && state.mainFocused);
-      pinned = !!(state && state.pinned);
+      pinned = !!(state && state.data && state.data.pinned);
       render();
     });
   }

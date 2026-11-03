@@ -2,14 +2,14 @@
 // Python backend; plugins, sessions and settings all stay in the backend (same as the browser).
 'use strict';
 
-const { app, BrowserWindow, Menu, Tray, clipboard, dialog, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, ipcMain, nativeImage, shell } = require('electron');
 const path = require('node:path');
 const { Backend, isGaRoot } = require('./backend');
 const { Updater } = require('./updater');
 const { t, setLanguage, initLanguage } = require('./i18n');
 const autostart = require('./autostart');
 const { openExternal, openExternalQuiet } = require('./external');
-const { Island, supported: islandSupported } = require('./island');
+const { PluginWindows } = require('./plugin-windows');
 
 let backend = null;
 let win = null;
@@ -17,7 +17,7 @@ let origin = null;
 let quitting = false;
 let tray = null;
 let updater = null;
-let island = null;
+let pluginWindows = null;
 // Started by the login item: stay in the tray until the user opens the window.
 const startHidden = autostart.launchedHidden();
 // Windows picks the matching frame from a multi-size .ico; downscaling the 512px PNG blurs it.
@@ -42,12 +42,27 @@ function registerBridge() {
   ipcMain.on('gah:set-lang', (event, lang) => {
     if (fromBackend(event) && setLanguage(lang)) refreshTrayMenu();
   });
-  // Dynamic island page (web-island) -> shell.
-  const fromIsland = (event) => island && island.win && !island.win.isDestroyed()
-    && event.sender === island.win.webContents && fromBackend(event);
-  ipcMain.on('gah:island-layout', (event, box) => { if (fromIsland(event)) island.layout(box || {}); });
-  ipcMain.on('gah:island-drag', (event, phase, x, y) => { if (fromIsland(event)) island.dragEvent(phase, Number(x) || 0, Number(y) || 0); });
-  ipcMain.on('gah:island-open-main', (event) => { if (fromIsland(event)) showWindow(); });
+  // Desktop windows declared by web plugins: the main page forwards the declarations.
+  const fromMain = (event) => win && !win.isDestroyed() && event.sender === win.webContents && fromBackend(event);
+  const fromPlugin = (event) => pluginWindows && fromBackend(event) && pluginWindows.entryFor(event.sender);
+  ipcMain.on('gah:plugin-windows', (event, list) => { if (fromMain(event) && pluginWindows) pluginWindows.sync(list); });
+  ipcMain.on('gah:plugin-open', (event, key) => { if (fromMain(event) && pluginWindows) pluginWindows.open(String(key || '')); });
+  // Plugin window pages -> shell.
+  ipcMain.on('gah:plugin-layout', (event, box) => { if (fromPlugin(event)) pluginWindows.layout(event.sender, box || {}); });
+  ipcMain.on('gah:plugin-drag', (event, phase, x, y) => { if (fromPlugin(event)) pluginWindows.dragEvent(event.sender, String(phase), Number(x) || 0, Number(y) || 0); });
+  ipcMain.on('gah:plugin-open-main', (event) => { if (fromPlugin(event)) showWindow(); });
+  // Main page or plugin pages: system notification (click brings the main window) and taskbar flash.
+  ipcMain.on('gah:plugin-notify', (event, opts) => {
+    if (!(fromMain(event) || fromPlugin(event)) || !Notification.isSupported() || !opts || typeof opts !== 'object') return;
+    const n = new Notification({ title: String(opts.title || 'GenericAgent-Harness').slice(0, 120), body: String(opts.body || '').slice(0, 400), icon: ICON, silent: !!opts.silent });
+    n.on('click', () => showWindow());
+    n.show();
+  });
+  ipcMain.on('gah:plugin-flash', (event, on) => {
+    if (!(fromMain(event) || fromPlugin(event)) || !win || win.isDestroyed()) return;
+    if (on && win.isFocused()) return;
+    win.flashFrame(!!on);
+  });
   ipcMain.handle('gah:pick-directory', async (event, opts = {}) => {
     if (!fromBackend(event)) throw new Error('forbidden');
     const res = await dialog.showOpenDialog(win, {
@@ -70,14 +85,6 @@ function registerBridge() {
   ipcMain.handle('gah:autostart-get', (event) => {
     if (!fromBackend(event)) throw new Error('forbidden');
     return { supported: autostart.supported(), enabled: autostart.isEnabled() };
-  });
-  ipcMain.handle('gah:island-prefs-get', (event) => {
-    if (!fromBackend(event)) throw new Error('forbidden');
-    return island ? island.getPrefs() : { supported: false, enabled: false, pinned: false };
-  });
-  ipcMain.handle('gah:island-prefs-set', (event, patch) => {
-    if (!fromBackend(event) || !island || !patch || typeof patch !== 'object') throw new Error('forbidden');
-    return island.setPrefs({ enabled: patch.enabled, pinned: patch.pinned });
   });
   ipcMain.handle('gah:autostart-set', (event, on) => {
     if (!fromBackend(event) || typeof on !== 'boolean') throw new Error('forbidden');
@@ -270,6 +277,11 @@ function refreshTrayMenu() {
       ],
     }, { type: 'separator' });
   }
+  const pluginItems = pluginWindows ? pluginWindows.trayItems() : [];
+  if (pluginItems.length) {
+    for (const it of pluginItems) items.push({ label: it.label, click: () => { pluginWindows.open(it.key); } });
+    items.push({ type: 'separator' });
+  }
   if (backend) items.push({ label: t('GenericAgent 目录…', 'GenericAgent folder...'), click: () => { changeGaRootFromTray().catch(() => {}); } }, { type: 'separator' });
   if (autostart.supported()) {
     items.push({ label: t('开机自启', 'Launch at login'), type: 'checkbox', checked: autostart.isEnabled(),
@@ -384,12 +396,13 @@ function createWindow(url) {
     win.hide();
   });
   win.on('closed', () => { win = null; });
-  // The island collapses while the main window is in front (the page then shows the same runs).
-  const islandState = () => { if (island && win) island.sendState({ mainFocused: win.isVisible() && win.isFocused() }); };
-  for (const ev of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(ev, islandState);
-  // Open the island once the main page has set the session cookie it authenticates with.
-  win.webContents.once('did-finish-load', () => { if (island) island.open(origin); });
-  win.webContents.on('did-finish-load', islandState);
+  // Plugin windows learn whether the main window is in front (e.g. an island collapses then).
+  const mainState = () => { if (pluginWindows && win) pluginWindows.sendState({ mainFocused: win.isVisible() && win.isFocused() }); };
+  for (const ev of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) win.on(ev, mainState);
+  win.on('focus', () => { if (win) win.flashFrame(false); });
+  // Open plugin windows once the main page has set the session cookie they authenticate with.
+  win.webContents.once('did-finish-load', () => { if (pluginWindows) pluginWindows.setOrigin(origin); });
+  win.webContents.on('did-finish-load', mainState);
   win.loadURL(`${url}?gah_token=${backend.token}`);
 }
 
@@ -453,7 +466,7 @@ async function boot() {
     const url = await backend.waitReady();
     origin = new URL(url).origin;
     updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState, openSettings: openMirrorSettings });
-    if (islandSupported()) island = new Island({ dataDir: app.getPath('userData'), preload: path.join(__dirname, 'preload.js'), icon: ICON });
+    pluginWindows = new PluginWindows({ dataDir: app.getPath('userData'), preload: path.join(__dirname, 'preload.js'), icon: ICON, onChange: () => refreshTrayMenu() });
     registerBridge();
     createTray();
     createWindow(url);
@@ -509,6 +522,6 @@ app.on('before-quit', (event) => {
   quitting = true;
   event.preventDefault();
   if (tray) { tray.destroy(); tray = null; }
-  if (island) island.close();
+  if (pluginWindows) pluginWindows.closeAll();
   backend.stop().finally(() => app.exit(0));
 });
