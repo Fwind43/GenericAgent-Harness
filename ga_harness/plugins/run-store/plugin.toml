@@ -8,8 +8,9 @@ provides = ["runs"]
 
 [settings.max_parallel]
 type = "integer"
-label = "Maximum concurrent runs"
-default = 4
+label = "Maximum concurrent runs (0 = unlimited)"
+label_zh = "最大并行运行数（0 为不限制）"
+default = 0
 
 [settings.cancel_grace]
 type = "number"

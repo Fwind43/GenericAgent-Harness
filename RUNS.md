@@ -43,7 +43,7 @@ run metadata. Worker failures expose the exception class, not config values or
 tracebacks. Conversation and tool output are still persisted: they are not a
 credential-redaction boundary.
 
-At most one run owns a session at a time. `max_parallel` (default 4) limits total
+At most one run owns a session at a time. `max_parallel` (default 0 = unlimited) can cap total
 active workers. Events `run.started`, `run.event`, `run.cancelling`, and
 `run.finished` carry run/session identity and a per-run sequence number. The Web
 host projects worker output into persisted messages; the React host filters by
