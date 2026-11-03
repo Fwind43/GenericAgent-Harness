@@ -100,7 +100,7 @@ its windows live. Browsers ignore them.
 Pages are served from `/web/<plugin>/` and get the same preload. Bridge for them:
 `gahDesktop.plugin.layout(box)`, `.drag(phase, screenX, screenY)` (`start`/`move`/`end`),
 `.openMain()`, `.notify({title, body, silent})`, `.flashFrame(on)` and
-`.onState(fn)` with `{mainFocused, plugin, window, kind, data}`. `web-island` is the reference user.
+`.onState(fn)` with `{mainFocused, plugin, window, kind, data}`. `desktop-island` is the reference user.
 
 ## Packaging
 

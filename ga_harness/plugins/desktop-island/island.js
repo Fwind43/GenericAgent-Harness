@@ -1,4 +1,4 @@
-// web-island: the floating pill shown by the desktop shell. Follows /api/events like the main page
+// desktop-island: the floating pill shown by the desktop shell. Follows /api/events like the main page
 // and asks the shell (window.gahDesktop.plugin, the generic plugin-window bridge) to size, show
 // and move its window. The window itself is declared in main.py; `pinned` arrives as state.data.
 // One row per chat: chats waiting for an ask_user reply first, then chats with a live (or just

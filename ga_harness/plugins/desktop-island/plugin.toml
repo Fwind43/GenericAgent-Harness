@@ -1,4 +1,4 @@
-name = "web-island"
+name = "desktop-island"
 category = "ui"
 entry = "main:apply"
 description = "Desktop dynamic island: a floating always-on-top pill showing running tasks (step, elapsed time, abort, jump to session). Desktop app only."

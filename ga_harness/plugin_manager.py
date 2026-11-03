@@ -23,6 +23,8 @@ HOST_CAPABILITIES = {"plugin.catalog"}
 PROTECTED = {"plugin-manager", "ga-core"}
 SENSITIVE = re.compile(r"key|secret|password|token|credential|authorization", re.I)
 MAX_FILE = 1 << 20
+# Former plugin names -> current ones; saved preferences follow the rename on read.
+RENAMED = {"web-island": "desktop-island"}
 
 
 def settings_path():
@@ -198,6 +200,9 @@ class PluginPreferences:
             for entries in data["profiles"].values():
                 if not isinstance(entries, dict):
                     raise ValueError()
+                for old, new in RENAMED.items():  # carry saved preferences over to the new name
+                    if old in entries:
+                        entries.setdefault(new, entries.pop(old))
                 for item in entries.values():
                     if (not isinstance(item, dict) or set(item) - {"enabled", "config"}
                             or ("enabled" in item and type(item["enabled"]) is not bool)

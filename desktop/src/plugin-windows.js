@@ -64,11 +64,16 @@ class PluginWindows {
     this.state = { mainFocused: false };
     this.prefs = {};
     try { this.prefs = JSON.parse(fs.readFileSync(this.file, 'utf8')) || {}; } catch { this.prefs = {}; }
-    // One-time carry-over of the position from the shell's former built-in island.
-    if (!this.prefs['web-island/island']) {
+    // One-time carry-overs: the plugin's position from before it was renamed from web-island,
+    // then the position from the shell's former built-in island.
+    if (!this.prefs['desktop-island/island'] && this.prefs['web-island/island']) {
+      this.prefs['desktop-island/island'] = this.prefs['web-island/island'];
+    }
+    delete this.prefs['web-island/island'];
+    if (!this.prefs['desktop-island/island']) {
       try {
         const old = JSON.parse(fs.readFileSync(path.join(dataDir, 'island.json'), 'utf8'));
-        if (typeof old.x === 'number' && typeof old.y === 'number') this.prefs['web-island/island'] = { x: old.x, y: old.y };
+        if (typeof old.x === 'number' && typeof old.y === 'number') this.prefs['desktop-island/island'] = { x: old.x, y: old.y };
       } catch { /* none */ }
     }
   }
