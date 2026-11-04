@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { sessionDrafts } from './session-drafts';
 import { request } from './api';
-import { MAX_FILES, PendingStrip, pendingOf, upload, type Pending } from './components/Attachments';
+import { PendingStrip } from './components/Attachments';
+import { attachmentDrafts } from './attachment-drafts';
 import { save, saved, T } from './i18n';
 import { host, useHost } from './store';
 import { plugins } from './plugin-runtime';
@@ -47,26 +48,19 @@ export function App() {
   const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
   const stick = useRef(true), submitting = useRef(false);
-  const [files, setFiles] = useState<Pending[]>([]), [dragging, setDragging] = useState(false);
+  const attachmentSnapshot = useSyncExternalStore(attachmentDrafts.subscribe, () => attachmentDrafts.get(state.session_id));
+  const files = attachmentSnapshot.items;
+  const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
-  const uploading = files.some(p => !p.file && !p.error);
+  useEffect(() => { void attachmentDrafts.load(state.session_id); }, [state.session_id]);
+  const uploading = attachmentSnapshot.loading || files.some(p => !p.file && !p.error);
   const ready = files.filter(p => p.file);
   function addFiles(list: FileList | File[] | null | undefined) {
     const picked = Array.from(list ?? []);
-    if (!picked.length) return;
-    const room = MAX_FILES - files.length;
-    if (picked.length > room) host.notice(T(`每条消息最多 ${MAX_FILES} 个附件`, `At most ${MAX_FILES} attachments per message`));
-    for (const file of picked.slice(0, Math.max(0, room))) {
-      const item = pendingOf(file);
-      setFiles(list => [...list, item]);
-      if (item.error) continue;
-      upload(file).then(
-        done => setFiles(list => list.map(p => p.key === item.key ? { ...p, file: done } : p)),
-        error => setFiles(list => list.map(p => p.key === item.key ? { ...p, error: String(error?.message || error) } : p)));
-    }
+    if (picked.length) attachmentDrafts.add(host.getSnapshot().state.session_id, picked);
   }
   function removeFile(key: string) {
-    setFiles(list => { const gone = list.find(p => p.key === key); if (gone?.preview) URL.revokeObjectURL(gone.preview); return list.filter(p => p.key !== key); });
+    attachmentDrafts.remove(state.session_id, [key]);
   }
   const viewState = useViews(), view = viewState.active, composer = showsComposer(viewState);
   // A plugin page route replaces the whole chat column; slots stay mounted (hidden) for plugins.
@@ -196,7 +190,9 @@ export function App() {
         if (state.running) { host.notice(T('任务运行中，请稍候', 'A task is running; please wait')); return; }
         await request('/api/run', { task, session_id: state.session_id, attachments });
       }
-      sessionDrafts.sent(state.session_id, draft); files.forEach(p => p.preview && URL.revokeObjectURL(p.preview)); setFiles([]); stick.current = true;
+      sessionDrafts.sent(state.session_id, draft);
+      attachmentDrafts.remove(state.session_id, ready.map(p => p.key));
+      stick.current = true;
     } catch (error) { host.report(error); }
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
   }
