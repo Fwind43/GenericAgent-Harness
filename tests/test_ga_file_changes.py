@@ -84,7 +84,15 @@ def test_reports_created_and_modified_files(tmp_path):
         {"path": str(new), "action": "created", "count": 1, "turns": [1]},
         {"path": str(existing), "action": "modified", "count": 2, "turns": [2, 3]},
     ]
-    assert data["notes"] == [{"kind": "files", "text": "+ src/new.py\n~ README.md (x2)"}]
+    (note,) = data["notes"]
+    assert note["kind"] == "files" and note["text"] == "+ src/new.py\n~ README.md (x2)"
+    assert note["data"]["base"] == str(tmp_path) and note["data"]["more"] == 0
+    assert [(f["display"], f["action"], f["count"], f["added"], f["removed"], f["diff"], f["truncated"])
+            for f in note["data"]["files"]] == [
+        ("src/new.py", "created", 1, 1, 0, "@@ -0,0 +1 @@\n+y", False),
+        ("README.md", "modified", 2, 0, 0, "", False),  # patched without changing its content
+    ]
+    assert not any("skipped" in f for f in note["data"]["files"])
     assert rt.ctx.get("ga.file_changes")() == data["files"]
     _unmount(rt)
 
@@ -153,5 +161,29 @@ def test_paths_relative_to_session_workspace(tmp_path):
     hooks.trigger("agent_after", {"exit_reason": {}})
     data = sent[0]["data"]
     assert data["base"] == str(ws)
-    assert data["notes"] == [{"kind": "files", "text": "+ hello.py"}]
+    (note,) = data["notes"]
+    assert note["text"] == "+ hello.py" and note["data"]["base"] == str(ws)
+    assert [(f["display"], f["diff"]) for f in note["data"]["files"]] == [("hello.py", "@@ -0,0 +1 @@\n+x")]
+    _unmount(rt)
+
+
+def test_notes_carry_unified_diffs_from_pre_run_content(tmp_path):
+    a, b, big = tmp_path / "a.txt", tmp_path / "b.bin", tmp_path / "big.txt"
+    a.write_text("one\ntwo\nthree\n", encoding="utf8")
+    b.write_bytes(b"\0\1")
+    rt, hooks, sent = _mount(config={"max_diff_lines": 8})
+    h = Handler(tmp_path)
+    hooks.trigger("agent_before", {"handler": h})
+    _tool(hooks, h, "file_patch", "a.txt", write=lambda: a.write_text("one\n2\nthree\n", encoding="utf8"))
+    _tool(hooks, h, "file_patch", "a.txt", write=lambda: a.write_text("one\n2\nthree\nfour\n", encoding="utf8"), turn=2)
+    _tool(hooks, h, "file_write", "b.bin", write=lambda: b.write_bytes(b"\0\2"))
+    _tool(hooks, h, "file_write", "big.txt", write=lambda: big.write_text("x\n" * 10, encoding="utf8"))
+    hooks.trigger("agent_after", {})
+    files = {f["display"]: f for f in sent[0]["data"]["notes"][0]["data"]["files"]}
+    # Both patches fold into one diff against the content before the run first touched the file.
+    assert files["a.txt"]["diff"] == "@@ -1,3 +1,4 @@\n one\n-two\n+2\n three\n+four"
+    assert (files["a.txt"]["added"], files["a.txt"]["removed"], files["a.txt"]["truncated"]) == (2, 1, False)
+    assert files["b.bin"]["skipped"] == "binary" and files["b.bin"]["diff"] == ""
+    assert files["big.txt"]["truncated"] and files["big.txt"]["added"] == 10  # counts cover the whole diff
+    assert files["big.txt"]["diff"].splitlines() == ["@@ -0,0 +1,10 @@"] + ["+x"] * 7  # max_diff_lines = 8
     _unmount(rt)

@@ -18,6 +18,8 @@ from .run_output import apply_event
 from .sessions import settle
 from .worker import run_worker
 
+NOTE_DATA_LIMIT = 512 * 1024  # bytes of JSON kept per plugin note ``data``
+
 ACTIVE = ("running", "cancelling")
 TERMINAL = ("done", "error", "aborted", "interrupted")
 # High-frequency fragments; the final assistant.text/turn events are durable.
@@ -436,11 +438,13 @@ class Runs:
 
     @staticmethod
     def _fold_notes(messages, data):
-        """Attach plugin ``notes`` ([{kind, text}]) to the running assistant message.
+        """Attach plugin ``notes`` ([{kind, text, data?}]) to the running assistant message.
 
         A note is placed after ``turn``: the plugin's explicit integer ``turn`` when
         given (plugin events and agent events can arrive in either order), otherwise
         the last started turn. The UI uses it to keep notes in sequence with steps.
+        An optional JSON object ``data`` (at most ``NOTE_DATA_LIMIT`` bytes encoded) is
+        kept for richer rendering; ``text`` stays the plain fallback.
         """
         notes = data.get("notes") if isinstance(data, dict) else None
         if not isinstance(notes, list) or not messages or messages[-1].get("status") != "running":
@@ -454,8 +458,16 @@ class Runs:
                 kind = note.get("kind") if isinstance(note.get("kind"), str) else "note"
                 turn = note.get("turn")
                 turn = turn if isinstance(turn, int) and not isinstance(turn, bool) else latest
-                message.setdefault("notes", []).append(
-                    {"kind": kind, "text": note["text"], "turn": turn, "created_at": time.time()})
+                item = {"kind": kind, "text": note["text"], "turn": turn, "created_at": time.time()}
+                extra = note.get("data")
+                if isinstance(extra, dict):
+                    try:
+                        raw = json.dumps(extra, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        raw = None
+                    if raw is not None and len(raw.encode("utf-8")) <= NOTE_DATA_LIMIT:
+                        item["data"] = json.loads(raw)
+                message.setdefault("notes", []).append(item)
                 added = True
         return added
 

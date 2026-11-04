@@ -21,7 +21,7 @@ export interface Message {
   source?: string;
 }
 export interface Attachment { id?: string; name: string; mime: string; size: number; image: boolean; url: string; path?: string }
-export interface MessageNote { kind: string; text: string; turn: number; created_at?: number }
+export interface MessageNote { kind: string; text: string; turn: number; created_at?: number; /** Plugin-specific structured payload; ``text`` is the plain fallback. */ data?: unknown }
 export interface Project { id: string; name: string; workspace: string; updated?: number }
 export interface Scope { project_id?: string | null; project?: Project | null; workspace?: string; default_workspace?: string; projects: Project[] }
 export interface Session { id: string; title: string; project_id?: string | null; workspace?: string; parent_id?: string | null; updated?: number; pinned?: number; running?: boolean; unread?: boolean }

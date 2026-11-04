@@ -5,6 +5,7 @@ import type { Message, MessageNote, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
 import { MessageStats } from './MessageStats';
 import { MessageAttachments } from './Attachments';
+import { FileChanges, filesData } from './FileChanges';
 
 // DOM and class names intentionally mirror the legacy ui-web renderer so output.css applies unchanged.
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
@@ -117,6 +118,8 @@ function MessageTime({ message }: { message: Message }) {
 }
 function Note({ note }: { note: MessageNote }) {
   const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind === 'files' ? T('修改的文件', 'Files changed') : note.kind;
+  const files = note.kind === 'files' ? filesData(note.data) : null;
+  if (files) return <FileChanges data={files} label={label} />;
   return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
 }
 // Conductor wake-ups are prompts written for the conductor model; show them as a compact

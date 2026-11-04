@@ -57,7 +57,7 @@ ga-harness 自身的数据（配置、插件设置、上传文件、聊天记录
 | `ga-tools` | 不改 GA 即可新增、替换或禁用工具 |
 | `ga-events` / `ga-usage` | 提供结构化执行事件，以及每步、每次任务的 token 用量 |
 | `ga-timing` | 通过 GA 钩子统计每次工具调用耗时（只记录，不改变 GA 行为） |
-| `ga-file-changes` | 记录每次任务中 Agent 通过 `file_write` / `file_patch` 成功修改的文件，任务结束时在对话中列出（`+` 新建、`~` 修改；`code_run` 脚本间接改动的文件不计） |
+| `ga-file-changes` | 记录每次任务中 Agent 通过 `file_write` / `file_patch` 成功修改的文件，任务结束时在对话中列出（`+` 新建、`~` 修改），每个文件可展开查看本次任务的改动差异（二进制或超过 1 MiB 的文件只列文件名；`max_diff_lines = 0` 关闭差异）；`code_run` 脚本间接改动的文件不计 |
 | `session-store` | 独立的会话持久化插件；保存对话和 GA 上下文，供前端切换、恢复会话 |
 | `workspace-store` | 会话绑定的工作目录与项目（项目记忆复用 GA 官方 project_mode） |
 | `project-memory` | 分层项目记忆（L0 规范 / L1 索引 / L2 事实 / L3 专题）：每次调用模型时把索引和事实注入系统提示；官方 project_mode 只指向单个 `project_memory.md`，这里保留为只读来源 |
