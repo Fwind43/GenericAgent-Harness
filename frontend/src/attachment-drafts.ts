@@ -13,13 +13,31 @@ class AttachmentDrafts {
   private database?: Promise<IDBDatabase>;
   private writes = new Map<string, Promise<void>>();
   private warned = false;
+  private stored?: Set<string>;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   };
+  /** Sessions with attachment drafts, from the database keys, so unopened sessions count too. */
+  ids = (): ReadonlySet<string> => {
+    if (!this.stored) {
+      const stored = this.stored = new Set<string>();
+      void this.db().then(db => new Promise<IDBValidKey[]>((resolve, reject) => {
+        const request = db.transaction('sessions').objectStore('sessions').getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      })).then(keys => {
+        for (const key of keys) if (typeof key === 'string' && !this.sessions.has(key)) stored.add(key);
+        this.listeners.forEach(listener => listener());
+      }, () => { /* No database: only this page's drafts are known. */ });
+    }
+    return this.stored;
+  };
   get = (id?: string): Snapshot => id ? this.sessions.get(id) ?? EMPTY : EMPTY;
   private publish(id: string, snapshot: Snapshot) {
     this.sessions.set(id, snapshot);
+    // While loading, keep the stored flag; afterwards the loaded items are authoritative.
+    if (!snapshot.loading) { this.ids(); if (snapshot.items.length) this.stored!.add(id); else this.stored!.delete(id); }
     this.listeners.forEach(listener => listener());
   }
   private db() {

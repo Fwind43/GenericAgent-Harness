@@ -68,6 +68,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
   const pinFirst = (items) => [...items].sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
   function Sessions({ api }) {
     const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api, !!state.parallel_runs);
+    const drafts = sdk.useDraftSessions();
     const [toggled, setToggled] = react.useState(loadToggles), [expanded, setExpanded] = react.useState({});
     const [query, setQuery] = react.useState(""), [moving, setMoving] = react.useState("");
     const [layout, setLayout] = react.useState(loadLayout), [menu, setMenu] = react.useState("");
@@ -212,11 +213,13 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       const project = session.project_id ? projectName.get(session.project_id) : void 0;
       const status = activity.get(session.id), tag = recent ? project ?? "" : "";
       const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
+      const draft = session.id !== state.session_id && drafts.has(session.id);
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: depth ? label(session).replace(/^\u25b8\s*/, "") : label(session) }),
           tag && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-tag", children: tag }),
+          draft && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-draft", title: sdk.T("有未发送的草稿", "Unsent draft"), children: sdk.T("草稿", "Draft") }),
           unread && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-unread", role: "status", title: sdk.T("未读", "Unread"), "aria-label": sdk.T("未读", "Unread") }),
           !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
           status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })

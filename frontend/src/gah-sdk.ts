@@ -7,6 +7,7 @@ import { plugins } from './plugin-runtime';
 import type { BrowserSDK, PluginSetup, ReactPlugin } from './sdk';
 
 export { host, useHost } from './store';
+export { useDraftSessions } from './draft-index';
 export { views, useViews, CHAT_VIEW } from './views';
 export { pages, usePages } from './pages';
 export { T, save, saved, errorText } from './i18n';

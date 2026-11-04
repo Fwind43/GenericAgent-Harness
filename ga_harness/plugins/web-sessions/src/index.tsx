@@ -1,5 +1,5 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { type PluginAPI, type HostState, type Session, useHost, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, PageNav, pages, useOperation, defineReact } from '@gah/sdk';
+import { type PluginAPI, type HostState, type Session, useHost, useDraftSessions, saved, save, T, Icon, confirmDialog, promptDialog, PluginSlot, PageNav, pages, useOperation, defineReact } from '@gah/sdk';
 
 // Sidebar layout: projects first (each a collapsible group of its chats), then Recent:
 // every chat by recency, project chats tagged with their project name. A project is a durable identity; the workspace is
@@ -68,6 +68,7 @@ function nest(items: Session[]) {
 const pinFirst = (items: Session[]) => [...items].sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
 export function Sessions({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api, !!state.parallel_runs);
+  const drafts = useDraftSessions();
   const [toggled, setToggled] = useState(loadToggles), [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState(''), [moving, setMoving] = useState('');
   const [layout, setLayout] = useState(loadLayout), [menu, setMenu] = useState<string>('');
@@ -180,9 +181,12 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const project = session.project_id ? projectName.get(session.project_id) : undefined;
     const status = activity.get(session.id), tag = recent ? project ?? '' : '';
     const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
+    // The open chat shows its draft in the composer; other rows flag unsent text or attachments.
+    const draft = session.id !== state.session_id && drafts.has(session.id);
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
+        {draft && <span className="gah-sess-draft" title={T('\u6709\u672a\u53d1\u9001\u7684\u8349\u7a3f', 'Unsent draft')}>{T('\u8349\u7a3f', 'Draft')}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
         {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
         {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>

@@ -2,6 +2,7 @@
 export class SessionDrafts {
   private values = new Map<string, string>();
   private listeners = new Set<() => void>();
+  private known?: Set<string>;
   constructor(private storage: () => Storage = () => localStorage) {}
   private key(id: string) { return `gah-session-draft:${encodeURIComponent(id)}`; }
   subscribe = (listener: () => void) => {
@@ -17,9 +18,24 @@ export class SessionDrafts {
     }
     return this.values.get(id)!;
   };
+  /** Sessions with a non-empty text draft, including ones stored by earlier page loads. */
+  ids = (): ReadonlySet<string> => {
+    if (!this.known) {
+      this.known = new Set();
+      try {
+        const storage = this.storage(), prefix = 'gah-session-draft:';
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key?.startsWith(prefix) && storage.getItem(key)) this.known.add(decodeURIComponent(key.slice(prefix.length)));
+        }
+      } catch { /* Storage unavailable: only this page's drafts are known. */ }
+    }
+    return this.known;
+  };
   set = (id: string | undefined, value: string) => {
     if (!id || this.get(id) === value) return;
     this.values.set(id, value);
+    { this.ids(); if (value) this.known!.add(id); else this.known!.delete(id); }
     try {
       if (value) this.storage().setItem(this.key(id), value);
       else this.storage().removeItem(this.key(id));

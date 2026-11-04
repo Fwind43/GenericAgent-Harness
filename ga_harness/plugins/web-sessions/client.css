@@ -123,3 +123,5 @@
 .gah-group.project.dragging .gah-group-head,.gah-group.project.dragging .gah-group-toggle{cursor:grabbing}
 .gah-group.project.drop-before>.gah-group-head{box-shadow:inset 0 2px 0 var(--accent,var(--text))}
 .gah-group.project.drop-after>.gah-group-head{box-shadow:inset 0 -2px 0 var(--accent,var(--text))}
+/* Unsent composer text or attachments in another chat. */
+.gah-sess-draft{flex:none;font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;color:var(--warn,#c2410c);background:color-mix(in srgb,var(--warn,#c2410c) 12%,transparent);white-space:nowrap}
