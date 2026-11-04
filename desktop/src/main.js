@@ -358,6 +358,13 @@ function createWindow(url) {
       webSecurity: true,
     },
   });
+  // Refresh the main page without restarting the backend or its running tasks.
+  // Handle this in the shell even when the page is unresponsive or has failed to load.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.key !== 'F5' || input.control || input.alt || input.meta || input.shift) return;
+    event.preventDefault();
+    if (input.type === 'keyDown' && !input.isAutoRepeat) win.webContents.reload();
+  });
   // Login launch with a tray: keep the window hidden (the tray icon brings it back).
   win.once('ready-to-show', () => { if (!(startHidden && tray)) win.show(); });
   // Stay on the backend origin; everything else opens in the system browser.
