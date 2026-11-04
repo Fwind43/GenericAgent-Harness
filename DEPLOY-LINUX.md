@@ -15,7 +15,9 @@
  GAH_WEB_HOST=0.0.0.0 ./gah-server
 ```
 
-默认端口为 `8765`。非回环监听首次启动会生成访问令牌并保存在 `~/.ga-harness/web-token`（权限 600），不会将令牌打印到日志。只在服务器终端自行查看它，然后打开 `http://<服务器IP>:8765/?gah_token=<令牌>`。这是令牌认证，不是账号/密码。不要分享带令牌的 URL。
+默认端口为 `8765`。服务端首次启动会为所有监听地址（包括 `127.0.0.1`）生成访问令牌并保存在 `$GAH_HOME/web-token`（默认 `~/.ga-harness/web-token`，权限 600），后续启动复用；显式设置 `GAH_WEB_TOKEN` 时优先使用该值。不会将令牌打印到日志。只在服务器终端自行查看它，然后打开 `http://<服务器IP>:8765/?gah_token=<令牌>`。这是令牌认证，不是账号/密码。不要分享带令牌的 URL。
+
+**回环反代推荐配置**：`GAH_WEB_HOST=127.0.0.1`、`GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com`，HTTPS 反代指向 `http://127.0.0.1:8765`。回环监听仍要求令牌；允许 Origin 不是身份认证。仅在已有独立访问控制时，才考虑用 `GAH_WEB_ALLOW_NO_TOKEN=1`（也支持 `true` / `yes`）显式跳过自动令牌生成；已有显式 token 不会因此失效。此默认认证改动在 `v0.0.28` 之后加入，旧版回环部署必须手动设置 `GAH_WEB_TOKEN`。桌面端和源码 CLI 的默认行为不受此服务端启动器改动影响。
 
 默认仅监听回环；上面的 `GAH_WEB_HOST=0.0.0.0` 开启网络监听。**不要直接将明文 HTTP 暴露到公网**：优先通过 Tailscale 私网 IP 访问并在防火墙限定来源；或使用 HTTPS 反向代理。域名访问需设置 `GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com`（填写实际 scheme/域名/端口）。
 

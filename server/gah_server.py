@@ -15,12 +15,12 @@ Environment (all optional):
   GA_ROOT              use this GenericAgent checkout instead of the bundled copy
   GAH_WEB_HOST         bind address (default 127.0.0.1; 0.0.0.0 to listen on all interfaces)
   GAH_WEB_PORT         port (default 8765)
-  GAH_WEB_TOKEN        access token; when the bind address is not loopback and no token is
-                       set, one is generated once and kept in $GAH_HOME/web-token
-  GAH_WEB_ALLOWED_ORIGINS, GAH_WEB_ALLOW_NO_TOKEN  see ga_harness/plugins/ui-web/main.py
+  GAH_WEB_TOKEN        access token; if unset, generated once for ALL bind addresses
+                       (including loopback) and kept in $GAH_HOME/web-token
+  GAH_WEB_ALLOW_NO_TOKEN  explicitly opt out of automatic token generation (1/true/yes)
+  GAH_WEB_ALLOWED_ORIGINS  see ga_harness/plugins/ui-web/main.py
 Extra arguments are passed to `ga_harness.cli run` (e.g. --profile, --patch).
 """
-import ipaddress
 import os
 import secrets
 import shutil
@@ -78,16 +78,6 @@ def sync_ga(dest):
     return dest
 
 
-def _loopback(host):
-    host = host.strip("[]").lower()
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
 def main():
     env = os.environ
     home = Path(env.get("GAH_HOME") or Path.home() / ".ga-harness").expanduser()
@@ -98,7 +88,9 @@ def main():
     port = env.setdefault("GAH_WEB_PORT", "8765")
     env.setdefault("GAH_WEB_OPEN_BROWSER", "0")
     flag = (env.get("GAH_WEB_ALLOW_NO_TOKEN") or "").strip().lower()
-    if not _loopback(host) and not env.get("GAH_WEB_TOKEN") and flag in ("", "0", "false", "no"):
+    allow_no_token = flag in ("1", "true", "yes")
+    env["GAH_WEB_ALLOW_NO_TOKEN"] = "1" if allow_no_token else "0"
+    if not env.get("GAH_WEB_TOKEN") and not allow_no_token:
         tok_file = home / "web-token"
         tok = tok_file.read_text(encoding="utf-8").strip() if tok_file.exists() else ""
         if not tok:
@@ -114,6 +106,8 @@ def main():
         print(f"gah-server: open http://{shown}:{port}/?gah_token=<token>  "
               f"(token in GAH_WEB_TOKEN or {home / 'web-token'})", flush=True)
     else:
+        print("gah-server: WARNING: automatic token authentication disabled; "
+              "do not expose without external authentication", file=sys.stderr, flush=True)
         print(f"gah-server: open http://{host}:{port}/", flush=True)
     env["PYTHONPATH"] = str(PY) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.setdefault("PYTHONUNBUFFERED", "1")
