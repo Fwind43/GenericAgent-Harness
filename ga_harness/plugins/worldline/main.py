@@ -101,6 +101,21 @@ def variants(store, sid, messages):
     return out
 
 
+# Per-conversation choices made via sessions.remember(); they belong to the conversation, not to
+# a point in its history, so rewinding or switching branches must not bring back older ones.
+SETTINGS = ("model", "effort", "preset")
+
+
+def _keep_settings(state, live):
+    state, live = dict(state or {}), live or {}
+    for key in SETTINGS:
+        if key in live:
+            state[key] = live[key]
+        else:
+            state.pop(key, None)
+    return state
+
+
 def apply(ctx, config):
     host, runs, sessions = ctx.get("web.host"), ctx.get("runs"), ctx.get("sessions")
     frontend, store = host.frontend, Store(_store_path(sessions))
@@ -172,7 +187,7 @@ def apply(ctx, config):
             raise ValueError("message is empty")
         store.archive(sid, idx, messages, current["state"])
         with sessions._db() as db:
-            sessions._write(db, current, messages[:idx], state)
+            sessions._write(db, current, messages[:idx], _keep_settings(state, current["state"]))
         _refresh(sid, messages[:idx])
         run = runs.start(text, session_id=sid, source="worldline")
         return {"ok": True, "run": run}
@@ -191,7 +206,7 @@ def apply(ctx, config):
             raise ValueError("branch does not share this conversation's history")
         store.archive(sid, idx, live, current["state"])
         with sessions._db() as db:
-            sessions._write(db, current, messages, state)
+            sessions._write(db, current, messages, _keep_settings(state, current["state"]))
         return _refresh(sid, messages)
 
     def branch(body):
@@ -210,7 +225,7 @@ def apply(ctx, config):
         kept = messages[:end]
         child = sessions.create(parent_id=sid)
         with sessions._db() as db:
-            sessions._write(db, child, kept, state)
+            sessions._write(db, child, kept, _keep_settings(state, current["state"]))
         store.copy_checkpoints(sid, child["id"], end)
         sessions.change("select", child["id"])
         return _refresh(child["id"], kept)
