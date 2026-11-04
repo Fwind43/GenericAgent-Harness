@@ -11,3 +11,17 @@
 .gah-wl-btn:disabled { opacity: .3; cursor: default; }
 .gah-wl-nav { display: inline-flex; align-items: center; gap: 2px; }
 .gah-wl-count { min-width: 2.5em; text-align: center; opacity: .7; font-variant-numeric: tabular-nums; }
+
+/* In-place edit: the editor replaces the bubble's text and hover actions while open. */
+.msg.user.gah-wl.gah-wl-editing { justify-items: stretch; }
+.msg.user.gah-wl-editing > .body,
+.msg.user.gah-wl-editing > .gah-wl-bar,
+.msg.user.gah-wl-editing > .message-time { display: none; }
+.gah-wl-edit { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid rgba(127,127,127,.35); border-radius: 12px; background: var(--gah-surface, rgba(127,127,127,.08)); }
+.gah-wl-edit:focus-within { border-color: rgba(127,127,127,.6); }
+.gah-wl-edit-input { width: 100%; box-sizing: border-box; min-height: 1.5em; max-height: 50vh; resize: none; overflow-y: auto; border: 0; outline: none; background: transparent; color: inherit; font: inherit; line-height: 1.5; padding: 0; }
+.gah-wl-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.gah-wl-edit-actions button { border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 4px 14px; border-radius: 999px; cursor: pointer; }
+.gah-wl-edit-actions button:hover:not(:disabled) { background: rgba(127,127,127,.15); }
+.gah-wl-edit-actions .gah-wl-edit-send { font-weight: 600; border-color: rgba(127,127,127,.6); background: rgba(127,127,127,.18); }
+.gah-wl-edit-actions button:disabled { opacity: .4; cursor: default; }

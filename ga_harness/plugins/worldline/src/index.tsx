@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useHost, T, defineReact, promptDialog, host, type PluginAPI } from '@gah/sdk';
+import { useHost, T, defineReact, host, type PluginAPI } from '@gah/sdk';
 
 type Variant = { branches: number[]; count: number; current: number };
 type Variants = Record<string, Variant>;
@@ -14,15 +14,59 @@ function button(label: string, title: string, onClick: () => void, disabled = fa
 }
 
 async function act(api: PluginAPI, path: string, body: Record<string, unknown>) {
-  try { await api.post(path, body); } catch (error) { host.report(error); }
+  try { await api.post(path, body); return true; } catch (error) { host.report(error); return false; }
+}
+
+// The message being edited in place. It lives outside React so that repaints (state pushes,
+// thread re-renders) keep the draft and re-attach the editor to whichever node holds it.
+type Editing = { sid: string; index: number; draft: string; sending: boolean };
+let editing: Editing | null = null;
+let repaint = () => {};
+
+function closeEditor() { editing = null; repaint(); }
+
+function editor(api: PluginAPI, current: Editing, busy: boolean) {
+  const box = document.createElement('div');
+  box.className = 'gah-wl-edit';
+  const area = document.createElement('textarea');
+  area.className = 'gah-wl-edit-input';
+  area.value = current.draft;
+  area.rows = 1;
+  const fit = () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; };
+  const actions = document.createElement('div');
+  actions.className = 'gah-wl-edit-actions';
+  const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'gah-wl-edit-cancel', textContent: T('\u53d6\u6d88', 'Cancel') });
+  const send = Object.assign(document.createElement('button'), { type: 'button', className: 'gah-wl-edit-send', textContent: T('\u53d1\u9001', 'Send') });
+  const sync = (running: boolean) => { send.disabled = running || current.sending || !area.value.trim(); };
+  const submit = async () => {
+    if (send.disabled) return;
+    current.sending = true; sync(busy);
+    const ok = await act(api, 'fork', { session_id: current.sid, index: current.index, text: area.value });
+    current.sending = false;
+    if (ok && editing === current) closeEditor(); else sync(busy);
+  };
+  area.addEventListener('input', () => { current.draft = area.value; fit(); sync(busy); });
+  area.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeEditor(); }
+    else if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); }
+  });
+  cancel.addEventListener('click', event => { event.stopPropagation(); closeEditor(); });
+  send.addEventListener('click', event => { event.stopPropagation(); void submit(); });
+  actions.append(cancel, send);
+  box.append(area, actions);
+  (box as HTMLElement & { gahSync?: (running: boolean) => void }).gahSync = running => { busy = running; sync(running); };
+  sync(busy);
+  requestAnimationFrame(() => { fit(); area.focus(); area.setSelectionRange(area.value.length, area.value.length); });
+  return box;
 }
 
 function bar(api: PluginAPI, sid: string, index: number, text: string, info: Variant | undefined, busy: boolean) {
   const box = document.createElement('div');
   box.className = 'gah-wl-bar';
-  box.append(button('\u270e', T('\u7f16\u8f91\u5e76\u91cd\u53d1', 'Edit and resend'), async () => {
-    const value = await promptDialog({ title: T('\u7f16\u8f91\u6d88\u606f', 'Edit message'), value: text, confirm: T('\u53d1\u9001', 'Send') });
-    if (value !== null && value.trim()) await act(api, 'fork', { session_id: sid, index, text: value });
+  box.append(button('\u270e', T('\u7f16\u8f91\u5e76\u91cd\u53d1', 'Edit and resend'), () => {
+    editing = { sid, index, draft: text, sending: false };
+    repaint();
   }, busy));
   box.append(button('\u21bb', T('\u91cd\u65b0\u751f\u6210', 'Regenerate'), () => act(api, 'fork', { session_id: sid, index }), busy));
   if (info && info.branches.length) {
@@ -70,6 +114,14 @@ function Worldline({ api }: { api: PluginAPI }) {
         node.querySelector(':scope > .gah-wl-bar')?.remove();
         node.querySelector('.gah-wl-branch')?.remove();
         const message = state.messages[index];
+        const mine = !!editing && editing.sid === sid && editing.index === index && message?.role === 'user';
+        const open = node.querySelector(':scope > .gah-wl-edit') as (HTMLElement & { gahSync?: (running: boolean) => void }) | null;
+        if (!mine && open) open.remove();
+        node.classList.toggle('gah-wl-editing', mine);
+        if (mine && editing) {
+          if (open) open.gahSync?.(state.running);
+          else node.append(editor(api, editing, state.running));
+        }
         if (message?.role === 'assistant' && lastUser >= 0 && !state.running) {
           const actions = node.querySelector('.message-actions');
           if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
@@ -83,8 +135,9 @@ function Worldline({ api }: { api: PluginAPI }) {
       observer.observe(thread, { childList: true, subtree: !state.running });
     };
     const observer = new MutationObserver(paint);
+    repaint = paint;
     paint();
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); if (repaint === paint) repaint = () => {}; };
   }, [api, state]);
   return null;
 }

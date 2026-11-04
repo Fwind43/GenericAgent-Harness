@@ -17,16 +17,89 @@
   async function act(api, path, body) {
     try {
       await api.post(path, body);
+      return true;
     } catch (error) {
       sdk.host.report(error);
+      return false;
     }
+  }
+  let editing = null;
+  let repaint = () => {
+  };
+  function closeEditor() {
+    editing = null;
+    repaint();
+  }
+  function editor(api, current, busy) {
+    const box = document.createElement("div");
+    box.className = "gah-wl-edit";
+    const area = document.createElement("textarea");
+    area.className = "gah-wl-edit-input";
+    area.value = current.draft;
+    area.rows = 1;
+    const fit = () => {
+      area.style.height = "auto";
+      area.style.height = `${area.scrollHeight}px`;
+    };
+    const actions = document.createElement("div");
+    actions.className = "gah-wl-edit-actions";
+    const cancel = Object.assign(document.createElement("button"), { type: "button", className: "gah-wl-edit-cancel", textContent: sdk.T("取消", "Cancel") });
+    const send = Object.assign(document.createElement("button"), { type: "button", className: "gah-wl-edit-send", textContent: sdk.T("发送", "Send") });
+    const sync = (running) => {
+      send.disabled = running || current.sending || !area.value.trim();
+    };
+    const submit = async () => {
+      if (send.disabled) return;
+      current.sending = true;
+      sync(busy);
+      const ok = await act(api, "fork", { session_id: current.sid, index: current.index, text: area.value });
+      current.sending = false;
+      if (ok && editing === current) closeEditor();
+      else sync(busy);
+    };
+    area.addEventListener("input", () => {
+      current.draft = area.value;
+      fit();
+      sync(busy);
+    });
+    area.addEventListener("keydown", (event) => {
+      if (event.isComposing) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeEditor();
+      } else if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        void submit();
+      }
+    });
+    cancel.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeEditor();
+    });
+    send.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void submit();
+    });
+    actions.append(cancel, send);
+    box.append(area, actions);
+    box.gahSync = (running) => {
+      busy = running;
+      sync(running);
+    };
+    sync(busy);
+    requestAnimationFrame(() => {
+      fit();
+      area.focus();
+      area.setSelectionRange(area.value.length, area.value.length);
+    });
+    return box;
   }
   function bar(api, sid, index, text, info, busy) {
     const box = document.createElement("div");
     box.className = "gah-wl-bar";
-    box.append(button("✎", sdk.T("编辑并重发", "Edit and resend"), async () => {
-      const value = await sdk.promptDialog({ title: sdk.T("编辑消息", "Edit message"), value: text, confirm: sdk.T("发送", "Send") });
-      if (value !== null && value.trim()) await act(api, "fork", { session_id: sid, index, text: value });
+    box.append(button("✎", sdk.T("编辑并重发", "Edit and resend"), () => {
+      editing = { sid, index, draft: text, sending: false };
+      repaint();
     }, busy));
     box.append(button("↻", sdk.T("重新生成", "Regenerate"), () => act(api, "fork", { session_id: sid, index }), busy));
     if (info && info.branches.length) {
@@ -67,10 +140,18 @@
         observer.disconnect();
         let lastUser = -1;
         Array.from(thread.children).forEach((node, index) => {
-          var _a, _b;
+          var _a, _b, _c;
           (_a = node.querySelector(":scope > .gah-wl-bar")) == null ? void 0 : _a.remove();
           (_b = node.querySelector(".gah-wl-branch")) == null ? void 0 : _b.remove();
           const message = state.messages[index];
+          const mine = !!editing && editing.sid === sid && editing.index === index && (message == null ? void 0 : message.role) === "user";
+          const open = node.querySelector(":scope > .gah-wl-edit");
+          if (!mine && open) open.remove();
+          node.classList.toggle("gah-wl-editing", mine);
+          if (mine && editing) {
+            if (open) (_c = open.gahSync) == null ? void 0 : _c.call(open, state.running);
+            else node.append(editor(api, editing, state.running));
+          }
           if ((message == null ? void 0 : message.role) === "assistant" && lastUser >= 0 && !state.running) {
             const actions = node.querySelector(".message-actions");
             if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
@@ -84,8 +165,13 @@
         observer.observe(thread, { childList: true, subtree: !state.running });
       };
       const observer = new MutationObserver(paint);
+      repaint = paint;
       paint();
-      return () => observer.disconnect();
+      return () => {
+        observer.disconnect();
+        if (repaint === paint) repaint = () => {
+        };
+      };
     }, [api, state]);
     return null;
   }
