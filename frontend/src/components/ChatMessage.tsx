@@ -171,7 +171,10 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
     }
     groups.at(-1)!.steps.push(step);
   }
-  groups.at(-1)!.notes.push(...pending);
+  // Notes delivered during the final answer (e.g. the run's file-change summary) follow it.
+  const finalAt = finalTurn ? finalTurn.turn ?? Infinity : !running && fin?.reply ? -Infinity : Infinity;
+  const after = pending.filter(n => n.at >= finalAt);
+  groups.at(-1)!.notes.push(...pending.filter(n => !after.includes(n)));
   return <div className={'msg ' + m.role}>
     {m.role === 'assistant' && <div className="meta"><span className="dot" /><span className="assistant-name">GenericAgent</span>
       {m.model?.trim() && <span className="model-name" title={T('使用的模型：', 'Model used: ') + m.model}>{m.model}</span>}
@@ -194,6 +197,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
         {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
         {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
       </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={summaryOf(fin)} /><Markdown text={fin.reply} /></> : null}
+      {after.map(n => <Note key={n.i} note={n.note} />)}
     </> : <Markdown text={m.text || ''} stream={running} className={'body' + (running ? ' cursor' : '')} />}
     {m.role === 'assistant' && <div className="message-actions">
       <MessageStats m={m} turns={turns} />
