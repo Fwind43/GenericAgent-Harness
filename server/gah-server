@@ -1,0 +1,5 @@
+#!/bin/sh
+# Entry point of the ga-harness server package; see gah_server.py.
+set -e
+here=$(cd "$(dirname "$0")" && pwd -P)
+exec "$here/python/bin/python3" "$here/gah_server.py" "$@"

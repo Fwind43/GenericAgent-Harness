@@ -1,0 +1,20 @@
+# systemd unit for the ga-harness server package.
+# Install: copy the package to /opt/ga-harness, adjust User=, then
+#   sudo cp /opt/ga-harness/ga-harness.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ga-harness
+# The access token (when listening on 0.0.0.0) is in ~<User>/.ga-harness/web-token.
+[Unit]
+Description=GenericAgent-Harness web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=gah
+Environment=GAH_WEB_HOST=0.0.0.0
+Environment=GAH_WEB_PORT=8765
+ExecStart=/opt/ga-harness/gah-server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

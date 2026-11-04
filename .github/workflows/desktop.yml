@@ -5,6 +5,8 @@ name: desktop
 # draft release. The release carries, besides the installers:
 #   update.json + ga-harness-app-<version>.zip   code-only update read by desktop/src/updater.js
 #   latest.yml / latest-linux.yml + *.blockmap   installer update (electron-updater, generic feed)
+# Also built: headless Linux server packages (x64 + arm64 tar.gz, see server/) and a multi-arch
+# Docker image pushed to ghcr.io/<owner>/<repo> on pushes (not pull requests).
 # desktop/shell.json sets, per platform, the shell a release requires (raise only when the code
 # cannot run on older shells) and recommends (optional hint); otherwise desktop users only
 # download the small code package.
@@ -16,12 +18,14 @@ on:
       - "desktop/**"
       - "frontend/**"
       - "ga_harness/**"
+      - "server/**"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
       - "desktop/**"
       - "frontend/**"
       - "ga_harness/**"
+      - "server/**"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
@@ -138,9 +142,116 @@ jobs:
             out/update.json
             out/*.zip
 
+  # Headless Linux server package: bundled CPython + ga_harness + GenericAgent, no Electron.
+  server:
+    name: server-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-22.04 }
+          - { name: linux-arm64, runner: ubuntu-22.04-arm }
+    env:
+      GAH_DESKTOP_PYTHON_VERSION: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node desktop/scripts/set-version.mjs "${{ github.ref_name }}"
+
+      - name: Build web frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage Python runtime and backend
+        working-directory: desktop
+        run: node scripts/prepare.mjs
+
+      - name: Pack server tarball
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ga_harness/__init__.py)
+          arch=${{ matrix.name }}
+          sh server/build.sh "${arch#linux-}" "$version"
+
+      - name: Smoke test
+        run: |
+          dir=$(ls -d out/ga-harness-server-*/ | head -n 1)
+          GAH_HOME="$RUNNER_TEMP/gah-home" "$dir/python/bin/python3" -c "import sys; sys.path.insert(0, '$dir/py'); import ga_harness.cli"
+          test -f "$dir/py/genericagent/agentmain.py"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-server-${{ matrix.name }}
+          if-no-files-found: error
+          path: out/*.tar.gz
+
+  # Multi-arch image built from the two server tarballs.
+  docker:
+    needs: server
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: pkgs
+          pattern: desktop-server-*
+          merge-multiple: true
+
+      - name: Unpack server packages
+        run: |
+          for pair in x64:amd64 arm64:arm64; do
+            src=${pair%%:*}; dst=server/dist/${pair##*:}
+            mkdir -p "$dst"
+            tar -xzf pkgs/ga-harness-server-*-linux-$src.tar.gz -C "$dst" --strip-components=1
+          done
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, app]
+    needs: [build, app, server]
     runs-on: ubuntu-latest
     permissions:
       contents: write

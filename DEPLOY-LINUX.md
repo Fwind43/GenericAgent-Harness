@@ -1,5 +1,70 @@
 # Linux 无桌面服务器部署 ga-harness（含远程访问）
 
+## 推荐：服务端预打包版本（不需要桌面环境）
+
+服务端包包含 Python 3.12、GenericAgent、后端依赖和已构建网页，不需要自行安装 Node.js 或构建前端。支持 Linux x64 / arm64（glibc 系统，建议 Ubuntu 22.04+ / Debian 12；不适用于 Alpine/musl）。模型服务的 API 凭据仍需自行配置。
+
+### 下载与运行 tar.gz
+
+在 GitHub Actions 的 `desktop` 工作流成功后，下载对应的 `desktop-server-linux-x64` 或 `desktop-server-linux-arm64` artifact，解开 artifact ZIP 后取得 tar.gz。打 `v*` 标签时，tar.gz 也会附在草稿 Release 中；未发布草稿不会出现在公开下载页。
+
+```bash
+# 将文件名替换为实际版本；arm64 服务器选 linux-arm64
+ tar -xzf ga-harness-server-<版本>-linux-x64.tar.gz
+ cd ga-harness-server-<版本>-linux-x64
+ GAH_WEB_HOST=0.0.0.0 ./gah-server
+```
+
+默认端口为 `8765`。非回环监听首次启动会生成访问令牌并保存在 `~/.ga-harness/web-token`（权限 600），不会将令牌打印到日志。只在服务器终端自行查看它，然后打开 `http://<服务器IP>:8765/?gah_token=<令牌>`。这是令牌认证，不是账号/密码。不要分享带令牌的 URL。
+
+默认仅监听回环；上面的 `GAH_WEB_HOST=0.0.0.0` 开启网络监听。**不要直接将明文 HTTP 暴露到公网**：优先通过 Tailscale 私网 IP 访问并在防火墙限定来源；或使用 HTTPS 反向代理。域名访问需设置 `GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com`（填写实际 scheme/域名/端口）。
+
+首次访问后在 **设置 → 模型** 添加模型。状态都在 `$GAH_HOME`（默认 `~/.ga-harness`）：GA 可写副本及 `mykey.py` 位于 `genericagent/`，会话和插件设置也在该数据目录内。升级时停服务、替换安装包、保留整个数据目录；不要将数据目录放进安装包目录。启动器刷新 GA 代码，但保留模型配置、temp 和已有 memory 文件。可用 `GA_ROOT` 指定已有 GA 副本。
+
+### systemd 常驻
+
+将解压后的包内容放到 `/opt/ga-harness`，创建专用运行用户，并安装包内的 service：
+
+```bash
+sudo useradd --system --create-home --shell /bin/bash gah  # 已存在则跳过
+sudo cp /opt/ga-harness/ga-harness.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ga-harness
+sudo journalctl -u ga-harness -f
+```
+
+包内 service 以 `gah` 用户运行，监听 `0.0.0.0:8765`；确保安装目录可读、该用户主目录可写。令牌位于该用户的 `~/.ga-harness/web-token`。用 `sudo systemctl edit ga-harness` 添加环境变量，例如：
+
+```ini
+[Service]
+Environment=GAH_HOME=/var/lib/ga-harness
+Environment=GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com
+```
+
+自定义数据目录须先创建并授权给 `gah`，然后重启服务。此 service 与下文源码部署 service 是两种备选方案，不要同时安装。
+
+### Docker（amd64 / arm64 自动选择）
+
+镜像由 CI 发布至 `ghcr.io/fwind43/genericagent-harness`。`main` 分支发布 `:main` 和 `:latest`，`desktop` 分支发布 `:desktop`，版本标签发布对应版本号。首次发布需仓库管理员确认 GHCR 包可见性为 public，否则拉取需要登录。
+
+```bash
+docker volume create gah-data
+docker run -d --name ga-harness --restart unless-stopped \
+  -p 127.0.0.1:8765:8765 \
+  -v gah-data:/data \
+  ghcr.io/fwind43/genericagent-harness:main
+# 在自己的终端查看自动生成的令牌，勿粘贴到公开日志
+docker exec ga-harness cat /data/web-token
+```
+
+示例只发布到宿主机回环，可通过 SSH 隧道或 HTTPS 反代访问。Tailscale 远程直连时，将 `127.0.0.1` 替换为宿主机的实际 tailnet IPv4；不要无意中发布到所有公网接口。Docker 容器内已监听 `0.0.0.0`，默认端口 8765。使用域名时在 `docker run` 加 `-e GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com`。数据卷保留模型配置、会话和令牌；升级需拉取镜像、删除旧容器并以同一卷重新创建，**不要删除数据卷**。
+
+容器默认以 root 运行，Agent 能执行容器内命令；不要挂载 Docker socket 或不必要的宿主机目录。仅安装核心依赖，桌面自动化及其他可选集成仍需额外依赖。配置与代码同步由启动器完成，不需要 Electron。
+
+---
+
+## 备选：从源码部署
+
 适用于没有图形界面的 Linux 服务器（Ubuntu/Debian 为例，其他发行版换成对应的包管理器）。部署完成后：
 
 - ga-harness 网页界面作为 systemd 服务常驻，只监听 `127.0.0.1:8765`；

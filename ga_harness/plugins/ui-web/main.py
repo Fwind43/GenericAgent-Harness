@@ -25,7 +25,8 @@ Environment overrides for embedding (the desktop shell sets these):
   renewed on each page load; the token itself never expires), GAH_WEB_READY_FILE
   (JSON {"url", "pid"} written atomically once listening; never contains the token),
   GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed),
-  GAH_WEB_ALLOWED_ORIGINS (comma-separated, added to allowed_origins), GAH_WEB_ALLOW_NO_TOKEN=1.
+  GAH_WEB_ALLOWED_ORIGINS (comma-separated, added to allowed_origins), GAH_WEB_ALLOW_NO_TOKEN=1,
+  GAH_WEB_HOST (bind address, e.g. 0.0.0.0 in a container; overrides config host).
 External access: plugins use ``web.host.allow_origin(url)`` (returns an undo callable),
 ``web.host.access()`` and ``web.host.set_token()``; see WebHost.
 Ctrl+C in the terminal aborts a running task and stops the server.
@@ -321,8 +322,9 @@ class WebHost:
 class WebFrontend:
     def __init__(self, ctx, config):
         self.ctx = ctx
-        self.host = config.get("host", "127.0.0.1")
         env = os.environ
+        # GAH_WEB_HOST (e.g. 0.0.0.0 in a container) overrides the configured bind address.
+        self.host = env.get("GAH_WEB_HOST") or config.get("host", "127.0.0.1")
         self.port = int(env.get("GAH_WEB_PORT") or config.get("port", 0))
         flag = env.get("GAH_WEB_OPEN_BROWSER")
         self.open_browser = (bool(config.get("open_browser", True)) if flag is None
