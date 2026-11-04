@@ -399,6 +399,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.model_action(body, configure=True))
         elif path == "/api/models/remote":
             self._json(*self.frontend.model_remote(body))
+        elif path == "/api/models/secret":
+            self._json(*self.frontend.model_secret(body))
         elif path == "/api/models/test":
             self._json(*self.frontend.model_test(body))
         elif path == "/api/abort":

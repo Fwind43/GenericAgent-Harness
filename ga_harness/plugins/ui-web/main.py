@@ -612,6 +612,17 @@ class WebFrontend:
         except Exception:
             return 500, {"error": "could not list provider models"}
 
+    def model_secret(self, body):
+        """Reveal one stored API key on explicit user request (Settings > Models "Show")."""
+        if not self.models:
+            return 404, {"error": "model-store is not enabled"}
+        try:
+            return 200, self.models.secret(body)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except Exception:
+            return 500, {"error": "could not read the key"}
+
     def model_test(self, body):
         """Send one tiny request to check URL, key and model; network-bound, so the lock is not held."""
         if not self.models:

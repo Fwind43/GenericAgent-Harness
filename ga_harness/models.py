@@ -540,6 +540,24 @@ class Models:
                 errors.append(str(e))
         raise ValueError(errors[0])
 
+    def secret(self, body):
+        """Return the stored API key literal (as written in mykey.py, e.g. ``${ENV}``) on explicit request."""
+        with self.lock:
+            _, _, data, _ = self._read()
+            providers = self._providers(data)
+            pid, key = body.get("provider"), body.get("key")
+            if pid:
+                if not isinstance(pid, str) or pid not in providers:
+                    raise ValueError("unknown provider")
+                value = providers[pid].get("apikey")
+            elif isinstance(key, str) and _supported(key, data.get(key)):
+                src = data[key]
+                pv = providers.get(src.get("provider")) if src.get("provider") else None
+                value = (pv or src).get("apikey")
+            else:
+                raise ValueError("unknown model configuration")
+        return {"apikey": value if isinstance(value, str) else ""}
+
     def _connection(self, body):
         with self.lock:
             _, _, data, _ = self._read()

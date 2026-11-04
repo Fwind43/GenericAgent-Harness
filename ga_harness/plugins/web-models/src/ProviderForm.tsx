@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useState } from 'react';
 import { T, confirmDialog, type ModelEntry, type ProviderEntry } from '@gah/sdk';
-import { Credentials, Field, FormActions, Protocol, Section, useDraft, type SaveModel } from './ModelForm';
+import { Credentials, Field, FormActions, Protocol, Section, useDraft, type RevealKey, type SaveModel } from './ModelForm';
 import { RemoteModels, type FetchModels } from './RemoteModels';
 import { ProviderModels, type QuickSave } from './ProviderModels';
 
@@ -20,10 +20,10 @@ export function providerId(name: string, base: string, taken: Iterable<string>) 
   for (let n = 2; used.has(id); n++) id = `${root}-${n}`;
   return id;
 }
-export function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }: {
+export function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels, revealKey }: {
   entry?: ProviderEntry; taken?: string[]; models: ModelEntry[]; disabled: boolean; onSave: SaveModel; onQuickSave: QuickSave;
   onDirtyChange: (dirty: boolean) => void; onReset: () => void; onOpenModel: (key: string) => void; onNewModel: () => void;
-  fetchModels: FetchModels; onAddModels: (provider: string, protocol: string, ids: string[]) => void;
+  fetchModels: FetchModels; onAddModels: (provider: string, protocol: string, ids: string[]) => void; revealKey?: RevealKey;
 }) {
   const [id, setId] = useState(entry?.id || ''), [name, setName] = useState(entry?.values.name || '');
   const [protocol, setProtocol] = useState(entry?.values.protocol || 'oai');
@@ -39,7 +39,7 @@ export function ProviderForm({ entry, taken = [], models, disabled, onSave, onQu
       <Section title={T('\u670d\u52a1\u5546', 'Provider')} hint={T('\u5730\u5740\u548c\u5bc6\u94a5\u4f1a\u540c\u6b65\u5230\u4f7f\u7528\u6b64\u670d\u52a1\u5546\u7684\u6240\u6709\u6a21\u578b\u3002', 'URL and key are synced to every model that uses this provider.')}>
         <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input disabled={disabled} value={name} maxLength={120} placeholder={T('\u4f8b\u5982 OpenAI', 'For example, OpenAI')} onChange={event => setName(event.target.value)} autoFocus={!entry} /></Field>
         <Protocol value={protocol} disabled={disabled} onChange={setProtocol} />
-        <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} />
+        <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} reveal={entry && revealKey ? () => revealKey({ provider: entry.id }) : undefined} />
       </Section>
       {entry && <Section title={T('\u6a21\u578b', 'Models')} hint={used ? T('\u70b9\u51fb\u6a21\u578b\u53ef\u76f4\u63a5\u7f16\u8f91\uff1b\u6709\u6a21\u578b\u65f6\u4e0d\u80fd\u5220\u9664\u670d\u52a1\u5546\u3002', 'Click a model to edit it here; a provider with models cannot be deleted.') : T('\u8fd8\u6ca1\u6709\u6a21\u578b\u4f7f\u7528\u6b64\u670d\u52a1\u5546\u3002', 'No models use this provider yet.')}>
         <ProviderModels provider={entry.id} models={models} disabled={disabled} onSave={onQuickSave} onOpen={onOpenModel} onAdd={onNewModel} onDirtyChange={onModelDirty} />

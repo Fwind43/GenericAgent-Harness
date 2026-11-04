@@ -117,6 +117,7 @@ export function Models({ api }: { api: PluginAPI }) {
       api.notice(T('\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u751f\u6548', 'Configuration saved and applied'));
     }, setError);
   };
+  const revealKey = async (source: { provider?: string; key?: string }) => (await api.host.post<{ apikey: string }>('/api/models/secret', source)).apikey || '';
   const fetchModels: FetchModels = async source => (await api.host.post<{ models: RemoteModel[] }>('/api/models/remote', source)).models || [];
   const addModels = (provider: string, protocol: string, ids: string[]) => {
     if (!config?.writable || busy || !ids.length) return;
@@ -214,10 +215,10 @@ export function Models({ api }: { api: PluginAPI }) {
                 <button type="button" className="secondary model-back" disabled={browsing} onClick={() => { void navigate(() => select(edit.kind, edit.id, false)); }}>{T('\u8fd4\u56de\u5217\u8868', 'Back to list')}</button>
                 <div><span className="model-eyebrow">{isModel ? (entry ? T('编辑模型', 'Edit model') : T('新模型', 'New model')) : isMixin ? (mixin ? T('编辑故障转移组', 'Edit failover group') : T('新故障转移组', 'New failover group')) : (provider ? T('编辑服务商', 'Edit provider') : T('新服务商', 'New provider'))}</span><h3 ref={heading} tabIndex={-1}>{title || (isModel ? T('新增模型', 'Add model') : isMixin ? T('新增故障转移组', 'Add failover group') : T('新增服务商', 'Add provider'))}</h3></div>
               </div>
-              {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} />
+              {isModel ? <ModelForm key={edit.serial} entry={entry} config={config} initialProvider={group?.provider?.id || (!section ? config.providers[0]?.id : '')} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('model', edit.id)} onProvider={openProvider} fetchModels={fetchModels} revealKey={revealKey} />
                 : isMixin ? <MixinForm key={edit.serial} entry={mixin} config={config} disabled={locked} onSave={change} onDirtyChange={onDirtyChange} onReset={() => choose('mixin', edit.id)} />
                 : <ProviderForm key={edit.serial} entry={provider} taken={config.providers.map(item => item.id)} models={provider ? config.entries.filter(item => item.provider === provider.id) : []} disabled={locked} onSave={change} onQuickSave={quickSave}
-                  onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onOpenModel={openModel} onNewModel={() => openModel()} fetchModels={fetchModels} onAddModels={addModels} />}
+                  onDirtyChange={onDirtyChange} onReset={() => choose('provider', edit.id)} onOpenModel={openModel} onNewModel={() => openModel()} fetchModels={fetchModels} onAddModels={addModels} revealKey={revealKey} />}
             </section>
           </div>}
         </>}

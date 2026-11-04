@@ -17,11 +17,21 @@ export function useDraft(value: unknown, onDirtyChange: (dirty: boolean) => void
   useLayoutEffect(() => () => { onDirtyChange(false); }, [onDirtyChange]);
   return dirty;
 }
-export function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase, onSecret }: {
+export type RevealKey = (source: { provider?: string; key?: string }) => Promise<string>;
+export function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase, onSecret, reveal }: {
   base: string; secret: string; hasKey?: boolean; hiddenURL?: boolean; disabled: boolean;
-  onBase: (value: string) => void; onSecret: (value: string) => void;
+  onBase: (value: string) => void; onSecret: (value: string) => void; reveal?: () => Promise<string>;
 }) {
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState(false), [stored, setStored] = useState<string | null>(null), [error, setError] = useState('');
+  // The stored key is fetched only when the user presses Show; it is not a draft value until edited.
+  const toggle = async () => {
+    if (show) { setShow(false); return; }
+    setShow(true); setError('');
+    if (hasKey && reveal && stored === null) {
+      try { setStored(await reveal()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    }
+  };
+  const value = secret || (show && stored !== null ? stored : '');
   return <>
     <Field label="API Base URL" wide>
       <input required disabled={disabled} value={base} autoComplete="off" spellCheck={false} placeholder="https://api.example.com/v1" onChange={event => onBase(event.target.value)} />
@@ -30,12 +40,12 @@ export function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase,
     <div className="model-field wide">
       <label htmlFor="model-api-key">API Key</label>
       <div className="model-secret-input">
-        <input id="model-api-key" type={show ? 'text' : 'password'} autoComplete="new-password" spellCheck={false} required={!hasKey} disabled={disabled} value={secret}
+        <input id="model-api-key" type={show ? 'text' : 'password'} autoComplete="new-password" spellCheck={false} required={!hasKey} disabled={disabled} value={value}
           placeholder={hasKey ? T('\u5df2\u914d\u7f6e\uff0c\u7559\u7a7a\u4e0d\u4fee\u6539', 'Configured; leave empty to keep') : T('\u5bc6\u94a5\u6216 ${ENV_NAME}', 'API key or ${ENV_NAME}')}
           onChange={event => onSecret(event.target.value)} />
-        <button type="button" className="secondary" disabled={disabled} aria-pressed={show} onClick={() => setShow(!show)}>{show ? T('\u9690\u85cf', 'Hide') : T('\u663e\u793a', 'Show')}</button>
+        <button type="button" className="secondary" disabled={disabled} aria-pressed={show} onClick={() => { void toggle(); }}>{show ? T('\u9690\u85cf', 'Hide') : T('\u663e\u793a', 'Show')}</button>
       </div>
-      <small>{T('\u652f\u6301 ${ENV_NAME}\uff1b\u5df2\u4fdd\u5b58\u7684\u5bc6\u94a5\u4e0d\u4f1a\u56de\u663e\u3002', 'Supports ${ENV_NAME}; stored keys are never displayed.')}</small>
+      <small>{error || T('\u652f\u6301 ${ENV_NAME}\uff1b\u70b9\u51fb\u663e\u793a\u53ef\u67e5\u770b\u5df2\u4fdd\u5b58\u7684\u5bc6\u94a5\u3002', 'Supports ${ENV_NAME}; press Show to view the stored key.')}</small>
     </div>
   </>;
 }
@@ -53,9 +63,9 @@ export function FormActions({ dirty, existing, disabled, canDelete = true, onRes
     <button type="submit" disabled={disabled || (existing && !dirty)}>{T('\u4fdd\u5b58\u5e76\u751f\u6548', 'Save and apply')}</button>
   </div>;
 }
-export function ModelForm({ entry, config, initialProvider = '', disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels }: {
+export function ModelForm({ entry, config, initialProvider = '', disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels, revealKey }: {
   entry?: ModelEntry; config: ModelConfig; initialProvider?: string; disabled: boolean; onSave: SaveModel;
-  onDirtyChange: (dirty: boolean) => void; onReset: () => void; onProvider: (id: string) => void; fetchModels: FetchModels;
+  onDirtyChange: (dirty: boolean) => void; onReset: () => void; onProvider: (id: string) => void; fetchModels: FetchModels; revealKey?: RevealKey;
 }) {
   const options = useModelOptions(fetchModels), names = providerNames(config);
   const defaultProtocol = config.providers.find(item => item.id === initialProvider)?.values.protocol || 'oai';
@@ -92,7 +102,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
         {shared ? <div className="model-connection wide">
           <div><strong>{names.get(shared.id)}</strong><span>{endpoint(shared.values.apibase)}{' \u00b7 '}{shared.has_key ? T('\u5bc6\u94a5\u5df2\u914d\u7f6e', 'Key configured') : T('\u672a\u914d\u7f6e\u5bc6\u94a5', 'No key')}</span></div>
           <button type="button" className="secondary" disabled={disabled} onClick={() => onProvider(shared.id)}>{T('\u7f16\u8f91\u670d\u52a1\u5546', 'Edit provider')}</button>
-        </div> : <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} />}
+        </div> : <Credentials base={base} secret={secret} hasKey={entry?.has_key} hiddenURL={entry?.url_hidden} disabled={disabled} onBase={setBase} onSecret={setSecret} reveal={entry && revealKey ? () => revealKey({ key: entry.key }) : undefined} />}
       </Section>
       <Section title={T('\u6a21\u578b', 'Model')}>
         <div className="model-field wide">
