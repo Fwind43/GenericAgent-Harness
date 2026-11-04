@@ -24,11 +24,13 @@ class Handler:
         return str(p if p.is_absolute() else Path(self.cwd) / p)
 
 
-def _mount(with_host=True, config=None):
+def _mount(with_host=True, config=None, workspace=None):
     rt = Runtime()
     sent = []
     if with_host:
         rt.ctx.provide("run.host", WorkerHost(lambda kind, **data: sent.append(dict(kind=kind, **data)), "r1", "s1"))
+    if workspace is not None:
+        rt.ctx.provide("run.context", {"session_id": "s1", "run_id": "r1", "workspace": str(workspace)})
     tree = [{"name": "ga-hooks", "disabled": False, "config": {"ga_root": str(GA_ROOT)}},
             {"name": "ga-file-changes", "disabled": False, "config": config or {}}]
     mount(rt, tree, discover([PLUGINS]))
@@ -138,4 +140,18 @@ def test_without_run_host_only_keeps_list(tmp_path):
     hooks.trigger("agent_after", {})
     assert sent == []
     assert [f["path"] for f in rt.ctx.get("ga.file_changes")()] == [str(tmp_path / "a.txt")]
+    _unmount(rt)
+
+def test_paths_relative_to_session_workspace(tmp_path):
+    # GA's handler.cwd (its temp dir) differs from the session workspace the worker chdirs to.
+    ws = tmp_path / "ws"
+    rt, hooks, sent = _mount(workspace=ws)
+    h = Handler(tmp_path)
+    hooks.trigger("agent_before", {"handler": h})
+    ws.mkdir()
+    _tool(hooks, h, "file_write", str(ws / "hello.py"), write=lambda: (ws / "hello.py").write_text("x", encoding="utf8"))
+    hooks.trigger("agent_after", {"exit_reason": {}})
+    data = sent[0]["data"]
+    assert data["base"] == str(ws)
+    assert data["notes"] == [{"kind": "files", "text": "+ hello.py"}]
     _unmount(rt)

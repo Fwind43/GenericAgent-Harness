@@ -195,6 +195,9 @@ footer .hint{padding-bottom:2px}
 .msg-note{display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin:8px 0}
 .msg-note .note-kind{color:var(--muted);font-size:11px}
 .msg-note .note-body{max-width:85%;padding:8px 14px;background:var(--surface-muted);border:1px dashed var(--border);border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Agent-side summaries (file changes) belong to the reply: left-aligned, solid, compact. */
+.msg-note.files{align-items:flex-start}
+.msg-note.files .note-body{max-width:100%;padding:6px 12px;border-style:solid;border-radius:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px}
 /* local file references */
 .md a.md-file{display:inline-flex;align-items:baseline;gap:3px;color:#2f6feb;text-decoration:none;font-weight:500;border-radius:4px;padding:0 2px;margin:0 1px;overflow-wrap:anywhere}
 .md a.md-file:hover{background:color-mix(in srgb,#2f6feb 10%,transparent);text-decoration:underline;text-underline-offset:3px}

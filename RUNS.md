@@ -161,7 +161,7 @@ Host side (any plugin that injects `runs`):
 
 Worker side (an execution plugin mounted in the worker):
 
-- `run.context` -> `{"session_id", "run_id"}`.
+- `run.context` -> `{"session_id", "run_id", "workspace"}`.
 - `run.host` -> `WorkerHost`: `call(service, body=None, timeout=60.0)` blocks for the
   host reply and raises `RpcError` on refusal, timeout, cancellation or a broken pipe;
   `emit(name, data)` sends a `plugin.*` run event (the prefix is added when missing);

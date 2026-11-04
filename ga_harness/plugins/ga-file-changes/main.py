@@ -59,6 +59,9 @@ def summarize(files, base=None, limit=50):
 
 def apply(ctx, config):
     host = ctx.get("run.host") if ctx.has("run.host") else None
+    # Paths are shown relative to the session workspace; GA's own cwd is only a fallback.
+    run_ctx = ctx.get("run.context") if ctx.has("run.context") else None
+    workspace = run_ctx.get("workspace") if isinstance(run_ctx, dict) else None
     limit = max(1, int(config.get("max_files") or 50))
     lock = threading.Lock()
     state = {"files": {}, "pending": {}, "base": None}
@@ -97,7 +100,7 @@ def apply(ctx, config):
         handler = gactx.get("handler")
         with lock:
             state["files"], state["pending"] = {}, {}
-            state["base"] = getattr(handler, "cwd", None)
+            state["base"] = workspace or getattr(handler, "cwd", None)
         return nxt(gactx)
 
     def agent_after(gactx, nxt):

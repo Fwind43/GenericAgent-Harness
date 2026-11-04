@@ -238,7 +238,8 @@ def run_worker(connection, recipe, payload):
         if not Path(workspace).is_dir():
             raise ValueError("workspace is no longer available")
         os.chdir(workspace)
-        runtime.ctx.provide("run.context", {key: payload[key] for key in ("session_id", "run_id")})
+        runtime.ctx.provide("run.context", {**{key: payload[key] for key in ("session_id", "run_id")},
+                                            "workspace": str(workspace)})
         # Provided before any plugin mounts so worker plugins can inject it.
         host = WorkerHost(send, payload["run_id"], payload["session_id"])
         runtime.ctx.provide("run.host", host)
