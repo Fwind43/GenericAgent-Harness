@@ -24,9 +24,13 @@ function overlaysSupported() {
   return process.platform === 'win32' || process.platform === 'darwin';
 }
 
+// Electron's native setters reject -0, NaN and fractions ("conversion failure"); Math.round(-0.3)
+// is -0, which a drag across a display's top/left edge at fractional DPI coordinates produces.
+const int = (v) => Math.round(Number(v)) || 0;
+
 const clamp = (v, lo, hi, dflt) => {
   const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) || 0 : dflt;
 };
 
 // Re-validate what the renderer sent: never trust it to pick URLs or window options.
@@ -199,7 +203,7 @@ class PluginWindows {
       y = a.startsWith('top') ? area.y + MARGIN : a.startsWith('bottom') ? area.y + area.height - MARGIN : area.y + area.height / 2;
     }
     // Keep it reachable when the saved spot is on a display that is gone.
-    const d = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea;
+    const d = screen.getDisplayNearestPoint({ x: int(x), y: int(y) }).workArea;
     x = Math.min(Math.max(x, d.x), d.x + d.width);
     y = Math.min(Math.max(y, d.y), d.y + d.height);
     return { x, y };
@@ -209,7 +213,7 @@ class PluginWindows {
   static place(anchor, x, y, w, h) {
     const left = anchor.endsWith('left') ? x : anchor.endsWith('right') ? x - w : x - w / 2;
     const top = anchor.startsWith('top') ? y : anchor.startsWith('bottom') ? y - h : y - h / 2;
-    return { x: Math.round(left), y: Math.round(top), width: w, height: h };
+    return { x: int(left), y: int(top), width: int(w), height: int(h) };
   }
 
   layout(sender, box) {
@@ -241,7 +245,7 @@ class PluginWindows {
       entry.drag = { sx, sy, x: b.x, y: b.y };
     } else if (phase === 'move' && entry.drag) {
       const d = entry.drag;
-      win.setPosition(Math.round(d.x + sx - d.sx), Math.round(d.y + sy - d.sy));
+      win.setPosition(int(d.x + sx - d.sx), int(d.y + sy - d.sy));
     } else if (phase === 'end' && entry.drag) {
       const b = win.getBounds();
       if (b.x !== entry.drag.x || b.y !== entry.drag.y) {
