@@ -350,8 +350,24 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     }, [onDirtyChange]);
     return dirty;
   }
-  function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase, onSecret }) {
-    const [show, setShow] = react.useState(false);
+  function Credentials({ base, secret, hasKey, hiddenURL, disabled, onBase, onSecret, reveal }) {
+    const [show, setShow] = react.useState(false), [stored, setStored] = react.useState(null), [error, setError] = react.useState("");
+    const toggle = async () => {
+      if (show) {
+        setShow(false);
+        return;
+      }
+      setShow(true);
+      setError("");
+      if (hasKey && reveal && stored === null) {
+        try {
+          setStored(await reveal());
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      }
+    };
+    const value = secret || (show && stored !== null ? stored : "");
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: "API Base URL", wide: true, children: [
         /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, disabled, value: base, autoComplete: "off", spellCheck: false, placeholder: "https://api.example.com/v1", onChange: (event) => onBase(event.target.value) }),
@@ -369,14 +385,16 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               spellCheck: false,
               required: !hasKey,
               disabled,
-              value: secret,
+              value,
               placeholder: hasKey ? sdk.T("已配置，留空不修改", "Configured; leave empty to keep") : sdk.T("密钥或 ${ENV_NAME}", "API key or ${ENV_NAME}"),
               onChange: (event) => onSecret(event.target.value)
             }
           ),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, "aria-pressed": show, onClick: () => setShow(!show), children: show ? sdk.T("隐藏", "Hide") : sdk.T("显示", "Show") })
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, "aria-pressed": show, onClick: () => {
+            void toggle();
+          }, children: show ? sdk.T("隐藏", "Hide") : sdk.T("显示", "Show") })
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("支持 ${ENV_NAME}；已保存的密钥不会回显。", "Supports ${ENV_NAME}; stored keys are never displayed.") })
+        /* @__PURE__ */ jsxRuntime.jsx("small", { children: error || sdk.T("支持 ${ENV_NAME}；点击显示可查看已保存的密钥。", "Supports ${ENV_NAME}; press Show to view the stored key.") })
       ] })
     ] });
   }
@@ -394,7 +412,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: disabled || existing && !dirty, children: sdk.T("保存并生效", "Save and apply") })
     ] });
   }
-  function ModelForm({ entry, config, initialProvider = "", disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels }) {
+  function ModelForm({ entry, config, initialProvider = "", disabled, onSave, onDirtyChange, onReset, onProvider, fetchModels, revealKey }) {
     var _a;
     const options = useModelOptions(fetchModels), names = providerNames(config);
     const defaultProtocol = ((_a = config.providers.find((item) => item.id === initialProvider)) == null ? void 0 : _a.values.protocol) || "oai";
@@ -453,7 +471,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               ] })
             ] }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => onProvider(shared.id), children: sdk.T("编辑服务商", "Edit provider") })
-          ] }) : /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
+          ] }) : /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret, reveal: entry && revealKey ? () => revealKey({ key: entry.key }) : void 0 })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Model"), children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-field wide", children: [
@@ -642,7 +660,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     for (let n = 2; used.has(id); n++) id = `${root}-${n}`;
     return id;
   }
-  function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels }) {
+  function ProviderForm({ entry, taken = [], models, disabled, onSave, onQuickSave, onDirtyChange, onReset, onOpenModel, onNewModel, fetchModels, onAddModels, revealKey }) {
     const [id, setId] = react.useState((entry == null ? void 0 : entry.id) || ""), [name, setName] = react.useState((entry == null ? void 0 : entry.values.name) || "");
     const [protocol, setProtocol] = react.useState((entry == null ? void 0 : entry.values.protocol) || "oai");
     const [base, setBase] = react.useState((entry == null ? void 0 : entry.values.apibase) || ""), [secret, setSecret] = react.useState("");
@@ -667,7 +685,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("服务商", "Provider"), hint: sdk.T("地址和密钥会同步到使用此服务商的所有模型。", "URL and key are synced to every model that uses this provider."), children: [
           /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { disabled, value: name, maxLength: 120, placeholder: sdk.T("例如 OpenAI", "For example, OpenAI"), onChange: (event) => setName(event.target.value), autoFocus: !entry }) }),
           /* @__PURE__ */ jsxRuntime.jsx(Protocol, { value: protocol, disabled, onChange: setProtocol }),
-          /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret })
+          /* @__PURE__ */ jsxRuntime.jsx(Credentials, { base, secret, hasKey: entry == null ? void 0 : entry.has_key, hiddenURL: entry == null ? void 0 : entry.url_hidden, disabled, onBase: setBase, onSecret: setSecret, reveal: entry && revealKey ? () => revealKey({ provider: entry.id }) : void 0 })
         ] }),
         entry && /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("模型", "Models"), hint: used ? sdk.T("点击模型可直接编辑；有模型时不能删除服务商。", "Click a model to edit it here; a provider with models cannot be deleted.") : sdk.T("还没有模型使用此服务商。", "No models use this provider yet."), children: [
           /* @__PURE__ */ jsxRuntime.jsx(ProviderModels, { provider: entry.id, models, disabled, onSave: onQuickSave, onOpen: onOpenModel, onAdd: onNewModel, onDirtyChange: onModelDirty }),
@@ -1103,6 +1121,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         api.notice(sdk.T("配置已保存并生效", "Configuration saved and applied"));
       }, setError);
     };
+    const revealKey = async (source) => (await api.host.post("/api/models/secret", source)).apikey || "";
     const fetchModels = async (source) => (await api.host.post("/api/models/remote", source)).models || [];
     const addModels = (provider2, protocol, ids) => {
       if (!(config == null ? void 0 : config.writable) || busy || !ids.length) return;
@@ -1296,7 +1315,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                   /* @__PURE__ */ jsxRuntime.jsx("h3", { ref: heading, tabIndex: -1, children: title || (isModel ? sdk.T("新增模型", "Add model") : isMixin ? sdk.T("新增故障转移组", "Add failover group") : sdk.T("新增服务商", "Add provider")) })
                 ] })
               ] }),
-              isModel ? /* @__PURE__ */ jsxRuntime.jsx(ModelForm, { entry, config, initialProvider: ((_c = group == null ? void 0 : group.provider) == null ? void 0 : _c.id) || (!section ? (_d = config.providers[0]) == null ? void 0 : _d.id : ""), disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("model", edit.id), onProvider: openProvider, fetchModels }, edit.serial) : isMixin ? /* @__PURE__ */ jsxRuntime.jsx(MixinForm, { entry: mixin, config, disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("mixin", edit.id) }, edit.serial) : /* @__PURE__ */ jsxRuntime.jsx(
+              isModel ? /* @__PURE__ */ jsxRuntime.jsx(ModelForm, { entry, config, initialProvider: ((_c = group == null ? void 0 : group.provider) == null ? void 0 : _c.id) || (!section ? (_d = config.providers[0]) == null ? void 0 : _d.id : ""), disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("model", edit.id), onProvider: openProvider, fetchModels, revealKey }, edit.serial) : isMixin ? /* @__PURE__ */ jsxRuntime.jsx(MixinForm, { entry: mixin, config, disabled: locked, onSave: change, onDirtyChange, onReset: () => choose("mixin", edit.id) }, edit.serial) : /* @__PURE__ */ jsxRuntime.jsx(
                 ProviderForm,
                 {
                   entry: provider,
@@ -1310,7 +1329,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
                   onOpenModel: openModel,
                   onNewModel: () => openModel(),
                   fetchModels,
-                  onAddModels: addModels
+                  onAddModels: addModels,
+                  revealKey
                 },
                 edit.serial
               )
