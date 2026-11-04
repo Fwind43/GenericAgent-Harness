@@ -95,10 +95,24 @@
     const run = runs.get(env.run_id);
     if (!run) return;
     const data = env.data || {};
+    // Step title = the turn's <summary>: streamed by assistant.delta, final in assistant.text,
+    // and carried by durable events' turn patch (covers joining mid-run).
+    const turn = env.patch && env.patch.turn;
+    if (turn && Number(turn.turn) >= run.step && typeof turn.summary === 'string') {
+      run.step = Number(turn.turn) || run.step;
+      run.summary = turn.summary;
+    }
     if (env.name === 'turn.start') {
       run.step = Number(data.turn) || run.step + 1;
       run.tool = '';
       run.asked = null;
+      run.summary = '';
+    } else if (env.name === 'assistant.delta') {
+      if (data.part !== 'summary' || typeof data.text !== 'string' || !data.text) return;
+      if (Number(data.turn) && Number(data.turn) !== run.step) { run.step = Number(data.turn); run.summary = ''; }
+      run.summary = (run.summary || '') + data.text;
+    } else if (env.name === 'assistant.text') {
+      if (typeof data.summary === 'string' && data.summary) run.summary = data.summary;
     } else if (env.name === 'tool.call') {
       run.tool = String(data.name || data.tool || '');
       const args = data.args && typeof data.args === 'object' ? data.args : {};
@@ -165,7 +179,9 @@
       default: {
         const parts = [];
         if (run.step) parts.push(T(`\u7b2c ${run.step} \u6b65`, `Step ${run.step}`));
-        if (run.tool) parts.push(run.tool);
+        const summary = (run.summary || '').replace(/\s+/g, ' ').trim();
+        if (summary) parts.push(summary);
+        else if (run.tool) parts.push(run.tool);
         text = parts.join(' \u00b7 ') || T('\u601d\u8003\u4e2d\u2026', 'Thinking\u2026');
       }
     }
