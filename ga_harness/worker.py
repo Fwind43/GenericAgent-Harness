@@ -21,7 +21,8 @@ EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn
 # Further execution plugins come from run-store.worker_plugins or
 # Runs.register_worker_plugin.
 DEFAULT_PLUGINS = frozenset(("ga-hooks", "ga-stdout", "ga-timing",
-                             "ga-events", "ga-usage", "ga-core", "ga-prompt", "ga-tools"))
+                             "ga-events", "ga-usage", "ga-file-changes", "ga-core", "ga-prompt",
+                             "ga-tools"))
 # A mode listing HOST_PLUGINS ("*") also gets every agent plugin enabled in the
 # host at run start (live: toggling a plugin affects the next run). That is how the
 # Standard mode works.

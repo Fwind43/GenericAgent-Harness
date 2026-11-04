@@ -24,6 +24,10 @@ name = "ga-events"
 [[plugins]]
 name = "ga-usage"
 
+# files changed by file_write/file_patch in each run, listed in the transcript at the end
+[[plugins]]
+name = "ga-file-changes"
+
 [[plugins]]
 name = "ga-core"
 

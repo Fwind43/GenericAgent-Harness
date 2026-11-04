@@ -116,7 +116,7 @@ function MessageTime({ message }: { message: Message }) {
   </time>;
 }
 function Note({ note }: { note: MessageNote }) {
-  const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind;
+  const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind === 'files' ? T('修改的文件', 'Files changed') : note.kind;
   return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
 }
 // Conductor wake-ups are prompts written for the conductor model; show them as a compact
