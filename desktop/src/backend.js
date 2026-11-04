@@ -471,8 +471,34 @@ class Backend {
     return true;
   }
 
+  // A shell that crashed (or was killed) leaves its backend running: it keeps the session
+  // database and its workers alive, and the next backend would fight it. Ready files are
+  // named after the shell pid and hold the backend pid, so stop backends whose shell is gone.
+  reapOrphans() {
+    const dir = path.dirname(this.readyFile);
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch { return; }
+    for (const name of names) {
+      const m = /^backend-(\d+)\.json$/.exec(name);
+      if (!m || Number(m[1]) === process.pid) continue;
+      const file = path.join(dir, name);
+      if (pidAlive(Number(m[1]))) continue;          // another live shell instance owns it
+      let pid = 0;
+      try { pid = Number(JSON.parse(fs.readFileSync(file, 'utf8')).pid) || 0; } catch { /* torn */ }
+      if (pid && pid !== process.pid && isPythonProcess(pid)) {
+        if (process.platform === 'win32') {
+          spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+        } else {
+          try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+        }
+      }
+      fs.rmSync(file, { force: true });
+    }
+  }
+
   start() {
     fs.mkdirSync(path.dirname(this.readyFile), { recursive: true });
+    try { this.reapOrphans(); } catch { /* best effort */ }
     fs.mkdirSync(path.dirname(this.logFile), { recursive: true });
     fs.rmSync(this.readyFile, { force: true });
     const log = fs.createWriteStream(this.logFile, { flags: 'a' });
@@ -562,6 +588,22 @@ class Backend {
       try { process.kill(-pid, 'SIGKILL'); } catch { /* group gone */ }
     }
   }
+}
+
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (err) { return err.code === 'EPERM'; }
+}
+
+// Guards against pid reuse: only ever kill something that is still a Python interpreter.
+function isPythonProcess(pid) {
+  try {
+    if (process.platform === 'win32') {
+      const r = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true, encoding: 'utf8' });
+      return /^"python[w]?(\d+(\.\d+)*)?\.exe"/im.test(r.stdout || '');
+    }
+    const r = spawnSync('ps', ['-p', String(pid), '-o', 'comm='], { encoding: 'utf8' });
+    return /python/i.test(r.stdout || '');
+  } catch { return false; }
 }
 
 module.exports = {

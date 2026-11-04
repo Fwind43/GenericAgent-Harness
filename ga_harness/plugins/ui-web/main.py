@@ -945,10 +945,17 @@ class WebFrontend:
                         pass
             except (OSError, ValueError):
                 pass
-            self.log("[web] parent closed stdin; stopping")
-            if self.running:
-                self.abort()
-            self.stop()
+            # The parent is gone, so stdout/stderr pipes are usually closed too: a failing
+            # log line must never skip the shutdown, or the backend lives on as an orphan.
+            try:
+                self.log("[web] parent closed stdin; stopping")
+            except Exception:
+                pass
+            try:
+                if self.running:
+                    self.abort()
+            finally:
+                self.stop()
         threading.Thread(target=watch, name="ui-web-stdin", daemon=True).start()
 
     def stop(self):

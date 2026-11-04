@@ -236,10 +236,12 @@ function relaunch() {
 }
 
 function showWindow() {
-  if (!win) return;
+  if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+  // Brought back from the tray onto a dead page: reload instead of showing white.
+  if (win.webContents.isCrashed()) win.webContents.reload();
 }
 
 // Closing the window keeps the backend (and any running task) alive in the tray; only the
@@ -414,7 +416,38 @@ function createWindow(url) {
   // Open plugin windows once the main page has set the session cookie they authenticate with.
   win.webContents.once('did-finish-load', () => { if (pluginWindows) pluginWindows.setOrigin(origin); });
   win.webContents.on('did-finish-load', mainState);
-  win.loadURL(`${url}?gah_token=${backend.token}`);
+  // A blank window must heal itself: reload after a renderer crash and retry a failed
+  // load with backoff, instead of leaving a white page until the app is restarted.
+  const page = `${url}?gah_token=${backend.token}`;
+  let crashes = [];
+  let loadRetry = 0;
+  let retryTimer = null;
+  const reloadSoon = (delay) => {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      if (win && !win.isDestroyed() && !quitting) win.loadURL(page).catch(() => { /* did-fail-load retries */ });
+    }, delay);
+  };
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (quitting || details.reason === 'clean-exit') return;
+    const now = Date.now();
+    crashes = crashes.filter((at) => now - at < 60000);
+    crashes.push(now);
+    console.error(`[shell] renderer gone (${details.reason}, exit ${details.exitCode})`);
+    if (crashes.length <= 3) reloadSoon(500);
+    else dialog.showErrorBox('GenericAgent-Harness', t('页面反复崩溃，请按 F5 重新加载或重启应用。',
+      'The page keeps crashing. Press F5 to reload or restart the app.'));
+  });
+  win.webContents.on('did-fail-load', (_event, code, desc, failedUrl, isMainFrame) => {
+    if (!isMainFrame || code === -3 || quitting) return;   // -3 = aborted (navigation replaced)
+    console.error(`[shell] load failed (${code} ${desc}) ${failedUrl}`);
+    loadRetry += 1;
+    reloadSoon(Math.min(10000, 500 * 2 ** Math.min(loadRetry, 5)));
+  });
+  win.webContents.on('did-finish-load', () => { loadRetry = 0; });
+  win.on('unresponsive', () => console.error('[shell] page unresponsive (F5 reloads it)'));
+  win.on('closed', () => clearTimeout(retryTimer));
+  win.loadURL(page).catch(() => { /* did-fail-load retries */ });
 }
 
 // Ask for a GenericAgent checkout until the user picks a valid one (saved to desktop.json)

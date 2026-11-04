@@ -1,5 +1,5 @@
 import os
-from ga_harness import paths
+from ga_harness import ownerlock, paths
 from ga_harness.sessions import Sessions
 
 
@@ -12,4 +12,13 @@ def apply(ctx, config):
     if not path:
         path = paths.session_db(config.get("ga_root") or os.environ.get("GA_ROOT"))
         path.parent.mkdir(parents=True, exist_ok=True)
-    ctx.provide("sessions", Sessions(ctx.get("ga.agent"), path))
+    # One host per database: a second host would mark the first host's live runs
+    # interrupted while their workers keep running. Waits briefly for a host that is
+    # still shutting down; the OS drops the lock when a host is killed.
+    lock = ownerlock.acquire(path, wait=float(config.get("owner_wait", 15)))
+    try:
+        ctx.provide("sessions", Sessions(ctx.get("ga.agent"), path))
+    except BaseException:
+        lock.release()
+        raise
+    return lock.release
