@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { sessionDrafts } from './session-drafts';
 import { request } from './api';
 import { MAX_FILES, PendingStrip, pendingOf, upload, type Pending } from './components/Attachments';
 import { save, saved, T } from './i18n';
@@ -37,7 +38,10 @@ const WINDOW = 40;
 
 export function App() {
   const { state, connected, changing, notice } = useHost();
-  const [draft, setDraft] = useState(''), [sending, setSending] = useState(false);
+  const draft = useSyncExternalStore(sessionDrafts.subscribe, () => sessionDrafts.get(state.session_id));
+  // Event subscriptions are long-lived: resolve the session at the time of input.
+  const setDraft = (value: string) => sessionDrafts.set(host.getSnapshot().state.session_id, value);
+  const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false), [sidebar, setSidebar] = useState(false);
   const [collapsed, setCollapsed] = useState(() => saved('gah-side-collapsed') === '1');
   const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
@@ -99,7 +103,7 @@ export function App() {
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
   }, []);
-  useEffect(() => host.on('reset', () => { setDraft(''); stick.current = true; setSidebar(false); }), []);
+  useEffect(() => host.on('reset', () => { stick.current = true; setSidebar(false); }), []);
   useEffect(() => {
     // Legacy plugins dispatch a non-bubbling input event after setting .value.
     const node = input.current;
@@ -192,7 +196,7 @@ export function App() {
         if (state.running) { host.notice(T('任务运行中，请稍候', 'A task is running; please wait')); return; }
         await request('/api/run', { task, session_id: state.session_id, attachments });
       }
-      setDraft(''); files.forEach(p => p.preview && URL.revokeObjectURL(p.preview)); setFiles([]); stick.current = true;
+      sessionDrafts.sent(state.session_id, draft); files.forEach(p => p.preview && URL.revokeObjectURL(p.preview)); setFiles([]); stick.current = true;
     } catch (error) { host.report(error); }
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
   }
