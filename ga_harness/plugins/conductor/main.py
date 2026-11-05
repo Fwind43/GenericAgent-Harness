@@ -27,6 +27,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from ga_harness import model_keys
 from ga_harness.sessions import EFFORTS
@@ -753,6 +754,15 @@ def apply(ctx, config):
     ctx.scope.add(runs.register_worker_plugin("ga-steer"))
     ctx.on("web.snapshot", snapshot)
     ctx.provide("conductor.pending_since", pending_since)
+
+    def is_enabled(sid):
+        with lock:
+            return bool(enabled.get(sid))
+
+    def set_enabled(sid, on):
+        return toggle({"session_id": sid, "enabled": bool(on)})["enabled"]
+    # Per-session mode switch for other plugins (e.g. the channels /conductor command).
+    ctx.provide("conductor.mode", SimpleNamespace(enabled=is_enabled, toggle=set_enabled))
     ctx.on("run.finished", on_finished)
     script, style = HERE / "client.js", HERE / "client.css"
     ctx.scope.add(host.register("conductor", script=script if script.is_file() else None,

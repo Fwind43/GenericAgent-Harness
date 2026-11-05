@@ -14,7 +14,7 @@ Code: `ga_harness/channels.py` (hub) and `ga_harness/plugins/channels/`
 - On `run.finished` takes the final reply, splits it to the adapter's
   `max_len`, and sends it from one ordered delivery thread.
 - Built-in commands: `/new`, `/stop`, `/status`, `/model` (alias `/llm`),
-  `/effort`, `/help`. `/model` lists the configured models and
+  `/effort`, `/conductor`, `/help`. `/model` lists the configured models and
   `/model <number|name>` switches this chat (a partial name works when it
   matches only one model); `/effort <low|medium|high|xhigh|max|default>` sets
   its reasoning effort. Both are stored on the chat's session, refused while a
@@ -23,6 +23,12 @@ Code: `ga_harness/channels.py` (hub) and `ga_harness/plugins/channels/`
   are not run: the chat is asked to pick another model with `/model` or to
   send `/new`. Model switching uses the optional `models` service from
   `model-store`; without it `/model` reports that it is unavailable.
+- Conductor: `/conductor` shows and `/conductor <on|off>` switches conductor
+  mode for the chat's session (refused while a task is running), using the
+  `conductor.mode` service of the `conductor` plugin (enabled by default in
+  `ga-compat`). Runs with `source = "conductor"` (the conductor waking its
+  session when delegated tasks finish) are delivered to every chat bound to
+  that session, on any channel, like a chat's own runs.
 - Media: inbound files/images passed as `files=` are stored as uploads and
   attached to the run (images reach the model as vision input). Each task
   carries a short hint asking the model to write `[FILE:<absolute path>]` to

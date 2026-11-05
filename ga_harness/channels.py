@@ -28,12 +28,17 @@ HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
         "/status  查看当前会话、项目、模型和推理强度\n"
         "/model  列出模型；/model <编号|名称> 切换本聊天的模型（别名 /llm）\n"
         "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
+        "/conductor  查看指挥家模式；/conductor <on|off> 开启或关闭（本聊天的当前会话）\n"
         "/help  显示本帮助")
 BUSY = "上一个任务还在运行。发送 /stop 可以取消。"
 SESSIONS_PAGE = 10  # rows per /sessions page; numbering is global so /use <n> works from any page
 # Durable per-turn events forwarded to adapters that implement ``progress``;
 # high-frequency stream fragments (assistant.delta) are never forwarded.
 PROGRESS_EVENTS = frozenset({"turn.start", "assistant.text", "tool.call", "tool.result", "turn.end"})
+# Runs not started from a chat whose replies still belong to the chats bound to their
+# session: the conductor wakes its session when delegated tasks finish.
+FOLLOW_SOURCES = frozenset({"conductor"})
+ALL_CHANNELS = "*"
 
 
 def final_text(message):
@@ -154,11 +159,12 @@ class Hub:
     """Platform-neutral router. Published as the ``channels`` service."""
 
     def __init__(self, runs, sessions, bindings, *, workspace=None, title_prefix="channel",
-                 models=None, workspaces=None):
+                 models=None, workspaces=None, conductor=None):
         self.runs, self.sessions, self.bindings = runs, sessions, bindings
         self.workspace, self.title_prefix = workspace, title_prefix
         self.models = models  # model catalog service, or a zero-arg callable returning it
         self.workspaces = workspaces  # workspace/project service, or a zero-arg callable
+        self.conductor = conductor  # conductor mode switch, or a zero-arg callable returning it
         self.adapters = {}
         self.run_channels = {}  # run_id -> channel name or None (progress routing cache)
         self.lock = threading.RLock()
@@ -240,6 +246,41 @@ class Hub:
             if hit:
                 return hit
         return None
+
+    def _conductor(self):
+        """The conductor mode switch (enabled/toggle), or None when conductor is not loaded."""
+        mode = self.conductor
+        if mode is not None and not hasattr(mode, "toggle"):
+            try:
+                mode = mode()
+            except Exception:
+                return None
+        return mode if hasattr(mode, "toggle") and hasattr(mode, "enabled") else None
+
+    def _cmd_conductor(self, channel, chat, arg):
+        mode = self._conductor()
+        if mode is None:
+            return "未加载指挥家插件（conductor），无法使用指挥家模式。"
+        sid = self.session_for(channel, chat)
+        arg = arg.lower()
+        if not arg:
+            on = mode.enabled(sid)
+            return (f"指挥家模式：{'开启' if on else '关闭'}。"
+                    "发送 /conductor on 或 /conductor off 切换。")
+        if arg in ("on", "1", "true", "开", "开启"):
+            on = True
+        elif arg in ("off", "0", "false", "关", "关闭"):
+            on = False
+        else:
+            return "用法：/conductor <on|off>"
+        if self.runs.active_for(sid):
+            return "当前会话有任务在运行，请等它结束或发送 /stop 后再切换。"
+        try:
+            mode.toggle(sid, on)
+        except Exception as e:
+            return f"切换失败：{e}"
+        return ("已开启指挥家模式：本会话只负责规划与委派，子任务完成后结果会推送到这里。"
+                if on else "已关闭指挥家模式。")
 
     def _workspaces(self):
         """The workspace/project service, or None when workspace-store is not loaded."""
@@ -329,6 +370,8 @@ class Hub:
             return self._cmd_model(channel, chat, arg)
         if word == "/effort":
             return self._cmd_effort(channel, chat, arg)
+        if word == "/conductor":
+            return self._cmd_conductor(channel, chat, arg)
         if word == "/projects":
             return self._cmd_project(channel, chat, "")
         if word == "/project":
@@ -346,8 +389,15 @@ class Hub:
             if not session:
                 return "还没有会话。"
             busy = "运行中" if self.runs.active_for(sid) else "空闲"
+            mode = self._conductor()
+            conductor = ""
+            if mode is not None:
+                try:
+                    conductor = f"指挥家模式：{'开启' if mode.enabled(sid) else '关闭'}\n"
+                except Exception:
+                    pass
             return (f"会话 {sid}（{busy}）\n标题：{session.get('title') or '-'}\n"
-                    f"{self._scope_text(sid, session)}{self._describe(session)}")
+                    f"{self._scope_text(sid, session)}{conductor}{self._describe(session)}")
         return None
 
     # -- project switching ------------------------------------------------
@@ -618,8 +668,28 @@ class Hub:
         d = uploads.save(io.BytesIO(data), len(data), f.get("name") or "file", f.get("mime"))
         return {"url": d["url"], "mime": d["mime"]}
 
+    @staticmethod
+    def _source_channel(source):
+        """Channel a run's replies go to: its chat channel, ALL_CHANNELS for
+        FOLLOW_SOURCES (every chat bound to the session), else None."""
+        source = source or ""
+        if source.startswith("channel:"):
+            return source.split(":", 1)[1]
+        return ALL_CHANNELS if source in FOLLOW_SOURCES else None
+
+    def _targets(self, channel, sid):
+        """(channel, chat) pairs bound to ``sid`` for a routed channel."""
+        if not channel or not sid:
+            return []
+        if channel != ALL_CHANNELS:
+            return [(channel, chat) for chat in self.bindings.chats_for(channel, sid)]
+        with self.lock:
+            names = list(self.adapters)
+        return [(name, chat) for name in names for chat in self.bindings.chats_for(name, sid)]
+
     def _run_channel(self, run_id):
-        """Channel name of a run started from a chat (cached), else None."""
+        """Channel name of a run started from a chat (cached), ALL_CHANNELS for
+        conductor wake-ups, else None."""
         with self.lock:
             if run_id in self.run_channels:
                 return self.run_channels[run_id]
@@ -627,7 +697,7 @@ class Hub:
             source = self.runs.get(run_id).get("source") or ""
         except Exception:
             return None
-        channel = source.split(":", 1)[1] if source.startswith("channel:") else None
+        channel = self._source_channel(source)
         with self.lock:
             self.run_channels[run_id] = channel
             while len(self.run_channels) > 256:
@@ -642,36 +712,36 @@ class Hub:
         if name not in PROGRESS_EVENTS or not run_id or self.closed:
             return
         channel = self._run_channel(run_id)
-        adapter = self.adapters.get(channel) if channel else None
-        if adapter is None or not callable(getattr(adapter, "progress", None)):
+        if not channel:
             return
         data = envelope.get("data") if isinstance(envelope.get("data"), dict) else {}
-        for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
-            self.outbox.put((channel, str(chat), "progress", (run_id, name, data)))
+        for target, chat in self._targets(channel, envelope.get("session_id")):
+            adapter = self.adapters.get(target)
+            if adapter is not None and callable(getattr(adapter, "progress", None)):
+                self.outbox.put((target, str(chat), "progress", (run_id, name, data)))
 
     def on_run_finished(self, envelope):
         """Kernel ``run.finished`` subscriber: deliver the answer to its chat."""
         run = (envelope or {}).get("run") or {}
-        source = run.get("source") or ""
-        if not source.startswith("channel:"):
+        channel = self._source_channel(run.get("source"))
+        if not channel:
             return
-        channel = source.split(":", 1)[1]
         with self.lock:
             self.run_channels.pop(run.get("id"), None)
         text, paths = extract_files(final_text(envelope.get("message")))
         status = run.get("status")
         if not text and not paths:
             text = "（已取消）" if status == "aborted" else "（无回复）"
-        adapter = self.adapters.get(channel)
-        rich = adapter is not None and callable(getattr(adapter, "finish", None))
-        for chat in self.bindings.chats_for(channel, envelope.get("session_id")):
+        for target, chat in self._targets(channel, envelope.get("session_id")):
+            adapter = self.adapters.get(target)
+            rich = adapter is not None and callable(getattr(adapter, "finish", None))
             if rich and not self.closed:
-                self.outbox.put((channel, str(chat), "finish",
+                self.outbox.put((target, str(chat), "finish",
                                  (run.get("id"), text, status, run.get("error"))))
             elif text:
-                self.reply(channel, chat, text)
+                self.reply(target, chat, text)
             for path in paths:
-                self.reply_file(channel, chat, path)
+                self.reply_file(target, chat, path)
 
     def reply(self, channel, chat, text):
         """Queue text for a chat; delivery is ordered and off the caller thread."""

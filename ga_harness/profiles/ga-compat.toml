@@ -110,6 +110,11 @@ name = "worldline"
 [[plugins]]
 name = "run-queue"
 
+# conductor mode: a session plans/delegates to child task sessions (toggled per session,
+# from the web UI or a chat's /conductor command)
+[[plugins]]
+name = "conductor"
+
 # vision_ask tool: send local images to the current model or a mykey.py model
 [[plugins]]
 name = "vlm-tool"

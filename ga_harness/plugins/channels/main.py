@@ -25,7 +25,8 @@ def apply(ctx, config):
     hub = Hub(runs, sessions, Bindings(_store_path(sessions)),
               workspace=(config or {}).get("workspace") or None,
               models=lambda: ctx.get("models"),
-              workspaces=lambda: ctx.get("workspaces"))
+              workspaces=lambda: ctx.get("workspaces"),
+              conductor=lambda: ctx.get("conductor.mode"))
     manager = ChannelManager(hub, ChannelStore(_store_path(sessions, "channels.json")))
     ctx.on("run.event", hub.on_run_event)
     ctx.on("run.finished", hub.on_run_finished)
