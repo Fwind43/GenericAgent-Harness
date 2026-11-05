@@ -235,7 +235,7 @@ html.md-lightbox-open{overflow:hidden}
 .md-lightbox.video .md-lightbox-stage img,.md-lightbox.video .md-lightbox-zoom,.md-lightbox.video .md-lightbox-btn:nth-of-type(-n+3){display:none}
 /* ga-file-changes notes with diffs: one disclosure per file, numbered unified hunks. */ .msg-note.fc{align-items:stretch}
 .msg-note.fc .note-kind{display:flex;align-items:center;gap:8px}
-.msg-note.fc .note-body.fc-list{padding:0;width:100%;box-sizing:border-box;overflow:hidden;white-space:normal;font-family:inherit;font-size:13px}
+.msg-note.fc .note-body.fc-list{padding:0;width:100%;box-sizing:border-box;overflow:hidden;overflow:clip;white-space:normal;font-family:inherit;font-size:13px}
 .msg-note.fc .fc-list.capped{overflow-y:auto;overscroll-behavior:contain}
 .msg-note.fc .fc-list[hidden]{display:none}
 .msg-note.fc .fc-list.capped .fc-diff{max-height:min(480px,calc(var(--fc-max) - 80px));min-height:120px}
@@ -246,6 +246,9 @@ html.md-lightbox-open{overflow:hidden}
 .fc-all{margin-left:auto}
 .fc-file+.fc-file,.fc-list>.fc-msg{border-top:1px solid var(--border)}
 .fc-file>summary{padding:6px 12px;min-height:32px;gap:6px;font-size:12.5px;line-height:20px}
+/* An open file keeps its header pinned while its diff scrolls past (the capped list or the page). */
+.fc-file[open]>summary{position:sticky;top:0;z-index:2;background:var(--surface,var(--bg));border-bottom:1px solid var(--border)}
+.fc-file[open]>.fc-body{border-top:0}
 .fc-file>summary .chev{opacity:.7}
 .fc-file>summary:hover .fc-path{color:var(--accent)}
 .fc-head{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
