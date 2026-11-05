@@ -155,7 +155,10 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
   // A terminal question is user-facing output, not a hidden execution step.
   const finalQuestion = !!fin && !['aborted', 'error'].includes(m.status ?? '')
     && fin.tools.some(t => window.GAHOutput.isAskUser(t.name) && (t.status !== 'done' || t.ok));
-  const finalTurn = fin && ((!fin.tools.length && fin.reply) || finalQuestion) ? fin : null;
+  // Once the run has stopped, its last turn is the outcome the user sees, so it stays
+  // visible even when it ended on a tool call; only a live turn stays folded in the steps.
+  const finalTurn = fin && ((!fin.tools.length && fin.reply) || finalQuestion
+    || (!running && (fin.reply || fin.tools.length || fin.thinking))) ? fin : null;
   const steps = finalTurn ? turns.slice(0, -1) : turns;
   const reply = (fin ? fin.reply : m.text) || '';
   const awaiting = last && finalQuestion;
