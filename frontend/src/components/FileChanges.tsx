@@ -75,7 +75,7 @@ export function FileChanges({ data, label }: { data: FilesData; label: string })
   const { files, more = 0 } = data, total = files.length + more;
   const added = files.reduce((n, f) => n + (f.added ?? 0), 0), removed = files.reduce((n, f) => n + (f.removed ?? 0), 0);
   const height = Math.max(0, Number(data.max_height ?? 420) || 0);
-  const [open, setOpen] = useState(files.length <= Math.max(1, Number(data.collapse_after ?? 5) || 5));
+  const [open, setOpen] = useState(files.length <= Math.max(0, Number(data.collapse_after ?? 0) || 0));
   // Files start folded; ``all`` overrides that and ``gen`` remounts them so manual toggles reset too.
   // Folding the list only hides it, so each file keeps its own open state across folds.
   const [all, setAll] = useState<boolean | undefined>(undefined), [gen, setGen] = useState(0);

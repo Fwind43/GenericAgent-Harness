@@ -154,7 +154,7 @@ def apply(ctx, config):
             return max(low, int(config.get(key, default)))
         except (TypeError, ValueError):
             return default
-    max_height, collapse_after = _int("max_height", 420, 0), _int("collapse_after", 5, 1)
+    max_height, collapse_after = _int("max_height", 420, 0), _int("collapse_after", 0, 0)
     lock = threading.Lock()
     state = {"files": {}, "pending": {}, "base": None, "snap": {}, "snap_bytes": 0}
 

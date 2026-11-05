@@ -32,8 +32,8 @@ max = 5000
 
 [settings.collapse_after]
 type = "integer"
-label = "Start the list folded when more files than this changed"
-label_zh = "\u4fee\u6539\u6587\u4ef6\u6570\u8d85\u8fc7\u6b64\u503c\u65f6\u5217\u8868\u9ed8\u8ba4\u6298\u53e0"
-default = 5
-min = 1
+label = "Start the list folded when more files than this changed (0 = always folded)"
+label_zh = "\u4fee\u6539\u6587\u4ef6\u6570\u8d85\u8fc7\u6b64\u503c\u65f6\u5217\u8868\u9ed8\u8ba4\u6298\u53e0\uff080 = \u59cb\u7ec8\u6298\u53e0\uff09"
+default = 0
+min = 0
 max = 1000
