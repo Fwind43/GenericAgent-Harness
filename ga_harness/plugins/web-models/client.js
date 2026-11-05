@@ -277,21 +277,23 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     };
     return { draft, set, diff };
   }
-  function AdvancedOptions({ protocol, draft, hidden = [], disabled, onChange }) {
+  const PRIMARY = /* @__PURE__ */ new Set(["reasoning_effort"]);
+  const SPECS = GROUPS.flatMap((group) => group.items);
+  function OptionField({ spec, draft, hidden = [], disabled, onChange }) {
     const defaultText = sdk.T("默认", "Default");
-    const input = (spec) => {
-      const value = draft[spec.key] ?? "", change = (v) => onChange(spec.key, v);
-      if (hidden.includes(spec.key)) return /* @__PURE__ */ jsxRuntime.jsx("input", { value: sdk.T("已在 mykey.py 中设置（此处不显示）", "Set in mykey.py (not shown here)"), disabled: true, readOnly: true });
-      if (spec.kind === "enum" || spec.kind === "bool") {
-        const choices = spec.kind === "bool" ? [["true", sdk.T("开启", "On")], ["false", sdk.T("关闭", "Off")]] : spec.choices.map((c) => [c, c]);
-        return /* @__PURE__ */ jsxRuntime.jsxs("select", { value, disabled, onChange: (event) => change(event.target.value), children: [
-          /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: defaultText }),
-          choices.map(([v, label]) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: v, children: label }, v))
-        ] });
-      }
-      if (spec.kind === "text") return /* @__PURE__ */ jsxRuntime.jsx("textarea", { rows: 4, value, disabled, maxLength: 5e4, placeholder: defaultText, onChange: (event) => change(event.target.value) });
+    const value = draft[spec.key] ?? "", change = (v) => onChange(spec.key, v);
+    let control;
+    if (hidden.includes(spec.key)) control = /* @__PURE__ */ jsxRuntime.jsx("input", { value: sdk.T("已在 mykey.py 中设置（此处不显示）", "Set in mykey.py (not shown here)"), disabled: true, readOnly: true });
+    else if (spec.kind === "enum" || spec.kind === "bool") {
+      const choices = spec.kind === "bool" ? [["true", sdk.T("开启", "On")], ["false", sdk.T("关闭", "Off")]] : spec.choices.map((c) => [c, c]);
+      control = /* @__PURE__ */ jsxRuntime.jsxs("select", { value, disabled, onChange: (event) => change(event.target.value), children: [
+        /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: defaultText }),
+        choices.map(([v, label]) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: v, children: label }, v))
+      ] });
+    } else if (spec.kind === "text") control = /* @__PURE__ */ jsxRuntime.jsx("textarea", { rows: 4, value, disabled, maxLength: 5e4, placeholder: defaultText, onChange: (event) => change(event.target.value) });
+    else {
       const numeric = spec.kind === "int" || spec.kind === "float";
-      return /* @__PURE__ */ jsxRuntime.jsx(
+      control = /* @__PURE__ */ jsxRuntime.jsx(
         "input",
         {
           type: numeric ? "number" : "text",
@@ -306,19 +308,27 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           onChange: (event) => change(event.target.value)
         }
       );
-    };
+    }
+    return /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T(spec.zh, spec.en), wide: spec.kind === "text", children: [
+      control,
+      /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+        /* @__PURE__ */ jsxRuntime.jsx("code", { children: spec.key }),
+        spec.hint ? " · " + sdk.T(spec.hint[0], spec.hint[1]) : ""
+      ] })
+    ] });
+  }
+  const visible = (spec, protocol) => !spec.only || spec.only === protocol;
+  function PrimaryOptions(props) {
+    return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: SPECS.filter((spec) => PRIMARY.has(spec.key) && visible(spec, props.protocol)).map((spec) => /* @__PURE__ */ jsxRuntime.jsx(OptionField, { spec, ...props }, spec.key)) });
+  }
+  function AdvancedOptions(props) {
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       GROUPS.map((group) => {
-        const items = group.items.filter((spec) => !spec.only || spec.only === protocol);
+        const items = group.items.filter((spec) => !PRIMARY.has(spec.key) && visible(spec, props.protocol));
+        if (!items.length) return null;
         return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-advanced-group", children: [
           /* @__PURE__ */ jsxRuntime.jsx("h4", { children: sdk.T(group.zh, group.en) }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: items.map((spec) => /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T(spec.zh, spec.en), wide: spec.kind === "text", children: [
-            input(spec),
-            /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
-              /* @__PURE__ */ jsxRuntime.jsx("code", { children: spec.key }),
-              spec.hint ? " · " + sdk.T(spec.hint[0], spec.hint[1]) : ""
-            ] })
-          ] }, spec.key)) })
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: items.map((spec) => /* @__PURE__ */ jsxRuntime.jsx(OptionField, { spec, ...props }, spec.key)) })
         ] }, group.en);
       }),
       /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-advanced-note", children: sdk.T("留空表示使用 GA 默认值；清空已有的值会从 mykey.py 删除该项。", "Leave empty to use the GA default; clearing a value removes it from mykey.py.") })
@@ -436,7 +446,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       void options.load(provider ? { provider } : { key: entry == null ? void 0 : entry.key, apibase: base.trim(), apikey: secret, protocol });
     };
     const exact = options.items.some((item) => item.id === model);
-    const visible = options.items.filter((item) => !model || exact || sdk.matches(model, item.id, item.name)).slice(0, 50);
+    const visible2 = options.items.filter((item) => !model || exact || sdk.matches(model, item.id, item.name)).slice(0, 50);
     return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "model-form", onInvalidCapture: (event) => {
       var _a2;
       return (_a2 = event.target.closest("details")) == null ? void 0 : _a2.setAttribute("open", "");
@@ -498,7 +508,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || options.loading || !canFetch, title: canFetch ? "" : sdk.T("先选择服务商或填写 API 地址", "Choose a provider or enter an API URL first"), onClick: fetchList, children: options.loading ? sdk.T("获取中…", "Fetching…") : options.items.length ? sdk.T("重新获取", "Refresh") : sdk.T("从服务商获取", "Fetch from provider") })
             ] }),
             options.error ? /* @__PURE__ */ jsxRuntime.jsx("small", { className: "model-error", children: options.error }) : options.items.length ? /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("服务商返回 " + options.items.length + " 个模型，输入可筛选，点击选用", options.items.length + " models available; type to filter, click to use") }) : /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("传给接口的 model 参数，可手动填写或从服务商获取。", "The model parameter sent to the API. Type it or fetch from the provider.") }),
-            suggest && options.items.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-suggest", role: "listbox", "aria-label": sdk.T("可用模型", "Available models"), children: visible.length ? visible.map((item) => /* @__PURE__ */ jsxRuntime.jsxs(
+            suggest && options.items.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-suggest", role: "listbox", "aria-label": sdk.T("可用模型", "Available models"), children: visible2.length ? visible2.map((item) => /* @__PURE__ */ jsxRuntime.jsxs(
               "button",
               {
                 type: "button",
@@ -518,7 +528,8 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             )) : /* @__PURE__ */ jsxRuntime.jsx("p", { children: sdk.T("没有匹配的模型，将使用输入的 ID", "No match; the typed ID will be used") }) })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("显示名称", "Display name"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { value: name, disabled, maxLength: 120, placeholder: model || sdk.T("默认使用模型 ID", "Defaults to model ID"), onChange: (event) => setName(event.target.value) }) }),
-          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("上下文窗口", "Context window"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) }) })
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("上下文窗口", "Context window"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) }) }),
+          /* @__PURE__ */ jsxRuntime.jsx(PrimaryOptions, { protocol, draft: opts.draft, hidden: entry == null ? void 0 : entry.options_hidden, disabled, onChange: opts.set })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
           /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
@@ -965,13 +976,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
     const [edit, setEdit] = react.useState({ kind: "provider", serial: 0 }), [detail, setDetail] = react.useState(false);
     const [quick, setQuick] = react.useState(false);
-    const [simple, setSimple] = react.useState(() => localStorage.getItem("gah.models.view") !== "advanced");
-    const toggleSimple = () => {
-      const next = !simple;
-      setSimple(next);
-      localStorage.setItem("gah.models.view", next ? "simple" : "advanced");
-      if (next && edit.kind === "mixin") switchView("provider");
-    };
     const draft = react.useRef(false), blocked = react.useRef(false), leaving = react.useRef(false), alive = react.useRef(true);
     const heading = react.useRef(null);
     const onDirtyChange = react.useCallback((value) => {
@@ -1198,7 +1202,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const title = isModel ? (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || (entry == null ? void 0 : entry.key) : isMixin ? mixin == null ? void 0 : mixin.key : (provider == null ? void 0 : provider.values.name) || (provider == null ? void 0 : provider.id);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsx(ModelPicker, { api }),
-      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : "") + (simple ? " is-simple" : ""), children: [
+      state.models && /* @__PURE__ */ jsxRuntime.jsx(sdk.SettingsPanel, { api, label: sdk.T("模型", "Models"), icon: "cpu", order: 10, className: "gah-model-dialog", onOpen: load, onBeforeLeave: canLeave, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content model-workspace" + (detail ? " is-detail" : ""), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-workspace-head", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-view-switch", role: "group", "aria-label": sdk.T("模型与服务商", "Models and providers"), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": edit.kind === "provider", disabled: browsing, onClick: () => switchView("provider"), children: [
@@ -1209,7 +1213,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
               sdk.T("模型", "Models"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: (config == null ? void 0 : config.entries.length) ?? 0 })
             ] }),
-            !simple && /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isMixin, disabled: browsing, onClick: () => switchView("mixin"), children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", "aria-pressed": isMixin, disabled: browsing, onClick: () => switchView("mixin"), children: [
               sdk.T("故障转移组", "Failover groups"),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: ((_b = config == null ? void 0 : config.mixins) == null ? void 0 : _b.length) ?? 0 })
             ] })
@@ -1217,7 +1221,6 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "model-quick-open", disabled: browsing || locked || quick, onClick: () => {
             void navigate(() => setQuick(true));
           }, children: sdk.T("+ 快速添加", "+ Quick add") }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-mode", "aria-pressed": !simple, title: sdk.T("高级模式显示故障转移组和每个模型的调优参数", "Advanced mode shows failover groups and per-model tuning"), onClick: toggleSimple, children: simple ? sdk.T("简单模式", "Simple") : sdk.T("高级模式", "Advanced") }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary model-refresh", disabled: browsing, onClick: () => {
             void navigate(() => {
               void load();

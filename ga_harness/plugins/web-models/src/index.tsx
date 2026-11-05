@@ -16,9 +16,6 @@ export function Models({ api }: { api: PluginAPI }) {
   const [query, setQuery] = useState(''), [section, setSection] = useState('');
   const [edit, setEdit] = useState<Edit>({ kind: 'provider', serial: 0 }), [detail, setDetail] = useState(false);
   const [quick, setQuick] = useState(false);
-  // Simple view hides failover groups and per-model tuning; advanced users opt in once and it sticks.
-  const [simple, setSimple] = useState(() => localStorage.getItem('gah.models.view') !== 'advanced');
-  const toggleSimple = () => { const next = !simple; setSimple(next); localStorage.setItem('gah.models.view', next ? 'simple' : 'advanced'); if (next && edit.kind === 'mixin') switchView('provider'); };
   const draft = useRef(false), blocked = useRef(false), leaving = useRef(false), alive = useRef(true);
   const heading = useRef<HTMLHeadingElement>(null);
   const onDirtyChange = useCallback((value: boolean) => { draft.current = value; }, []);
@@ -173,15 +170,14 @@ export function Models({ api }: { api: PluginAPI }) {
   return <>
     <ModelPicker api={api} />
     {state.models && <SettingsPanel api={api} label={T('\u6a21\u578b', 'Models')} icon="cpu" order={10} className="gah-model-dialog" onOpen={load} onBeforeLeave={canLeave}>
-      <div className={'dialog-content model-workspace' + (detail ? ' is-detail' : '') + (simple ? ' is-simple' : '')}>
+      <div className={'dialog-content model-workspace' + (detail ? ' is-detail' : '')}>
         <div className="model-workspace-head">
           <div className="model-view-switch" role="group" aria-label={T('\u6a21\u578b\u4e0e\u670d\u52a1\u5546', 'Models and providers')}>
             <button type="button" aria-pressed={edit.kind === 'provider'} disabled={browsing} onClick={() => switchView('provider')}>{T('\u670d\u52a1\u5546', 'Providers')}<span>{config?.providers.length ?? 0}</span></button>
             <button type="button" aria-pressed={isModel} disabled={browsing} onClick={() => switchView('model')}>{T('\u6a21\u578b', 'Models')}<span>{config?.entries.length ?? 0}</span></button>
-            {!simple && <button type="button" aria-pressed={isMixin} disabled={browsing} onClick={() => switchView('mixin')}>{T('\u6545\u969c\u8f6c\u79fb\u7ec4', 'Failover groups')}<span>{config?.mixins?.length ?? 0}</span></button>}
+            <button type="button" aria-pressed={isMixin} disabled={browsing} onClick={() => switchView('mixin')}>{T('\u6545\u969c\u8f6c\u79fb\u7ec4', 'Failover groups')}<span>{config?.mixins?.length ?? 0}</span></button>
           </div>
           <button type="button" className="model-quick-open" disabled={browsing || locked || quick} onClick={() => { void navigate(() => setQuick(true)); }}>{T('+ \u5feb\u901f\u6dfb\u52a0', '+ Quick add')}</button>
-          <button type="button" className="secondary model-mode" aria-pressed={!simple} title={T('\u9ad8\u7ea7\u6a21\u5f0f\u663e\u793a\u6545\u969c\u8f6c\u79fb\u7ec4\u548c\u6bcf\u4e2a\u6a21\u578b\u7684\u8c03\u4f18\u53c2\u6570', 'Advanced mode shows failover groups and per-model tuning')} onClick={toggleSimple}>{simple ? T('\u7b80\u5355\u6a21\u5f0f', 'Simple') : T('\u9ad8\u7ea7\u6a21\u5f0f', 'Advanced')}</button>
           <button type="button" className="secondary model-refresh" disabled={browsing} onClick={() => { void navigate(() => { void load(); }); }}>{T('\u5237\u65b0', 'Refresh')}</button>
         </div>
         {error && <p className="model-error" role="alert">{error}</p>}

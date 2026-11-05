@@ -195,12 +195,9 @@
 .model-owned-item .model-owned-row{flex:1}
 .model-owned-delete{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;padding:6px 8px;margin-right:2px;border-radius:6px;cursor:pointer}
 .model-owned-delete:hover:not(:disabled),.model-owned-delete:focus-visible{color:var(--danger,#d64545);background:color-mix(in srgb,var(--danger,#d64545) 10%,transparent)}
-/* Quick add wizard, duplicate banner and simple view. */
+/* Quick add wizard, duplicate banner. */
 .gah-model-dialog .model-workspace-head{justify-content:flex-start}
 .gah-model-dialog .model-quick-open{margin-left:auto;padding:7px 12px;font-size:12px}
-.gah-model-dialog .model-mode{padding:7px 10px;font-size:12px}
-.gah-model-dialog .model-mode[aria-pressed=true]{color:var(--accent)}
-.gah-model-dialog .model-workspace.is-simple .model-advanced{display:none}
 .gah-model-dialog .model-duplicates{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-muted);font-size:13px}
 .gah-model-dialog .model-duplicates span{min-width:0;overflow-wrap:anywhere}
 .gah-model-dialog .model-duplicates button{flex:none;padding:6px 12px;font-size:12px}

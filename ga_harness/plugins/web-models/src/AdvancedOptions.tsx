@@ -61,31 +61,45 @@ export function useOptions(initial: Options = {}) {
   return { draft, set, diff };
 }
 
-export function AdvancedOptions({ protocol, draft, hidden = [], disabled, onChange }: {
-  protocol: string; draft: Record<string, string>; hidden?: string[]; disabled: boolean; onChange: (key: string, value: string) => void;
-}) {
+type FieldProps = { protocol: string; draft: Record<string, string>; hidden?: string[]; disabled: boolean; onChange: (key: string, value: string) => void };
+/** Options shown in the main Model section instead of the collapsed Advanced block. */
+const PRIMARY = new Set(['reasoning_effort']);
+const SPECS = GROUPS.flatMap(group => group.items);
+
+function OptionField({ spec, draft, hidden = [], disabled, onChange }: FieldProps & { spec: Spec }) {
   const defaultText = T('\u9ed8\u8ba4', 'Default');
-  const input = (spec: Spec) => {
-    const value = draft[spec.key] ?? '', change = (v: string) => onChange(spec.key, v);
-    if (hidden.includes(spec.key)) return <input value={T('\u5df2\u5728 mykey.py \u4e2d\u8bbe\u7f6e\uff08\u6b64\u5904\u4e0d\u663e\u793a\uff09', 'Set in mykey.py (not shown here)')} disabled readOnly />;
-    if (spec.kind === 'enum' || spec.kind === 'bool') {
-      const choices = spec.kind === 'bool' ? [['true', T('\u5f00\u542f', 'On')], ['false', T('\u5173\u95ed', 'Off')]] : spec.choices!.map(c => [c, c]);
-      return <select value={value} disabled={disabled} onChange={event => change(event.target.value)}>
-        <option value="">{defaultText}</option>{choices.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-      </select>;
-    }
-    if (spec.kind === 'text') return <textarea rows={4} value={value} disabled={disabled} maxLength={50000} placeholder={defaultText} onChange={event => change(event.target.value)} />;
+  const value = draft[spec.key] ?? '', change = (v: string) => onChange(spec.key, v);
+  let control;
+  if (hidden.includes(spec.key)) control = <input value={T('\u5df2\u5728 mykey.py \u4e2d\u8bbe\u7f6e\uff08\u6b64\u5904\u4e0d\u663e\u793a\uff09', 'Set in mykey.py (not shown here)')} disabled readOnly />;
+  else if (spec.kind === 'enum' || spec.kind === 'bool') {
+    const choices = spec.kind === 'bool' ? [['true', T('\u5f00\u542f', 'On')], ['false', T('\u5173\u95ed', 'Off')]] : spec.choices!.map(c => [c, c]);
+    control = <select value={value} disabled={disabled} onChange={event => change(event.target.value)}>
+      <option value="">{defaultText}</option>{choices.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+    </select>;
+  } else if (spec.kind === 'text') control = <textarea rows={4} value={value} disabled={disabled} maxLength={50000} placeholder={defaultText} onChange={event => change(event.target.value)} />;
+  else {
     const numeric = spec.kind === 'int' || spec.kind === 'float';
-    return <input type={numeric ? 'number' : 'text'} step={spec.kind === 'float' ? 'any' : numeric ? 1 : undefined} min={spec.min} max={spec.max}
+    control = <input type={numeric ? 'number' : 'text'} step={spec.kind === 'float' ? 'any' : numeric ? 1 : undefined} min={spec.min} max={spec.max}
       value={value} disabled={disabled} spellCheck={false} autoComplete="off" placeholder={spec.ph ? defaultText + ' ' + spec.ph : defaultText} onChange={event => change(event.target.value)} />;
-  };
+  }
+  return <Field label={T(spec.zh, spec.en)} wide={spec.kind === 'text'}>
+    {control}<small><code>{spec.key}</code>{spec.hint ? ' \u00b7 ' + T(spec.hint[0], spec.hint[1]) : ''}</small>
+  </Field>;
+}
+
+const visible = (spec: Spec, protocol: string) => !spec.only || spec.only === protocol;
+
+export function PrimaryOptions(props: FieldProps) {
+  return <>{SPECS.filter(spec => PRIMARY.has(spec.key) && visible(spec, props.protocol)).map(spec => <OptionField key={spec.key} spec={spec} {...props} />)}</>;
+}
+
+export function AdvancedOptions(props: FieldProps) {
   return <>{GROUPS.map(group => {
-    const items = group.items.filter(spec => !spec.only || spec.only === protocol);
+    const items = group.items.filter(spec => !PRIMARY.has(spec.key) && visible(spec, props.protocol));
+    if (!items.length) return null;
     return <div className="model-advanced-group" key={group.en}>
       <h4>{T(group.zh, group.en)}</h4>
-      <div className="model-grid">{items.map(spec => <Field key={spec.key} label={T(spec.zh, spec.en)} wide={spec.kind === 'text'}>
-        {input(spec)}<small><code>{spec.key}</code>{spec.hint ? ' \u00b7 ' + T(spec.hint[0], spec.hint[1]) : ''}</small>
-      </Field>)}</div>
+      <div className="model-grid">{items.map(spec => <OptionField key={spec.key} spec={spec} {...props} />)}</div>
     </div>;
   })}<p className="model-advanced-note">{T('\u7559\u7a7a\u8868\u793a\u4f7f\u7528 GA \u9ed8\u8ba4\u503c\uff1b\u6e05\u7a7a\u5df2\u6709\u7684\u503c\u4f1a\u4ece mykey.py \u5220\u9664\u8be5\u9879\u3002', 'Leave empty to use the GA default; clearing a value removes it from mykey.py.')}</p></>;
 }

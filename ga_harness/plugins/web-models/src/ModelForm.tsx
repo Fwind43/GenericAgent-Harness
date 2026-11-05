@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { T, confirmDialog, matches, type ModelConfig, type ModelEntry, type ModelValues, type MixinValues } from '@gah/sdk';
 import { endpoint, providerNames } from './helpers';
 import { useModelOptions, type FetchModels } from './RemoteModels';
-import { AdvancedOptions, useOptions, type OptionValue } from './AdvancedOptions';
+import { AdvancedOptions, PrimaryOptions, useOptions, type OptionValue } from './AdvancedOptions';
 
 export function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
   return <label className={'model-field' + (wide ? ' wide' : '')}>{label}{children}</label>;
@@ -125,6 +125,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
         </div>
         <Field label={T('\u663e\u793a\u540d\u79f0', 'Display name')}><input value={name} disabled={disabled} maxLength={120} placeholder={model || T('\u9ed8\u8ba4\u4f7f\u7528\u6a21\u578b ID', 'Defaults to model ID')} onChange={event => setName(event.target.value)} /></Field>
         <Field label={T('\u4e0a\u4e0b\u6587\u7a97\u53e3', 'Context window')}><input type="number" min={1024} step={1} value={context} disabled={disabled} placeholder={T('\u9ed8\u8ba4', 'Default')} onChange={event => setContext(event.target.value)} /></Field>
+        <PrimaryOptions protocol={protocol} draft={opts.draft} hidden={entry?.options_hidden} disabled={disabled} onChange={opts.set} />
       </Section>
       <details className="model-advanced">
         <summary>{T('\u9ad8\u7ea7', 'Advanced')}</summary>
