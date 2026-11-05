@@ -241,7 +241,7 @@ def test_commands_without_catalog_and_help(tmp_path):
         raise RuntimeError("model-store failed to start")
 
     assert [line.split()[0] for line in HELP.splitlines()] == [
-        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/help"]
+        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/conductor", "/help"]
     for n, models in enumerate((None, broken, lambda: FakeModels(rows=()))):
         (tmp_path / str(n)).mkdir()
         hub, _, _ = make_hub(tmp_path / str(n), models=models)
@@ -324,5 +324,79 @@ def test_project_commands_switch_and_keep_project(tmp_path):
         assert sessions.get(hub.bindings.get("fake", "3"))["project_id"] == ""
         hub.receive("fake", "4", "hi")  # a fresh chat never inherits the web UI's project
         assert sessions.get(hub.bindings.get("fake", "4"))["project_id"] == ""
+    finally:
+        hub.close()
+
+class FakeConductor:
+    def __init__(self):
+        self.on, self.calls = set(), []
+
+    def enabled(self, sid):
+        return sid in self.on
+
+    def toggle(self, sid, on):
+        self.calls.append((sid, on))
+        (self.on.add if on else self.on.discard)(sid)
+        return on
+
+
+def _wait_sent(adapter, n, timeout=3.0):
+    import time
+    end = time.monotonic() + timeout
+    while len(adapter.sent) < n and time.monotonic() < end:
+        time.sleep(0.01)
+    return adapter.sent
+
+
+def test_conductor_command_shows_and_toggles(tmp_path):
+    mode = FakeConductor()
+    runs, sessions = FakeRuns(), FakeSessions()
+    hub = Hub(runs, sessions, Bindings(tmp_path / "channels.db"), conductor=lambda: mode)
+    try:
+        assert hub.command("fake", "3", "/conductor").startswith("指挥家模式：关闭。")
+        sid = hub.bindings.get("fake", "3")
+        assert hub.command("fake", "3", "/conductor maybe") == "用法：/conductor <on|off>"
+        assert hub.command("fake", "3", "/CONDUCTOR@bot on").startswith("已开启指挥家模式")
+        assert mode.calls == [(sid, True)] and mode.enabled(sid)
+        assert "\n指挥家模式：开启\n" in hub.command("fake", "3", "/status")
+        runs.active[sid] = {"id": "r9"}
+        assert hub.command("fake", "3", "/conductor off").startswith("当前会话有任务在运行")
+        assert mode.enabled(sid)
+        runs.active.clear()
+        assert hub.command("fake", "3", "/conductor 关") == "已关闭指挥家模式。"
+        assert not mode.enabled(sid)
+        assert "/conductor" in HELP
+    finally:
+        hub.close()
+
+
+def test_conductor_command_without_plugin(tmp_path):
+    hub, _, _ = make_hub(tmp_path)
+    try:
+        assert hub.command("fake", "3", "/conductor on").startswith("未加载指挥家插件")
+        hub.command("fake", "3", "/effort low")
+        assert "指挥家" not in hub.command("fake", "3", "/status")
+    finally:
+        hub.close()
+
+
+def test_conductor_wakeup_reply_reaches_bound_chats(tmp_path):
+    hub, _, _ = make_hub(tmp_path)
+    a, b = FakeAdapter(), FakeAdapter()
+    b.name = "other"
+    try:
+        hub.register(a)
+        hub.register(b)
+        hub.bindings.set("fake", "1", "s1")
+        hub.bindings.set("other", "2", "s1")
+        hub.bindings.set("fake", "3", "s2")
+        msg = {"turns": [{"reply": "子任务已审核"}]}
+        hub.on_run_finished({"run": {"id": "r1", "source": "conductor", "status": "done"},
+                             "session_id": "s1", "message": msg})
+        # Runs from other non-chat sources are still not forwarded.
+        hub.on_run_finished({"run": {"id": "r2", "source": "user", "status": "done"},
+                             "session_id": "s1", "message": msg})
+        assert _wait_sent(a, 1) == [("1", "子任务已审核")]
+        assert _wait_sent(b, 1) == [("2", "子任务已审核")]
     finally:
         hub.close()
