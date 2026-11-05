@@ -237,6 +237,7 @@ html.md-lightbox-open{overflow:hidden}
 .msg-note.fc .note-kind{display:flex;align-items:center;gap:8px}
 .msg-note.fc .note-body.fc-list{padding:0;width:100%;box-sizing:border-box;overflow:hidden;white-space:normal;font-family:inherit;font-size:13px}
 .msg-note.fc .fc-list.capped{overflow-y:auto;overscroll-behavior:contain}
+.msg-note.fc .fc-list[hidden]{display:none}
 .msg-note.fc .fc-list.capped .fc-diff{max-height:min(480px,calc(var(--fc-max) - 80px));min-height:120px}
 .fc-top{width:100%}
 .fc-toggle,.fc-all{display:inline-flex;align-items:center;gap:6px;padding:2px 4px;margin:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;cursor:pointer}
