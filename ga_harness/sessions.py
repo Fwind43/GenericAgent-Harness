@@ -358,7 +358,13 @@ class Sessions:
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
                     if sid == current["id"]:
-                        self._select(db, self._new(db, *fallback))
+                        # Fall back to the next existing top-level chat (same project first, in sidebar
+                        # order); only create a fresh one when nothing is left.
+                        row = db.execute(
+                            "SELECT id FROM sessions WHERE deleted=0 AND parent_id='' "
+                            "ORDER BY project_id=? DESC,pinned DESC,updated DESC,id LIMIT 1",
+                            (current["project_id"],)).fetchone()
+                        self._select(db, row[0] if row else self._new(db, *fallback))
                 else:
                     self._select(db, sid)
             selected = self.current()
