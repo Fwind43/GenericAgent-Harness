@@ -219,7 +219,8 @@ class Hub:
     def _selection(session):
         """The model/effort explicitly stored on a session."""
         state = (session or {}).get("state") or {}
-        return {k: state[k] for k in ("model", "model_key", "effort") if k in state}
+        return {k: state[k] for k in ("model", "model_key", "effort")
+                if k in state and (k != "model_key" or state[k])}
 
     @staticmethod
     def _listed(items, state):
