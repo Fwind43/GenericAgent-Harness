@@ -46,6 +46,20 @@ def test_sessions_isolation_and_cold_restart(tmp_path):
     assert restored.history == []
 
 
+def test_deleting_current_selects_existing_chat(tmp_path):
+    raw = agent()
+    store = Sessions(raw, tmp_path / "sessions.sqlite3")
+    first = store.current()["id"]
+    raw.history = ["first history"]
+    store.save([{"role": "user", "text": "first"}])
+    second = store.change("new")["id"]
+    store.create(parent_id=second, title="worker")
+    assert store.change("delete", second)["id"] == first
+    assert raw.history == ["first history"]
+    assert {s["id"] for s in store.listing() if not s["parent_id"]} == {first}
+    assert store.change("delete", first)["id"] not in (first, second)
+
+
 def test_crashed_run_is_not_replayed(tmp_path):
     path = tmp_path / "sessions.sqlite3"
     store = Sessions(agent(), path)
