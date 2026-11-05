@@ -52,8 +52,9 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   "use X for coding, Y for research"), save it with `conductor_set_policy` as clear
   written rules; it is added to your system prompt in later turns. Follow the policy
   below, if any, whenever you dispatch.
-- After dispatching, do not wait, sleep or poll. End your turn with a short status
-  for the user (what was dispatched, what happens next). When tasks finish you are
+- After dispatching, do not wait, sleep or poll (do not call `conductor_collect` to
+  wait). End your turn with a short text status for the user (what was dispatched,
+  what happens next); never end a turn on a tool call without saying anything. When tasks finish you are
   woken automatically with a `[Conductor]` message that already contains a clipped
   result of each finished task. Tasks finishing close together arrive in one
   wake-up: handle all of them in that turn. Use `conductor_collect` or
@@ -81,6 +82,11 @@ something blocks you, stop and report it. End with a report in this form:
 **Evidence** -- concrete files, commands and outputs that prove it.
 **Unverified / blocked** -- anything not checked or not finished, or "none".
 """
+
+
+IDLE_NOTE = ("[Conductor] Nothing has finished yet; you will be woken automatically when a "
+             "task finishes. Do not call any tool now. Reply to the user with a short status "
+             "(what is running, what happens next) and end your turn.")
 
 
 def _parent_prompt(limits):
@@ -115,8 +121,9 @@ TOOLS = {
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
         "conductor_collect",
-        "Return finished tasks not yet collected. If nothing has finished while tasks are "
-        "running, this ends your turn; you are woken automatically when a task finishes."), "collect"),
+        "Return finished tasks not yet collected. Not a way to wait: if nothing has finished, "
+        "reply to the user with a short status and end your turn; you are woken automatically "
+        "when a task finishes."), "collect"),
     "conductor_tasks": (_tool("conductor_tasks", "List all tasks of this conductor session."), "tasks"),
     "conductor_inspect": (_tool(
         "conductor_inspect", "Show one task in detail, including its latest result.",
@@ -194,9 +201,15 @@ def apply(ctx, config):
             result, msg = None, f"[Error] conductor {op}: {exc}"
         if (op == "collect" and isinstance(result, dict) and not result.get("finished")
                 and result.get("running") and not result.get("awaiting_review")):
-            # Nothing to review (new or earlier) yet: end the turn instead of letting the model
-            # poll. The host wakes this session when a child finishes.
-            return StepOutcome(msg, next_prompt=None, should_exit=True)
+            # Nothing to review (new or earlier) yet. The host wakes this session when a
+            # child finishes, so the model must not poll. Models often reach this right
+            # after conductor_dispatch without having written anything; ending the run here
+            # left the user with no reply. First give it one turn to report status (no
+            # tools); a repeated empty collect in the same run ends it.
+            state["idle_collects"] = state.get("idle_collects", 0) + 1
+            if state["idle_collects"] > 1:
+                return StepOutcome(msg, next_prompt=None, should_exit=True)
+            return StepOutcome(msg, next_prompt=msg + "\n" + IDLE_NOTE)
         return StepOutcome(msg, next_prompt=msg + "\n")
 
     def handler_for(op):
