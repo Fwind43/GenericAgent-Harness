@@ -219,7 +219,26 @@ class Hub:
     def _selection(session):
         """The model/effort explicitly stored on a session."""
         state = (session or {}).get("state") or {}
-        return {k: state[k] for k in ("model", "effort") if k in state}
+        return {k: state[k] for k in ("model", "model_key", "effort") if k in state}
+
+    @staticmethod
+    def _listed(items, state):
+        """Whether the session's stored model is still configured (by key, else name)."""
+        key = state.get("model_key")
+        if key and any(m.get("key") for m in items):
+            return any(m.get("key") == key for m in items)
+        return state.get("model") in [m.get("name") for m in items]
+
+    @staticmethod
+    def _chosen(items, state, current):
+        """Catalog row of the session's model (key first), else the host's current one."""
+        key, name = state.get("model_key"), state.get("model")
+        for test in ((lambda m: key and m.get("key") == key), (lambda m: not key and name and m.get("name") == name),
+                     (lambda m: not name and m.get("id") == current)):
+            hit = next((m for m in items if test(m)), None)
+            if hit:
+                return hit
+        return None
 
     def _workspaces(self):
         """The workspace/project service, or None when workspace-store is not loaded."""
@@ -293,10 +312,11 @@ class Hub:
         if word == "/new":
             old = self._session(self.bindings.get(channel, chat))
             keep = self._selection(old)
-            names = [m.get("name") for m in self._catalog()[0]]
+            items = self._catalog()[0]
             note = ""
-            if names and keep.get("model") and keep["model"] not in names:
+            if items and keep.get("model") and not self._listed(items, keep):
                 # Removed from the model config since it was picked: fall back to the default.
+                keep.pop("model_key", None)
                 note = f"模型 {keep.pop('model')} 已不在配置中，改用默认模型。"
             self._new_session(channel, chat, keep, project_id=(old or {}).get("project_id") or "")
             return "已新建会话。" + note
@@ -494,21 +514,22 @@ class Hub:
 
     def _stale_model(self, sid):
         """The session's model if the catalog no longer lists it, else None."""
-        model = ((self._session(sid) or {}).get("state") or {}).get("model")
+        state = (self._session(sid) or {}).get("state") or {}
+        model = state.get("model")
         if not model:
             return None
         try:
             items, _ = self._catalog()
         except Exception:  # no usable catalog: leave the decision to the run
             return None
-        return model if items and model not in [m.get("name") for m in items] else None
+        return model if items and not self._listed(items, state) else None
 
     def _labels(self, session):
         """(model, effort) of a session as shown to the chat user."""
         state = (session or {}).get("state") or {}
         items, current = self._catalog()
         model = state.get("model")
-        if model and items and model not in [m.get("name") for m in items]:
+        if model and items and not self._listed(items, state):
             model += "（已不在配置中，请用 /model 另选）"
         elif not model:
             host = next((m.get("name") for m in items if m.get("id") == current), None)
@@ -548,10 +569,8 @@ class Hub:
             return "无法切换模型：模型目录未加载。"
         if not arg:
             session = self._session(self.bindings.get(channel, chat))
-            chosen = ((session or {}).get("state") or {}).get("model")
-            if not chosen:
-                chosen = next((m.get("name") for m in items if m.get("id") == current), None)
-            rows = [("-> " if m.get("name") == chosen else "   ") + f"[{m.get('id')}] {m.get('name')}"
+            chosen = self._chosen(items, (session or {}).get("state") or {}, current)
+            rows = [("-> " if m is chosen else "   ") + f"[{m.get('id')}] {m.get('name')}"
                     + (f" ({m['provider']})" if m.get("provider") else "") for m in items]
             return "\n".join([f"模型：{self._labels(session)[0]}", *rows,
                               "用 /model <编号|名称> 切换。"])
@@ -562,7 +581,7 @@ class Hub:
         busy = self._busy(sid)
         if busy:
             return busy
-        self.sessions.remember_for(sid, model=item["name"])
+        self.sessions.remember_for(sid, model=item["name"], model_key=item.get("key"))
         return f"本聊天的模型：[{item['id']}] {item['name']}。"
 
     @staticmethod

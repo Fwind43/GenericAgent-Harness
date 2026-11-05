@@ -139,6 +139,8 @@ def load_module(ga_root: str | None, module: str):
 
 def apply(ctx, config):
     mod = load_module(config.get("ga_root") or os.environ.get("GA_ROOT"), config.get("module", "agentmain"))
+    from ga_harness import model_keys
+    model_keys.install(mod)   # tag clients with their mykey.py key before GA builds any
     agent = mod.GenericAgent()
     if not getattr(agent, "llmclients", None):
         # First run (e.g. the desktop's bundled GA ships an empty mykey.py): start anyway

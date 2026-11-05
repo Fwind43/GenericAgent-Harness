@@ -28,6 +28,7 @@ import time
 import uuid
 from pathlib import Path
 
+from ga_harness import model_keys
 from ga_harness.sessions import EFFORTS
 
 POLICY_MAX = 4000  # characters of model-selection policy text
@@ -118,7 +119,7 @@ def apply(ctx, config):
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
     policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
-    defaults = store.data["defaults"]  # parent -> {"model": name, "effort": level}; absent = inherit
+    defaults = store.data["defaults"]  # parent -> {"model": name, "model_key": key, "effort": level}; absent = inherit
 
     # ---- helpers ---------------------------------------------------------
     def _sid(body, key="session_id"):
@@ -155,7 +156,7 @@ def apply(ctx, config):
     def _public(task, full=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
-                                        "model", "effort")}
+                                        "model", "model_key", "effort")}
         out["objective"] = task["objective"] if full else _clip(task["objective"], 300)
         if task.get("status") in TERMINAL:
             out["result"] = task.get("result", "") if full else _clip(task.get("result", ""))
@@ -196,24 +197,37 @@ def apply(ctx, config):
             return None
 
     def _model_name(value):
-        """Resolve a requested model to its configured name (exact name, then
-        case-insensitive name, then a unique model id)."""
+        """Resolve a requested model to {"model": name, "model_key": key}: its unique
+        configuration key first, then an unambiguous exact name, case-insensitive
+        name or model id. A name shared by several models must be given by key."""
         if not isinstance(value, str) or not value.strip():
-            raise ValueError("model must be a configured model name")
+            raise ValueError("model must be a configured model key or name")
         value = value.strip()
         rows = _catalog()
         if rows is None:
             raise RuntimeError("model selection is unavailable (no model catalog)")
-        names = [row["name"] for row in rows]
-        if value in names:
-            return value
-        folded = [n for n in names if n.lower() == value.lower()]
-        if len(folded) == 1:
-            return folded[0]
-        by_id = [row["name"] for row in rows if str(row.get("model") or "").lower() == value.lower()]
-        if len(set(by_id)) == 1:
-            return by_id[0]
-        raise ValueError(f"unknown model {value!r}; call conductor_models for the configured names")
+        pick = lambda row: {"model": row["name"], "model_key": row.get("key")}
+        hit = [row for row in rows if row.get("key") and row["key"] == value]
+        if len(hit) == 1:
+            return pick(hit[0])
+        for test in ((lambda row: row["name"] == value),
+                     (lambda row: row["name"].lower() == value.lower()),
+                     (lambda row: str(row.get("model") or "").lower() == value.lower())):
+            hit = [row for row in rows if test(row)]
+            if len(hit) == 1:
+                return pick(hit[0])
+            if len(hit) > 1:
+                keys = ", ".join(str(row.get("key") or row["name"]) for row in hit)
+                raise ValueError(f"model {value!r} matches several models; give one key: {keys}")
+        raise ValueError(f"unknown model {value!r}; call conductor_models for the configured keys")
+
+    def _stored(state):
+        """The model selection stored in a session state / default, or None."""
+        name = state.get("model")
+        if not isinstance(name, str) or not name:
+            return None
+        key = state.get("model_key")
+        return {"model": name, "model_key": key if isinstance(key, str) and key else None}
 
     def _effort(value):
         if not isinstance(value, str) or value.strip().lower() not in EFFORTS:
@@ -227,14 +241,15 @@ def apply(ctx, config):
             state = dict((sessions.get(parent, light=False) or {}).get("state") or {})
         except Exception:
             pass
-        model = state.get("model")
-        if not isinstance(model, str) or not model:
-            backend = getattr(getattr(getattr(sessions, "agent", None), "llmclient", None), "backend", None)
-            model = getattr(backend, "name", None)
+        model = _stored(state)
+        if model is None:
+            try:
+                model = _stored(model_keys.selection(getattr(sessions, "agent", None)))
+            except Exception:
+                model = None
         effort = state.get("effort") if "effort" in state else getattr(getattr(sessions, "agent", None),
                                                                         "gah_reasoning_effort", None)
-        return (model if isinstance(model, str) and model else None,
-                effort if effort in EFFORTS else None)
+        return model, effort if effort in EFFORTS else None
 
     def _requested(body):
         """Validated per-call model/effort overrides (None = not given)."""
@@ -250,13 +265,13 @@ def apply(ctx, config):
         with lock:
             default = dict(defaults.get(parent) or {})
         own_model, own_effort = _parent_selection(parent)
-        return (model or default.get("model") or own_model,
+        return (model or _stored(default) or own_model,
                 effort or default.get("effort") or own_effort)
 
     def _apply_selection(task, model, effort):
         values = {}
         if model:
-            values["model"] = model
+            values.update(model)  # name + key (None clears a stale key)
         if effort:
             values["effort"] = effort
         if values:
@@ -514,12 +529,14 @@ def apply(ctx, config):
             policy = policies.get(parent)
             default = dict(defaults.get(parent) or {})
         model, effort = _selection(parent)
-        return {"models": [{"name": r["name"], "model": r.get("model"), "provider": r.get("provider")}
-                           for r in rows] if rows is not None else None,
+        view = lambda sel, eff: {"model": (sel or {}).get("model"), "model_key": (sel or {}).get("model_key"),
+                                 "effort": eff}
+        return {"models": [{"key": r.get("key"), "name": r["name"], "model": r.get("model"),
+                            "provider": r.get("provider")} for r in rows] if rows is not None else None,
                 "efforts": list(EFFORTS),
-                "conductor": {"model": own_model, "effort": own_effort},
-                "default": {"model": default.get("model"), "effort": default.get("effort")},
-                "effective_default": {"model": model, "effort": effort},
+                "conductor": view(own_model, own_effort),
+                "default": view(_stored(default), default.get("effort")),
+                "effective_default": view(model, effort),
                 "policy": policy}
 
     def set_policy(body):
@@ -562,8 +579,12 @@ def apply(ctx, config):
             previous = dict(defaults.get(parent) or {})
             default = dict(previous)
             for key, value in updates.items():
+                if key == "model":
+                    default.pop("model_key", None)
                 if value is None:
                     default.pop(key, None)
+                elif key == "model":
+                    default.update({k: v for k, v in value.items() if v})
                 else:
                     default[key] = value
             if default:
@@ -573,7 +594,8 @@ def apply(ctx, config):
         _publish()
         out = models_op({"session_id": parent})
         out.pop("models", None)
-        out["previous"] = {"model": previous.get("model"), "effort": previous.get("effort")}
+        out["previous"] = {"model": previous.get("model"), "model_key": previous.get("model_key"),
+                           "effort": previous.get("effort")}
         out["note"] = "applies to tasks dispatched from now on; running tasks keep their model"
         return out
 

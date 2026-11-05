@@ -47,7 +47,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
-from ga_harness import presets, uploads
+from ga_harness import model_keys, presets, uploads
 from ga_harness.sessions import EFFORTS, apply_effort
 
 from .handler import _Handler, _clip
@@ -648,7 +648,7 @@ class WebFrontend:
                     agent = self.ctx.get("ga.agent")
                     if self.sessions and agent is not None:
                         try:
-                            self.sessions.remember(model=getattr(getattr(agent.llmclient, "backend", None), "name", ""))
+                            self.sessions.remember(**model_keys.selection(agent))
                         except Exception:
                             # Keep the shown selection identical to what the session will run.
                             if isinstance(previous, int):

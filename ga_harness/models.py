@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode, urlsplit
 
-from ga_harness import llmconfig
+from ga_harness import llmconfig, model_keys
 
 _FIELDS = ("name", "model", "apibase", "context_win")
 # Per-model GA llmcore options (BaseSession / NativeClaudeSession). None or "" deletes the key so GA
@@ -483,6 +483,7 @@ class Models:
             except llmconfig.ConfigError:
                 continue
             out.setdefault((name, model), []).append((group_id, label))
+            out[("key", k)] = (group_id, label)
         return out
 
     def catalog(self):
@@ -495,9 +496,13 @@ class Models:
                 continue
             name = getattr(b, "name", "") or getattr(b, "model", "")
             model = getattr(b, "model", "")
-            matches = groups.get((name, model), [])
-            pid, label = matches.pop(0) if matches else (None, None)
-            rows.append({"id": i, "name": name, "model": model,
+            key = model_keys.key_of(c)
+            if key and ("key", key) in groups:
+                pid, label = groups[("key", key)]
+            else:
+                matches = groups.get((name, model), [])
+                pid, label = matches.pop(0) if matches else (None, None)
+            rows.append({"id": i, "key": key, "name": name, "model": model,
                          "provider": label, "provider_id": pid})
             if c is self.agent.llmclient:
                 current = i

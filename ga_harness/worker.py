@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import model_keys
+
 EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.start", "llm.timed")
@@ -251,12 +253,11 @@ def run_worker(connection, recipe, payload):
         agent = runtime.ctx.get("agent")
         raw = runtime.ctx.get("ga.agent")
         state = payload["state"]
-        model = state.get("model")
-        if model:
-            client = next((c for c in raw.llmclients if getattr(c.backend, "name", None) == model), None)
-            if client is None:
+        if state.get("model_key") or state.get("model"):
+            hit = model_keys.find(raw.llmclients, state.get("model_key"), state.get("model"))
+            if hit is None:
                 raise ValueError("the session's model is no longer configured")
-            raw.llmclient = client
+            raw.llmclient = hit[1]
         restore(raw, state)
         apply_effort(raw)
         # Reuse exactly the same workspace and project prompt hooks as single-agent

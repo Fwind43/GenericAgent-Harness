@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 
-from . import presets, uploads
+from . import model_keys, presets, uploads
 from .run_output import apply_event
 from .sessions import settle
 from .worker import run_worker
@@ -262,10 +262,9 @@ class Runs:
     def _seed_selection(self, state):
         state = dict(state or {})
         agent = getattr(self.sessions, "agent", None)
-        backend = getattr(getattr(agent, "llmclient", None), "backend", None)
-        name = getattr(backend, "name", None)
-        if not state.get("model") and isinstance(name, str) and name:
-            state["model"] = name
+        current = model_keys.selection(agent)
+        if not state.get("model") and not state.get("model_key") and current["model"]:
+            state.update(current)
         if "effort" not in state and agent is not None:
             state["effort"] = getattr(agent, "gah_reasoning_effort", None)
         return state

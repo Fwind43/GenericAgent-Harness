@@ -11,16 +11,20 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import model_keys
+
 
 def capture(agent):
     handler = getattr(agent, "handler", None)
     working = getattr(handler, "working", {})
-    backend = getattr(getattr(agent, "llmclient", None), "backend", None)   # None before any model exists
+    client = getattr(agent, "llmclient", None)
+    backend = getattr(client, "backend", None)   # None before any model exists
     return copy.deepcopy({
         "history": getattr(handler, "history_info", agent.history),
         "raw": getattr(backend, "history", []),
         "working": {k: working[k] for k in ("key_info", "passed_sessions") if k in working},
         "model": getattr(backend, "name", ""),
+        "model_key": model_keys.key_of(client),
         "effort": getattr(agent, "gah_reasoning_effort", None),
     })
 
@@ -47,15 +51,13 @@ def restore(agent, state):
         if hasattr(client, "last_tools"):
             client.last_tools = ""
     agent.history = state.get("history", [])
-    model = state.get("model")
-    if model:
-        # Per-conversation model; an unconfigured model keeps the current client.
-        for i, client in enumerate(getattr(agent, "llmclients", None) or []):
-            if getattr(getattr(client, "backend", None), "name", None) == model:
-                agent.llmclient = client
-                if hasattr(agent, "llm_no"):
-                    agent.llm_no = i
-                break
+    # Per-conversation model, by mykey.py key (name only for older state); an
+    # unconfigured model keeps the current client.
+    hit = model_keys.find(getattr(agent, "llmclients", None), state.get("model_key"), state.get("model"))
+    if hit:
+        i, agent.llmclient = hit
+        if hasattr(agent, "llm_no"):
+            agent.llm_no = i
     effort = state.get("effort")
     agent.gah_reasoning_effort = effort if effort in EFFORTS else None
     backend = getattr(getattr(agent, "llmclient", None), "backend", None)
