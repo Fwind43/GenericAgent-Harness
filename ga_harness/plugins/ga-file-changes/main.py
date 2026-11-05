@@ -149,6 +149,12 @@ def apply(ctx, config):
         max_lines = max(0, int(config.get("max_diff_lines", 400)))
     except (TypeError, ValueError):
         max_lines = 400
+    def _int(key, default, low):
+        try:
+            return max(low, int(config.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+    max_height, collapse_after = _int("max_height", 420, 0), _int("collapse_after", 5, 1)
     lock = threading.Lock()
     state = {"files": {}, "pending": {}, "base": None, "snap": {}, "snap_bytes": 0}
 
@@ -217,6 +223,7 @@ def apply(ctx, config):
             if max_lines > 0:
                 try:
                     note["data"] = detail(files, snaps, base, limit, max_lines)
+                    note["data"].update(max_height=max_height, collapse_after=collapse_after)
                 except Exception:
                     pass
             data = {"files": files, "base": base, "notes": [note]}

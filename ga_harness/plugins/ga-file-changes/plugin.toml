@@ -21,3 +21,19 @@ label_zh = "\u6bcf\u4e2a\u6587\u4ef6\u6700\u591a\u663e\u793a\u7684\u5dee\u5f02\u
 default = 400
 min = 0
 max = 5000
+
+[settings.max_height]
+type = "integer"
+label = "Height cap of the changed-files list in pixels (0 = no cap; scrolls inside)"
+label_zh = "\u4fee\u6539\u6587\u4ef6\u5217\u8868\u7684\u6700\u5927\u9ad8\u5ea6\uff08\u50cf\u7d20\uff0c0 = \u4e0d\u9650\uff0c\u8d85\u51fa\u65f6\u5185\u90e8\u6eda\u52a8\uff09"
+default = 420
+min = 0
+max = 5000
+
+[settings.collapse_after]
+type = "integer"
+label = "Start the list folded when more files than this changed"
+label_zh = "\u4fee\u6539\u6587\u4ef6\u6570\u8d85\u8fc7\u6b64\u503c\u65f6\u5217\u8868\u9ed8\u8ba4\u6298\u53e0"
+default = 5
+min = 1
+max = 1000

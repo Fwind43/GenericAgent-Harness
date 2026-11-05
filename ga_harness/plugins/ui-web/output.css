@@ -236,6 +236,13 @@ html.md-lightbox-open{overflow:hidden}
 /* ga-file-changes notes with diffs: one disclosure per file, numbered unified hunks. */ .msg-note.fc{align-items:stretch}
 .msg-note.fc .note-kind{display:flex;align-items:center;gap:8px}
 .msg-note.fc .note-body.fc-list{padding:0;width:100%;box-sizing:border-box;overflow:hidden;white-space:normal;font-family:inherit;font-size:13px}
+.msg-note.fc .fc-list.capped{overflow-y:auto;overscroll-behavior:contain}
+.msg-note.fc .fc-list.capped .fc-diff{max-height:min(480px,calc(var(--fc-max) - 80px));min-height:120px}
+.fc-top{width:100%}
+.fc-toggle,.fc-all{display:inline-flex;align-items:center;gap:6px;padding:2px 4px;margin:0;border:0;border-radius:4px;background:none;color:inherit;font:inherit;cursor:pointer}
+.fc-toggle:hover,.fc-all:hover{color:var(--text);background:var(--surface-muted)}
+.fc-toggle[aria-expanded=true]>.chev{transform:none}
+.fc-all{margin-left:auto}
 .fc-file+.fc-file,.fc-list>.fc-msg{border-top:1px solid var(--border)}
 .fc-file>summary{padding:6px 12px;min-height:32px;gap:6px;font-size:12.5px;line-height:20px}
 .fc-file>summary .chev{opacity:.7}

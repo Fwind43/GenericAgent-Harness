@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { T } from '../i18n';
-import { CopyButton, Disclosure } from './Output';
+import { Chevron, CopyButton, Disclosure } from './Output';
 
 /** One file of a ``ga-file-changes`` note's ``data`` (built by that plugin's ``detail``). */
 interface FileChange {
@@ -8,7 +8,11 @@ interface FileChange {
   /** Unified hunks with their ``@@`` lines and no file headers. */
   diff?: string; truncated?: boolean; skipped?: string;
 }
-export interface FilesData { base?: string | null; files: FileChange[]; more?: number }
+export interface FilesData {
+  base?: string | null; files: FileChange[]; more?: number;
+  /** List height cap in px (0 = none) and the file count above which the note starts folded. */
+  max_height?: number; collapse_after?: number;
+}
 type Row = { kind: 'hunk' | 'add' | 'del' | 'ctx' | 'meta'; old?: number; new?: number; text: string };
 
 /** The note's structured payload, or null for older notes that only carry ``text``. */
@@ -38,7 +42,7 @@ function parse(diff: string): Row[] {
 const Stat = ({ added = 0, removed = 0 }: { added?: number; removed?: number }) =>
   <span className="fc-stat"><span className="fc-add">+{added}</span><span className="fc-del">-{removed}</span></span>;
 
-function FileDiff({ f, open }: { f: FileChange; open: boolean }) {
+function FileDiff({ f, open, force }: { f: FileChange; open: boolean; force?: boolean }) {
   const rows = useMemo(() => parse(f.diff || ''), [f.diff]);
   const width = String(rows.reduce((m, r) => Math.max(m, r.old ?? 0, r.new ?? 0), 0)).length + 1 + 'ch';
   const created = f.action === 'created', count = f.count ?? 0;
@@ -49,7 +53,7 @@ function FileDiff({ f, open }: { f: FileChange; open: boolean }) {
     {!f.skipped && <Stat added={f.added} removed={f.removed} />}
   </span>;
   const message = f.skipped ? SKIPPED[f.skipped]?.() ?? f.skipped : rows.length ? '' : T('内容没有变化', 'No content change');
-  return <Disclosure className="fc-file" chevron="start" title={title} initial={open && rows.length > 0 && rows.length <= 60}>
+  return <Disclosure className="fc-file" chevron="start" title={title} initial={force ?? (open && rows.length > 0 && rows.length <= 60)}>
     {message ? <div className="fc-msg">{message}</div> : <div className="fc-body">
       <div className="fc-tools"><CopyButton text={f.diff || ''} label={T('复制差异', 'Copy diff')} /></div>
       <div className="fc-diff">{rows.map((r, i) => <div key={i} className={'fc-row ' + r.kind}>
@@ -65,15 +69,31 @@ function FileDiff({ f, open }: { f: FileChange; open: boolean }) {
   </Disclosure>;
 }
 
-/** ``files`` note with data: one disclosure per file holding its numbered unified diff. */
+/** ``files`` note with data: a foldable list (height-capped) of per-file disclosures with
+ * numbered unified diffs, plus an expand/collapse-all switch for the files. */
 export function FileChanges({ data, label }: { data: FilesData; label: string }) {
   const { files, more = 0 } = data, total = files.length + more;
   const added = files.reduce((n, f) => n + (f.added ?? 0), 0), removed = files.reduce((n, f) => n + (f.removed ?? 0), 0);
-  return <div className="msg-note files fc">
-    <span className="note-kind">{label} {'\u00b7'} {T(`${total} 个文件`, `${total} file(s)`)} <Stat added={added} removed={removed} /></span>
-    <div className="note-body fc-list">
-      {files.map(f => <FileDiff key={f.path} f={f} open={files.length <= 3} />)}
-      {more > 0 && <div className="fc-msg">{T(`还有 ${more} 个文件未列出`, `${more} more file(s) not listed`)}</div>}
+  const height = Math.max(0, Number(data.max_height ?? 420) || 0);
+  const [open, setOpen] = useState(files.length <= Math.max(1, Number(data.collapse_after ?? 5) || 5));
+  // ``all`` overrides every file's default; ``gen`` remounts them so manual toggles are reset too.
+  const [all, setAll] = useState<boolean | undefined>(undefined), [gen, setGen] = useState(0);
+  const auto = files.length <= 3, expanded = all ?? auto;
+  const toggleAll = () => { setAll(!expanded); setGen(g => g + 1); setOpen(true); };
+  const style = height ? { maxHeight: height + 'px', ['--fc-max' as string]: height + 'px' } : undefined;
+  return <div className={'msg-note files fc' + (open ? ' open' : '')}>
+    <div className="note-kind fc-top">
+      <button type="button" className="fc-toggle" aria-expanded={open} onClick={() => setOpen(o => !o)}
+        title={open ? T('收起修改的文件', 'Collapse changed files') : T('展开修改的文件', 'Expand changed files')}>
+        <Chevron /><span>{label} {'\u00b7'} {T(`${total} 个文件`, `${total} file(s)`)}</span> <Stat added={added} removed={removed} />
+      </button>
+      {files.length > 1 && <button type="button" className="fc-all" onClick={toggleAll}>
+        {open && expanded ? T('全部收起', 'Collapse all') : T('全部展开', 'Expand all')}
+      </button>}
     </div>
+    {open && <div className={'note-body fc-list' + (height ? ' capped' : '')} style={style}>
+      {files.map(f => <FileDiff key={f.path + ':' + gen} f={f} open={auto} force={all} />)}
+      {more > 0 && <div className="fc-msg">{T(`还有 ${more} 个文件未列出`, `${more} more file(s) not listed`)}</div>}
+    </div>}
   </div>;
 }
