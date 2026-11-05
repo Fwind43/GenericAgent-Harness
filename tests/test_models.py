@@ -506,6 +506,18 @@ def test_mixin_requires_unique_names_and_compatible_types(tmp_path):
     assert "mixin_config_main" not in data
 
 
+def test_model_display_names_must_be_unique(tmp_path):
+    store = make_mixin_models(tmp_path)
+    original = store.source.file.read_bytes()
+    with pytest.raises(ValueError, match="unique"):
+        change(store, key="native_oai_config_duplicate", values={
+            "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
+            "apikey": "test-duplicate"})
+    with pytest.raises(ValueError, match="unique"):
+        change(store, values={"name": "Two"})
+    assert store.source.file.read_bytes() == original
+
+
 def test_mixin_rename_references_and_delete_protection(tmp_path):
     store = make_mixin_models(tmp_path)
     save_mixin(store)

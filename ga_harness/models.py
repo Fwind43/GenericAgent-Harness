@@ -811,6 +811,17 @@ class Models:
                 raise ValueError("invalid configuration identifier")
             if key in data:
                 raise ValueError("configuration identifier already exists")
+            values = item.get("values")
+            if isinstance(values, dict) and not (isinstance(values.get("name"), str) and values["name"].strip()):
+                # Batch adds default the name to the model id; the same id from another
+                # provider would otherwise collide, so suffix it instead of failing.
+                base = str(values.get("model") or "").strip()
+                taken = {_model_name(v) for k, v in data.items() if _supported(k, v)}
+                if base and base in taken:
+                    name, n = f"{base} (2)", 3
+                    while name in taken:
+                        name, n = f"{base} ({n})", n + 1
+                    item = dict(item, values=dict(values, name=name))
             expanded.append(self._model_save(data, key, item))
         return expanded
 
@@ -1006,5 +1017,9 @@ class Models:
                 if old in others or not new or new in others:
                     raise ValueError("failover group references would be ambiguous; edit the group before renaming")
                 self._mixin_rename(data, old, new)
+            if new in others:
+                # GA, saved sessions and run workers all pick a model by this name;
+                # a duplicate would silently resolve to whichever comes first.
+                raise ValueError("another model already uses this display name; choose a unique name")
         data[key] = cfg
         return expanded
