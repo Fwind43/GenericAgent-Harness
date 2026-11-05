@@ -45,9 +45,11 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   your default set with `conductor_set_default`; otherwise on your own model and
   reasoning effort. `conductor_models` lists the configured models (use only those
   names), your default and your current model policy. When the user asks for a
-  standing default model/effort for tasks, use `conductor_set_default`. Pick per task: stronger models
-  or higher effort for hard or risky work, cheaper/faster ones for simple, mechanical
-  work. If the user names a model or effort, follow it.
+  standing default model/effort for tasks, use `conductor_set_default`. By default
+  OMIT model and effort so tasks follow your own model and effort (the one the user
+  chose for this session). Pass model/effort only when the user names one for the
+  task, or the model policy below tells you which to use; never pick a different
+  model or effort on your own judgement.
 - Model policy: when the user tells you how models should be chosen in general (e.g.
   "use X for coding, Y for research"), save it with `conductor_set_policy` as clear
   written rules; it is added to your system prompt in later turns. Follow the policy
@@ -108,9 +110,11 @@ TASK_IDS = {"task_ids": {"type": "array", "items": {"type": "string"},
                          "description": "Several task ids (instead of task_id)."}}
 
 MODEL = {"model": {"type": "string", "description": "Configured model name (see conductor_models). "
-                                               "Omit to use your default (conductor_set_default) or your own model."},
+                                               "Omit (the normal case) to use your default (conductor_set_default) or your own model; "
+                                               "set only when the user or the model policy asks for it."},
          "effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"],
-                    "description": "Reasoning effort. Omit to use your default (conductor_set_default) or your own effort."}}
+                    "description": "Reasoning effort. Omit (the normal case) to use your default "
+                                   "(conductor_set_default) or your own effort; set only when the user or the model policy asks for it."}}
 
 TOOLS = {
     "conductor_dispatch": (_tool(
