@@ -233,7 +233,7 @@ def apply(ctx, config):
     ctx.scope.add(lambda: None)             # 卸载时清理
 ```
 
-完整示例可参考 `ga-timing`（钩子）。
+完整示例可参考 `ga-timing`（钩子）。完整的插件与模式开发规范（Host/Worker 生命周期、HTTP 路由、前端 `window.GAH` SDK 与插槽、热重载工作流）见 `ga_harness/presets/plugin_dev_sop.md`，该 SOP 会通过 `creative.toml` 的 `prompt_file` 自动注入到“创造模式（Creative mode）”的 L0 系统提示词中。
 
 ## 接入新的展示前端
 
@@ -277,6 +277,7 @@ GA 内核只输出一段显示用的文本（`**LLM Running (Turn N) ...**`、`�
 ga_harness/
 ├── kernel/      # 无业务内核：Context、Events、Effect、Plugin、Loader
 ├── plugins/     # 全部能力
+├── presets/     # 模式预设与插件开发 SOP（creative.toml + plugin_dev_sop.md）
 ├── profiles/    # 基础插件树
 ├── cli.py       # gah 命令
 ├── launcher.py  # 切换到 GA 虚拟环境

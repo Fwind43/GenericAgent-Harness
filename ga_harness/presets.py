@@ -19,6 +19,8 @@ Fields (all optional except a usable file stem as id)::
     prompt = "..."               appended to the system prompt (ga-prompt ``append``);
                                  ``{data_dir}`` becomes the absolute ga-harness data
                                  directory (``paths.home()``, i.e. ``$GAH_HOME``)
+    prompt_file = "...md"        optional relative file in the preset directory (or
+                                 built-in presets dir) appended to ``prompt``
     disable_tools = ["..."]      merged into ga-tools ``disable``
     [config.<plugin>]            shallow-merged into the config of a plugin that is
                                  already part of the worker recipe
@@ -40,6 +42,21 @@ STANDARD = "standard"
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
+def _read_prompt_file(base_dir: Path, rel) -> str:
+    if not isinstance(rel, str) or not rel.strip() or Path(rel).is_absolute():
+        raise ValueError("prompt_file must be a relative path")
+    for folder in (base_dir, BUILTIN_DIR):
+        root = folder.resolve()
+        target = (root / rel).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as e:
+            raise ValueError("prompt_file must stay within the preset directory") from e
+        if target.is_file():
+            return target.read_text(encoding="utf-8")
+    raise ValueError(f"prompt_file not found: {rel}")
+
+
 def _parse(path):
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     tools = data.get("disable_tools", [])
@@ -48,8 +65,12 @@ def _parse(path):
     plugins = data.get("plugins", [])
     if not isinstance(plugins, list) or not all(isinstance(p, str) and p for p in plugins):
         raise ValueError("plugins must be a list of plugin names")
-    if not isinstance(data.get("prompt", ""), str):
+    prompt = data.get("prompt", "")
+    if not isinstance(prompt, str):
         raise ValueError("prompt must be a string")
+    if "prompt_file" in data:
+        extra = _read_prompt_file(path.parent, data["prompt_file"])
+        prompt = f"{prompt.rstrip()}\n\n{extra.strip()}" if prompt.strip() else extra
     config = data.get("config", {})
     if not isinstance(config, dict) or not all(isinstance(v, dict) for v in config.values()):
         raise ValueError("config must be a table of plugin tables")
@@ -60,7 +81,7 @@ def _parse(path):
             "name_zh": str(data.get("name_zh") or ""),
             "description": str(data.get("description") or ""),
             "description_zh": str(data.get("description_zh") or ""),
-            "prompt": data.get("prompt", ""), "disable_tools": list(tools), "config": config,
+            "prompt": prompt, "disable_tools": list(tools), "config": config,
             "plugins": list(dict.fromkeys(plugins)),
             "builtin": path.parent == BUILTIN_DIR}
 
