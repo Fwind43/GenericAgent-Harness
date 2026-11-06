@@ -227,17 +227,17 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     { zh: "生成", en: "Generation", items: [
       { key: "max_tokens", kind: "int", zh: "最大输出 token", en: "Max output tokens", min: 1, ph: "Claude 8192" },
       { key: "temperature", kind: "float", zh: "温度", en: "Temperature", min: 0, max: 2, ph: "1" },
-      { key: "reasoning_effort", kind: "enum", zh: "推理强度", en: "Reasoning effort", choices: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
-      { key: "service_tier", kind: "enum", zh: "服务等级", en: "Service tier", choices: ["auto", "default", "priority", "flex"] },
-      { key: "thinking_type", kind: "enum", zh: "思考模式", en: "Thinking mode", choices: ["adaptive", "enabled", "disabled"] },
-      { key: "thinking_budget_tokens", kind: "int", zh: "思考预算 token", en: "Thinking budget tokens", min: 0 },
+      { key: "reasoning_effort", kind: "enum", zh: "推理强度", en: "Reasoning effort", choices: ["none", "minimal", "low", "medium", "high", "xhigh", "max"], choicesBy: { claude: ["low", "medium", "high", "xhigh", "max"] } },
+      { key: "service_tier", kind: "enum", zh: "服务等级", en: "Service tier", choices: ["auto", "default", "priority", "flex"], only: "oai" },
+      { key: "thinking_type", kind: "enum", zh: "思考模式", en: "Thinking mode", choices: ["adaptive", "enabled", "disabled"], only: "claude" },
+      { key: "thinking_budget_tokens", kind: "int", zh: "思考预算 token", en: "Thinking budget tokens", min: 0, only: "claude" },
       { key: "stream", kind: "bool", zh: "流式输出", en: "Streaming", hint: ["默认开启", "On by default"] },
       { key: "omit_thinking", kind: "bool", zh: "历史中省略思考", en: "Omit thinking from history", hint: ["默认关闭", "Off by default"] }
     ] },
     { zh: "请求", en: "Request", items: [
       { key: "api_mode", kind: "enum", zh: "API 模式", en: "API mode", choices: ["chat_completions", "responses"], only: "oai" },
       { key: "api_key_header", kind: "enum", zh: "密钥请求头", en: "API key header", choices: ["auto", "x-api-key", "bearer"], only: "claude" },
-      { key: "user_agent", kind: "str", zh: "User-Agent", en: "User-Agent", only: "claude", ph: "claude-cli/…" },
+      { key: "user_agent", kind: "str", zh: "User-Agent", en: "User-Agent" },
       { key: "fake_cc_system_prompt", kind: "bool", zh: "模拟 Claude Code 系统提示", en: "Claude Code system prompt", only: "claude" },
       { key: "proxy", kind: "str", zh: "代理", en: "Proxy", ph: "http://127.0.0.1:7890", hint: ["支持 http(s):// 与 socks5://", "http(s):// or socks5://"] },
       { key: "verify", kind: "verify", zh: "TLS 校验", en: "TLS verify", ph: "true", hint: ["true / false，或 CA 证书路径", "true / false, or a CA bundle path"] }
@@ -254,14 +254,19 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       { key: "extra_sys_prompt", kind: "text", zh: "附加系统提示", en: "Extra system prompt" }
     ] }
   ];
+  const visible = (spec, protocol) => !spec.only || spec.only === protocol;
   GROUPS.flatMap((group) => group.items.map((item) => item.key));
   const toText = (value) => value === void 0 ? "" : String(value);
   function useOptions(initial = {}) {
     const [draft, setDraft] = react.useState(() => Object.fromEntries(Object.entries(initial).map(([k, v]) => [k, toText(v)])));
     const set = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
-    const diff = () => {
+    const diff = (protocol) => {
       const out = {};
       for (const group of GROUPS) for (const spec of group.items) {
+        if (!visible(spec, protocol)) {
+          if (spec.key in initial) out[spec.key] = null;
+          continue;
+        }
         const now = (draft[spec.key] ?? "").trim(), was = toText(initial[spec.key]);
         if (now === was && (draft[spec.key] ?? "") === was) continue;
         if (now === "") {
@@ -279,13 +284,17 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   }
   const PRIMARY = /* @__PURE__ */ new Set(["reasoning_effort"]);
   const SPECS = GROUPS.flatMap((group) => group.items);
-  function OptionField({ spec, draft, hidden = [], disabled, onChange }) {
+  function OptionField({ spec, protocol, draft, hidden = [], disabled, onChange }) {
     const defaultText = sdk.T("默认", "Default");
     const value = draft[spec.key] ?? "", change = (v) => onChange(spec.key, v);
     let control;
     if (hidden.includes(spec.key)) control = /* @__PURE__ */ jsxRuntime.jsx("input", { value: sdk.T("已在 mykey.py 中设置（此处不显示）", "Set in mykey.py (not shown here)"), disabled: true, readOnly: true });
     else if (spec.kind === "enum" || spec.kind === "bool") {
-      const choices = spec.kind === "bool" ? [["true", sdk.T("开启", "On")], ["false", sdk.T("关闭", "Off")]] : spec.choices.map((c) => [c, c]);
+      const choices = spec.kind === "bool" ? [["true", sdk.T("开启", "On")], ["false", sdk.T("关闭", "Off")]] : (() => {
+        var _a;
+        const list = ((_a = spec.choicesBy) == null ? void 0 : _a[protocol]) || spec.choices;
+        return (value && !list.includes(value) ? [...list, value] : list).map((c) => [c, c]);
+      })();
       control = /* @__PURE__ */ jsxRuntime.jsxs("select", { value, disabled, onChange: (event) => change(event.target.value), children: [
         /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: defaultText }),
         choices.map(([v, label]) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: v, children: label }, v))
@@ -317,22 +326,13 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       ] })
     ] });
   }
-  const visible = (spec, protocol) => !spec.only || spec.only === protocol;
   function PrimaryOptions(props) {
     return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: SPECS.filter((spec) => PRIMARY.has(spec.key) && visible(spec, props.protocol)).map((spec) => /* @__PURE__ */ jsxRuntime.jsx(OptionField, { spec, ...props }, spec.key)) });
   }
   function AdvancedOptions(props) {
-    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-      GROUPS.map((group) => {
-        const items = group.items.filter((spec) => !PRIMARY.has(spec.key) && visible(spec, props.protocol));
-        if (!items.length) return null;
-        return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-advanced-group", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("h4", { children: sdk.T(group.zh, group.en) }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: items.map((spec) => /* @__PURE__ */ jsxRuntime.jsx(OptionField, { spec, ...props }, spec.key)) })
-        ] }, group.en);
-      }),
-      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-advanced-note", children: sdk.T("留空表示使用 GA 默认值；清空已有的值会从 mykey.py 删除该项。", "Leave empty to use the GA default; clearing a value removes it from mykey.py.") })
-    ] });
+    const groups = GROUPS.map((group) => ({ group, items: group.items.filter((spec) => !PRIMARY.has(spec.key) && visible(spec, props.protocol)) })).filter((g) => g.items.length);
+    const note = sdk.T("留空表示使用 GA 默认值；清空已有的值会从 mykey.py 删除该项。只显示当前协议生效的参数。", "Leave empty to use the GA default; clearing a value removes it from mykey.py. Only options used by the current protocol are shown.");
+    return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: groups.map(({ group, items }, index) => /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T(group.zh, group.en), hint: index === 0 ? note : void 0, children: items.map((spec) => /* @__PURE__ */ jsxRuntime.jsx(OptionField, { spec, ...props }, spec.key)) }, group.en)) });
   }
   function Field({ label, wide, children }) {
     return /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "model-field" + (wide ? " wide" : ""), children: [
@@ -455,7 +455,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
       if (disabled) return;
       const values = provider ? { name: name.trim(), model: model.trim(), provider } : { name: name.trim(), model: model.trim(), provider: "", apibase: base.trim(), apikey: secret };
       if (context) values.context_win = Number(context);
-      const changed = opts.diff();
+      const changed = opts.diff(protocol);
       if (Object.keys(changed).length) values.options = changed;
       onSave("save", id.trim(), values);
     }, children: [
@@ -531,14 +531,11 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("上下文窗口", "Context window"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 1024, step: 1, value: context, disabled, placeholder: sdk.T("默认", "Default"), onChange: (event) => setContext(event.target.value) }) }),
           /* @__PURE__ */ jsxRuntime.jsx(PrimaryOptions, { protocol, draft: opts.draft, hidden: entry == null ? void 0 : entry.options_hidden, disabled, onChange: opts.set })
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Config key"), wide: true, children: [
-            /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, readOnly: !!entry, disabled, spellCheck: false, onChange: (event) => setId(event.target.value) }),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("mykey.py 中的变量名，创建后不可修改。", "Variable name in mykey.py; fixed after creation.") })
-          ] }) }),
-          /* @__PURE__ */ jsxRuntime.jsx(AdvancedOptions, { protocol, draft: opts.draft, hidden: entry == null ? void 0 : entry.options_hidden, disabled, onChange: opts.set })
-        ] })
+        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("标识", "Identifier"), children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("配置标识", "Config key"), wide: true, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, value: id, readOnly: !!entry, disabled, spellCheck: false, onChange: (event) => setId(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("mykey.py 中的变量名，创建后不可修改。", "Variable name in mykey.py; fixed after creation.") })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntime.jsx(AdvancedOptions, { protocol, draft: opts.draft, hidden: entry == null ? void 0 : entry.options_hidden, disabled, onChange: opts.set })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, onReset, onDelete: async () => {
         if (await sdk.confirmDialog({ title: sdk.T("删除这个模型？", "Delete this model?"), message: (entry == null ? void 0 : entry.values.name) || (entry == null ? void 0 : entry.values.model) || id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("delete", id);
@@ -711,13 +708,10 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             }
           ) })
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("高级", "Advanced") }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-grid", children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("服务商标识", "Provider ID"), wide: true, children: [
-            /* @__PURE__ */ jsxRuntime.jsx("input", { pattern: "[a-z0-9][a-z0-9_\\-]{0,39}", disabled: disabled || !!entry, value: id, placeholder: auto, spellCheck: false, onChange: (event) => setId(event.target.value) }),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: entry ? sdk.T("创建后不可修改。", "Fixed after creation.") : sdk.T("可留空，将根据名称或地址自动生成；创建后不可修改。", "Optional; generated from the name or URL. Fixed after creation.") })
-          ] }) })
-        ] })
+        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("标识", "Identifier"), children: /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("服务商标识", "Provider ID"), wide: true, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { pattern: "[a-z0-9][a-z0-9_\\-]{0,39}", disabled: disabled || !!entry, value: id, placeholder: auto, spellCheck: false, onChange: (event) => setId(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsx("small", { children: entry ? sdk.T("创建后不可修改。", "Fixed after creation.") : sdk.T("可留空，将根据名称或地址自动生成；创建后不可修改。", "Optional; generated from the name or URL. Fixed after creation.") })
+        ] }) })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, canDelete: used === 0, onReset, onDelete: async () => {
         if (await sdk.confirmDialog({ title: sdk.T("删除这个服务商？", "Delete this provider?"), message: (entry == null ? void 0 : entry.values.name) || id, danger: true, confirm: sdk.T("删除", "Delete") })) onSave("provider_delete", finalId);
@@ -802,13 +796,10 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅列出名称唯一且与当前组兼容的模型；重名模型请先在模型页改名。", "Only uniquely named, compatible models are listed. Rename duplicate models in the Models tab first.") })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsxRuntime.jsxs("details", { className: "model-advanced", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("summary", { children: sdk.T("重试与回切参数", "Retry and return settings") }),
-          /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("可选参数", "Optional settings"), hint: sdk.T("留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。", "Leave empty for GA defaults; 0 retries the primary model on the next request."), children: [
-            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("重试次数", "Max retries"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 20, step: 1, value: retries, disabled, onChange: (event) => setRetries(event.target.value) }) }),
-            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("基础延迟（秒）", "Base delay (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 120, step: "any", value: delay, disabled, onChange: (event) => setDelay(event.target.value) }) }),
-            /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("回切间隔（秒）", "Return interval (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 86400, step: 1, value: spring, disabled, onChange: (event) => setSpring(event.target.value) }) })
-          ] })
+        /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("可选参数", "Optional settings"), hint: sdk.T("留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。", "Leave empty for GA defaults; 0 retries the primary model on the next request."), children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("重试次数", "Max retries"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 20, step: 1, value: retries, disabled, onChange: (event) => setRetries(event.target.value) }) }),
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("基础延迟（秒）", "Base delay (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 120, step: "any", value: delay, disabled, onChange: (event) => setDelay(event.target.value) }) }),
+          /* @__PURE__ */ jsxRuntime.jsx(Field, { label: sdk.T("回切间隔（秒）", "Return interval (seconds)"), children: /* @__PURE__ */ jsxRuntime.jsx("input", { type: "number", min: 0, max: 86400, step: 1, value: spring, disabled, onChange: (event) => setSpring(event.target.value) }) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx(FormActions, { dirty, existing: !!entry, disabled, onReset, onDelete: async () => {
