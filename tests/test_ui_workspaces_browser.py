@@ -30,10 +30,12 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         box = page.locator(".gah-sessions")
         pw.expect(box).to_be_visible()
         pw.expect(box.locator(".gah-group.project")).to_have_count(0)
-        pw.expect(box.locator(".gah-group.workspace.current")).to_have_count(1)
-        chip = page.locator(".gah-scope")
-        pw.expect(chip).to_be_visible()
-        pw.expect(chip.locator(".gah-scope-kind")).to_have_text("\u5de5\u4f5c\u533a")
+        pw.expect(box.locator(".gah-group.recent.current")).to_have_count(1)  # f13e165: no-project chats live in "recent"
+        # 1fc5a8e removed the scope chip; a new chat now shows a project picker and a directory button
+        pick = page.locator(".gah-scope-pick select")
+        dirbtn = page.locator(".gah-scope-dir")
+        pw.expect(pick).to_be_visible()
+        pw.expect(pick).to_have_value("")
         screenshot(page, "desktop-empty")
         create = box.get_by_role("button", name="\u65b0\u5efa\u9879\u76ee", exact=True)
         create.click()
@@ -48,7 +50,7 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         pw.expect(dialog).not_to_be_visible()
         pw.expect(box.locator(".gah-group.current .gah-group-name")).to_have_text("Alpha \u9879\u76ee")
         pw.expect(box.locator(".gah-group.current .gah-sess-items")).to_be_visible()
-        pw.expect(chip.locator(".gah-scope-name")).to_have_text("Alpha \u9879\u76ee")
+        pw.expect(pick.locator("option:checked")).to_have_text("Alpha \u9879\u76ee")
         scope = _req(base + "api/state")[1]["scope"]
         project_id = scope["project_id"]
         assert scope["workspace"] == str(tmp_path.resolve())
@@ -56,11 +58,14 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         pw.expect(dialog.locator('[name="rules"], [name="memory"]')).to_have_count(0)
         page.reload()
         pw.expect(box.locator(".gah-group.project.current")).to_have_count(1)
-        edit = chip.get_by_role("button", name="\u9879\u76ee\u8bbe\u7f6e", exact=True)
+        edit = box.locator(".gah-group.current").get_by_role("button", name=re.compile("^\u9879\u76ee\u8bbe\u7f6e"))
+        box.locator(".gah-group.current .gah-group-head").hover()  # group actions only show on hover
         edit.click()
         pw.expect(dialog.locator('[name="project_id"]')).to_have_value(project_id)
         pw.expect(dialog.locator('[name="project_id"]')).to_have_attribute("readonly", "")
-        pw.expect(dialog.locator('[name="workspace"]')).to_have_attribute("readonly", "")
+        # f13e165 made the project directory optional and editable after creation
+        pw.expect(dialog.locator('[name="workspace"]')).to_be_editable()
+        pw.expect(dialog.locator('[name="workspace"]')).to_have_value(str(tmp_path.resolve()))
         dialog.locator('[name="name"]').fill("Alpha renamed")
         dialog.locator('button[type="submit"]').click()
         pw.expect(dialog).not_to_be_visible()
@@ -78,24 +83,29 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
                 pw.expect(create).to_be_visible()
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
                 screenshot(page, f"{width}-{theme}-sidebar")
-                if width == 390:
-                    page.keyboard.press("Escape")
-                    page.wait_for_timeout(220)
-                pw.expect(chip).to_be_visible()
-                assert chip.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
+                box.locator(".gah-group.current .gah-group-head").hover()  # group actions only show on hover
                 edit.click()
                 pw.expect(dialog).to_be_visible()
                 pw.expect(dialog.locator('[name="name"]')).to_have_value("Alpha renamed")
+                # mobile dialogs slide in (gah-sheet-in, translateY 24px); measure the settled box
+                dialog.evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
                 geometry = dialog.evaluate("e => {const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,w:innerWidth,h:innerHeight,overflow:e.scrollWidth-e.clientWidth}}")
                 assert geometry["left"] >= 0 and geometry["right"] <= geometry["w"] + 1, geometry
                 assert geometry["top"] >= 0 and geometry["bottom"] <= geometry["h"] + 1, geometry
                 assert geometry["overflow"] <= 1, geometry
                 screenshot(page, f"{width}-{theme}-editor")
                 dialog.get_by_role("button", name="\u53d6\u6d88", exact=True).click()
+                pw.expect(dialog).not_to_be_visible()
+                if width == 390:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(220)
+                bar = page.locator(".gah-scope-bar")
+                pw.expect(bar).to_be_visible()
+                assert bar.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
         assert len(palettes) == 3, palettes
         page.set_viewport_size({"width": 1280, "height": 820})
-        chip.get_by_role("button", name="\u9000\u51fa\u9879\u76ee", exact=True).click()
-        pw.expect(chip.locator(".gah-scope-name")).to_be_hidden()
+        pick.select_option("")
+        pw.expect(pick).to_have_value("")
         assert _req(base + "api/state")[1]["scope"]["project"] is None
         # slash commands: completion menu, enter by name, exit; nothing is sent to the model
         composer = page.locator("#input")
@@ -104,27 +114,28 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         composer.fill("/project alpha")
         pw.expect(page.locator(".gah-slash-item").first).to_have_text(re.compile("Alpha"))
         composer.press("Enter")
-        pw.expect(chip.locator(".gah-scope-name")).to_have_text("Alpha \u9879\u76ee")
+        pw.expect(pick).to_have_value(project_id)
         pw.expect(composer).to_have_value("")
         state = _req(base + "api/state")[1]
         assert state["scope"]["project_id"] == project_id and state["messages"] == []
         composer.fill("/project off")
         composer.press("Enter")
-        pw.expect(chip.locator(".gah-scope-name")).to_be_hidden()
+        pw.expect(pick).to_have_value("")
         composer.fill("/project nope")
         page.locator("#form").evaluate("f => f.requestSubmit()")
         pw.expect(page.locator("#notice")).to_contain_text("nope")
         assert _req(base + "api/state")[1]["messages"] == []
-        chip.locator(".gah-ws-path").click()
+        dirbtn.click()
         another = tmp_path / "another"
         another.mkdir()
         dialog.locator('[name="workspace"]').fill(str(another))
         dialog.locator('button[type="submit"]').click()
         pw.expect(dialog).not_to_be_visible()
-        pw.expect(chip.locator(".gah-ws-path")).to_have_text(str(another.resolve()))
+        pw.expect(dirbtn.locator("b")).to_have_text("another")
+        pw.expect(dirbtn).to_have_attribute("title", re.compile(re.escape(str(another.resolve()))))
         assert _req(base + "api/run", {"task": "wait"})[0] == 202
         pw.expect(create).to_be_disabled()
-        pw.expect(chip.locator(".gah-ws-path")).to_be_disabled()
+        pw.expect(dirbtn).to_have_count(0)  # hidden while a run is active
         assert _req(base + "api/abort", {})[0] == 202
         _wait_idle(base)
         pw.expect(create).to_be_enabled()
@@ -152,11 +163,12 @@ def test_sidebar_groups_sessions_by_scope(workspace_app, browser, tmp_path):
         current = box.locator(".gah-group.current")
         project = box.locator(".gah-group.project")
         pw.expect(current).to_have_count(1)
-        pw.expect(current).to_have_class(re.compile("workspace"))
+        pw.expect(current).to_have_class(re.compile(r"\brecent\b"))
         pw.expect(current.locator(".gah-sess-items")).to_be_visible()
         pw.expect(project.locator(".gah-group-name")).to_have_text("Alpha")
         pw.expect(project.locator(".gah-sess-items")).to_be_hidden()
-        project.locator(".gah-group-add").click()
+        project.locator(".gah-group-head").hover()  # group actions only show on hover
+        project.get_by_role("button", name=re.compile("^\u65b0\u5efa\u5bf9\u8bdd")).click()
         pw.expect(project).to_have_class(re.compile("current"))
         pw.expect(project.locator(".gah-sess-items .gah-sess-row.current")).to_have_count(1)
         state = _req(base + "api/state")[1]
