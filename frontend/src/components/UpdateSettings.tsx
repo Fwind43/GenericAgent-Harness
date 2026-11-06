@@ -120,7 +120,9 @@ export function UpdateSettings() {
         {!s ? <div className="gah-update-status">{T('加载中…', 'Loading…')}</div> : <>
           <div className="gah-setting-row">
             <div className="gah-setting-text"><strong>{T('当前版本', 'Current version')}</strong>
-              <span>{T('应用', 'App')} {s.codeVersion}{s.codeSource === 'update' ? T('（已在线更新）', ' (updated)') : ''} · {T('外壳', 'Shell')} {s.shellVersion}</span></div>
+              <span>{T('应用', 'App')} {s.codeVersion}{s.codeSource === 'update' ? T('（已在线更新）', ' (updated)') : ''} · {T('外壳', 'Shell')} {s.shellVersion}</span>
+              <span>{T('此处仅更新 Harness 应用与外壳，不会覆盖你的 GenericAgent 源码目录；更新 GA 源码请在对话中发送 /update。',
+                'This only updates the Harness app and shell without overwriting your GenericAgent folder; send /update in chat to update GenericAgent source.')}</span></div>
             <button type="button" className="gah-update-btn" disabled={working || staged} onClick={() => run(api.check())}>
               {s.phase === 'checking' ? T('检查中…', 'Checking…') : T('检查更新', 'Check now')}</button>
           </div>

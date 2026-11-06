@@ -27,9 +27,10 @@ NO_MODEL = "No model is configured yet. Add one in Settings > Models."
 
 
 class AgentHandle:
-    def __init__(self, agent, ctx):
+    def __init__(self, agent, ctx, ga_root: str | None = None):
         self.raw = agent
         self._ctx = ctx
+        self._ga_root = ga_root
 
     def run(self, query: str, source: str = "user", images=None, timeout: float | None = None) -> str:
         return self._ctx.waterfall("agent.request",
@@ -37,6 +38,7 @@ class AgentHandle:
             lambda request: self._run(**request))
 
     def _run(self, query, source, images, timeout):
+        query = _expand_slash_cmd(query, self._ga_root)
         if not getattr(self.raw, "llmclients", None):
             reload = getattr(self.raw, "load_llm_sessions", None)
             if callable(reload):
@@ -129,6 +131,54 @@ def _inject_images(client, paths):
     return undo
 
 
+def _expand_slash_cmd(query: str, ga_root: str | None) -> str:
+    """Expand GA's official slash commands (frontends.slash_cmds), including /update."""
+    if not isinstance(query, str):
+        return query
+    stripped = query.strip()
+    if not stripped.startswith("/"):
+        return query
+    parts = stripped[1:].split(None, 1)
+    if not parts:
+        return query
+    cmd = parts[0].lower().split("@", 1)[0]
+    args_text = parts[1].strip() if len(parts) > 1 else ""
+    try:
+        from frontends.slash_cmds import prompt_for
+    except Exception:
+        return query
+    expanded = prompt_for(cmd, args_text)
+    if not expanded:
+        return query
+    if cmd == "update" and ga_root:
+        from pathlib import Path
+        root = Path(ga_root).resolve()
+        ref_file = root / ".gah-ga-ref"
+        pinned = ref_file.read_text("utf-8").strip() if ref_file.is_file() else ""
+        has_git = (root / ".git").exists()
+        note = [
+            "",
+            "[Harness /update context]",
+            f"- Target GenericAgent directory (`ga_root`): {root}",
+            "- Note: Your current tool `cwd` may be a workspace directory rather than `ga_root`. Run all git/update commands inside `ga_root` (pass `cwd` to `code_run` or use `git -C`).",
+        ]
+        if not has_git:
+            ref_hint = f" (bundled commit in `.gah-ga-ref`: `{pinned}`)" if pinned else ""
+            note.append(
+                f"- `{root}` was seeded from a release bundle without `.git`{ref_hint}. "
+                "Before Phase 1 `git fetch upstream`, initialize git in-place without losing local edits: "
+                "`git init`, `git remote add upstream https://github.com/lsdefine/GenericAgent.git`, "
+                "`git fetch upstream`, and `git reset --mixed "
+                f"{pinned or 'upstream/main'}` so any local modifications appear in `git status` / `git diff`."
+            )
+        else:
+            note.append(
+                "- If remote `upstream` does not exist yet (`git remote`), add it first (`git remote add upstream https://github.com/lsdefine/GenericAgent.git`) or use the existing remote pointing to `lsdefine/GenericAgent`."
+            )
+        expanded = expanded + "\n" + "\n".join(note)
+    return expanded
+
+
 def load_module(ga_root: str | None, module: str):
     if ga_root:
         ga_root = os.path.abspath(ga_root)
@@ -138,7 +188,8 @@ def load_module(ga_root: str | None, module: str):
 
 
 def apply(ctx, config):
-    mod = load_module(config.get("ga_root") or os.environ.get("GA_ROOT"), config.get("module", "agentmain"))
+    ga_root = config.get("ga_root") or os.environ.get("GA_ROOT")
+    mod = load_module(ga_root, config.get("module", "agentmain"))
     from ga_harness import model_keys
     model_keys.install(mod)   # tag clients with their mykey.py key before GA builds any
     agent = mod.GenericAgent()
@@ -156,4 +207,4 @@ def apply(ctx, config):
         t.join(timeout=5)
     ctx.scope.add(stop)
     ctx.provide("ga.agent", agent)
-    ctx.provide("agent", AgentHandle(agent, ctx))
+    ctx.provide("agent", AgentHandle(agent, ctx, ga_root=ga_root))

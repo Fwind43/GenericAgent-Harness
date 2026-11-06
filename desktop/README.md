@@ -29,8 +29,10 @@ launched from the Start menu / Finder, where shell env vars are absent), a dialo
 choose it and saves the choice as `ga_root` in desktop.json. The startup-failure dialog also offers
 "Choose GenericAgent folder..." and relaunches.
 
-**Bundled GenericAgent copy.** Packaged builds ship GA code under `resources/py` and run a writable
-copy of it. On Windows the copy lives in the install folder, `<install dir>/GenericAgent`
+**Bundled GenericAgent copy.** Packaged builds ship GA code under `resources/py` and seed a writable
+copy of it on first start (existing copies are never overwritten on launch or update, preserving user
+and Agent-managed modifications; send the official `/update` command in chat so the Agent fetches and
+merges upstream GenericAgent changes while keeping local modifications and `memory/`). On Windows the copy lives in the install folder, `<install dir>/GenericAgent`
 (falling back to `<userData>/GenericAgent` if that folder is not writable); macOS and Linux keep
 it in `<userData>/GenericAgent`. The installer creates that folder and, when it runs elevated
 (e.g. installing under Program Files), grants regular users modify rights on it only, since the

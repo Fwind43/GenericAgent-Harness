@@ -134,12 +134,11 @@ function isGaRoot(dir) {
 }
 
 // ---- Bundled GenericAgent ---------------------------------------------------------------
-// Packaged builds (and code packages) carry GA's source at <code>/genericagent, pinned by
-// desktop/GA_REF. GA writes its state next to its code (mykey.py, memory/, temp/), so the
-// shell runs a writable copy (see bundledGaDir for where it lives). The
-// copy is refreshed whenever the shipped commit changes: code files are overwritten, user
-// state is kept — mykey.py is never touched, existing memory/ files are not replaced, and
-// files that only exist in the copy (temp/, sessions, user additions) are never deleted.
+// Packaged builds carry GA's source at <code>/genericagent, pinned by desktop/GA_REF. GA
+// writes its state next to its code (mykey.py, memory/, temp/) and users or the Agent itself
+// may customize/update the GA checkout in place, so the shell only seeds the writable copy
+// (see bundledGaDir for where it lives) when it does not exist yet — an existing copy is
+// never overwritten on launch or update.
 
 const GA_REF_FILE = '.gah-ga-ref';
 const BUNDLED = 'bundled';   // desktop.json ga_root value that selects the shipped copy
@@ -254,17 +253,22 @@ function copyGaTree(src, dest, rel = '') {
   }
 }
 
-// Ensures the copy at `dest` matches the GA shipped with the running code and returns it;
-// null when this code carries no GA (running from source, or an older code package).
-function syncBundledGa(codeDir, dest) {
-  const src = path.join(codeDir, 'genericagent');
-  if (!isGaRoot(src)) return null;
-  const ref = readGaRef(src);
-  if (!(ref && readGaRef(dest) === ref && isGaRoot(dest))) {
+// Ensures a GA copy exists at `dest`, seeding it from the bundled `genericagent` only when
+// `dest` has not been initialized yet (or an earlier initial copy was interrupted). Existing
+// GA directories are never overwritten so user/Agent modifications are preserved.
+function syncBundledGa(codeDir, dest, resourcesPath = null) {
+  const marker = path.join(dest, MIGRATING);
+  if (!isGaRoot(dest) || fs.existsSync(marker)) {
+    const candidates = [path.join(codeDir, 'genericagent')];
+    if (resourcesPath) candidates.push(path.join(resourcesPath, 'py', 'genericagent'));
+    const src = candidates.find(isGaRoot);
+    if (!src) return null;
+    const ref = readGaRef(src);
     fs.mkdirSync(dest, { recursive: true });
+    fs.writeFileSync(marker, '');
     copyGaTree(src, dest);
-    // Written last: an interrupted copy is retried on the next start.
     fs.writeFileSync(path.join(dest, GA_REF_FILE), `${ref || 'unknown'}\n`, 'utf8');
+    fs.rmSync(marker, { force: true });
   }
   const mykey = path.join(dest, 'mykey.py');
   if (!fs.existsSync(mykey)) fs.writeFileSync(mykey, EMPTY_MYKEY, 'utf8');
@@ -419,7 +423,7 @@ class Backend {
     if (configured.value) return configured;
     if (this.bundledGa === undefined) {
       try {
-        this.bundledGa = syncBundledGa(this.code.dir, this.bundledDir());
+        this.bundledGa = syncBundledGa(this.code.dir, this.bundledDir(), this.resourcesPath);
       } catch (err) {
         this.bundledGa = null;
         this.bundledGaError = err.message;
@@ -447,12 +451,13 @@ class Backend {
   gaRootInfo() {
     const next = this.gaRoot();
     const bundledDir = this.bundledDir();
+    const fallbackSrc = this.resourcesPath ? path.join(this.resourcesPath, 'py', 'genericagent') : null;
     return {
       running: this.runningGaRoot || null,
       next: { path: next.value, source: next.source },
       choice: this.settings.gaRoot === BUNDLED ? 'bundled' : this.settings.gaRoot ? 'custom' : 'auto',
       bundledDir,
-      bundledAvailable: isGaRoot(path.join(this.code.dir, 'genericagent')) || isGaRoot(bundledDir),
+      bundledAvailable: isGaRoot(bundledDir) || isGaRoot(path.join(this.code.dir, 'genericagent')) || Boolean(fallbackSrc && isGaRoot(fallbackSrc)),
       locked: hasGaRootArg(this.settings),
       settingsFile: this.settings.file,
       dataDir: this.dataDir(),

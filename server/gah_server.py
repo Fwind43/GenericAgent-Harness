@@ -6,9 +6,10 @@ Package layout (built by server/build.sh from desktop/stage):
   gah-server     shell entry point that runs this file with the bundled interpreter
 
 GenericAgent writes its state next to its code (mykey.py, memory/, temp/), so, like the
-desktop app (desktop/src/backend.js syncBundledGa), the shipped GA is copied to a writable
-directory, $GAH_HOME/genericagent by default. When the shipped commit changes, code files are
-overwritten while mykey.py, temp/ and existing memory/ files are kept.
+desktop app (desktop/src/backend.js syncBundledGa), the shipped GA is copied once to a
+writable directory, $GAH_HOME/genericagent by default, when that directory does not exist
+yet. Existing GenericAgent directories are never overwritten so user or Agent-managed
+customizations and updates are preserved.
 
 Environment (all optional):
   GAH_HOME             data directory (default ~/.ga-harness)
@@ -61,17 +62,22 @@ def _copy_tree(src, dest):
             shutil.copyfile(src / r, out)
 
 
+MIGRATING = ".gah-migrating"
+
+
 def sync_ga(dest):
     src = PY / "genericagent"
-    if not _is_ga_root(src):
-        sys.exit(f"gah-server: bundled GenericAgent missing at {src}")
-    ref = _ref(src)
-    if not (ref and _ref(dest) == ref and _is_ga_root(dest)):
+    marker = dest / MIGRATING
+    if not _is_ga_root(dest) or marker.exists():
+        if not _is_ga_root(src):
+            sys.exit(f"gah-server: bundled GenericAgent missing at {src}")
+        ref = _ref(src)
         print(f"gah-server: installing GenericAgent {ref or 'unknown'} -> {dest}", flush=True)
         dest.mkdir(parents=True, exist_ok=True)
+        marker.write_text("", encoding="utf-8")
         _copy_tree(src, dest)
-        # Written last: an interrupted copy is retried on the next start.
         (dest / GA_REF_FILE).write_text(f"{ref or 'unknown'}\n", encoding="utf-8")
+        marker.unlink(missing_ok=True)
     mykey = dest / "mykey.py"
     if not mykey.exists():
         mykey.write_text(EMPTY_MYKEY, encoding="utf-8")

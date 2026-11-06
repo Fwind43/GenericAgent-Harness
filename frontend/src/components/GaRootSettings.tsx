@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { T } from '../i18n';
 import { settings, useSettings } from '../settings';
+import { host } from '../store';
 
 // Built-in "GenericAgent" settings section (desktop shell only). Lets users who already
 // have a GenericAgent checkout point the app at it instead of the bundled copy. The choice
@@ -80,6 +81,14 @@ export function GaRootSettings() {
               <span>{T('来源：', 'Source: ')}{sourceText(i.running?.source ?? null)}</span></div>
             {i.running?.path && desktop?.openPath && <button type="button" className="gah-update-btn"
               onClick={() => desktop.openPath!(i.running!.path!).catch(() => {})}>{T('打开', 'Open')}</button>}
+          </div>
+
+          <div className="gah-setting-row">
+            <div className="gah-setting-text"><strong>{T('更新 GenericAgent 源码', 'Update GenericAgent source')}</strong>
+              <span>{T('应用更新不会覆盖 GenericAgent 目录。要升级 GA 源码，请在对话中发送官方 /update 命令，由 Agent 自动拉取上游更新并保留你的本地修改与记忆。',
+                'App updates never overwrite your GenericAgent folder. To upgrade GA source, send the official /update command in chat so the agent merges upstream updates while preserving your local changes and memory.')}</span></div>
+            <button type="button" className="gah-update-btn"
+              onClick={() => { settings.close(); host.emit('draft', '/update'); }}>{T('填入 /update', 'Fill /update')}</button>
           </div>
 
           {i.dataDir && <div className="gah-setting-row">

@@ -241,7 +241,7 @@ def test_commands_without_catalog_and_help(tmp_path):
         raise RuntimeError("model-store failed to start")
 
     assert [line.split()[0] for line in HELP.splitlines()] == [
-        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/conductor", "/help"]
+        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/conductor", "/update", "/help"]
     for n, models in enumerate((None, broken, lambda: FakeModels(rows=()))):
         (tmp_path / str(n)).mkdir()
         hub, _, _ = make_hub(tmp_path / str(n), models=models)

@@ -2,10 +2,9 @@
 
     python desktop/scripts/app_bundle.py <version> <out-dir>
 
-Writes <out-dir>/ga-harness-app-<version>.zip (roots: ga_harness/ and genericagent/, the
-same file set as scripts/prepare.mjs stages) and <out-dir>/update.json, read by
-desktop/src/updater.js. genericagent/ is the GA source pinned in desktop/GA_REF, so GA
-updates ride along with code packages.
+Writes <out-dir>/ga-harness-app-<version>.zip (root: ga_harness/) and <out-dir>/update.json,
+read by desktop/src/updater.js. GenericAgent is excluded so updates never overwrite the user's
+local GenericAgent directory (which may hold custom optimizations or Agent-managed updates).
 Shell requirements come from desktop/shell.json, per platform:
   required     below it the code package is not applied and a reinstall is needed. Raise it
                only when the code cannot run on older shells (backend.js launch contract,
@@ -19,14 +18,10 @@ import hashlib
 import json
 import re
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
 
 SKIP_DIRS = {"__pycache__", ".pytest_cache", "node_modules", "sessions"}
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import fetch_ga  # noqa: E402
 
 PLATFORMS = ("win32", "darwin", "linux")
 
@@ -65,11 +60,6 @@ def main(version: str, out: Path) -> None:
             if any(part in SKIP_DIRS for part in rel.parts) or path.suffix == ".pyc" or not path.is_file():
                 continue
             zf.write(path, rel.as_posix())
-        with tempfile.TemporaryDirectory() as tmp:
-            ga, _ = fetch_ga.fetch(tmp)
-            for path in sorted(ga.rglob("*")):
-                if path.is_file():
-                    zf.write(path, path.relative_to(tmp).as_posix())
     data = target.read_bytes()
     shell = shell_requirements(desktop)
     info = {

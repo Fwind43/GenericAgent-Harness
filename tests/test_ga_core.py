@@ -50,3 +50,27 @@ def test_run_streams_and_returns(tmp_path):
         rt.dispose()
         assert raw.exited and raw.aborted == 1
         assert rt.ctx.get("agent") is None
+
+
+def test_update_slash_cmd_expands_official_prompt(tmp_path):
+    pkg = tmp_path / "frontends"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "slash_cmds.py").write_text(textwrap.dedent('''
+        def prompt_for(cmd, args_text=""):
+            if cmd == "update":
+                base = "[SYSTEM COMMAND: SELF-UPDATE]"
+                return f"{base}\\n\\nUser notes: {args_text}" if args_text else base
+            return None
+    '''), encoding="utf-8")
+    (tmp_path / ".gah-ga-ref").write_text("e4d956f0207a2d268704634473196353946481bc\n", encoding="utf-8")
+    rt = _mount(tmp_path, True)
+    try:
+        out = rt.ctx.get("agent").run("/update keep local prompt tweaks", timeout=5)
+        assert out.startswith("echo:[SYSTEM COMMAND: SELF-UPDATE]")
+        assert "User notes: keep local prompt tweaks" in out
+        assert str(tmp_path.resolve()) in out
+        assert "e4d956f0207a2d268704634473196353946481bc" in out
+        assert "git reset --mixed e4d956f0207a2d268704634473196353946481bc" in out
+    finally:
+        rt.dispose()

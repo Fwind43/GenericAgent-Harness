@@ -21,7 +21,7 @@
 
 默认仅监听回环；上面的 `GAH_WEB_HOST=0.0.0.0` 开启网络监听。**不要直接将明文 HTTP 暴露到公网**：优先通过 Tailscale 私网 IP 访问并在防火墙限定来源；或使用 HTTPS 反向代理。域名访问需设置 `GAH_WEB_ALLOWED_ORIGINS=https://gah.example.com`（填写实际 scheme/域名/端口）。
 
-首次访问后在 **设置 → 模型** 添加模型。状态都在 `$GAH_HOME`（默认 `~/.ga-harness`）：GA 可写副本及 `mykey.py` 位于 `genericagent/`，会话和插件设置也在该数据目录内。升级时停服务、替换安装包、保留整个数据目录；不要将数据目录放进安装包目录。启动器刷新 GA 代码，但保留模型配置、temp 和已有 memory 文件。可用 `GA_ROOT` 指定已有 GA 副本。
+首次访问后在 **设置 → 模型** 添加模型。状态都在 `$GAH_HOME`（默认 `~/.ga-harness`）：GA 可写副本及 `mykey.py` 位于 `genericagent/`，会话和插件设置也在该数据目录内。升级时停服务、替换安装包、保留整个数据目录；不要将数据目录放进安装包目录。启动器仅在 `genericagent/` 尚未初始化时拷贝内置 GA，不会覆盖已有的 `genericagent/` 目录（保留用户自定义优化或由 Agent 自行完成的更新）。可用 `GA_ROOT` 指定已有 GA 副本。
 
 ### systemd 常驻
 
@@ -351,3 +351,10 @@ server {
 ```
 
 然后访问 `https://gah.example.com/?gah_token=<令牌>`。暴露到公网时，令牌务必足够长，最好再在反代层加一层 IP 白名单或 Basic Auth。
+
+---
+
+## 9. 更新代码
+
+- **更新 ga-harness**：在 `/opt/ga-harness` 下执行 `git pull` 并重启 `ga-harness` 服务。
+- **更新 GenericAgent 源码**：不要用覆盖目录的方式替换 `/opt/GenericAgent`（以免丢失本地定制、SOP 与 `memory/`）。直接在网页或聊天通道中发送官方命令 **`/update`**（可附带说明，如 `/update 保留本地配置`），由 Agent 自行拉取上游更新、合并冲突并保护本地修改与记忆。

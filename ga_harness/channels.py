@@ -29,6 +29,7 @@ HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
         "/model  列出模型；/model <编号|名称> 切换本聊天的模型（别名 /llm）\n"
         "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
         "/conductor  查看指挥家模式；/conductor <on|off> 开启或关闭（本聊天的当前会话）\n"
+        "/update  /update [说明] 触发 GenericAgent 官方自更新流程（保留本地修改与记忆）\n"
         "/help  显示本帮助")
 BUSY = "上一个任务还在运行。发送 /stop 可以取消。"
 SESSIONS_PAGE = 10  # rows per /sessions page; numbering is global so /use <n> works from any page
