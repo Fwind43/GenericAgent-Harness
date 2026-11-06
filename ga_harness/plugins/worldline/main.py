@@ -18,6 +18,21 @@ def _hash(messages):
     return h.hexdigest()
 
 
+def _full(messages):
+    """Identity of a whole conversation, used to deduplicate archived variants.
+
+    Unlike ``_hash`` it includes each message's run id and time: two variants may well read
+    the same (a regenerate that failed or was aborted twice leaves an empty reply both times),
+    and text alone would merge them so the second one was never archived.
+    """
+    h = hashlib.sha1()
+    for m in messages:
+        h.update(json.dumps([m.get("role"), m.get("text", ""), m.get("run_id"), m.get("created_at")],
+                            ensure_ascii=False).encode("utf-8"))
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def _user_indexes(messages):
     return [i for i, m in enumerate(messages) if m.get("role") == "user"]
 
@@ -75,7 +90,7 @@ DROP TABLE branches_old;
         with self.lock, self._db() as db:
             db.execute("INSERT OR IGNORE INTO branches(session_id,idx,prefix,full,messages,state,created) "
                        "VALUES(?,?,?,?,?,?,?)",
-                       (sid, idx, _hash(messages[:idx]), _hash(messages),
+                       (sid, idx, _hash(messages[:idx]), _full(messages),
                         json.dumps(messages, ensure_ascii=False), json.dumps(state, ensure_ascii=False), time.time()))
 
     def rows(self, sid):
@@ -138,7 +153,7 @@ def variants(store, sid, messages):
     1-based position of the live variant. Older archived snapshots of a variant collapse into
     its latest one, so editing or switching back and forth never reshuffles positions.
     """
-    rows, out, full = store.rows(sid), {}, _hash(messages)
+    rows, out, full = store.rows(sid), {}, _full(messages)
     for idx in _user_indexes(messages):
         prefix = _hash(messages[:idx])
         live_key, live_born = _origin(messages[idx])
