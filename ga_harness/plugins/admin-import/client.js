@@ -84,6 +84,7 @@ var GAHPlugin_admin_import = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "ai-list", children: scan.chats.map((c) => /* @__PURE__ */ jsxRuntime.jsxs("label", { className: `ai-item${c.imported ? " done" : ""}`, children: [
             /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", checked: c.imported || picked.has(c.id), disabled: busy || c.imported, onChange: () => toggle(c.id) }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "ai-title", title: c.title, children: c.title || c.id }),
+            c.project && /* @__PURE__ */ jsxRuntime.jsx("small", { className: "ai-project", title: sdk.T("Admin 项目", "Admin project"), children: c.project }),
             /* @__PURE__ */ jsxRuntime.jsx("small", { className: "ai-muted", children: c.imported ? sdk.T("已导入", "Imported") : `${c.messages} · ${when(c.updated)}` })
           ] }, c.id)) }),
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "ai-row", children: [

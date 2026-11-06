@@ -218,7 +218,8 @@ def apply(ctx, config):
             count = sum(1 for m in data["messages"] if isinstance(m, dict) and m.get("role") in ("user", "assistant"))
             done = sessions.exists(PREFIX + sid)
             chats.append({"id": sid, "title": _title(data), "updated": _time(data.get("updated_at"), file.stat().st_mtime),
-                          "messages": count, "imported": done})
+                          "messages": count, "imported": done,
+                          "project": data["project_id"].strip() if isinstance(data.get("project_id"), str) else ""})
             mark_zh, mark_en = ("\uff0c\u5df2\u5bfc\u5165", ", imported") if done else ("", "")
             say(f"{step}\uff1a{_title(data) or sid}\uff08{count} \u6761{mark_zh}\uff09", f"{step}: {_title(data) or sid} ({count} messages{mark_en})")
         chats.sort(key=lambda c: -c["updated"])
@@ -241,10 +242,29 @@ def apply(ctx, config):
                     files.setdefault(_admin_id(data, file), file)
         base = sessions.current(light=True)
         scope = getattr(sessions, "root_scope", None)
-        if scope:
-            workspace, project_id = scope(base, None)
+        if scope:  # chats without an Admin project: default workspace, no project
+            workspace, project_id = scope(base, "")
         else:
             workspace, project_id = base.get("workspace", ""), base.get("project_id", "")
+        spaces, projects = ctx.get("workspaces"), {}
+
+        def project_scope(data, step):
+            """Admin stores the project's name (= GA temp/projects folder) in project_id."""
+            name = data.get("project_id")
+            name = name.strip() if isinstance(name, str) else ""
+            if not name:
+                return workspace, project_id
+            key = name.lower()
+            if key not in projects:
+                found = spaces.project_for_name(name) if spaces is not None else None
+                projects[key] = (spaces.project_workspace(found), found["id"]) if found else None
+                if found:
+                    say(f"\u9879\u76ee\u300c{name}\u300d\u2192 harness \u9879\u76ee\u300c{found['name']}\u300d",
+                        f"Project \"{name}\" -> harness project \"{found['name']}\"", logging.INFO)
+                else:
+                    say(f"{step}\uff1a\u9879\u76ee\u300c{name}\u300d\u65e0\u6cd5\u5173\u8054\uff08\u540d\u79f0\u4e0d\u5408\u6cd5\u6216\u5df2\u5728 harness \u5220\u9664\uff09\uff0c\u5bfc\u5165\u4e3a\u65e0\u9879\u76ee",
+                        f"{step}: project \"{name}\" not linked (invalid name or deleted in harness); imported without project", logging.WARNING)
+            return projects[key] or (workspace, project_id)
         imported, existing, failed = [], [], []
         order = list(dict.fromkeys(ids))
         for n, sid in enumerate(order, 1):
@@ -257,9 +277,13 @@ def apply(ctx, config):
                 continue
             try:
                 messages, state, updated = convert(data, file.stat().st_mtime)
-                ok = sessions.insert(PREFIX + sid, title=_title(data), messages=messages, state=state,
-                                     updated=updated or time.time(), workspace=workspace or "",
-                                     project_id=project_id or "", pinned=updated if data.get("pinned") else 0)
+                if sessions.exists(PREFIX + sid):
+                    ok = False  # never create a project for a chat that is not imported
+                else:
+                    space, pid = project_scope(data, step)
+                    ok = sessions.insert(PREFIX + sid, title=_title(data), messages=messages, state=state,
+                                         updated=updated or time.time(), workspace=space or "",
+                                         project_id=pid or "", pinned=updated if data.get("pinned") else 0)
             except (TypeError, ValueError, OSError) as e:
                 failed.append({"id": sid, "error": str(e)})
                 say(f"{step}\uff1a\u5931\u8d25 {e}", f"{step}: failed: {e}", logging.WARNING)

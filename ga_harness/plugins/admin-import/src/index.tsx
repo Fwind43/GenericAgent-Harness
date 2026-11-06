@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type PluginAPI, useHost, T, SettingsPanel, useOperation, defineReact } from '@gah/sdk';
 
 // Import GA Admin chats as harness sessions. main.py only reads the Admin folder.
-type Chat = { id: string; title: string; updated: number; messages: number; imported: boolean };
+type Chat = { id: string; title: string; updated: number; messages: number; imported: boolean; project?: string };
 type Scan = { dir: string; chats: Chat[]; skipped: number };
 type Result = { imported: string[]; existing: string[]; failed: { id: string; error: string }[] };
 type Line = { zh: string; en: string };
@@ -90,6 +90,7 @@ export function ImportPanel({ api }: { api: PluginAPI }) {
           {scan.chats.map(c => <label key={c.id} className={`ai-item${c.imported ? ' done' : ''}`}>
             <input type="checkbox" checked={c.imported || picked.has(c.id)} disabled={busy || c.imported} onChange={() => toggle(c.id)} />
             <span className="ai-title" title={c.title}>{c.title || c.id}</span>
+            {c.project && <small className="ai-project" title={T('Admin 项目', 'Admin project')}>{c.project}</small>}
             <small className="ai-muted">{c.imported ? T('已导入', 'Imported') : `${c.messages} · ${when(c.updated)}`}</small>
           </label>)}
         </div>

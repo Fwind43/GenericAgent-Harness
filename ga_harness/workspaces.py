@@ -74,6 +74,27 @@ class Workspaces:
         project = next((p for p in self.projects() if p["id"] == pid), None) if pid else None
         return (self.project_workspace(project), pid) if project else (self.default_workspace, "")
 
+    def project_for_name(self, name):
+        """Find (or create, with the default workspace) the project called `name`.
+
+        Used by importers; unlike change() it never switches the current chat.
+        Returns None when the name is invalid or its project was deleted here.
+        """
+        try:
+            name = self.project_name(name)
+        except ValueError:
+            return None
+        with self.sessions.lock, self.sessions._db() as db:
+            row = db.execute("SELECT * FROM projects WHERE lower(name)=lower(?) ORDER BY updated DESC, id",
+                             (name,)).fetchone()
+            if row is None:
+                if db.execute("SELECT 1 FROM project_ignored WHERE name=?", (name,)).fetchone():
+                    return None
+                pid = uuid.uuid4().hex
+                db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)", (pid, name, "", "", "", time.time()))
+                row = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+            return {k: row[k] for k in ("id", "name", "workspace", "updated")}
+
     def _unique_name(self, db, name, pid):
         # Names map to memory folders; Windows folders are case-insensitive.
         if db.execute("SELECT 1 FROM projects WHERE lower(name)=lower(?) AND id<>?", (name, pid)).fetchone():
