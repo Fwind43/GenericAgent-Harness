@@ -17,7 +17,8 @@ def test_resolve_order(tmp_path, monkeypatch):
     monkeypatch.delenv("GA_ROOT", raising=False)
     assert launcher.resolve_ga_root() is None
     (tmp_path / "home").mkdir()
-    (tmp_path / "home/config.toml").write_text('ga_root = "%s"\n' % (tmp_path / "cfg").as_posix())
+    (tmp_path / "home/config.toml").write_text('ga_root = "%s"\n' % (tmp_path / "cfg").as_posix(),
+                                                encoding="utf-8")  # TOML is UTF-8; tmp path may be non-ASCII
     assert launcher.resolve_ga_root() == str((tmp_path / "cfg").resolve())
     monkeypatch.setenv("GA_ROOT", str(tmp_path / "env"))
     assert launcher.resolve_ga_root() == str((tmp_path / "env").resolve())
