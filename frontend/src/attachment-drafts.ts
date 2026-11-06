@@ -5,6 +5,8 @@ import { host } from './store';
 type Item = Pending & { source: File };
 type Snapshot = { items: Item[]; loading: boolean };
 const EMPTY: Snapshot = { items: [], loading: true };
+// No session id (no run-store, or before the first snapshot): nothing to restore, so not loading.
+const NO_SESSION: Snapshot = { items: [], loading: false };
 
 // IndexedDB retains the actual files (including pasted images), not ephemeral blob URLs.
 class AttachmentDrafts {
@@ -33,7 +35,7 @@ class AttachmentDrafts {
     }
     return this.stored;
   };
-  get = (id?: string): Snapshot => id ? this.sessions.get(id) ?? EMPTY : EMPTY;
+  get = (id?: string): Snapshot => id ? this.sessions.get(id) ?? EMPTY : NO_SESSION;
   private publish(id: string, snapshot: Snapshot) {
     this.sessions.set(id, snapshot);
     // While loading, keep the stored flag; afterwards the loaded items are authoritative.

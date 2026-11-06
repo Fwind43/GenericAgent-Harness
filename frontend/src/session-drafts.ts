@@ -3,6 +3,9 @@ export class SessionDrafts {
   private values = new Map<string, string>();
   private listeners = new Set<() => void>();
   private known?: Set<string>;
+  // Without a session id (no run-store, or before the first snapshot) the composer still
+  // has to hold what is typed; that draft is in-memory only and not listed in ids().
+  private loose = '';
   constructor(private storage: () => Storage = () => localStorage) {}
   private key(id: string) { return `gah-session-draft:${encodeURIComponent(id)}`; }
   subscribe = (listener: () => void) => {
@@ -10,7 +13,7 @@ export class SessionDrafts {
     return () => { this.listeners.delete(listener); };
   };
   get = (id: string | undefined): string => {
-    if (!id) return '';
+    if (!id) return this.loose;
     if (!this.values.has(id)) {
       let value = '';
       try { value = this.storage().getItem(this.key(id)) ?? ''; } catch { /* Private mode / blocked storage. */ }
@@ -33,7 +36,13 @@ export class SessionDrafts {
     return this.known;
   };
   set = (id: string | undefined, value: string) => {
-    if (!id || this.get(id) === value) return;
+    if (!id) {
+      if (this.loose === value) return;
+      this.loose = value;
+      this.listeners.forEach(listener => listener());
+      return;
+    }
+    if (this.get(id) === value) return;
     this.values.set(id, value);
     { this.ids(); if (value) this.known!.add(id); else this.known!.delete(id); }
     try {
