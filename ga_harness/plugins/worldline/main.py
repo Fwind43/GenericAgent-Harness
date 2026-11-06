@@ -39,7 +39,19 @@ CREATE TABLE IF NOT EXISTS checkpoints(session_id TEXT, idx INTEGER, prefix TEXT
   PRIMARY KEY(session_id, idx, prefix));
 CREATE TABLE IF NOT EXISTS branches(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
   idx INTEGER, prefix TEXT, full TEXT, messages TEXT, state TEXT, created REAL,
-  UNIQUE(session_id, full));
+  UNIQUE(session_id, idx, full));
+""")
+            # Older databases deduplicated on (session, full) alone, so a conversation already
+            # archived at one fork point silently refused to become a variant at a deeper one.
+            row = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='branches'").fetchone()
+            if row and "UNIQUE(session_id, full)" in row[0]:
+                db.executescript("""
+ALTER TABLE branches RENAME TO branches_old;
+CREATE TABLE branches(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
+  idx INTEGER, prefix TEXT, full TEXT, messages TEXT, state TEXT, created REAL,
+  UNIQUE(session_id, idx, full));
+INSERT INTO branches SELECT id,session_id,idx,prefix,full,messages,state,created FROM branches_old;
+DROP TABLE branches_old;
 """)
 
     def _db(self):
@@ -230,13 +242,23 @@ def apply(ctx, config):
             raise RuntimeError("no checkpoint for this message; it predates the worldline plugin")
         text = body.get("text")
         text = messages[idx].get("text", "") if text is None else str(text)
-        if not text.strip():
+        # Editing changes only the text; the files sent with the message go along again.
+        attachments = messages[idx].get("attachments") or None
+        if not text.strip() and not attachments:
             raise ValueError("message is empty")
         store.archive(sid, idx, messages, current["state"])
+        before = current["state"]
         with sessions._db() as db:
-            sessions._write(db, current, messages[:idx], _keep_settings(state, current["state"]))
+            sessions._write(db, current, messages[:idx], _keep_settings(state, before))
         _refresh(sid, messages[:idx])
-        run = runs.start(text, session_id=sid, source="worldline")
+        try:
+            run = runs.start(text, session_id=sid, source="worldline", attachments=attachments)
+        except Exception:
+            # The run never started: put the conversation back instead of leaving it cut off.
+            with sessions._db() as db:
+                sessions._write(db, sessions.get(sid), messages, before)
+            _refresh(sid, messages)
+            raise
         return {"ok": True, "run": run}
 
 

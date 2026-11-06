@@ -141,14 +141,19 @@
       if (!thread || !sid) return;
       const variants = state.worldline || {};
       const paint = () => {
+        var _a;
         observer.disconnect();
-        let lastUser = -1;
         const nodes = Array.from(thread.children).filter((node) => node.classList.contains("msg"));
         const offset = Math.max(0, state.messages.length - nodes.length);
+        let lastUser = -1;
+        for (let i = offset - 1; i >= 0; i--) if (((_a = state.messages[i]) == null ? void 0 : _a.role) === "user") {
+          lastUser = i;
+          break;
+        }
         nodes.forEach((node, position) => {
-          var _a, _b, _c;
+          var _a2, _b, _c;
           const index = offset + position;
-          (_a = node.querySelector(":scope > .gah-wl-bar")) == null ? void 0 : _a.remove();
+          (_a2 = node.querySelector(":scope > .gah-wl-bar")) == null ? void 0 : _a2.remove();
           (_b = node.querySelector(".gah-wl-branch")) == null ? void 0 : _b.remove();
           const message = state.messages[index];
           const mine = !!editing && editing.sid === sid && editing.index === index && (message == null ? void 0 : message.role) === "user";
@@ -164,8 +169,9 @@
             if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
             return;
           }
-          if (!node.classList.contains("user") || (message == null ? void 0 : message.role) !== "user") return;
+          if ((message == null ? void 0 : message.role) !== "user") return;
           lastUser = index;
+          if (!node.classList.contains("user")) return;
           node.classList.add(MARK);
           node.append(bar(api, sid, index, textOf(message), variants[String(index)], state.running));
         });

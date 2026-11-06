@@ -111,10 +111,12 @@ function Worldline({ api }: { api: PluginAPI }) {
     const variants = ((state as unknown as { worldline?: Variants }).worldline || {});
     const paint = () => {
       observer.disconnect();
-      let lastUser = -1;
       // The host only renders the latest window of messages, so DOM position != message index.
       const nodes = Array.from(thread.children).filter(node => node.classList.contains('msg'));
       const offset = Math.max(0, state.messages.length - nodes.length);
+      // The turn an assistant reply belongs to may start above the rendered window.
+      let lastUser = -1;
+      for (let i = offset - 1; i >= 0; i--) if (state.messages[i]?.role === 'user') { lastUser = i; break; }
       nodes.forEach((node, position) => {
         const index = offset + position;
         node.querySelector(':scope > .gah-wl-bar')?.remove();
@@ -133,8 +135,10 @@ function Worldline({ api }: { api: PluginAPI }) {
           if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
           return;
         }
-        if (!node.classList.contains('user') || message?.role !== 'user') return;
+        if (message?.role !== 'user') return;
+        // A conductor wake-up is a user message drawn as a notice: it starts a turn but gets no bar.
         lastUser = index;
+        if (!node.classList.contains('user')) return;
         node.classList.add(MARK);
         node.append(bar(api, sid, index, textOf(message), variants[String(index)], state.running));
       });
