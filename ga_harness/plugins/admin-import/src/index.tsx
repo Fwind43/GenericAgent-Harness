@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type PluginAPI, useHost, T, SettingsPanel, useOperation, defineReact } from '@gah/sdk';
 
 // Import GA Admin chats as harness sessions. main.py only reads the Admin folder.
 type Chat = { id: string; title: string; updated: number; messages: number; imported: boolean };
 type Scan = { dir: string; chats: Chat[]; skipped: number };
 type Result = { imported: string[]; existing: string[]; failed: { id: string; error: string }[] };
+type Line = { zh: string; en: string };
+type Job<R> = { status: 'running' | 'done' | 'error'; log: Line[]; next: number; result: R | null; error: string | null };
 
 const when = (t: number) => (t ? new Date(t * 1000).toLocaleString() : '');
 
@@ -16,20 +18,40 @@ export function ImportPanel({ api }: { api: PluginAPI }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState('');
+  const [log, setLog] = useState<Line[]>([]);
+  const logRef = useRef<HTMLPreElement>(null);
   const busy = working || changing;
 
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log]);
+
+  // main.py runs scan/import in a background job; poll its log until it finishes.
+  const follow = async <R,>(kind: 'scan' | 'import', body: unknown): Promise<R> => {
+    const { job } = await api.post<{ job: string }>(kind, body);
+    for (let since = 0; ;) {
+      await new Promise(done => setTimeout(done, 300));
+      const state = await api.get<Job<R>>(`job?id=${encodeURIComponent(job)}&since=${since}`);
+      since = state.next;
+      if (state.log.length) setLog(prev => [...prev, ...state.log]);
+      if (state.status === 'error') throw new Error(state.error || 'failed');
+      if (state.status === 'done') return state.result as R;
+    }
+  };
+
   const load = (dir = path) => run(async () => {
-    setError(''); setResult(null);
-    const data = await api.get<Scan>(`?path=${encodeURIComponent(dir.trim())}`);
+    setError(''); setResult(null); setLog([]);
+    const data = await follow<Scan>('scan', { path: dir.trim() });
     setScan(data); setPicked(new Set());
   }, setError, true);
 
   const start = () => run(async () => {
     if (!scan) return;
-    setError('');
-    const res = await api.post<Result>('', { path: scan.dir, ids: [...picked] });
+    setError(''); setLog([]);
+    const res = await follow<Result>('import', { path: scan.dir, ids: [...picked] });
     setResult(res);
-    const data = await api.get<Scan>(`?path=${encodeURIComponent(scan.dir)}`);
+    const data = await follow<Scan>('scan', { path: scan.dir });
     setScan(data); setPicked(new Set());
   }, setError, true);
 
@@ -54,6 +76,8 @@ export function ImportPanel({ api }: { api: PluginAPI }) {
         <button type="submit" className="btn" disabled={busy || !path.trim()}>{T('扫描', 'Scan')}</button>
       </form>
       {error && <p className="ai-error">{error}</p>}
+      {log.length > 0 && <pre ref={logRef} className="ai-log" aria-live="polite">
+        {log.map(line => T(line.zh, line.en)).join('\n')}</pre>}
       {scan && <>
         <div className="ai-row ai-muted">
           <span>{T(`${scan.dir}：${scan.chats.length} 个聊天`, `${scan.dir}: ${scan.chats.length} chats`)}

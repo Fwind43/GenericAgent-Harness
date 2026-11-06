@@ -9,20 +9,39 @@ var GAHPlugin_admin_import = (function(exports, jsxRuntime, react, sdk) {
     const [picked, setPicked] = react.useState(/* @__PURE__ */ new Set());
     const [result, setResult] = react.useState(null);
     const [error, setError] = react.useState("");
+    const [log, setLog] = react.useState([]);
+    const logRef = react.useRef(null);
     const busy = working || changing;
+    react.useEffect(() => {
+      const el = logRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, [log]);
+    const follow = async (kind, body) => {
+      const { job } = await api.post(kind, body);
+      for (let since = 0; ; ) {
+        await new Promise((done) => setTimeout(done, 300));
+        const state = await api.get(`job?id=${encodeURIComponent(job)}&since=${since}`);
+        since = state.next;
+        if (state.log.length) setLog((prev) => [...prev, ...state.log]);
+        if (state.status === "error") throw new Error(state.error || "failed");
+        if (state.status === "done") return state.result;
+      }
+    };
     const load = (dir = path) => run(async () => {
       setError("");
       setResult(null);
-      const data = await api.get(`?path=${encodeURIComponent(dir.trim())}`);
+      setLog([]);
+      const data = await follow("scan", { path: dir.trim() });
       setScan(data);
       setPicked(/* @__PURE__ */ new Set());
     }, setError, true);
     const start = () => run(async () => {
       if (!scan) return;
       setError("");
-      const res = await api.post("", { path: scan.dir, ids: [...picked] });
+      setLog([]);
+      const res = await follow("import", { path: scan.dir, ids: [...picked] });
       setResult(res);
-      const data = await api.get(`?path=${encodeURIComponent(scan.dir)}`);
+      const data = await follow("scan", { path: scan.dir });
       setScan(data);
       setPicked(/* @__PURE__ */ new Set());
     }, setError, true);
@@ -52,6 +71,7 @@ var GAHPlugin_admin_import = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", className: "btn", disabled: busy || !path.trim(), children: sdk.T("扫描", "Scan") })
         ] }),
         error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "ai-error", children: error }),
+        log.length > 0 && /* @__PURE__ */ jsxRuntime.jsx("pre", { ref: logRef, className: "ai-log", "aria-live": "polite", children: log.map((line) => sdk.T(line.zh, line.en)).join("\n") }),
         scan && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "ai-row ai-muted", children: /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
             sdk.T(`${scan.dir}：${scan.chats.length} 个聊天`, `${scan.dir}: ${scan.chats.length} chats`),
