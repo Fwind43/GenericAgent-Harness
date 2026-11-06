@@ -11,7 +11,7 @@ import { endpoint, sections as modelSections, readonlyText, sectionKey, provider
 
 type Edit = { kind: 'model' | 'provider' | 'mixin'; id?: string; serial: number };
 export function Models({ api }: { api: PluginAPI }) {
-  const { state, changing } = useHost(), { busy, working, run } = useOperation(api);
+  const { state, changing } = useHost(), { busy, working, run } = useOperation(api, !!state.parallel_runs);
   const [config, setConfig] = useState<ModelConfig | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [section, setSection] = useState('');
   const [edit, setEdit] = useState<Edit>({ kind: 'provider', serial: 0 }), [detail, setDetail] = useState(false);
@@ -184,7 +184,10 @@ export function Models({ api }: { api: PluginAPI }) {
         {!config && <p className="model-empty" role="status">{working ? T('\u52a0\u8f7d\u4e2d...', 'Loading...') : T('\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u5237\u65b0\u3002', 'Unable to load configuration. Try refreshing.')}</p>}
         {config && <>
           {!config.writable && <div className="model-readonly" role="status"><span>{readonlyText(config)}</span></div>}
-          {state.running && <p className="model-help model-running">{T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u53ef\u67e5\u770b\u914d\u7f6e\uff0c\u7ed3\u675f\u540e\u53ef\u7f16\u8f91\u3002', 'A run is active. You can browse; editing is available when it finishes.')}</p>}
+          {state.running && <p className="model-help model-running">{state.parallel_runs
+            // Each run owns a worker that loaded its model at start; saving rewrites mykey.py for later runs only.
+            ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff1a\u4fdd\u5b58\u7684\u4fee\u6539\u5bf9\u4e4b\u540e\u5f00\u59cb\u7684\u4efb\u52a1\u751f\u6548\uff0c\u6b63\u5728\u8fd0\u884c\u7684\u4efb\u52a1\u7ee7\u7eed\u4f7f\u7528\u542f\u52a8\u65f6\u7684\u914d\u7f6e\u3002', 'A run is active. Saved changes apply to runs started afterwards; the active run keeps the configuration it started with.')
+            : T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u53ef\u67e5\u770b\u914d\u7f6e\uff0c\u7ed3\u675f\u540e\u53ef\u7f16\u8f91\u3002', 'A run is active. You can browse; editing is available when it finishes.')}</p>}
           {!quick && config.writable && duplicates.size > 0 && <div className="model-duplicates" role="status">
             <span>{T('\u53d1\u73b0\u5730\u5740\u548c\u5bc6\u94a5\u5b8c\u5168\u76f8\u540c\u7684\u91cd\u590d\u670d\u52a1\u5546\uff1a', 'Duplicate providers with the same URL and key: ')}{[...duplicates].map(([into, ids]) => [into, ...ids].map(id => names.get(id) || id).join(' = ')).join('\uff1b')}</span>
             <button type="button" className="secondary" disabled={locked} onClick={() => { void mergeDuplicates(); }}>{T('\u4e00\u952e\u5408\u5e76', 'Merge')}</button>
