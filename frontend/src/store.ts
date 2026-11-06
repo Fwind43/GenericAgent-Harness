@@ -104,6 +104,11 @@ export class HostStore {
     this.runSeq.set(event.run_id, event.seq);
     ++this.refreshVersion;
     const previous = state.runs?.find(run => run.id === event.run_id);
+    if (!current && kind === 'run.event' && previous && previous.status === (event.run?.status ?? previous.status)) {
+      if (typeof previous.seq !== 'number' || event.seq > previous.seq) previous.seq = event.seq;
+      this.emit(kind, event);
+      return;
+    }
     const record = event.run ?? (previous ? { ...previous, seq: event.seq } : undefined);
     const runs = record ? [record, ...(state.runs ?? []).filter(run => run.id !== record.id)] : state.runs;
     let next: HostState = { ...state, runs };

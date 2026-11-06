@@ -554,7 +554,9 @@ class Runs:
                         break
                 with self.lock:
                     cancel_at = live["cancel_at"]
-                if cancel_at is not None and time.monotonic() - cancel_at >= self.cancel_grace:
+                    closing = self.closed
+                grace = min(self.cancel_grace, 0.3) if closing else self.cancel_grace
+                if cancel_at is not None and time.monotonic() - cancel_at >= grace:
                     self._finish(rid, "aborted")
                     break
                 if live["timeout"] and time.monotonic() - live["started"] > live["timeout"] + self.cancel_grace:

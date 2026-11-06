@@ -585,12 +585,18 @@ class Backend {
   }
 
   killTree() {
-    const pid = this.child && this.child.pid;
-    if (!pid) return;
-    if (process.platform === 'win32') {
-      spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
-    } else {
-      try { process.kill(-pid, 'SIGKILL'); } catch { /* group gone */ }
+    const pids = new Set();
+    if (this.child && this.child.pid) pids.add(this.child.pid);
+    try {
+      const readyPid = Number(JSON.parse(fs.readFileSync(this.readyFile, 'utf8')).pid) || 0;
+      if (readyPid && readyPid !== process.pid && isPythonProcess(readyPid)) pids.add(readyPid);
+    } catch { /* missing or torn */ }
+    for (const pid of pids) {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+      } else {
+        try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* group gone */ } }
+      }
     }
   }
 }

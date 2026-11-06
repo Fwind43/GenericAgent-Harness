@@ -38,7 +38,7 @@ import os
 import sys
 import html
 import json
-import time
+import queue
 import re
 import threading
 import time
@@ -358,6 +358,7 @@ class WebFrontend:
         self.running = False
         self.aborting = False
         self.clients = set()
+        self._clients_lock = threading.Lock()
         self.server = None
         self.url = None
         self.stopped = threading.Event()
@@ -368,16 +369,17 @@ class WebFrontend:
                 ctx.on(kind, lambda data, kind=kind: self.broadcast(kind, data))
 
     def broadcast(self, kind, data):
-        with self.lock:
-            self._broadcast(kind, data)
+        self._broadcast(kind, data)
 
     def web_plugins_changed(self):
         self.broadcast("web.plugins", self.web.manifest())
 
-    # ---- state + fan-out (callers hold self.lock) ----
+    # ---- state + fan-out ----
     def _broadcast(self, kind, data):
         msg = f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-        for q in list(self.clients):
+        with self._clients_lock:
+            clients = list(self.clients)
+        for q in clients:
             q.put(msg)
 
     def snapshot(self):
@@ -973,9 +975,15 @@ class WebFrontend:
         server, self.server = self.server, None
         if server is None:
             return
-        with self.lock:
-            for q in list(self.clients):
-                q.put(None)        # end every open SSE stream
+        with self._clients_lock:
+            clients = list(self.clients)
+        for q in clients:
+            while True:
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+            q.put(None)        # end every open SSE stream
         server.shutdown()
         server.server_close()
         self.stopped.set()

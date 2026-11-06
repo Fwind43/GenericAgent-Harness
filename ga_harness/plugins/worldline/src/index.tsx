@@ -104,11 +104,18 @@ function textOf(message: unknown) {
 
 function Worldline({ api }: { api: PluginAPI }) {
   const { state } = useHost();
+  const variants = ((state as unknown as { worldline?: Variants }).worldline || {});
+  const wlKey = [
+    state.session_id || '',
+    state.running ? '1' : '0',
+    state.messages.length,
+    state.messages.map((m, i) => m?.role === 'user' ? `${i}:u:${textOf(m)}` : `${i}:${m?.role || ''}`).join('\u0001'),
+    JSON.stringify(variants),
+  ].join('\u0002');
   useEffect(() => {
     const thread = document.getElementById('thread');
     const sid = state.session_id;
     if (!thread || !sid) return;
-    const variants = ((state as unknown as { worldline?: Variants }).worldline || {});
     const paint = () => {
       observer.disconnect();
       // The host only renders the latest window of messages, so DOM position != message index.
@@ -148,7 +155,7 @@ function Worldline({ api }: { api: PluginAPI }) {
     repaint = paint;
     paint();
     return () => { observer.disconnect(); if (repaint === paint) repaint = () => {}; };
-  }, [api, state]);
+  }, [api, wlKey]);
   return null;
 }
 

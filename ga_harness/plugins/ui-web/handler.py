@@ -413,9 +413,12 @@ class _Handler(BaseHTTPRequestHandler):
         q = queue.Queue()
         try:
             with fe.lock:  # snapshot + subscribe atomically: no chunk lost or duplicated
+                with fe._clients_lock:
+                    fe.clients.add(q)
                 first = f"event: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
-                fe.clients.add(q)
         except Exception as e:
+            with fe._clients_lock:
+                fe.clients.discard(q)
             # Previously this escaped as a dropped connection, leaving the page stuck on "Connecting".
             import traceback
             fe.log(f"[web] /api/events snapshot failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
@@ -445,5 +448,5 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         finally:
-            with fe.lock:
+            with fe._clients_lock:
                 fe.clients.discard(q)

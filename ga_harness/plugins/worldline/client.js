@@ -135,11 +135,18 @@
   }
   function Worldline({ api }) {
     const { state } = sdk.useHost();
+    const variants = state.worldline || {};
+    const wlKey = [
+      state.session_id || "",
+      state.running ? "1" : "0",
+      state.messages.length,
+      state.messages.map((m, i) => (m == null ? void 0 : m.role) === "user" ? `${i}:u:${textOf(m)}` : `${i}:${(m == null ? void 0 : m.role) || ""}`).join(""),
+      JSON.stringify(variants)
+    ].join("");
     react.useEffect(() => {
       const thread = document.getElementById("thread");
       const sid = state.session_id;
       if (!thread || !sid) return;
-      const variants = state.worldline || {};
       const paint = () => {
         var _a;
         observer.disconnect();
@@ -185,7 +192,7 @@
         if (repaint === paint) repaint = () => {
         };
       };
-    }, [api, state]);
+    }, [api, wlKey]);
     return null;
   }
   sdk.defineReact("worldline", Worldline);
