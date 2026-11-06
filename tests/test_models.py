@@ -386,8 +386,7 @@ def test_mykey_provider_label_edit_and_noop_save_skip_reload(tmp_path):
 
 
 @pytest.mark.parametrize("mapping", [
-    [], {"native_oai_config_x": "missing"}, {"native_oai_config_missing": "shared"},
-    {"native_oai_config_x": []},
+    [], {"native_oai_config_x": "missing"}, {"native_oai_config_x": []},
 ])
 def test_mykey_invalid_provider_mapping_refuses_edits(tmp_path, mapping):
     store, _, mykey = make_fallback(tmp_path)
@@ -400,6 +399,26 @@ def test_mykey_invalid_provider_mapping_refuses_edits(tmp_path, mapping):
         store.change({"action": "save", "key": "native_oai_config_x",
                       "values": {"model": "not-saved"}, "revision": store._read(logical=False)[3]})
     assert mykey.read_bytes() == original
+
+
+def test_mykey_dangling_provider_owner_is_ignored_and_pruned_on_save(tmp_path):
+    store, _, mykey = make_fallback(tmp_path)
+    _native_provider_change(store, values={
+        "apibase": "https://shared.invalid/v1", "apikey": "test-shared-secret"})
+    change(store, key="native_oai_config_x", values={"provider": "shared"})
+    data = llmconfig.read_mykey_py(mykey)
+    owners = dict(data[llmconfig.MYKEY_MODEL_PROVIDERS], native_oai_config_renamed_away="shared")
+    lines = [line if not line.startswith(llmconfig.MYKEY_MODEL_PROVIDERS + " =")
+             else llmconfig.MYKEY_MODEL_PROVIDERS + " = " + repr(owners)
+             for line in mykey.read_text(encoding="utf-8").splitlines()]
+    mykey.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    view = store._read()[2]
+    assert view["native_oai_config_x"]["provider"] == "shared"
+    assert "native_oai_config_renamed_away" not in view
+    change(store, key="native_oai_config_x", values={"model": "after-rename"})
+    saved = llmconfig.read_mykey_py(mykey)
+    assert saved[llmconfig.MYKEY_MODEL_PROVIDERS] == {"native_oai_config_x": "shared"}
+    assert saved["native_oai_config_x"]["model"] == "after-rename"
 
 
 def test_mykey_dynamic_provider_metadata_is_not_rewritten(tmp_path):

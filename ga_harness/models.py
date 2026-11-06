@@ -424,6 +424,10 @@ class Models:
         if not isinstance(owners, dict):
             raise ValueError("mykey provider mapping is invalid; fix it locally before editing")
         for key, pid in owners.items():
+            if isinstance(key, str) and llmconfig.is_llm_key(key) and key not in out:
+                # Dangling owner left by an external tool (e.g. GA Admin renaming a
+                # model); skip it so the next save rewrites the map without it.
+                continue
             if (not isinstance(key, str) or not _supported(key, out.get(key))
                     or not isinstance(pid, str) or pid not in providers
                     or out[key].get("provider", pid) != pid):
