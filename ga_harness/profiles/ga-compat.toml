@@ -94,6 +94,10 @@ name = "web-context"
 [[plugins]]
 name = "web-usage"
 
+# Settings page that imports GA Admin chats as continuable sessions (Admin files are only read)
+[[plugins]]
+name = "admin-import"
+
 # render ```mermaid blocks in messages as diagrams; add-on for ui-web
 [[plugins]]
 name = "web-mermaid"

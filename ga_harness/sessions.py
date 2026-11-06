@@ -302,6 +302,33 @@ class Sessions:
                         raise RuntimeError("session is owned by another run")
                 self._write(db, current, messages, state)
 
+    def insert(self, sid, *, title, messages, state, updated, workspace="", project_id="", pinned=0):
+        """Add a finished, unselected chat (e.g. imported history) under a caller-chosen ID.
+
+        Returns False when a live chat already uses the ID; a deleted tombstone is replaced.
+        """
+        if not isinstance(sid, str) or not sid:
+            raise ValueError("session id required")
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                row = db.execute("SELECT deleted FROM sessions WHERE id=?", (sid,)).fetchone()
+                if row is not None and not row["deleted"]:
+                    return False
+                db.execute("INSERT OR REPLACE INTO sessions (id,title,updated,messages,state,deleted,workspace,project_id,parent_id,pinned,read_at)"
+                           " VALUES (?,?,?,?,?,0,?,?,'',?,?)",
+                           (sid, title or "\u65b0\u4f1a\u8bdd", float(updated),
+                            json.dumps(messages, ensure_ascii=False, allow_nan=False),
+                            json.dumps(state, ensure_ascii=False, allow_nan=False),
+                            workspace or "", project_id or "", float(pinned or 0), float(updated)))
+            return True
+
+    def exists(self, sid):
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                return db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone() is not None
+
     def create(self, *, parent_id=None, workspace=None, project_id=None, title=None, select=False):
         """Create a fresh child (or root); a child inherits scope, never history."""
         with self.lock:

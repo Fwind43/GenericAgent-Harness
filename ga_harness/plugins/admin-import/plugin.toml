@@ -1,0 +1,6 @@
+name = "admin-import"
+category = "ui"
+entry = "main:apply"
+description = "Import GA Admin chats into harness sessions (Admin files are only read; imported chats can be continued)."
+description_zh = "把 GA Admin 的聊天记录导入为 harness 会话（只读取 Admin 文件，导入后可接着聊）。"
+inject = ["web.host"]
