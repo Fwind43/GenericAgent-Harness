@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useHost, T, defineReact, host, type PluginAPI } from '@gah/sdk';
 
-type Variant = { branches: number[]; count: number; current: number };
+type Variant = { order?: (number | null)[]; branches: number[]; count: number; current: number };
 type Variants = Record<string, Variant>;
 
 const MARK = 'gah-wl';
@@ -69,14 +69,16 @@ function bar(api: PluginAPI, sid: string, index: number, text: string, info: Var
     repaint();
   }, busy));
   box.append(button('\u21bb', T('\u91cd\u65b0\u751f\u6210', 'Regenerate'), () => act(api, 'fork', { session_id: sid, index }), busy));
-  if (info && info.branches.length) {
-    const ids = info.branches;
+  if (info && info.count > 1) {
+    const order = info.order ?? [...info.branches, null];
+    const prev = order[info.current - 2], next = order[info.current];
+    const go = (id: number | null | undefined) => () => { if (typeof id === 'number') void act(api, 'switch', { session_id: sid, branch_id: id }); };
     const nav = document.createElement('span');
     nav.className = 'gah-wl-nav';
     nav.append(
-      button('\u2039', T('\u4e0a\u4e00\u6761\u4e16\u754c\u7ebf', 'Previous worldline'), () => act(api, 'switch', { session_id: sid, branch_id: ids[0] }), busy),
+      button('\u2039', T('\u4e0a\u4e00\u6761\u4e16\u754c\u7ebf', 'Previous worldline'), go(prev), busy || typeof prev !== 'number'),
       Object.assign(document.createElement('span'), { className: 'gah-wl-count', textContent: `${info.current}/${info.count}` }),
-      button('\u203a', T('\u4e0b\u4e00\u6761\u4e16\u754c\u7ebf', 'Next worldline'), () => act(api, 'switch', { session_id: sid, branch_id: ids[ids.length - 1] }), busy),
+      button('\u203a', T('\u4e0b\u4e00\u6761\u4e16\u754c\u7ebf', 'Next worldline'), go(next), busy || typeof next !== 'number'),
     );
     box.append(nav);
   }
@@ -110,7 +112,11 @@ function Worldline({ api }: { api: PluginAPI }) {
     const paint = () => {
       observer.disconnect();
       let lastUser = -1;
-      Array.from(thread.children).forEach((node, index) => {
+      // The host only renders the latest window of messages, so DOM position != message index.
+      const nodes = Array.from(thread.children).filter(node => node.classList.contains('msg'));
+      const offset = Math.max(0, state.messages.length - nodes.length);
+      nodes.forEach((node, position) => {
+        const index = offset + position;
         node.querySelector(':scope > .gah-wl-bar')?.remove();
         node.querySelector('.gah-wl-branch')?.remove();
         const message = state.messages[index];

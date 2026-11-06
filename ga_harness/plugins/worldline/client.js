@@ -102,14 +102,18 @@
       repaint();
     }, busy));
     box.append(button("↻", sdk.T("重新生成", "Regenerate"), () => act(api, "fork", { session_id: sid, index }), busy));
-    if (info && info.branches.length) {
-      const ids = info.branches;
+    if (info && info.count > 1) {
+      const order = info.order ?? [...info.branches, null];
+      const prev = order[info.current - 2], next = order[info.current];
+      const go = (id) => () => {
+        if (typeof id === "number") void act(api, "switch", { session_id: sid, branch_id: id });
+      };
       const nav = document.createElement("span");
       nav.className = "gah-wl-nav";
       nav.append(
-        button("‹", sdk.T("上一条世界线", "Previous worldline"), () => act(api, "switch", { session_id: sid, branch_id: ids[0] }), busy),
+        button("‹", sdk.T("上一条世界线", "Previous worldline"), go(prev), busy || typeof prev !== "number"),
         Object.assign(document.createElement("span"), { className: "gah-wl-count", textContent: `${info.current}/${info.count}` }),
-        button("›", sdk.T("下一条世界线", "Next worldline"), () => act(api, "switch", { session_id: sid, branch_id: ids[ids.length - 1] }), busy)
+        button("›", sdk.T("下一条世界线", "Next worldline"), go(next), busy || typeof next !== "number")
       );
       box.append(nav);
     }
@@ -139,8 +143,11 @@
       const paint = () => {
         observer.disconnect();
         let lastUser = -1;
-        Array.from(thread.children).forEach((node, index) => {
+        const nodes = Array.from(thread.children).filter((node) => node.classList.contains("msg"));
+        const offset = Math.max(0, state.messages.length - nodes.length);
+        nodes.forEach((node, position) => {
           var _a, _b, _c;
+          const index = offset + position;
           (_a = node.querySelector(":scope > .gah-wl-bar")) == null ? void 0 : _a.remove();
           (_b = node.querySelector(".gah-wl-branch")) == null ? void 0 : _b.remove();
           const message = state.messages[index];

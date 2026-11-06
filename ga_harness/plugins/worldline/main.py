@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS branches(id INTEGER PRIMARY KEY AUTOINCREMENT, sessio
             return [dict(r) for r in db.execute(
                 "SELECT id,idx,prefix,full,created FROM branches WHERE session_id=? ORDER BY created,id", (sid,))]
 
+    def origin(self, row):
+        """(key, born) of the user message a branch starts with; cached, rows never change."""
+        cache = self.__dict__.setdefault("_origins", {})
+        if row["id"] not in cache:
+            with self.lock, self._db() as db:
+                found = db.execute("SELECT messages FROM branches WHERE id=?", (row["id"],)).fetchone()
+            try:
+                message = json.loads(found[0])[row["idx"]]
+            except Exception:
+                message = None
+            cache[row["id"]] = _origin(message, row)
+        return cache[row["id"]]
+
     def load(self, sid, branch_id):
         with self.lock, self._db() as db:
             row = db.execute("SELECT * FROM branches WHERE session_id=? AND id=?", (sid, branch_id)).fetchone()
@@ -90,14 +103,48 @@ def _store_path(sessions):
     return Path(base).with_name("worldline.db") if base else HERE / "worldline.db"
 
 
+def _origin(message, row=None):
+    """Identity and birth time of one variant: the user message sent at the fork point.
+
+    Every send (edit, regenerate) creates a new user message with its own run id and time,
+    while switching to or continuing a variant keeps it, so this orders variants stably.
+    """
+    message = message if isinstance(message, dict) else {}
+    born = message.get("created_at")
+    key = message.get("run_id") or (f"t:{born}" if born is not None else None)
+    if key is None:
+        key = f"row:{row['id']}" if row else "live"
+    if not isinstance(born, (int, float)):
+        born = row["created"] if row else float("inf")
+    return key, born
+
+
 def variants(store, sid, messages):
-    """For each user message: the sibling branches at that point plus the live one."""
-    rows, out = store.rows(sid), {}
+    """For each user message: every variant at that point, in the order they were first sent.
+
+    ``order`` holds a branch id per variant (``None`` for the live one) and ``current`` is the
+    1-based position of the live variant. Older archived snapshots of a variant collapse into
+    its latest one, so editing or switching back and forth never reshuffles positions.
+    """
+    rows, out, full = store.rows(sid), {}, _hash(messages)
     for idx in _user_indexes(messages):
-        prefix, full = _hash(messages[:idx]), _hash(messages)
-        ids = [r["id"] for r in rows if r["idx"] == idx and r["prefix"] == prefix and r["full"] != full]
-        if ids:
-            out[str(idx)] = {"branches": ids, "count": len(ids) + 1, "current": len(ids) + 1}
+        prefix = _hash(messages[:idx])
+        live_key, live_born = _origin(messages[idx])
+        slots = {live_key: (live_born, None)}
+        for r in rows:  # oldest first, so the latest snapshot of a variant wins
+            if r["idx"] != idx or r["prefix"] != prefix or r["full"] == full:
+                continue
+            key, born = store.origin(r)
+            if key == live_key:
+                continue
+            prev = slots.get(key)
+            slots[key] = (min(born, prev[0]) if prev else born, r["id"])
+        if len(slots) < 2:
+            continue
+        ordered = sorted(slots.items(), key=lambda kv: (kv[1][0], str(kv[0])))
+        order = [bid for _, (_, bid) in ordered]
+        out[str(idx)] = {"order": order, "branches": [b for b in order if b is not None],
+                         "count": len(order), "current": order.index(None) + 1}
     return out
 
 
