@@ -962,7 +962,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   }
   function Models({ api }) {
     var _a, _b, _c, _d;
-    const { state, changing } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api);
+    const { state, changing } = sdk.useHost(), { busy, working, run } = sdk.useOperation(api, !!state.parallel_runs);
     const [config, setConfig] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [section, setSection] = react.useState("");
     const [edit, setEdit] = react.useState({ kind: "provider", serial: 0 }), [detail, setDetail] = react.useState(false);
@@ -1222,7 +1222,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         !config && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-empty", role: "status", children: working ? sdk.T("加载中...", "Loading...") : sdk.T("加载失败，请重试刷新。", "Unable to load configuration. Try refreshing.") }),
         config && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
           !config.writable && /* @__PURE__ */ jsxRuntime.jsx("div", { className: "model-readonly", role: "status", children: /* @__PURE__ */ jsxRuntime.jsx("span", { children: readonlyText(config) }) }),
-          state.running && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help model-running", children: sdk.T("任务运行中，可查看配置，结束后可编辑。", "A run is active. You can browse; editing is available when it finishes.") }),
+          state.running && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help model-running", children: state.parallel_runs ? sdk.T("任务运行中：保存的修改对之后开始的任务生效，正在运行的任务继续使用启动时的配置。", "A run is active. Saved changes apply to runs started afterwards; the active run keeps the configuration it started with.") : sdk.T("任务运行中，可查看配置，结束后可编辑。", "A run is active. You can browse; editing is available when it finishes.") }),
           !quick && config.writable && duplicates.size > 0 && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-duplicates", role: "status", children: [
             /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
               sdk.T("发现地址和密钥完全相同的重复服务商：", "Duplicate providers with the same URL and key: "),
