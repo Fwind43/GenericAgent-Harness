@@ -89,7 +89,7 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
     const values: Parameters<SaveModel>[2] & {} = provider ? { name: name.trim(), model: model.trim(), provider }
       : { name: name.trim(), model: model.trim(), provider: '', apibase: base.trim(), apikey: secret };
     if (context) values.context_win = Number(context);
-    const changed = opts.diff(); if (Object.keys(changed).length) values.options = changed;
+    const changed = opts.diff(protocol); if (Object.keys(changed).length) values.options = changed;
     onSave('save', id.trim(), values);
   }}>
     <div className="model-form-content">
@@ -127,13 +127,10 @@ export function ModelForm({ entry, config, initialProvider = '', disabled, onSav
         <Field label={T('\u4e0a\u4e0b\u6587\u7a97\u53e3', 'Context window')}><input type="number" min={1024} step={1} value={context} disabled={disabled} placeholder={T('\u9ed8\u8ba4', 'Default')} onChange={event => setContext(event.target.value)} /></Field>
         <PrimaryOptions protocol={protocol} draft={opts.draft} hidden={entry?.options_hidden} disabled={disabled} onChange={opts.set} />
       </Section>
-      <details className="model-advanced">
-        <summary>{T('\u9ad8\u7ea7', 'Advanced')}</summary>
-        <div className="model-grid">
+      <Section title={T('\u6807\u8bc6', 'Identifier')}>
           <Field label={T('\u914d\u7f6e\u6807\u8bc6', 'Config key')} wide><input required value={id} readOnly={!!entry} disabled={disabled} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{T('mykey.py \u4e2d\u7684\u53d8\u91cf\u540d\uff0c\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Variable name in mykey.py; fixed after creation.')}</small></Field>
-        </div>
-        <AdvancedOptions protocol={protocol} draft={opts.draft} hidden={entry?.options_hidden} disabled={disabled} onChange={opts.set} />
-      </details>
+      </Section>
+      <AdvancedOptions protocol={protocol} draft={opts.draft} hidden={entry?.options_hidden} disabled={disabled} onChange={opts.set} />
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} onReset={onReset} onDelete={async () => {
       if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u6a21\u578b\uff1f', 'Delete this model?'), message: entry?.values.name || entry?.values.model || id, danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('delete', id);

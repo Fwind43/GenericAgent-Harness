@@ -1,27 +1,27 @@
 import { useState } from 'react';
 import { T } from '@gah/sdk';
-import { Field } from './ModelForm';
+import { Field, Section } from './ModelForm';
 
 export type OptionValue = string | number | boolean;
 export type Options = Record<string, OptionValue>;
 type Kind = 'int' | 'float' | 'bool' | 'enum' | 'str' | 'text' | 'verify';
-interface Spec { key: string; kind: Kind; zh: string; en: string; hint?: [string, string]; ph?: string; choices?: string[]; min?: number; max?: number; only?: 'oai' | 'claude' }
+interface Spec { key: string; kind: Kind; zh: string; en: string; hint?: [string, string]; ph?: string; choices?: string[]; choicesBy?: Partial<Record<'oai' | 'claude', string[]>>; min?: number; max?: number; only?: 'oai' | 'claude' }
 
 const GROUPS: { zh: string; en: string; items: Spec[] }[] = [
   { zh: '\u751f\u6210', en: 'Generation', items: [
     { key: 'max_tokens', kind: 'int', zh: '\u6700\u5927\u8f93\u51fa token', en: 'Max output tokens', min: 1, ph: 'Claude 8192' },
     { key: 'temperature', kind: 'float', zh: '\u6e29\u5ea6', en: 'Temperature', min: 0, max: 2, ph: '1' },
-    { key: 'reasoning_effort', kind: 'enum', zh: '\u63a8\u7406\u5f3a\u5ea6', en: 'Reasoning effort', choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
-    { key: 'service_tier', kind: 'enum', zh: '\u670d\u52a1\u7b49\u7ea7', en: 'Service tier', choices: ['auto', 'default', 'priority', 'flex'] },
-    { key: 'thinking_type', kind: 'enum', zh: '\u601d\u8003\u6a21\u5f0f', en: 'Thinking mode', choices: ['adaptive', 'enabled', 'disabled'] },
-    { key: 'thinking_budget_tokens', kind: 'int', zh: '\u601d\u8003\u9884\u7b97 token', en: 'Thinking budget tokens', min: 0 },
+    { key: 'reasoning_effort', kind: 'enum', zh: '\u63a8\u7406\u5f3a\u5ea6', en: 'Reasoning effort', choices: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'], choicesBy: { claude: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+    { key: 'service_tier', kind: 'enum', zh: '\u670d\u52a1\u7b49\u7ea7', en: 'Service tier', choices: ['auto', 'default', 'priority', 'flex'], only: 'oai' },
+    { key: 'thinking_type', kind: 'enum', zh: '\u601d\u8003\u6a21\u5f0f', en: 'Thinking mode', choices: ['adaptive', 'enabled', 'disabled'], only: 'claude' },
+    { key: 'thinking_budget_tokens', kind: 'int', zh: '\u601d\u8003\u9884\u7b97 token', en: 'Thinking budget tokens', min: 0, only: 'claude' },
     { key: 'stream', kind: 'bool', zh: '\u6d41\u5f0f\u8f93\u51fa', en: 'Streaming', hint: ['\u9ed8\u8ba4\u5f00\u542f', 'On by default'] },
     { key: 'omit_thinking', kind: 'bool', zh: '\u5386\u53f2\u4e2d\u7701\u7565\u601d\u8003', en: 'Omit thinking from history', hint: ['\u9ed8\u8ba4\u5173\u95ed', 'Off by default'] },
   ] },
   { zh: '\u8bf7\u6c42', en: 'Request', items: [
     { key: 'api_mode', kind: 'enum', zh: 'API \u6a21\u5f0f', en: 'API mode', choices: ['chat_completions', 'responses'], only: 'oai' },
     { key: 'api_key_header', kind: 'enum', zh: '\u5bc6\u94a5\u8bf7\u6c42\u5934', en: 'API key header', choices: ['auto', 'x-api-key', 'bearer'], only: 'claude' },
-    { key: 'user_agent', kind: 'str', zh: 'User-Agent', en: 'User-Agent', only: 'claude', ph: 'claude-cli/\u2026' },
+    { key: 'user_agent', kind: 'str', zh: 'User-Agent', en: 'User-Agent' },
     { key: 'fake_cc_system_prompt', kind: 'bool', zh: '\u6a21\u62df Claude Code \u7cfb\u7edf\u63d0\u793a', en: 'Claude Code system prompt', only: 'claude' },
     { key: 'proxy', kind: 'str', zh: '\u4ee3\u7406', en: 'Proxy', ph: 'http://127.0.0.1:7890', hint: ['\u652f\u6301 http(s):// \u4e0e socks5://', 'http(s):// or socks5://'] },
     { key: 'verify', kind: 'verify', zh: 'TLS \u6821\u9a8c', en: 'TLS verify', ph: 'true', hint: ['true / false\uff0c\u6216 CA \u8bc1\u4e66\u8def\u5f84', 'true / false, or a CA bundle path'] },
@@ -38,16 +38,18 @@ const GROUPS: { zh: string; en: string; items: Spec[] }[] = [
     { key: 'extra_sys_prompt', kind: 'text', zh: '\u9644\u52a0\u7cfb\u7edf\u63d0\u793a', en: 'Extra system prompt' },
   ] },
 ];
+const visible = (spec: Spec, protocol: string) => !spec.only || spec.only === protocol;
 export const ADVANCED_KEYS = GROUPS.flatMap(group => group.items.map(item => item.key));
 
 const toText = (value: OptionValue | undefined) => value === undefined ? '' : String(value);
 export function useOptions(initial: Options = {}) {
   const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(initial).map(([k, v]) => [k, toText(v)])));
   const set = (key: string, value: string) => setDraft(prev => ({ ...prev, [key]: value }));
-  /** Only changed keys are sent; null clears the key so GA falls back to its default. */
-  const diff = () => {
+  /** Only changed keys are sent; null clears the key so GA falls back to its default. Keys the protocol ignores are cleared. */
+  const diff = (protocol: string) => {
     const out: Record<string, OptionValue | null> = {};
     for (const group of GROUPS) for (const spec of group.items) {
+      if (!visible(spec, protocol)) { if (spec.key in initial) out[spec.key] = null; continue; }
       const now = (draft[spec.key] ?? '').trim(), was = toText(initial[spec.key]);
       if (now === was && (draft[spec.key] ?? '') === was) continue;
       if (now === '') { if (spec.key in initial) out[spec.key] = null; continue; }
@@ -66,13 +68,13 @@ type FieldProps = { protocol: string; draft: Record<string, string>; hidden?: st
 const PRIMARY = new Set(['reasoning_effort']);
 const SPECS = GROUPS.flatMap(group => group.items);
 
-function OptionField({ spec, draft, hidden = [], disabled, onChange }: FieldProps & { spec: Spec }) {
+function OptionField({ spec, protocol, draft, hidden = [], disabled, onChange }: FieldProps & { spec: Spec }) {
   const defaultText = T('\u9ed8\u8ba4', 'Default');
   const value = draft[spec.key] ?? '', change = (v: string) => onChange(spec.key, v);
   let control;
   if (hidden.includes(spec.key)) control = <input value={T('\u5df2\u5728 mykey.py \u4e2d\u8bbe\u7f6e\uff08\u6b64\u5904\u4e0d\u663e\u793a\uff09', 'Set in mykey.py (not shown here)')} disabled readOnly />;
   else if (spec.kind === 'enum' || spec.kind === 'bool') {
-    const choices = spec.kind === 'bool' ? [['true', T('\u5f00\u542f', 'On')], ['false', T('\u5173\u95ed', 'Off')]] : spec.choices!.map(c => [c, c]);
+    const choices = spec.kind === 'bool' ? [['true', T('\u5f00\u542f', 'On')], ['false', T('\u5173\u95ed', 'Off')]] : (() => { const list = spec.choicesBy?.[protocol as 'oai' | 'claude'] || spec.choices!; return (value && !list.includes(value) ? [...list, value] : list).map(c => [c, c]); })();
     control = <select value={value} disabled={disabled} onChange={event => change(event.target.value)}>
       <option value="">{defaultText}</option>{choices.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
     </select>;
@@ -87,19 +89,15 @@ function OptionField({ spec, draft, hidden = [], disabled, onChange }: FieldProp
   </Field>;
 }
 
-const visible = (spec: Spec, protocol: string) => !spec.only || spec.only === protocol;
 
 export function PrimaryOptions(props: FieldProps) {
   return <>{SPECS.filter(spec => PRIMARY.has(spec.key) && visible(spec, props.protocol)).map(spec => <OptionField key={spec.key} spec={spec} {...props} />)}</>;
 }
 
 export function AdvancedOptions(props: FieldProps) {
-  return <>{GROUPS.map(group => {
-    const items = group.items.filter(spec => !PRIMARY.has(spec.key) && visible(spec, props.protocol));
-    if (!items.length) return null;
-    return <div className="model-advanced-group" key={group.en}>
-      <h4>{T(group.zh, group.en)}</h4>
-      <div className="model-grid">{items.map(spec => <OptionField key={spec.key} spec={spec} {...props} />)}</div>
-    </div>;
-  })}<p className="model-advanced-note">{T('\u7559\u7a7a\u8868\u793a\u4f7f\u7528 GA \u9ed8\u8ba4\u503c\uff1b\u6e05\u7a7a\u5df2\u6709\u7684\u503c\u4f1a\u4ece mykey.py \u5220\u9664\u8be5\u9879\u3002', 'Leave empty to use the GA default; clearing a value removes it from mykey.py.')}</p></>;
+  const groups = GROUPS.map(group => ({ group, items: group.items.filter(spec => !PRIMARY.has(spec.key) && visible(spec, props.protocol)) })).filter(g => g.items.length);
+  const note = T('\u7559\u7a7a\u8868\u793a\u4f7f\u7528 GA \u9ed8\u8ba4\u503c\uff1b\u6e05\u7a7a\u5df2\u6709\u7684\u503c\u4f1a\u4ece mykey.py \u5220\u9664\u8be5\u9879\u3002\u53ea\u663e\u793a\u5f53\u524d\u534f\u8bae\u751f\u6548\u7684\u53c2\u6570\u3002', 'Leave empty to use the GA default; clearing a value removes it from mykey.py. Only options used by the current protocol are shown.');
+  return <>{groups.map(({ group, items }, index) => <Section key={group.en} title={T(group.zh, group.en)} hint={index === 0 ? note : undefined}>
+    {items.map(spec => <OptionField key={spec.key} spec={spec} {...props} />)}
+  </Section>)}</>;
 }

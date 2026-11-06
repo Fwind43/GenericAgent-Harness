@@ -46,12 +46,9 @@ export function ProviderForm({ entry, taken = [], models, disabled, onSave, onQu
         <div className="wide"><RemoteModels source={{ provider: entry.id, protocol, apibase: base.trim(), apikey: secret }} existing={existing} disabled={disabled}
           fetchModels={fetchModels} onAdd={ids => onAddModels(entry.id, protocol, ids)} /></div>
       </Section>}
-      <details className="model-advanced">
-        <summary>{T('\u9ad8\u7ea7', 'Advanced')}</summary>
-        <div className="model-grid">
+      <Section title={T('\u6807\u8bc6', 'Identifier')}>
           <Field label={T('\u670d\u52a1\u5546\u6807\u8bc6', 'Provider ID')} wide><input pattern="[a-z0-9][a-z0-9_\-]{0,39}" disabled={disabled || !!entry} value={id} placeholder={auto} spellCheck={false} onChange={event => setId(event.target.value)} /><small>{entry ? T('\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Fixed after creation.') : T('\u53ef\u7559\u7a7a\uff0c\u5c06\u6839\u636e\u540d\u79f0\u6216\u5730\u5740\u81ea\u52a8\u751f\u6210\uff1b\u521b\u5efa\u540e\u4e0d\u53ef\u4fee\u6539\u3002', 'Optional; generated from the name or URL. Fixed after creation.')}</small></Field>
-        </div>
-      </details>
+      </Section>
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} canDelete={used === 0} onReset={onReset} onDelete={async () => {
       if (await confirmDialog({ title: T('\u5220\u9664\u8fd9\u4e2a\u670d\u52a1\u5546\uff1f', 'Delete this provider?'), message: entry?.values.name || id, danger: true, confirm: T('\u5220\u9664', 'Delete') })) onSave('provider_delete', finalId);

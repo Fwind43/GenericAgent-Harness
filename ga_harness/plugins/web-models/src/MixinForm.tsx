@@ -67,14 +67,11 @@ export function MixinForm({ entry, config, disabled, onSave, onDirtyChange, onRe
           </Field>
         </div>
       </Section>
-      <details className="model-advanced">
-        <summary>{T('重试与回切参数', 'Retry and return settings')}</summary>
-        <Section title={T('可选参数', 'Optional settings')} hint={T('留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。', 'Leave empty for GA defaults; 0 retries the primary model on the next request.')}>
-          <Field label={T('重试次数', 'Max retries')}><input type="number" min={0} max={20} step={1} value={retries} disabled={disabled} onChange={event => setRetries(event.target.value)} /></Field>
-          <Field label={T('基础延迟（秒）', 'Base delay (seconds)')}><input type="number" min={0} max={120} step="any" value={delay} disabled={disabled} onChange={event => setDelay(event.target.value)} /></Field>
-          <Field label={T('回切间隔（秒）', 'Return interval (seconds)')}><input type="number" min={0} max={86400} step={1} value={spring} disabled={disabled} onChange={event => setSpring(event.target.value)} /></Field>
-        </Section>
-      </details>
+      <Section title={T('可选参数', 'Optional settings')} hint={T('留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。', 'Leave empty for GA defaults; 0 retries the primary model on the next request.')}>
+        <Field label={T('重试次数', 'Max retries')}><input type="number" min={0} max={20} step={1} value={retries} disabled={disabled} onChange={event => setRetries(event.target.value)} /></Field>
+        <Field label={T('基础延迟（秒）', 'Base delay (seconds)')}><input type="number" min={0} max={120} step="any" value={delay} disabled={disabled} onChange={event => setDelay(event.target.value)} /></Field>
+        <Field label={T('回切间隔（秒）', 'Return interval (seconds)')}><input type="number" min={0} max={86400} step={1} value={spring} disabled={disabled} onChange={event => setSpring(event.target.value)} /></Field>
+      </Section>
     </div>
     <FormActions dirty={dirty} existing={!!entry} disabled={disabled} onReset={onReset} onDelete={async () => {
       if (await confirmDialog({ title: T('删除此故障转移组？', 'Delete this failover group?'), message: id, danger: true, confirm: T('删除', 'Delete') })) onSave('mixin_delete', id);
