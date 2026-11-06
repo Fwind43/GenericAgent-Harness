@@ -119,15 +119,16 @@ function AskDialog({ mode, options, initial, done }: { mode: AskMode; options: A
   const ref = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState(initial);
   useLayoutEffect(() => { ref.current?.showModal(); }, []);
+  const finish = (result: string | null) => { ref.current?.close(); done(result); };
   const ok = options.confirm ?? T('\u786e\u5b9a', 'OK');
-  return <dialog ref={ref} className="gah-dialog gah-ask" aria-label={options.title} onCancel={event => { event.preventDefault(); done(mode === 'alert' ? '' : null); }}>
-    <form onSubmit={event => { event.preventDefault(); if (mode === 'prompt' && !value.trim()) return; done(mode === 'prompt' ? value : ''); }}>
+  return <dialog ref={ref} className="gah-dialog gah-ask" aria-label={options.title} onCancel={event => { event.preventDefault(); finish(mode === 'alert' ? '' : null); }}>
+    <form onSubmit={event => { event.preventDefault(); if (mode === 'prompt' && !value.trim()) return; finish(mode === 'prompt' ? value : ''); }}>
       <div className="dialog-head"><h2>{options.title}</h2></div>
       <div className="dialog-content">
         {options.message && <p className="gah-ask-msg">{options.message}</p>}
         {mode === 'prompt' && <input className="gah-ask-input" autoFocus value={value} placeholder={options.placeholder} aria-label={options.title} onFocus={event => event.currentTarget.select()} onChange={event => setValue(event.target.value)} />}
         <div className="gah-ask-actions">
-          {mode !== 'alert' && <button type="button" className="secondary" onClick={() => done(null)}>{options.cancel ?? T('\u53d6\u6d88', 'Cancel')}</button>}
+          {mode !== 'alert' && <button type="button" className="secondary" onClick={() => finish(null)}>{options.cancel ?? T('\u53d6\u6d88', 'Cancel')}</button>}
           <button type="submit" className={options.danger ? 'danger' : undefined} autoFocus={mode !== 'prompt'} disabled={mode === 'prompt' && !value.trim()}>{ok}</button>
         </div>
       </div>

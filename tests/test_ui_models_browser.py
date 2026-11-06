@@ -263,7 +263,6 @@ def test_search_and_provider_filter_crud(browser, models_app):
         pw.expect(form.get_by_label("API Key", exact=True)).to_have_count(0)
         form.get_by_label("\u663e\u793a\u540d\u79f0", exact=True).fill("Beta added")
         form.get_by_label("\u6a21\u578b ID", exact=True).fill("beta-2")
-        form.locator(".model-advanced summary").click()
         added_key = form.get_by_label("\u914d\u7f6e\u6807\u8bc6").input_value()
         button(form, "\u4fdd\u5b58\u5e76\u751f\u6548").click()
         pw.expect(dialog.locator(".model-list-item")).to_have_count(2)
@@ -284,7 +283,6 @@ def test_search_and_provider_filter_crud(browser, models_app):
         button(provider, "\u4fdd\u5b58\u5e76\u751f\u6548").click()
         pw.expect(dialog.locator(".model-list-item").filter(has_text="Acme renamed")).to_have_count(1)
         dialog.locator(".model-add").click()
-        provider.locator(".model-advanced summary").click()
         provider.get_by_label("\u670d\u52a1\u5546\u6807\u8bc6").fill("new-provider")
         provider.get_by_label("API Base URL").fill("https://new.invalid/v1")
         provider.get_by_label("API Key", exact=True).fill("synthetic-new")
@@ -321,7 +319,6 @@ def test_search_and_provider_filter_crud(browser, models_app):
         assert next(item for item in store.config()["entries"] if item["key"] == "native_oai_config_one")["provider"] is None
         provider_filter(dialog).select_option(legacy.last.get_attribute("value"))
         dialog.locator(".model-add").click()
-        form.locator(".model-advanced summary").click()
         if "claude_config" not in form.get_by_label("\u914d\u7f6e\u6807\u8bc6").input_value():
             pytest.xfail("adding a model from a legacy provider group no longer infers its protocol")
         assert "claude_config" in form.get_by_label("\u914d\u7f6e\u6807\u8bc6").input_value()
@@ -342,7 +339,6 @@ def test_draft_close_reset_and_mobile_drill_in(browser, models_app, width):
         form = model_form(dialog)
         name = form.get_by_label("\u663e\u793a\u540d\u79f0", exact=True)
         old_name = name.input_value()
-        pw.expect(form.locator(".model-advanced")).not_to_have_attribute("open", "")
         pw.expect(button(form, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_disabled()
         name.fill("Unsaved mobile draft")
         pw.expect(button(form, "\u4fdd\u5b58\u5e76\u751f\u6548")).to_be_in_viewport()

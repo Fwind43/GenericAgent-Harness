@@ -4,6 +4,7 @@ Run with the optional Playwright dependency and Chromium installed.
 GAH_OUTPUT_ARTIFACTS retains desktop/mobile screenshots outside the repository.
 """
 import json
+import re
 
 import pytest
 
@@ -31,14 +32,28 @@ def plugins_app(tmp_path):
 
 def open_plugins(page, base):
     page.goto(base)
-    page.locator('[data-gah-plugin="web-plugins"] .side-item').evaluate("b => b.click()")
+    # Plugins moved into unified Settings (a28bb9b); reopening restores the last section.
+    page.locator("#settingsBtn").evaluate("b => b.click()")
+    tab = page.locator(".gah-settings-tab").filter(has_text=re.compile(r"^\s*(\u63d2\u4ef6|Plugins)\s*$"))
+    if tab.get_attribute("aria-selected") != "true":
+        tab.click()
     dialog = page.locator(".gah-plugin-dialog")
     pw.expect(dialog.locator(".plugin-card").first).to_be_visible()
     return dialog
 
 
+def visible_items(manager):
+    # The manager hides worker_only plugins (643667b); they surface as run-queue dependencies.
+    return [i for i in manager.catalog()["items"] if not i.get("worker_only")]
+
+
 def card(dialog, name):
     return dialog.locator('.plugin-card[data-plugin="' + name + '"]')
+
+
+def lock(dialog, name):
+    # Compact cards drop the Protected tag; the lock sits next to the card button (eb0b5ee).
+    return dialog.locator('li:has(> .plugin-card[data-plugin="' + name + '"]) > .plugin-lock')
 
 
 def no_overflow(dialog):
@@ -47,7 +62,7 @@ def no_overflow(dialog):
 
 def test_cards_filter_detail_and_save(browser, plugins_app):
     manager, base = plugins_app
-    names = [i["name"] for i in manager.catalog()["items"]]
+    names = [i["name"] for i in visible_items(manager)]
     page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -57,13 +72,13 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     # Cards sit side by side in a grid, not a single list column.
     tops = dialog.locator('.plugin-group[data-category="ui"] .plugin-card').evaluate_all("cs => cs.slice(0, 3).map(c => c.getBoundingClientRect().top)")
     # Group headings carry the category; cards and details need no duplicate avatars.
-    cats = [i["category"] for i in manager.catalog()["items"]]
+    cats = [i["category"] for i in visible_items(manager)]
     order = [c for c in ("core", "extension", "observe", "service", "ui", "other") if c in cats]
     assert dialog.locator(".plugin-group").evaluate_all("gs => gs.map(g => g.dataset.category)") == order
     pw.expect(dialog.locator(".plugin-avatar")).to_have_count(0)
     assert len(set(round(t) for t in tops)) == 1
     assert no_overflow(dialog)
-    pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["\u53d7\u4fdd\u62a4"])
+    pw.expect(lock(dialog, "ga-core")).to_have_attribute("title", re.compile('^\\u53d7\\u4fdd\\u62a4'))
     assert "DO-NOT-EXPOSE" not in dialog.inner_text()
     # Full names stay readable, and the last card is reachable by scrolling.
     assert dialog.locator(".plugin-name").evaluate_all("ns => ns.every(n => n.scrollWidth <= n.clientWidth + 1)")
@@ -79,7 +94,7 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     off = dialog.locator('.plugin-filter[data-filter="off"]')
     off.click()
     pw.expect(off).to_have_attribute("aria-selected", "true")
-    expected_off = sum(i["state"] in ("disabled", "removed") for i in manager.catalog()["items"])
+    expected_off = sum(i["state"] in ("disabled", "removed") for i in visible_items(manager))
     pw.expect(dialog.locator(".plugin-card")).to_have_count(expected_off)
     dialog.locator('.plugin-filter[data-filter="all"]').click()
 
@@ -108,11 +123,12 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     assert "DO-NOT-EXPOSE" not in json.dumps(manager.catalog())
 
     detail.locator(".plugin-reset").click()
+    page.locator('.gah-ask[open] button[type="submit"]').click()
     pw.expect(detail.locator(".plugin-reset")).to_be_disabled()
     assert next(i for i in manager.catalog()["items"] if i["name"] == "demo")["config"]["limit"] == 10
 
-    # Escape returns to the grid first, then closes the dialog.
-    page.keyboard.press("Escape")
+    # Back returns to the grid and restores focus; Escape closes unified Settings.
+    detail.locator(".plugin-back").click()
     pw.expect(dialog.locator(".plugin-catalog")).to_be_visible()
     pw.expect(card(dialog, "demo")).to_be_focused()
     card(dialog, "ga-core").click()
@@ -121,6 +137,8 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     assert card_fields.evaluate_all("fs => fs.every(f => f.disabled)")
     detail.locator(".plugin-back").click()
     pw.expect(dialog.locator(".plugin-catalog")).to_be_visible()
+    page.keyboard.press("Escape")
+    pw.expect(page.locator("#gah-settings")).to_be_hidden()
     assert errors == []
 
 
@@ -151,7 +169,7 @@ def test_language_follows_browser_and_toggle(browser, plugins_app):
     page.on("pageerror", lambda e: errors.append(str(e)))
     dialog = open_plugins(page, base)
     assert page.evaluate("document.documentElement.lang") == "en"
-    pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["Protected"])
+    pw.expect(lock(dialog, "ga-core")).to_have_attribute("title", re.compile('^Protected'))
     pw.expect(card(dialog, "ga-core")).to_contain_text("Host an unmodified GenericAgent")
     assert not any("\u4e00" <= ch <= "\u9fff" for ch in dialog.inner_text())
     page.keyboard.press("Escape")
@@ -162,5 +180,5 @@ def test_language_follows_browser_and_toggle(browser, plugins_app):
     assert page.evaluate("GAH_LANG") == "zh"
     dialog = open_plugins(page, base)
     pw.expect(card(dialog, "ga-core")).to_contain_text("\u627f\u8f7d\u672a\u7ecf\u4fee\u6539\u7684 GenericAgent")
-    pw.expect(card(dialog, "ga-core").locator(".plugin-tag")).to_contain_text(["\u53d7\u4fdd\u62a4"])
+    pw.expect(lock(dialog, "ga-core")).to_have_attribute("title", re.compile('^\\u53d7\\u4fdd\\u62a4'))
     assert errors == []
