@@ -51,8 +51,11 @@ export function ImportPanel({ api }: { api: PluginAPI }) {
     setError(''); setLog([]);
     const res = await follow<Result>('import', { path: scan.dir, ids: [...picked] });
     setResult(res);
-    const data = await follow<Scan>('scan', { path: scan.dir });
-    setScan(data); setPicked(new Set());
+    // Mark chats now in harness locally instead of rescanning the whole folder;
+    // failed ones stay picked so they can be retried.
+    const done = new Set([...res.imported, ...res.existing]);
+    setScan(prev => prev && { ...prev, chats: prev.chats.map(c => done.has(c.id) ? { ...c, imported: true } : c) });
+    setPicked(prev => new Set([...prev].filter(id => !done.has(id))));
   }, setError, true);
 
   const fresh = scan?.chats.filter(c => !c.imported) || [];

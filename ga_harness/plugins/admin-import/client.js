@@ -41,9 +41,9 @@ var GAHPlugin_admin_import = (function(exports, jsxRuntime, react, sdk) {
       setLog([]);
       const res = await follow("import", { path: scan.dir, ids: [...picked] });
       setResult(res);
-      const data = await follow("scan", { path: scan.dir });
-      setScan(data);
-      setPicked(/* @__PURE__ */ new Set());
+      const done = /* @__PURE__ */ new Set([...res.imported, ...res.existing]);
+      setScan((prev) => prev && { ...prev, chats: prev.chats.map((c) => done.has(c.id) ? { ...c, imported: true } : c) });
+      setPicked((prev) => new Set([...prev].filter((id) => !done.has(id))));
     }, setError, true);
     const fresh = (scan == null ? void 0 : scan.chats.filter((c) => !c.imported)) || [];
     const all = fresh.length > 0 && fresh.every((c) => picked.has(c.id));
