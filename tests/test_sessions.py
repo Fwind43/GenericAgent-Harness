@@ -114,8 +114,10 @@ def test_sessions_unread_tracking(tmp_path):
     unread = lambda: {r["id"]: r["unread"] for r in store.listing()}
     assert unread() == {first: False, second: False}
     # Background write to a chat that is not on screen -> unread; write to the open chat -> read.
+    store.remember(preset="creative")
     store.save_for(second, [{"role": "assistant", "text": "done"}], {})
     store.save([{"role": "user", "text": "hi"}])
+    assert store.current()["state"]["preset"] == "creative"
     assert unread() == {first: False, second: True}
     store.change("rename", second, "renamed")
     assert unread()[second] is True

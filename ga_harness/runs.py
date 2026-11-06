@@ -492,7 +492,7 @@ class Runs:
                 messages[-1]["text"] = text
             settle(messages, status, error)
             session = self.sessions.get(record["session_id"])
-            state = state if isinstance(state, dict) else live["state"]
+            state = {**live["state"], **state} if isinstance(state, dict) else live["state"]
             with self.sessions._db() as db:
                 self.sessions._write(db, session, messages, state)
                 self._append(db, rid, "run.finished", {"status": status, "error": error})

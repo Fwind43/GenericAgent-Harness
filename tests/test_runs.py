@@ -139,3 +139,28 @@ def test_recovery_settles_unselected_sessions_without_retry(stores):
     assert not recovered_runs.busy
     assert recovered_runs.events("interrupted-run")[-1]["kind"] == "run.finished"
     assert len(runs.listing()) == 1
+
+
+def test_run_finish_preserves_session_preset(stores):
+    sessions, scope = stores
+    sessions.remember(preset="creative")
+    runs = Runs(sessions, scope, lambda *mode: [])
+    sid = sessions.current()["id"]
+    reserve(sessions, sid, "preset-run")
+    runs.live["preset-run"] = {
+        "messages": [{"role": "user", "text": "hi"},
+                     {"role": "assistant", "text": "", "status": "running", "turns": []}],
+        "state": dict(sessions.get(sid)["state"]),
+        "seq": 0,
+        "calls": {},
+        "finished": SimpleNamespace(set=lambda: None),
+        "process": None,
+        "thread": None,
+        "cancelled": False,
+        "last_checkpoint": 0.0,
+    }
+    runs._finish("preset-run", "done", text="done",
+                 state={"history": ["worker-turn"], "model": "fixture-model", "model_key": None, "effort": None})
+    saved = sessions.get(sid)["state"]
+    assert saved["history"] == ["worker-turn"]
+    assert saved["preset"] == "creative"

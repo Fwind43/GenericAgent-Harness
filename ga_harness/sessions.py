@@ -260,8 +260,9 @@ class Sessions:
             current = self.current()
             if current["id"] in self.active:
                 raise RuntimeError("session is running")
+            state = {**(current.get("state") or {}), **capture(self.agent)}
             with self._db() as db:
-                self._write(db, current, messages, capture(self.agent))
+                self._write(db, current, messages, state)
 
     def remember(self, **values):
         """Persist per-conversation settings (model/effort) without touching the transcript."""
