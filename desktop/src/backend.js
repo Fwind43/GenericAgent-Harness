@@ -3,7 +3,10 @@
 // Contract with ga_harness/plugins/ui-web (see its module docstring):
 //   GAH_WEB_PORT=0                 bind a free port on 127.0.0.1 (never the 8765 web instance)
 //   GAH_WEB_OPEN_BROWSER=0         the shell owns the window
-//   GAH_WEB_TOKEN=<random>         every request needs it; the page enters via /?gah_token=
+//   GAH_WEB_TOKEN=<token>          every request needs it; the page enters via /?gah_token=
+//   GAH_WEB_TOKEN_FILE=<path>      <userData>/backend-token: random once, then reused so remote
+//                                  links (web-lan/web-tailscale) survive restarts; the backend
+//                                  writes runtime changes (plugin "reset token") back to it
 //   GAH_WEB_READY_FILE=<path>      {"url","pid"} appears once the server listens
 //   GAH_WEB_EXIT_ON_STDIN_EOF=1    backend stops by itself if this process dies
 'use strict';
@@ -394,6 +397,32 @@ function saveGaRoot(settings, dir) {
   settings.gaRoot = dir || null;
 }
 
+// Same rules as ui-web's set_token: at least 16 characters, no spaces, ';', ',' or quotes.
+function validToken(t) { return typeof t === 'string' && t.length >= 16 && !/[\s;,"]/.test(t); }
+
+function readToken(file) {
+  try {
+    const t = fs.readFileSync(file, 'utf8').trim();
+    return validToken(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// The persisted token, or a new random one saved for next time (kept in memory if unwritable).
+function loadToken(file) {
+  const saved = readToken(file);
+  if (saved) return saved;
+  const token = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, token, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch { /* this session still works; the next start makes a new one */ }
+  return token;
+}
+
 function hasGaRootArg(settings) {
   return settings.args.some((a) => a === '--ga-root' || a.startsWith('--ga-root='));
 }
@@ -408,7 +437,8 @@ class Backend {
     this.code = rt.code;     // {dir, version, source: 'builtin' | 'update' | 'source'}
     this.settings = loadSettings(userData, rt);
     this.url = null;
-    this.token = crypto.randomBytes(32).toString('hex');
+    this.tokenFile = path.join(userData, 'backend-token');
+    this.startToken = loadToken(this.tokenFile);
     this.readyFile = path.join(userData, 'run', `backend-${process.pid}.json`);
     this.logDir = programLogDir(resourcesPath, userData);
     this.logFile = path.join(this.logDir, 'backend.log');
@@ -433,6 +463,9 @@ class Backend {
   }
 
   setGaRoot(dir) { saveGaRoot(this.settings, dir); }
+
+  // Re-read so a token reset inside the running backend (written to tokenFile) is picked up.
+  get token() { return readToken(this.tokenFile) || this.startToken; }
 
   // Resolved (and, once, filled from ~/.ga-harness) on first use; see harnessDataDir.
   dataDir() {
@@ -517,6 +550,7 @@ class Backend {
       GAH_WEB_PORT: '0',
       GAH_WEB_OPEN_BROWSER: '0',
       GAH_WEB_TOKEN: this.token,
+      GAH_WEB_TOKEN_FILE: this.tokenFile,
       GAH_WEB_READY_FILE: this.readyFile,
       GAH_WEB_EXIT_ON_STDIN_EOF: '1',
       GAH_HOME: this.dataDir().path,

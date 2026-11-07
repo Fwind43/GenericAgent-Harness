@@ -24,6 +24,8 @@ Environment overrides for embedding (the desktop shell sets these):
   entered via ``/?gah_token=...`` (reusable) which sets an HttpOnly cookie valid 30 days,
   renewed on each page load; the token itself never expires), GAH_WEB_READY_FILE
   (JSON {"url", "pid"} written atomically once listening; never contains the token),
+  GAH_WEB_TOKEN_FILE (token changes made at runtime via ``set_token``, e.g. a plugin's
+  "reset token", are written here so the embedder can reuse them on its next start),
   GAH_WEB_EXIT_ON_STDIN_EOF=1 (stop when the parent closes stdin, e.g. it crashed),
   GAH_WEB_ALLOWED_ORIGINS (comma-separated, added to allowed_origins), GAH_WEB_ALLOW_NO_TOKEN=1,
   GAH_WEB_HOST (bind address, e.g. 0.0.0.0 in a container; overrides config host).
@@ -342,6 +344,7 @@ class WebFrontend:
         self._runtime_origins = {}
         self.bound_port = None
         self.ready_file = env.get("GAH_WEB_READY_FILE") or config.get("ready_file") or None
+        self.token_file = env.get("GAH_WEB_TOKEN_FILE") or None
         self.exit_on_stdin_eof = env.get("GAH_WEB_EXIT_ON_STDIN_EOF") == "1"
         console = ctx.get("console")    # ga-stdout captures sys.stdout; talk to the real one
         self.log = config.get("log") or (lambda *m: print(*m, file=console.out, flush=True) if console
@@ -912,8 +915,23 @@ class WebFrontend:
             raise ValueError("a token is required while the server is reachable from other machines")
         if token is not None and (len(token) < 16 or any(c.isspace() or c in ";,\"" for c in token)):
             raise ValueError("token must be at least 16 characters without spaces, ';', ',' or quotes")
+        if token is not None and self.token_file:
+            self._persist_token(token)
         self.token = token
         return True
+
+    def _persist_token(self, token):
+        """Best effort: the new token still applies now even if it cannot be saved."""
+        try:
+            path = Path(self.token_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(token)
+            os.replace(tmp, path)
+        except OSError as e:
+            print(f"ui-web: could not save token to {self.token_file}: {e}", file=sys.stderr)
 
     def origin_allowed(self, origin, host_header=None):
         """CSRF gate for POSTs: no Origin (non-browser), the page itself, loopback aliases,

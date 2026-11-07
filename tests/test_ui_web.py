@@ -362,3 +362,22 @@ def test_ui_web_bundled_web_plugins_mount_and_host_css_scope(tmp_path):
         assert not re.search(r"(?m)(^|[{},])\s*form\s*[{:,]", css)  # bare `form` selector, incl. in @media
     finally:
         rt.dispose()
+
+
+def test_ui_web_set_token_persists_to_token_file(tmp_path, monkeypatch):
+    f = tmp_path / "d" / "backend-token"
+    monkeypatch.setenv("GAH_WEB_TOKEN", "a" * 32)
+    monkeypatch.setenv("GAH_WEB_TOKEN_FILE", str(f))
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        assert fe.token == "a" * 32 and not f.exists()  # the embedder owns the start token
+        fe.set_token("b" * 32)
+        assert fe.token == "b" * 32 and f.read_text(encoding="utf-8") == "b" * 32
+        try:
+            fe.set_token("bad token")
+        except ValueError:
+            pass
+        assert f.read_text(encoding="utf-8") == "b" * 32  # invalid tokens are never written
+    finally:
+        off()
+        rt.dispose()
