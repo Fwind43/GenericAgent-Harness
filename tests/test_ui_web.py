@@ -68,9 +68,29 @@ def _wait_idle(base):
     raise AssertionError("still running")
 
 
-def _open_sse(base):
+class _SSE:
+    """Event stream reader that drops ``id:`` lines (recorded in ``.ids``) so tests read
+    ``event:``/``data:``/blank lines in order."""
+
+    def __init__(self, resp):
+        self.resp, self.ids = resp, []
+
+    def readline(self):
+        while True:
+            line = self.resp.readline()
+            if line.startswith(b"id: "):
+                self.ids.append(line[4:].strip().decode())
+                continue
+            return line
+
+    def close(self):
+        self.resp.close()
+
+
+def _open_sse(base, last=None):
     """Open /api/events; return (stream, first event line), skipping the comment/blank prelude."""
-    sse = urllib.request.urlopen(base + "api/events", timeout=5)
+    url = base + "api/events" + ("" if last is None else "?last=" + urllib.parse.quote(last))
+    sse = _SSE(urllib.request.urlopen(url, timeout=5))
     while True:
         line = sse.readline()
         if not line:
@@ -308,6 +328,84 @@ def test_ui_web_host_changes_reach_sse(tmp_path):
         un()
         assert sse.readline().strip() == b"event: web.plugins"
         assert json.loads(sse.readline()[len(b"data: "):]) == []
+        sse.close()
+    finally:
+        off()
+        rt.dispose()
+
+
+def _read_event(sse):
+    kind = sse.readline().strip()
+    data = json.loads(sse.readline()[len(b"data: "):])
+    assert sse.readline().strip() == b""
+    return kind, data
+
+
+def test_ui_web_sse_resumes_from_last_id(tmp_path):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        sse, first = _open_sse(base)
+        assert first == b"event: snapshot"
+        sse.readline(); sse.readline()
+        base_id = sse.ids[-1]
+        fe.web.emit("demo", "tick", {"n": 1})
+        assert _read_event(sse) == (b"event: plugin", {"plugin": "demo", "kind": "tick", "data": {"n": 1}})
+        seen = sse.ids[-1]
+        sse.close()
+        # missed while disconnected
+        fe.web.emit("demo", "tick", {"n": 2})
+        fe.web.emit("demo", "tick", {"n": 3})
+
+        # resume: only the gap after the last applied id, in order, no snapshot
+        sse, first = _open_sse(base, last=seen)
+        assert first == b"event: resume"
+        sse.readline(); sse.readline()
+        assert [_read_event(sse)[1]["data"]["n"] for _ in range(2)] == [2, 3]
+        fe.web.emit("demo", "tick", {"n": 4})
+        assert _read_event(sse)[1]["data"]["n"] == 4
+        sse.close()
+
+        # resuming from the snapshot's own id replays everything after it
+        sse, first = _open_sse(base, last=base_id)
+        assert first == b"event: resume"
+        sse.readline(); sse.readline()
+        assert [_read_event(sse)[1]["data"]["n"] for _ in range(4)] == [1, 2, 3, 4]
+        sse.close()
+
+        # unknown epoch, future seq or garbage: full snapshot tagged with the current id
+        epoch, _, cur = sse.ids[-1].partition("-")
+        for bad in ("deadbeef-1", f"{epoch}-{int(cur) + 5}", "junk"):
+            sse, first = _open_sse(base, last=bad)
+            assert first == b"event: snapshot", bad
+            sse.readline()
+            assert sse.ids == [f"{epoch}-{cur}"]
+            sse.close()
+    finally:
+        off()
+        rt.dispose()
+
+
+def test_ui_web_sse_backlog_is_bounded(tmp_path, monkeypatch):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        mod = __import__(type(fe).__module__, fromlist=["x"])
+        monkeypatch.setattr(mod, "BACKLOG_EVENTS", 3)
+        sse, _ = _open_sse(base)
+        sse.readline()
+        old = sse.ids[-1]
+        sse.close()
+        for n in range(5):
+            fe.web.emit("demo", "tick", {"n": n})
+        assert len(fe._backlog) == 3
+        # the gap after `old` was evicted: snapshot instead of a partial replay
+        sse, first = _open_sse(base, last=old)
+        assert first == b"event: snapshot"
+        sse.close()
+        # the oldest retained boundary still resumes
+        sse, first = _open_sse(base, last=f"{fe._epoch}-{fe._backlog[0][0] - 1}")
+        assert first == b"event: resume"
+        sse.readline(); sse.readline()
+        assert [_read_event(sse)[1]["data"]["n"] for _ in range(3)] == [2, 3, 4]
         sse.close()
     finally:
         off()
