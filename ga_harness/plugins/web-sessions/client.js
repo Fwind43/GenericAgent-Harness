@@ -128,34 +128,38 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       return { ...old, order };
     });
     const scope = state.scope, rawProjects = (scope == null ? void 0 : scope.projects) ?? [];
+    const defaultOrder = [...rawProjects].sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0) || a.id.localeCompare(b.id)).map((p) => p.id);
     const customRank = /* @__PURE__ */ new Map(), seenIds = new Set(rawProjects.map((p) => p.id));
-    [...layout.projectOrder.filter((id) => seenIds.has(id)), ...rawProjects.map((p) => p.id).filter((id) => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
+    [...layout.projectOrder.filter((id) => seenIds.has(id)), ...defaultOrder.filter((id) => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
     const latest = /* @__PURE__ */ new Map(), counts = /* @__PURE__ */ new Map();
     for (const s of state.sessions ?? []) if (s.project_id) {
       latest.set(s.project_id, Math.max(latest.get(s.project_id) ?? 0, s.updated ?? 0));
       counts.set(s.project_id, (counts.get(s.project_id) ?? 0) + 1);
     }
     const projects = [...rawProjects].sort((a, b) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       const by = layout.projectSort === "recent" ? (latest.get(b.id) ?? 0) - (latest.get(a.id) ?? 0) : layout.projectSort === "count" ? (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) : layout.projectSort === "name" ? a.name.localeCompare(b.name, void 0, { numeric: true, sensitivity: "base" }) : 0;
       return by || (customRank.get(a.id) ?? 0) - (customRank.get(b.id) ?? 0);
     });
     const moveProject = (id, delta) => updateLayout((old) => {
       const ids = projects.map((p) => p.id), from = ids.indexOf(id), to = from + delta;
-      if (from < 0 || to < 0 || to >= ids.length) return old;
+      if (from < 0 || to < 0 || to >= ids.length || !!projects[from].pinned !== !!projects[to].pinned) return old;
       [ids[from], ids[to]] = [ids[to], ids[from]];
       return { ...old, projectOrder: ids };
     });
     const dropProject = (id, target, after) => updateLayout((old) => {
-      if (id === target) return old;
+      var _a, _b;
+      if (id === target || !!((_a = projects.find((p) => p.id === id)) == null ? void 0 : _a.pinned) !== !!((_b = projects.find((p) => p.id === target)) == null ? void 0 : _b.pinned)) return old;
       const ids = projects.map((p) => p.id).filter((x) => x !== id), at = ids.indexOf(target);
       if (at < 0) return old;
       ids.splice(at + (after ? 1 : 0), 0, id);
       return { ...old, projectOrder: ids };
     });
     const dragSlot = (x, y) => {
-      var _a;
+      var _a, _b, _c;
       const el = (_a = document.elementFromPoint(x, y)) == null ? void 0 : _a.closest(".gah-group.project"), key = el == null ? void 0 : el.dataset.key;
       if (!el || !(key == null ? void 0 : key.startsWith("p:"))) return null;
+      if (drag && !!((_b = projects.find((p) => p.id === drag.id)) == null ? void 0 : _b.pinned) !== !!((_c = projects.find((p) => p.id === key.slice(2))) == null ? void 0 : _c.pinned)) return null;
       const box = el.getBoundingClientRect();
       return { target: key.slice(2), after: y > box.top + box.height / 2 };
     };
@@ -302,13 +306,15 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const sorting = reordering && layout.projectSort === "custom" && !q;
     const projectCap = layout.sections.projects.count, allProjects = !!q || sorting || !!expanded["projects:all"];
     const matchedProjects = projects.filter((p) => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
-    const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
+    const pinnedCount = matchedProjects.filter((p) => p.pinned).length;
+    const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => p.pinned || i - pinnedCount < projectCap || `p:${p.id}` === current);
     const projectGroups = cappedProjects.map((p) => {
       var _a, _b;
       const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
+      const peers = projects.filter((item) => !!item.pinned === !!p.pinned);
       const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
       const dropCls = drag && drag.id !== p.id && drag.target === p.id ? drag.after ? " drop-after" : " drop-before" : "";
-      return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group project${isCurrent ? " current" : ""}${(drag == null ? void 0 : drag.id) === p.id ? " dragging" : ""}${dropCls}`, "data-key": key, children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("section", { className: `gah-group project${p.pinned ? " pinned" : ""}${isCurrent ? " current" : ""}${(drag == null ? void 0 : drag.id) === p.id ? " dragging" : ""}${dropCls}`, "data-key": key, children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-group-head${sorting ? " sortable" : ""}`, ...sorting ? {
           onPointerDown: (e) => {
             if (e.button !== 0 || e.target.closest(".gah-group-move")) return;
@@ -338,9 +344,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-group-count", children: (byProject.get(p.id) ?? []).length })
           ] }),
           sorting ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_a = projects[0]) == null ? void 0 : _a.id) === p.id, "aria-label": `${sdk.T("上移", "Move up")}: ${p.name}`, title: sdk.T("上移", "Move up"), onClick: () => moveProject(p.id, -1), children: "▲" }),
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_b = projects[projects.length - 1]) == null ? void 0 : _b.id) === p.id, "aria-label": `${sdk.T("下移", "Move down")}: ${p.name}`, title: sdk.T("下移", "Move down"), onClick: () => moveProject(p.id, 1), children: "▼" })
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_a = peers[0]) == null ? void 0 : _a.id) === p.id, "aria-label": `${sdk.T("上移", "Move up")}: ${p.name}`, title: sdk.T("上移", "Move up"), onClick: () => moveProject(p.id, -1), children: "▲" }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_b = peers[peers.length - 1]) == null ? void 0 : _b.id) === p.id, "aria-label": `${sdk.T("下移", "Move down")}: ${p.name}`, title: sdk.T("下移", "Move down"), onClick: () => moveProject(p.id, 1), children: "▼" })
           ] }) : /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-group-add gah-project-pin${p.pinned ? " on" : ""}`, disabled: busy, "aria-pressed": !!p.pinned, "aria-label": `${p.pinned ? sdk.T("取消项目置顶", "Unpin project") : sdk.T("置顶项目", "Pin project")}: ${p.name}`, title: p.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), onClick: () => void scoped({ action: p.pinned ? "unpin" : "pin", id: p.id }, false), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin", size: 14 }) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${p.name}`, onClick: () => void (isCurrent ? act("new") : scoped({ action: "enter", id: p.id })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("项目设置", "Project settings")}: ${p.name}`, onClick: () => dialog("update", p.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("删除项目", "Delete project")}: ${p.name}`, onClick: async () => {
@@ -405,7 +412,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
           sectionHead("projects", open, sorting ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn gah-sess-done", "aria-label": sdk.T("完成排序", "Done reordering"), title: sdk.T("完成排序", "Done reordering"), onClick: () => setReordering(false), children: sdk.T("完成", "Done") }) : /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-head-btn", disabled: busy, "aria-label": sdk.T("新建项目", "New project"), onClick: () => dialog("create"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder-plus" }) })),
           open && (projects.length ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
             projectGroups,
-            !q && !sorting && matchedProjects.length > projectCap && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, "projects:all": !allProjects })), children: allProjects ? sdk.T("收起项目", "Show fewer projects") : `${sdk.T("显示全部项目", "Show all projects")} (${matchedProjects.length})` })
+            !q && !sorting && matchedProjects.length - pinnedCount > projectCap && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sess-more", onClick: () => setExpanded((old) => ({ ...old, "projects:all": !allProjects })), children: allProjects ? sdk.T("收起项目", "Show fewer projects") : `${sdk.T("显示全部项目", "Show all projects")} (${matchedProjects.length})` })
           ] }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-empty", children: sdk.T("还没有项目", "No projects yet") }))
         ] }, "projects");
       },
