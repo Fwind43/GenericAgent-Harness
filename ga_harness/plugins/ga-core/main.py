@@ -147,7 +147,8 @@ def _expand_slash_cmd(query: str, ga_root: str | None) -> str:
         from frontends.slash_cmds import prompt_for
     except Exception:
         return query
-    expanded = prompt_for(cmd, args_text)
+    # GA's table is keyed by "/update" etc.; older GA versions used bare names.
+    expanded = prompt_for("/" + cmd, args_text) or prompt_for(cmd, args_text)
     if not expanded:
         return query
     if cmd == "update" and ga_root:
