@@ -109,15 +109,18 @@ export function Sessions({ api }: { api: PluginAPI }) {
     [order[from], order[to]] = [order[to], order[from]]; return { ...old, order };
   });
   const scope = state.scope, rawProjects = scope?.projects ?? [];
+  // Ignore pinned-first server order when deriving the default manual order.
+  const defaultOrder = [...rawProjects].sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0) || a.id.localeCompare(b.id)).map(p => p.id);
   // Project order: custom = the user's saved order (new projects keep their store order after it);
   // otherwise derived from the chats (latest activity / count) or the name. Ties fall back to the custom order.
   const customRank = new Map<string, number>(), seenIds = new Set(rawProjects.map(p => p.id));
-  [...layout.projectOrder.filter(id => seenIds.has(id)), ...rawProjects.map(p => p.id).filter(id => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
+  [...layout.projectOrder.filter(id => seenIds.has(id)), ...defaultOrder.filter(id => !layout.projectOrder.includes(id))].forEach((id, i) => customRank.set(id, i));
   const latest = new Map<string, number>(), counts = new Map<string, number>();
   for (const s of state.sessions ?? []) if (s.project_id) {
     latest.set(s.project_id, Math.max(latest.get(s.project_id) ?? 0, s.updated ?? 0)); counts.set(s.project_id, (counts.get(s.project_id) ?? 0) + 1);
   }
   const projects = [...rawProjects].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
     const by = layout.projectSort === 'recent' ? (latest.get(b.id) ?? 0) - (latest.get(a.id) ?? 0)
       : layout.projectSort === 'count' ? (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0)
       : layout.projectSort === 'name' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : 0;
@@ -125,11 +128,11 @@ export function Sessions({ api }: { api: PluginAPI }) {
   });
   const moveProject = (id: string, delta: number) => updateLayout(old => {
     const ids = projects.map(p => p.id), from = ids.indexOf(id), to = from + delta;
-    if (from < 0 || to < 0 || to >= ids.length) return old;
+    if (from < 0 || to < 0 || to >= ids.length || !!projects[from].pinned !== !!projects[to].pinned) return old;
     [ids[from], ids[to]] = [ids[to], ids[from]]; return { ...old, projectOrder: ids };
   });
   const dropProject = (id: string, target: string, after: boolean) => updateLayout(old => {
-    if (id === target) return old;
+    if (id === target || !!projects.find(p => p.id === id)?.pinned !== !!projects.find(p => p.id === target)?.pinned) return old;
     const ids = projects.map(p => p.id).filter(x => x !== id), at = ids.indexOf(target);
     if (at < 0) return old;
     ids.splice(at + (after ? 1 : 0), 0, id); return { ...old, projectOrder: ids };
@@ -137,6 +140,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const dragSlot = (x: number, y: number) => {
     const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.gah-group.project'), key = el?.dataset.key;
     if (!el || !key?.startsWith('p:')) return null;
+    if (drag && !!projects.find(p => p.id === drag.id)?.pinned !== !!projects.find(p => p.id === key.slice(2))?.pinned) return null;
     const box = el.getBoundingClientRect(); return { target: key.slice(2), after: y > box.top + box.height / 2 };
   };
   const current = scope?.project_id ? `p:${scope.project_id}` : 'recent', previous = useRef(current);
@@ -222,12 +226,14 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const sorting = reordering && layout.projectSort === 'custom' && !q;
   const projectCap = layout.sections.projects.count, allProjects = !!q || sorting || !!expanded['projects:all'];
   const matchedProjects = projects.filter(p => !q || (byProject.get(p.id) ?? []).length || p.name.toLowerCase().includes(q));
-  const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => i < projectCap || `p:${p.id}` === current);
+  const pinnedCount = matchedProjects.filter(p => p.pinned).length;
+  const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => p.pinned || i - pinnedCount < projectCap || `p:${p.id}` === current);
   const projectGroups = cappedProjects.map(p => {
     const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
+    const peers = projects.filter(item => !!item.pinned === !!p.pinned);
     const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
     const dropCls = drag && drag.id !== p.id && drag.target === p.id ? (drag.after ? ' drop-after' : ' drop-before') : '';
-    return <section key={key} className={`gah-group project${isCurrent ? ' current' : ''}${drag?.id === p.id ? ' dragging' : ''}${dropCls}`} data-key={key}>
+    return <section key={key} className={`gah-group project${p.pinned ? ' pinned' : ''}${isCurrent ? ' current' : ''}${drag?.id === p.id ? ' dragging' : ''}${dropCls}`} data-key={key}>
       <div className={`gah-group-head${sorting ? ' sortable' : ''}`} {...(sorting ? {
         onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => {
           if (e.button !== 0 || (e.target as HTMLElement).closest('.gah-group-move')) return;
@@ -237,8 +243,9 @@ export function Sessions({ api }: { api: PluginAPI }) {
         onPointerUp: () => { if (drag) dropProject(drag.id, drag.target, drag.after); setDrag(null); },
         onPointerCancel: () => setDrag(null),
       } : {})}><button type="button" className="gah-group-toggle" title={sorting ? T('\u62d6\u52a8\u4ee5\u6392\u5e8f', 'Drag to reorder') : p.workspace} aria-expanded={open} onClick={() => { if (!sorting) toggle(key, open); }}>{sorting && <span className="gah-group-grip" aria-hidden="true">{'\u2807'}</span>}<span className="gah-ico gah-ico-closed" data-i="folder" aria-hidden="true" /><span className="gah-ico gah-ico-open" data-i="folder-open" aria-hidden="true" /><span className="gah-group-name">{p.name}</span>{projectStatus.has(p.id) && <span className={`gah-sess-status ${projectStatus.get(p.id)}`} role="status" title={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} aria-label={projectStatus.get(p.id) === 'cancelling' ? T('\u6709\u4f1a\u8bdd\u6b63\u5728\u505c\u6b62', 'A chat is stopping') : T('\u6709\u4f1a\u8bdd\u8fd0\u884c\u4e2d', 'A chat is running')} />}<span className="gah-group-count">{(byProject.get(p.id) ?? []).length}</span></button>
-        {sorting ? <><button type="button" className="gah-group-add gah-group-move" disabled={projects[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
-        <button type="button" className="gah-group-add gah-group-move" disabled={projects[projects.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></> : <>
+        {sorting ? <><button type="button" className="gah-group-add gah-group-move" disabled={peers[0]?.id === p.id} aria-label={`${T('\u4e0a\u79fb', 'Move up')}: ${p.name}`} title={T('\u4e0a\u79fb', 'Move up')} onClick={() => moveProject(p.id, -1)}>{'\u25b2'}</button>
+        <button type="button" className="gah-group-add gah-group-move" disabled={peers[peers.length - 1]?.id === p.id} aria-label={`${T('\u4e0b\u79fb', 'Move down')}: ${p.name}`} title={T('\u4e0b\u79fb', 'Move down')} onClick={() => moveProject(p.id, 1)}>{'\u25bc'}</button></> : <>
+        <button type="button" className={`gah-group-add gah-project-pin${p.pinned ? ' on' : ''}`} disabled={busy} aria-pressed={!!p.pinned} aria-label={`${p.pinned ? T('\u53d6\u6d88\u9879\u76ee\u7f6e\u9876', 'Unpin project') : T('\u7f6e\u9876\u9879\u76ee', 'Pin project')}: ${p.name}`} title={p.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')} onClick={() => void scoped({ action: p.pinned ? 'unpin' : 'pin', id: p.id }, false)}><Icon name="pin" size={14} /></button>
         <button type="button" className="gah-group-add" disabled={busy} data-gah-close="" aria-label={`${T('\u65b0\u5efa\u5bf9\u8bdd', 'New chat')}: ${p.name}`} onClick={() => void (isCurrent ? act('new') : scoped({ action: 'enter', id: p.id }))}><Icon name="plus" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u9879\u76ee\u8bbe\u7f6e', 'Project settings')}: ${p.name}`} onClick={() => dialog('update', p.id)}><Icon name="pencil" /></button>
         <button type="button" className="gah-group-add" disabled={busy} aria-label={`${T('\u5220\u9664\u9879\u76ee', 'Delete project')}: ${p.name}`} onClick={async () => { if (await confirmDialog({ title: T('\u5220\u9664\u9879\u76ee', 'Delete project'), danger: true, confirm: T('\u5220\u9664', 'Delete'), message: T('\u5220\u9664\u9879\u76ee\u201c', 'Delete project "') + p.name + T('\u201d\uff1f\u5176\u4e2d\u7684\u4f1a\u8bdd\u4f1a\u79fb\u5230\u201c\u6700\u8fd1\u201d\uff0c\u9879\u76ee\u8bb0\u5fc6\u6587\u4ef6\u4fdd\u7559\u5728\u78c1\u76d8\u4e0a\u3002', '"? Its chats move to Recent; the project memory files stay on disk.') })) void scoped({ action: 'delete', id: p.id }, isCurrent); }}><Icon name="trash" /></button></>}</div>
@@ -277,7 +284,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
       return <div key="projects" className="gah-sess-section" data-section="projects">
         {sectionHead('projects', open, sorting ? <button type="button" className="gah-sess-head-btn gah-sess-done" aria-label={T('\u5b8c\u6210\u6392\u5e8f', 'Done reordering')} title={T('\u5b8c\u6210\u6392\u5e8f', 'Done reordering')} onClick={() => setReordering(false)}>{T('\u5b8c\u6210', 'Done')}</button> : <button type="button" className="gah-sess-head-btn" disabled={busy} aria-label={T('\u65b0\u5efa\u9879\u76ee', 'New project')} onClick={() => dialog('create')}><Icon name="folder-plus" /></button>)}
         {open && (projects.length ? <>{projectGroups}
-          {!q && !sorting && matchedProjects.length > projectCap && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, 'projects:all': !allProjects }))}>{allProjects ? T('\u6536\u8d77\u9879\u76ee', 'Show fewer projects') : `${T('\u663e\u793a\u5168\u90e8\u9879\u76ee', 'Show all projects')} (${matchedProjects.length})`}</button>}</>
+          {!q && !sorting && matchedProjects.length - pinnedCount > projectCap && <button type="button" className="gah-sess-more" onClick={() => setExpanded(old => ({ ...old, 'projects:all': !allProjects }))}>{allProjects ? T('\u6536\u8d77\u9879\u76ee', 'Show fewer projects') : `${T('\u663e\u793a\u5168\u90e8\u9879\u76ee', 'Show all projects')} (${matchedProjects.length})`}</button>}</>
           : <div className="gah-sess-empty">{T('\u8fd8\u6ca1\u6709\u9879\u76ee', 'No projects yet')}</div>)}
       </div>;
     },

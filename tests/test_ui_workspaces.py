@@ -66,6 +66,27 @@ def test_workspace_http_isolation_conflict_busy_and_unload(workspace_app, tmp_pa
     assert ws.current()["project_id"] == project["id"]
 
 
+def test_workspace_http_project_pin(workspace_app, tmp_path):
+    _, _, _, base = workspace_app
+    first = _req(base + "api/p/web-workspaces", {
+        "action": "create", "name": "first", "workspace": str(tmp_path),
+    })[1]
+    pid = first["scope"]["project_id"]
+    second = _req(base + "api/p/web-workspaces", {
+        "action": "create", "name": "second", "workspace": str(tmp_path),
+    })[1]
+    for action, expected in (("pin", 1), ("pin", 1), ("unpin", 0), ("unpin", 0)):
+        status, result = _req(base + "api/p/web-workspaces", {"action": action, "id": pid})
+        assert status == 200
+        assert result["session_id"] == second["session_id"]
+        assert result["scope"]["project_id"] == second["scope"]["project_id"]
+        projects = _req(base + "api/state")[1]["scope"]["projects"]
+        assert next(p for p in projects if p["id"] == pid)["pinned"] == expected
+        if expected:
+            assert projects[0]["id"] == pid
+    assert _req(base + "api/p/web-workspaces", {"action": "pin", "id": "missing"})[0] == 400
+
+
 def test_workspace_http_storage_error_is_redacted(workspace_app, monkeypatch):
     _, _, ws, base = workspace_app
     def fail(_):

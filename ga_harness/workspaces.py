@@ -28,6 +28,9 @@ class Workspaces:
                 db.execute("""CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace TEXT NOT NULL,
                     rules TEXT NOT NULL, memory TEXT NOT NULL, updated REAL NOT NULL)""")
+                columns = {r[1] for r in db.execute("PRAGMA table_info(projects)")}
+                if "pinned" not in columns:
+                    db.execute("ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
                 # Folders under projects_root whose project was deleted here; not re-listed.
                 db.execute("CREATE TABLE IF NOT EXISTS project_ignored (name TEXT PRIMARY KEY COLLATE NOCASE)")
                 db.execute("UPDATE sessions SET workspace=? WHERE workspace=''",
@@ -91,9 +94,9 @@ class Workspaces:
                 if db.execute("SELECT 1 FROM project_ignored WHERE name=?", (name,)).fetchone():
                     return None
                 pid = uuid.uuid4().hex
-                db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)", (pid, name, "", "", "", time.time()))
+                db.execute("INSERT INTO projects (id, name, workspace, rules, memory, updated) VALUES (?, ?, ?, ?, ?, ?)", (pid, name, "", "", "", time.time()))
                 row = db.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
-            return {k: row[k] for k in ("id", "name", "workspace", "updated")}
+            return {k: row[k] for k in ("id", "name", "workspace", "updated", "pinned")}
 
     def _unique_name(self, db, name, pid):
         # Names map to memory folders; Windows folders are case-insensitive.
@@ -135,14 +138,14 @@ class Workspaces:
                 updated = folder.stat().st_mtime
             except (ValueError, OSError):
                 continue
-            db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
+            db.execute("INSERT INTO projects (id, name, workspace, rules, memory, updated) VALUES (?, ?, ?, ?, ?, ?)",
                        (uuid.uuid4().hex, name, "", "", "", updated))
             known.add(name.lower())
 
     def projects(self):
         with self.sessions.lock, self.sessions._db() as db:
-            return [{k: r[k] for k in ("id", "name", "workspace", "updated")}
-                    for r in db.execute("SELECT * FROM projects ORDER BY updated DESC, id")]
+            return [{k: r[k] for k in ("id", "name", "workspace", "updated", "pinned")}
+                    for r in db.execute("SELECT * FROM projects ORDER BY pinned DESC, updated DESC, id")]
 
     def current(self):
         return self.context(self.sessions.current()["id"])
@@ -198,7 +201,7 @@ class Workspaces:
                     self._unique_name(db, name, pid)
                     db.execute("DELETE FROM project_ignored WHERE name=?", (name,))
                     if action == "create":
-                        db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
+                        db.execute("INSERT INTO projects (id, name, workspace, rules, memory, updated) VALUES (?, ?, ?, ?, ?, ?)",
                                    (pid, name, workspace, "", "", time.time()))
                         self._enter(db, workspace or self.default_workspace, pid)
                     else:
@@ -215,6 +218,15 @@ class Workspaces:
                 if action == "create":
                     from .sessions import restore
                     restore(store.agent, {})
+            elif action in ("pin", "unpin"):
+                # Presentation only: preserve edit timestamps, selection and chat history.
+                pid = body.get("id")
+                if not isinstance(pid, str) or not pid:
+                    raise ValueError("invalid project id")
+                with store._db() as db:
+                    if db.execute("UPDATE projects SET pinned=? WHERE id=?",
+                                  (1 if action == "pin" else 0, pid)).rowcount != 1:
+                        raise ValueError("project not found")
             elif action == "workspace":
                 directory = self.directory(body.get("workspace"))
                 store.change("new", workspace=directory, project_id="")

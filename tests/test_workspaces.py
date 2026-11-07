@@ -19,6 +19,51 @@ def project(ws, path, name="alpha", **fields):
     return ws.change(dict(action="create", name=name, workspace=str(path), **fields))
 
 
+def test_project_pin_persists_without_changing_scope_or_order(tmp_path):
+    raw, sessions, ws = setup(tmp_path)
+    a = project(ws, tmp_path)
+    b = project(ws, tmp_path, name="beta")
+    with sessions._db() as db:
+        db.execute("UPDATE projects SET updated=1 WHERE id=?", (a["project_id"],))
+        db.execute("UPDATE projects SET updated=2 WHERE id=?", (b["project_id"],))
+    original = ws.projects()
+    assert [p["id"] for p in original] == [b["project_id"], a["project_id"]]
+    raw.history = ["keep this conversation"]
+    current = sessions.current()["id"]
+    for _ in range(2):  # Repeat pin is idempotent, not a toggle.
+        ws.change({"action": "pin", "id": a["project_id"]})
+        assert sessions.current()["id"] == current
+        assert raw.history == ["keep this conversation"]
+        assert ws.projects() == [dict(original[1], pinned=1), original[0]]
+    restarted = Workspaces(Sessions(agent(), sessions.path), tmp_path)
+    assert restarted.projects() == ws.projects()
+    for _ in range(2):
+        restarted.change({"action": "unpin", "id": a["project_id"]})
+        assert restarted.projects() == original
+    for action in ("pin", "unpin"):
+        with pytest.raises(ValueError, match="project not found"):
+            ws.change({"action": action, "id": "missing"})
+        with pytest.raises(ValueError, match="invalid project id"):
+            ws.change({"action": action})
+
+
+def test_project_pin_migrates_legacy_schema(tmp_path):
+    sessions = Sessions(agent(), tmp_path / "sessions.sqlite3")
+    with sessions._db() as db:
+        db.execute("""CREATE TABLE projects (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace TEXT NOT NULL,
+            rules TEXT NOT NULL DEFAULT '', memory TEXT NOT NULL DEFAULT '', updated REAL NOT NULL
+        )""")
+        db.execute("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?)",
+                   ("legacy", "legacy", str(tmp_path), "", "", 1))
+    ws = Workspaces(sessions, tmp_path)
+    assert ws.projects()[0]["pinned"] == 0
+    ws.change({"action": "pin", "id": "legacy"})
+    assert Workspaces(sessions, tmp_path).projects()[0]["pinned"] == 1
+    created = project(ws, tmp_path, name="new")
+    assert ws.context(created["id"])["project"]["pinned"] == 0
+
+
 def test_scope_switch_isolation_and_restart(tmp_path):
     raw, sessions, ws = setup(tmp_path)
     initial = sessions.current()

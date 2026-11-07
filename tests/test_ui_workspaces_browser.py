@@ -19,6 +19,46 @@ def screenshot(page, name):
         page.screenshot(path=str(path / (name + ".png")), full_page=True)
 
 
+def test_project_pin_toggle_and_reload(workspace_app, browser, tmp_path):
+    _, _, ws, base = workspace_app
+    status, first = _req(base + "api/p/web-workspaces", {
+        "action": "create", "name": "alpha", "workspace": str(tmp_path),
+    })
+    assert status == 200
+    pid = first["scope"]["project_id"]
+    status, second = _req(base + "api/p/web-workspaces", {
+        "action": "create", "name": "beta", "workspace": str(tmp_path),
+    })
+    assert status == 200
+    # Fixed timestamps make the default order independent of clock resolution.
+    with ws.sessions._db() as db:
+        db.execute("UPDATE projects SET updated=1 WHERE id=?", (pid,))
+        db.execute("UPDATE projects SET updated=2 WHERE id=?", (second["scope"]["project_id"],))
+    page = browser.new_page(locale="en-US", viewport={"width": 1280, "height": 820})
+    try:
+        page.goto(base)
+        groups = page.locator(".gah-group.project")
+        alpha = page.locator(f'.gah-group.project[data-key="p:{pid}"]')
+        pw.expect(groups.first.locator(".gah-group-name")).to_have_text("beta")
+        alpha.locator(".gah-group-head").hover()
+        alpha.locator(".gah-project-pin").click()
+        pw.expect(groups.first.locator(".gah-group-name")).to_have_text("alpha")
+        pw.expect(alpha.locator(".gah-project-pin")).to_have_attribute("aria-pressed", "true")
+        state = _req(base + "api/state")[1]
+        assert state["session_id"] == second["session_id"]
+        assert state["scope"]["project_id"] == second["scope"]["project_id"]
+        page.reload()
+        pw.expect(groups.first.locator(".gah-group-name")).to_have_text("alpha")
+        alpha.locator(".gah-project-pin").click()
+        pw.expect(groups.first.locator(".gah-group-name")).to_have_text("beta")
+        pw.expect(alpha.locator(".gah-project-pin")).to_have_attribute("aria-pressed", "false")
+        state = _req(base + "api/state")[1]
+        assert state["session_id"] == second["session_id"]
+        assert state["scope"]["project_id"] == second["scope"]["project_id"]
+    finally:
+        page.close()
+
+
 def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser, tmp_path):
     _, _, _, base = workspace_app
     page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 820})
