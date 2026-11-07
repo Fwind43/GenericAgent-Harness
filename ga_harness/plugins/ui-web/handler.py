@@ -8,6 +8,8 @@ import mimetypes
 import os
 import queue
 import re
+import threading
+import zlib
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -22,6 +24,21 @@ MAX_BODY = 1 << 20
 COOKIE_MAX_AGE = 30 * 24 * 3600  # login cookie lifetime; renewed on each page load
 
 MAX_TOOL_DATA = 20000
+
+# Weak links (remote access over LAN / tailscale / mobile): compress text bodies and let the
+# browser revalidate static files instead of downloading ~1 MB of JS/CSS on every page load.
+GZIP_MIN = 1024
+COMPRESSIBLE = ("text/", "application/json", "image/svg+xml")
+IMMUTABLE = "private, max-age=31536000, immutable"   # Vite's content-hashed /assets/*
+REVALIDATE = "private, no-cache"                      # cached, but checked via ETag each load
+_GZ_CACHE = {}                                        # (path, mtime_ns, size) -> gzip bytes
+_GZ_CACHE_MAX = 128
+_GZ_LOCK = threading.Lock()
+
+
+def _gzip(body, level=6):
+    c = zlib.compressobj(level, zlib.DEFLATED, 31)   # wbits 31: gzip container
+    return c.compress(body) + c.flush()
 
 
 def _clip(data):
@@ -48,23 +65,77 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # keep the terminal quiet
         pass
 
-    def _json(self, code, obj):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    def _accepts_gzip(self):
+        for part in (self.headers.get("Accept-Encoding") or "").lower().split(","):
+            name, _, params = part.partition(";")
+            if name.strip() in ("gzip", "*"):
+                q = params.replace(" ", "")
+                if q.startswith("q="):
+                    try:
+                        return float(q[2:]) > 0
+                    except ValueError:
+                        return False
+                return True
+        return False
+
+    def _send_body(self, code, body, ctype, cache="no-store", etag=None, gz_key=None, nosniff=False):
+        """Send ``body``; gzip it when the client accepts that and it is worth it.
+
+        ``etag`` + a matching If-None-Match gives a bodiless 304. ``gz_key`` caches the
+        compressed bytes of an unchanging file so repeated loads cost no CPU.
+        """
+        compressible = ctype.startswith(COMPRESSIBLE)
+        if etag and code == 200 and etag in [t.strip() for t in (self.headers.get("If-None-Match") or "").split(",")]:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache)
+            if compressible:
+                self.send_header("Vary", "Accept-Encoding")
+            self.end_headers()
+            return
+        encoded = None
+        if compressible and len(body) >= GZIP_MIN and self._accepts_gzip():
+            with _GZ_LOCK:
+                encoded = _GZ_CACHE.get(gz_key) if gz_key else None
+            if encoded is None:
+                encoded = _gzip(body, 6 if gz_key else 5)
+                if gz_key:
+                    with _GZ_LOCK:
+                        if len(_GZ_CACHE) >= _GZ_CACHE_MAX:
+                            _GZ_CACHE.pop(next(iter(_GZ_CACHE)))
+                        _GZ_CACHE[gz_key] = encoded
+            body = encoded
         self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", ctype)
+        if encoded is not None:
+            self.send_header("Content-Encoding", "gzip")
+        if compressible:
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
+        if etag:
+            self.send_header("ETag", etag)
+        if nosniff:
+            self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
+    def _json(self, code, obj):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self._send_body(code, body, "application/json; charset=utf-8")
+
     def _bytes(self, code, body, ctype):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
+        self._send_body(code, body, ctype, nosniff=True)
+
+    def _static(self, path, ctype, immutable=False):
+        """A file that only changes on rebuild/upgrade: cacheable, validated by mtime+size."""
+        st = Path(path).stat()
+        etag = f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
+        cache = IMMUTABLE if immutable else REVALIDATE
+        if etag in [t.strip() for t in (self.headers.get("If-None-Match") or "").split(",")]:
+            return self._send_body(200, b"", ctype, cache=cache, etag=etag)   # -> 304
+        self._send_body(200, Path(path).read_bytes(), ctype, cache=cache, etag=etag,
+                        gz_key=(str(path), st.st_mtime_ns, st.st_size), nosniff=True)
 
     LOG_NAME = re.compile(r"^[\w.-]+\.log(\.\d+)?$")
     LOG_TAIL = 256 * 1024
@@ -284,7 +355,7 @@ class _Handler(BaseHTTPRequestHandler):
             if not asset.is_relative_to(root) or asset.suffix not in types or not asset.is_file():
                 return self._json(404, {"error": "not found"})
             try:
-                self._bytes(200, asset.read_bytes(), types[asset.suffix])
+                self._static(asset, types[asset.suffix], immutable=True)
             except OSError:
                 self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/ui-web-assets/"):
@@ -300,7 +371,7 @@ class _Handler(BaseHTTPRequestHandler):
             if name not in assets:
                 return self._json(404, {"error": "not found"})
             try:
-                self._bytes(200, DIST.with_name(name).read_bytes(), assets[name])
+                self._static(DIST.with_name(name), assets[name])
             except OSError:
                 self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/web/"):
@@ -309,7 +380,7 @@ class _Handler(BaseHTTPRequestHandler):
             if not found:
                 return self._json(404, {"error": "not found"})
             try:
-                self._bytes(200, found[0].read_bytes(), found[1])
+                self._static(found[0], found[1])
             except OSError:
                 self._json(404, {"error": "asset unavailable"})
         elif path.startswith("/api/p/"):
@@ -424,18 +495,33 @@ class _Handler(BaseHTTPRequestHandler):
             fe.log(f"[web] /api/events snapshot failed: {type(e).__name__}: {e}\n{traceback.format_exc()}")
             return self._json(500, {"error": f"snapshot failed: {type(e).__name__}: {e}"})
         try:
+            # The snapshot (whole visible history) is resent on every reconnect, which on a
+            # flaky link is the dominant cost; a gzip stream with a sync flush per event cuts
+            # it ~4x while each event still reaches the browser immediately.
+            gz = zlib.compressobj(5, zlib.DEFLATED, 31) if self._accepts_gzip() else None
+
+            def send(data):
+                if gz:
+                    data = gz.compress(data) + gz.flush(zlib.Z_SYNC_FLUSH)
+                self.wfile.write(data)
+                self.wfile.flush()
+
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-store, no-transform")
             self.send_header("X-Accel-Buffering", "no")
+            if gz:
+                self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
             # 2 KiB comment padding: some proxies / AV web shields (common on Windows Server)
             # buffer small streamed responses, so the browser never sees the first event.
-            self.wfile.write(b":" + b" " * 2048 + b"\n\n")
-            self.wfile.write(first.encode("utf-8"))
-            self.wfile.flush()
+            # Compressed, spaces would shrink to a few bytes, so pad with incompressible text.
+            pad = os.urandom(1536).hex()[:2048].encode() if gz else b" " * 2048
+            send(b":" + pad + b"\n\n")
+            send(first.encode("utf-8"))
             while True:
                 try:
                     msg = q.get(timeout=15)
@@ -443,8 +529,7 @@ class _Handler(BaseHTTPRequestHandler):
                     msg = "event: ping\ndata: {}\n\n"
                 if msg is None:
                     return
-                self.wfile.write(msg.encode("utf-8"))
-                self.wfile.flush()
+                send(msg.encode("utf-8"))
         except OSError:
             pass
         finally:
