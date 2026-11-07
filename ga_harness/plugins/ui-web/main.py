@@ -33,6 +33,7 @@ External access: plugins use ``web.host.allow_origin(url)`` (returns an undo cal
 ``web.host.access()`` and ``web.host.set_token()``; see WebHost.
 Ctrl+C in the terminal aborts a running task and stops the server.
 """
+import collections
 import copy
 import hashlib
 import ipaddress
@@ -56,6 +57,9 @@ from .handler import _Handler, _clip
 
 EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.start", "llm.timed")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
+# SSE replay window for reconnecting pages; past it they get a full snapshot instead.
+BACKLOG_EVENTS = 5000
+BACKLOG_BYTES = 4 * 1024 * 1024
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
                "style": "text/css; charset=utf-8"}
@@ -362,6 +366,13 @@ class WebFrontend:
         self.aborting = False
         self.clients = set()
         self._clients_lock = threading.Lock()
+        # Recent SSE events, so a reconnecting page replays what it missed instead of
+        # downloading the whole snapshot again. A fresh epoch per process makes ids from an
+        # earlier server instance fall back to a snapshot.
+        self._epoch = os.urandom(4).hex()
+        self._seq = 0
+        self._backlog = collections.deque()
+        self._backlog_bytes = 0
         self.server = None
         self.url = None
         self.stopped = threading.Event()
@@ -379,11 +390,37 @@ class WebFrontend:
 
     # ---- state + fan-out ----
     def _broadcast(self, kind, data):
-        msg = f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        body = f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        # Number, buffer and fan out under one lock so a resuming stream (see subscribe) gets
+        # every event after its last id exactly once, in order.
         with self._clients_lock:
+            self._seq += 1
+            msg = f"id: {self._epoch}-{self._seq}\n{body}"
+            self._backlog.append((self._seq, msg))
+            self._backlog_bytes += len(msg)
+            while self._backlog and (len(self._backlog) > BACKLOG_EVENTS
+                                     or self._backlog_bytes > BACKLOG_BYTES):
+                self._backlog_bytes -= len(self._backlog.popleft()[1])
             clients = list(self.clients)
         for q in clients:
             q.put(msg)
+
+    def subscribe(self, q, last_id=None):
+        """Register an SSE queue. When ``last_id`` (``<epoch>-<seq>``) is still covered by the
+        backlog, queue the missed events and return ``None``: the client resumes without a
+        snapshot. Otherwise return the event id the caller must attach to a fresh snapshot."""
+        with self._clients_lock:
+            self.clients.add(q)
+            epoch, _, seq = (last_id or "").partition("-")
+            if epoch == self._epoch and seq.isdigit():
+                seq = int(seq)
+                first = self._backlog[0][0] if self._backlog else self._seq + 1
+                if first - 1 <= seq <= self._seq:
+                    for n, msg in self._backlog:
+                        if n > seq:
+                            q.put(msg)
+                    return None
+            return f"{self._epoch}-{self._seq}"
 
     def snapshot(self):
         data = {"running": self.running, "messages": self.messages}

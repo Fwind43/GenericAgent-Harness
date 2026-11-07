@@ -41,6 +41,10 @@ export class HostStore {
   private runSeq = new Map<string, number>();
   private refreshVersion = 0;
   private resyncing = false;
+  // Id of the last SSE event applied. A reopened stream sends it so the server replays just the
+  // missed events ("resume") instead of a full snapshot, while its backlog still covers it.
+  // Cleared when state is reloaded over HTTP: replaying appended chunks onto it would duplicate.
+  private lastId = '';
   private pending: [string, RunEvent][] = [];
   getSnapshot = () => this.snapshot;
   subscribe = (listener: Listener) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -131,7 +135,7 @@ export class HostStore {
       this.resyncing = false;
       const pending = this.pending; this.pending = [];
       if (!state) return;
-      this.setState(state);
+      this.lastId = ''; this.setState(state);
       for (const [k, e] of pending) this.acceptRun(k, e);
     };
     request<HostState>('/api/state').then(done, error => { done(); this.report(error); });
@@ -172,11 +176,12 @@ export class HostStore {
     }, 10000);
     const open = () => {
       if (stopped) return;
-      const es = this.source = new EventSource('/api/events');
+      const es = this.source = new EventSource(this.lastId ? `/api/events?last=${encodeURIComponent(this.lastId)}` : '/api/events');
       seen = Date.now();
       const alive = () => { if (this.source === es) seen = Date.now(); };
       const listen = <D,>(name: string, fn: (data: D) => void) => es.addEventListener(name, event => {
         alive();
+        if ((event as MessageEvent).lastEventId) this.lastId = (event as MessageEvent).lastEventId;
         try { fn(JSON.parse((event as MessageEvent<string>).data) as D); }
         catch (e) { console.error(`[gah ${name}]`, e); this.notice(T('同步数据失败，请刷新页面。', 'Unable to sync data. Please reload.')); }
       });
@@ -184,10 +189,13 @@ export class HostStore {
       es.onopen = () => { alive(); this.update({ connected: true }); };
       es.onerror = () => {
         if (this.source !== es) return;
-        this.update({ connected: false });
-        if (es.readyState === EventSource.CLOSED) fail();
+        // Never let the browser reconnect on its own: it would reuse this URL's stale ?last=.
+        // Reopen ourselves so the request carries the id of the last event actually applied.
+        fail();
       };
-      // A full snapshot follows every (re)connect, so state missed while offline is replaced.
+      // A (re)connect starts with either a full snapshot, replacing state missed while offline,
+      // or "resume" followed by exactly the events missed since lastId.
+      listen<unknown>('resume', () => { delay = 1000; this.update({ connected: true }); });
       listen<HostState>('snapshot', state => { delay = 1000; this.update({ connected: true }); this.setState(state); this.emit('snapshot', state); });
       for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
       listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
@@ -232,7 +240,7 @@ export class HostStore {
   async refresh() {
     const version = this.refreshVersion;
     const state = await request<HostState>('/api/state');
-    if (version === this.refreshVersion) this.setState(state);
+    if (version === this.refreshVersion) { this.lastId = ''; this.setState(state); }
   }
   report(error: unknown) { this.notice(errorText(error)); }
 }

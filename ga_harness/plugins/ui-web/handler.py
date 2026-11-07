@@ -482,11 +482,17 @@ class _Handler(BaseHTTPRequestHandler):
     def _sse(self):
         fe = self.frontend
         q = queue.Queue()
+        # A reconnecting page passes the id of the last event it applied; if the backlog still
+        # covers it, replay only the gap. The browser's own Last-Event-ID is ignored on purpose:
+        # the page may have reloaded state over HTTP since, and replaying onto that duplicates.
+        last = parse_qs(urlsplit(self.path).query).get("last", [""])[0].strip()
         try:
             with fe.lock:  # snapshot + subscribe atomically: no chunk lost or duplicated
-                with fe._clients_lock:
-                    fe.clients.add(q)
-                first = f"event: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
+                base = fe.subscribe(q, last)
+                if base is None:
+                    first = "event: resume\ndata: {}\n\n"
+                else:
+                    first = f"id: {base}\nevent: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
         except Exception as e:
             with fe._clients_lock:
                 fe.clients.discard(q)
