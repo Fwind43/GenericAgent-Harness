@@ -111,8 +111,13 @@ export function Disclosure({ title, children, initial = false, className = '', s
     seen.current = initial;
     setOpen(initial);
   }, [initial]);
+  // Collapsed bodies (tool receipts, step Markdown) are mounted on first open only:
+  // switching to a long session would otherwise parse every hidden step at once.
+  // Once opened they stay mounted so re-collapsing keeps scroll/selection state.
+  const [mounted, setMounted] = useState(initial);
+  if (open && !mounted) setMounted(true);
   return <details className={className} data-state={state} open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary aria-label={label}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{children}
+    <summary aria-label={label}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{(open || mounted) && children}
   </details>;
 }
 /** Shared output copy button (icon, feedback, HTTP fallback) so styling matches output.css. */
