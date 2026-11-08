@@ -323,6 +323,7 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-page[hidden]{display:none}
 /* Conductor wake-up notice (replaces the machine-written user bubble) */
 .msg.conductor-wake{display:flex;flex-direction:column;gap:6px;margin:10px 0 14px;padding:8px 12px;border-left:2px solid var(--border);color:var(--muted);font-size:13px}
+.msg-source{font-size:12px;color:var(--muted);margin-bottom:2px}
 .conductor-wake .cw-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .conductor-wake .cw-label{font-weight:600;color:var(--text)}
 .conductor-wake .cw-still{padding:0 6px;border-radius:999px;background:var(--surface-muted)}

@@ -123,11 +123,13 @@ function Note({ note }: { note: MessageNote }) {
   return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
 }
 // Conductor wake-ups are prompts written for the conductor model; show them as a compact
-// notice instead of a user bubble. Older messages lack ``source``, so the text head also matches.
+// notice instead of a user bubble. Only the wake-up text head identifies them: task objectives
+// and follow-up instructions in child task sessions also carry ``source: 'conductor'`` and
+// must stay visible as normal messages.
 const WAKE_HEAD = '[Conductor] Delegated task(s) finished:';
 const TASK_STATUS: Record<string, () => string> = { done: () => T('完成', 'done'), error: () => T('失败', 'failed'), aborted: () => T('已停止', 'stopped'), cancelled: () => T('已取消', 'cancelled'), interrupted: () => T('中断', 'interrupted') };
 export function isConductorWake(m: Message) {
-  return m.role === 'user' && (m.source === 'conductor' || !!m.text?.startsWith(WAKE_HEAD));
+  return m.role === 'user' && !!m.text?.startsWith(WAKE_HEAD);
 }
 function ConductorWake({ m }: { m: Message }) {
   const text = m.text || '';
@@ -187,7 +189,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       {m.reasoning_effort?.trim() && <span className="reasoning-effort" title={T('本条回复的思考强度：', 'Reasoning effort for this reply: ') + m.reasoning_effort.trim()}>{m.reasoning_effort.trim()}</span>}
       <MessageTime message={m} />
     </div>}
-    {m.role === 'user' ? <><MessageAttachments items={m.attachments} />{m.text ? <div className="body">{m.text}</div> : null}<MessageTime message={m} /></> : turns.length ? <>
+    {m.role === 'user' ? <>{m.source === 'conductor' && <div className="msg-source conductor">{T('来自指挥家', 'From Conductor')}</div>}<MessageAttachments items={m.attachments} />{m.text ? <div className="body">{m.text}</div> : null}<MessageTime message={m} /></> : turns.length ? <>
       {groups.map((group, g) => {
         const tail = g === groups.length - 1, active = running && tail;
         return <Fragment key={g}>
