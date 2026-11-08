@@ -173,7 +173,11 @@ def validate_values(manifest, values):
         valid = ((kind == "string" and isinstance(value, str) and len(value) <= min(spec.get("max_length", 8000), 8000))
                  or (kind == "integer" and type(value) is int and spec.get("min", -1000000) <= value <= spec.get("max", 1000000))
                  or (kind == "boolean" and type(value) is bool)
-                 or (kind == "choice" and isinstance(value, str) and value in {o["value"] for o in spec["options"]}))
+                 or (kind == "choice" and isinstance(value, str)
+                     and (value in {o["value"] for o in spec["options"]}
+                          # options_from (e.g. mykey models) is empty before GA loads mykey.py at
+                          # launch; a saved dynamic choice must not block startup.
+                          or (spec.get("options_from") and len(value) <= 256))))
         if not valid:
             raise ValueError(f"invalid value for {key}")
     return copy.deepcopy(values)
