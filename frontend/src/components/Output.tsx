@@ -98,9 +98,9 @@ export const Markdown = memo(function Markdown({ text, className = 'body', strea
   return <div ref={ref} className={className + ' md'} />;
 });
 /** Native details whose summary mirrors the legacy DOM: the chevron leads or trails per element kind. */
-export function Disclosure({ title, children, initial = false, className = '', state, chevron = 'end', label }: {
+export function Disclosure({ title, children, initial = false, className = '', state, chevron = 'end', label, lazy = true }: {
   title: ReactNode; children: ReactNode; initial?: boolean; className?: string; state?: string;
-  chevron?: 'start' | 'end'; label?: string;
+  chevron?: 'start' | 'end'; label?: string; lazy?: boolean;
 }) {
   const [open, setOpen] = useState(initial);
   // Follow later changes of ``initial`` too: a live step or group opens while it runs
@@ -114,10 +114,12 @@ export function Disclosure({ title, children, initial = false, className = '', s
   // Collapsed bodies (tool receipts, step Markdown) are mounted on first open only:
   // switching to a long session would otherwise parse every hidden step at once.
   // Once opened they stay mounted so re-collapsing keeps scroll/selection state.
-  const [mounted, setMounted] = useState(initial);
+  // The summary click mounts synchronously (the native toggle event is async), so
+  // the body is there in the same frame the details opens.
+  const [mounted, setMounted] = useState(initial || !lazy);
   if (open && !mounted) setMounted(true);
   return <details className={className} data-state={state} open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary aria-label={label}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{(open || mounted) && children}
+    <summary aria-label={label} onClick={() => setMounted(true)}>{chevron === 'start' && <Chevron />}{title}{chevron === 'end' && <Chevron />}</summary>{(open || mounted) && children}
   </details>;
 }
 /** Shared output copy button (icon, feedback, HTTP fallback) so styling matches output.css. */

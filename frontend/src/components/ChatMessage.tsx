@@ -191,7 +191,7 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
       {groups.map((group, g) => {
         const tail = g === groups.length - 1, active = running && tail;
         return <Fragment key={g}>
-          {!!group.steps.length && <Disclosure className={'steps' + (active ? ' running' : '')} initial={active} title={<>
+          {!!group.steps.length && <Disclosure className={'steps' + (active ? ' running' : '')} initial={active} lazy={false} title={<>
             <span className="process-dot" /><span>{active ? T('执行中 · ', 'Working · ') : T('执行过程 · ', 'Steps · ')}{group.steps.length}{T(' 步', ' steps')}</span>
           </>}>{group.steps.map((turn, index) => <Step key={turn.turn} turn={turn} live={active && !finalTurn && index === group.steps.length - 1} />)}</Disclosure>}
           {group.notes.map(n => <Note key={n.i} note={n.note} />)}
