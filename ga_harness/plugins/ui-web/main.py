@@ -462,7 +462,11 @@ class WebFrontend:
         if fresh is not None:
             data["messages"] = fresh
         data["web_plugins"] = self.web.manifest()
-        return self.ctx.waterfall("web.snapshot", data)
+        data = self.ctx.waterfall("web.snapshot", data)
+        # HTTP replies and their SSE broadcast share this identity. A new snapshot
+        # always gets a new id, including after reconnect or a backend restart.
+        data["_snapshot_id"] = os.urandom(16).hex()
+        return data
 
     # ---- local file references (read-only; workspaces + GA root) ----
     FILE_LIMIT = 50 << 20

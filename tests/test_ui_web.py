@@ -148,6 +148,7 @@ def test_ui_web_busy_abort_and_sse(tmp_path):
         snap = json.loads(sse.readline()[len(b"data: "):])
         port = urllib.parse.urlsplit(base).port
         assert snap.pop("local") == {"url": base, "host": "127.0.0.1", "port": port}
+        assert re.fullmatch(r"[0-9a-f]{32}", snap.pop("_snapshot_id"))
         assert snap == {
             "running": False, "messages": [], "plugins_enabled": False, "web_plugins": [],
         }

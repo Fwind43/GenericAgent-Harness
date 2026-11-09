@@ -151,6 +151,10 @@ class Sessions:
                 db.execute("ALTER TABLE sessions ADD COLUMN read_at REAL NOT NULL DEFAULT 0")
                 db.execute("UPDATE sessions SET read_at=updated")
             db.execute("CREATE INDEX IF NOT EXISTS session_parent ON sessions(parent_id)")
+            # Cover the sidebar projection and its ordering without reading transcript/state
+            # overflow pages from the wide sessions table. Also migrates existing databases.
+            db.execute("CREATE INDEX IF NOT EXISTS session_listing ON sessions "
+                       "(deleted,pinned DESC,updated DESC,id,title,workspace,project_id,parent_id,read_at)")
             row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
             sid = row[0] if row else None
             if not db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():

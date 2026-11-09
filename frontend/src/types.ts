@@ -47,6 +47,7 @@ export interface DesktopWindow {
 }
 export interface WebManifest { name: string; rev: number; script?: string; style?: string; head?: string; order?: number; desktop?: DesktopWindow[] }
 export interface HostState {
+  _snapshot_id?: string;
   running: boolean; messages: Message[]; session_id?: string; sessions?: Session[];
   web_plugins?: WebManifest[]; scope?: Scope; plugins_enabled?: boolean;
   models?: RuntimeCatalog; effort?: Effort; presets?: PresetCatalog; parallel_runs?: boolean; run_id?: string | null; runs?: Run[];

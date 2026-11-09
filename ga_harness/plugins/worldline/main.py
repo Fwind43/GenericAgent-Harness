@@ -153,13 +153,23 @@ def variants(store, sid, messages):
     1-based position of the live variant. Older archived snapshots of a variant collapse into
     its latest one, so editing or switching back and forth never reshuffles positions.
     """
-    rows, out, full = store.rows(sid), {}, _full(messages)
-    for idx in _user_indexes(messages):
+    rows = store.rows(sid)
+    if not rows:
+        return {}
+    # Only fork points with an archive can have variants. Do not hash every growing
+    # transcript prefix on every snapshot (quadratic work for long conversations).
+    by_index = {}
+    for row in rows:
+        by_index.setdefault(row["idx"], []).append(row)
+    out, full = {}, _full(messages)
+    for idx in sorted(by_index):
+        if not 0 <= idx < len(messages) or messages[idx].get("role") != "user":
+            continue
         prefix = _hash(messages[:idx])
         live_key, live_born = _origin(messages[idx])
         slots = {live_key: (live_born, None)}
-        for r in rows:  # oldest first, so the latest snapshot of a variant wins
-            if r["idx"] != idx or r["prefix"] != prefix or r["full"] == full:
+        for r in by_index[idx]:  # oldest first, so the latest snapshot of a variant wins
+            if r["prefix"] != prefix or r["full"] == full:
                 continue
             key, born = store.origin(r)
             if key == live_key:

@@ -1,3 +1,13 @@
+const serverSnapshots = new WeakSet<object>();
+
+// Track wire objects, not a property copied by local {...state} updates. Plugins may
+// use setState for local changes as well as HTTP responses; those must not be deduped.
+export function markServerSnapshot<T>(value: T): T {
+  if (value && typeof value === 'object' && '_snapshot_id' in value) serverSnapshots.add(value);
+  return value;
+}
+export const isServerSnapshot = (value: object) => serverSnapshots.has(value);
+
 export async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
@@ -10,5 +20,7 @@ export async function request<T>(path: string, body?: unknown, signal?: AbortSig
     throw new Error(message);
   }
   if (data === null) throw new Error('Invalid JSON response');
-  return data as T;
+  // Some APIs wrap the host snapshot alongside their own result (e.g. model settings).
+  if (typeof data === 'object' && 'state' in data) markServerSnapshot(data.state);
+  return markServerSnapshot(data) as T;
 }

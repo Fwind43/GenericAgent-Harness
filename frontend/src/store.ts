@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { request } from './api';
+import { isServerSnapshot, markServerSnapshot, request } from './api';
 import { T, errorText } from './i18n';
 import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest, RunEvent } from './types';
 
@@ -39,6 +39,7 @@ export class HostStore {
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private publishedState = this.snapshot.state;
   private runSeq = new Map<string, number>();
+  private acceptedSnapshots = new Set<string>();
   private refreshVersion = 0;
   private resyncing = false;
   // Id of the last SSE event applied. A reopened stream sends it so the server replays just the
@@ -71,6 +72,14 @@ export class HostStore {
     else if (!this.flushTimer) this.flushTimer = setTimeout(this.flush, 50);
   }
   setState = (state: HostState) => {
+    const id = isServerSnapshot(state) ? state._snapshot_id : undefined;
+    if (id) {
+      // The HTTP reply and SSE notification can arrive in either order, with
+      // streaming updates in between. Never replace newer state with that duplicate.
+      if (this.acceptedSnapshots.has(id)) return;
+      this.acceptedSnapshots.add(id);
+      if (this.acceptedSnapshots.size > 64) this.acceptedSnapshots.delete(this.acceptedSnapshots.values().next().value!);
+    }
     ++this.refreshVersion;
     this.runSeq = new Map((state.runs ?? []).map(run => [run.id, run.seq]));
     this.update({ state });
@@ -196,7 +205,12 @@ export class HostStore {
       // A (re)connect starts with either a full snapshot, replacing state missed while offline,
       // or "resume" followed by exactly the events missed since lastId.
       listen<unknown>('resume', () => { delay = 1000; this.update({ connected: true }); });
-      listen<HostState>('snapshot', state => { delay = 1000; this.update({ connected: true }); this.setState(state); this.emit('snapshot', state); });
+      listen<HostState>('snapshot', state => {
+        delay = 1000;
+        if (!this.snapshot.connected) this.update({ connected: true });
+        this.setState(markServerSnapshot(state));
+        this.emit('snapshot', state);
+      });
       for (const kind of ['run.started', 'run.event', 'run.cancelling', 'run.finished']) listen<RunEvent>(kind, event => this.acceptRun(kind, event));
       listen<WebManifest[]>('web.plugins', list => this.setState({ ...this.snapshot.state, web_plugins: list }));
       listen<unknown>('plugin', data => this.emit('plugin', data));
