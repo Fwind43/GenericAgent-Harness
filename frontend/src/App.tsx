@@ -14,6 +14,7 @@ import { LogSettings } from './components/LogSettings';
 import { GaRootSettings } from './components/GaRootSettings';
 import { ChatMessage } from './components/ChatMessage';
 import { MessageNav } from './components/MessageNav';
+import { ScrollBottom } from './components/ScrollBottom';
 import { ModePicker } from './components/ModePicker';
 import { SessionStats, sessionStats } from './components/SessionStats';
 import type { SlotName } from './sdk';
@@ -223,6 +224,7 @@ export function App() {
         <div id="thread">{state.messages.length ? state.messages.slice(first).map((message, i) => { const index = first + i; return <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />; }) : <EmptyState />}</div>
       </main>
       {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
+      {!page && view === CHAT_VIEW && <ScrollBottom scroll={scroll} stick={stick} deps={[state.messages, state.session_id]} />}
       <div className="gah-view-area" hidden={!!page || view === CHAT_VIEW}><Slot name="view" /></div>
       <div className="gah-page-area" hidden={!page}><Slot name="page" /></div>
       <footer hidden={!!page || !composer}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}

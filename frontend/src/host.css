@@ -263,6 +263,9 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-msg-nav-item.active{color:var(--text);font-weight:600}
 .gah-msg-nav-item.active .tick{width:20px;height:3px;background:var(--accent,var(--text))}
 @media (max-width:760px){.gah-msg-nav{display:none}}
+.gah-to-bottom{position:absolute;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--muted);box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer;animation:gah-to-bottom-in .14s ease-out}
+.gah-to-bottom:hover,.gah-to-bottom:focus-visible{color:var(--text);border-color:var(--muted);outline:none}
+@keyframes gah-to-bottom-in{from{opacity:0;transform:translateX(-50%) translateY(6px)}}
 /* Settings > Updates (desktop shell only) */
 .gah-update-settings .dialog-content{display:flex;flex-direction:column;gap:14px}
 .gah-update-settings .gah-setting-row{max-width:640px}
