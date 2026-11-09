@@ -215,15 +215,17 @@ def apply(ctx, config):
         return sorted((t for t in tasks.values() if t["parent"] == parent), key=lambda t: t["created"])
 
     def _task_of_child(sid):
+        # A reused child session holds several tasks over time; the newest is current.
+        found = None
         for task in tasks.values():
-            if task["child"] == sid:
-                return task
-        return None
+            if task["child"] == sid and (found is None or task["created"] >= found["created"]):
+                found = task
+        return found
 
     def _public(task, full=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
-                                        "model", "model_key", "effort", "workspace")}
+                                        "model", "model_key", "effort", "workspace", "reused_from")}
         if task.get("branch"):
             out["branch"] = task["branch"]
             out["worktree"] = None if task.get("worktree_removed") else task.get("worktree")
@@ -387,7 +389,12 @@ def apply(ctx, config):
             raise ValueError("isolate must be true or false")
         if workspace is not None:
             workspace = _directory(workspace)
+        reuse = body.get("reuse_task")
+        if reuse is not None and (isolate or workspace is not None):
+            raise ValueError("reuse_task cannot be combined with workspace or isolate; "
+                             "the task keeps the reused session's workspace")
         task_id = "t" + uuid.uuid4().hex[:8]
+        reused = None
         worktree = None
         if isolate:
             source = workspace or sessions.get(parent, light=True).get("workspace") or ""
@@ -410,7 +417,23 @@ def apply(ctx, config):
                 if counts["running"] >= _max_running(parent):
                     raise RuntimeError(f"{_max_running(parent)} tasks are already running (the running limit); end your turn and "
                                        "dispatch more after you are woken by a finished task")
-                child = sessions.create(parent_id=parent, title=title, workspace=workspace)
+                if reuse is not None:
+                    reused = _owned(parent, reuse)
+                    current = _task_of_child(reused["child"])
+                    if not current["resolved"]:
+                        raise RuntimeError(f"the session of task {reuse} is in use by unresolved task "
+                                           f"{current['id']}; resolve it first")
+                    if current.get("worktree") and current.get("worktree_removed"):
+                        raise RuntimeError(f"the worktree of task {current['id']} was removed; dispatch a new task")
+                    reused = current
+                    try:
+                        child = sessions.get(reused["child"], light=True)
+                    except Exception:
+                        child = None
+                    if not child:
+                        raise RuntimeError(f"the session of task {reuse} no longer exists; dispatch a new task")
+                else:
+                    child = sessions.create(parent_id=parent, title=title, workspace=workspace)
         except Exception:
             if worktree:
                 try:
@@ -425,6 +448,10 @@ def apply(ctx, config):
                     "workspace": child.get("workspace") or workspace or ""}
             if worktree:
                 task.update(worktree=worktree[4], branch=worktree[1], repo=worktree[2], base=worktree[3])
+            if reused is not None:
+                task.update(reused_from=reused["id"], workspace=reused.get("workspace") or task["workspace"])
+                if reused.get("worktree"):  # shared with the earlier task; removed only once all are resolved
+                    task.update({k: reused[k] for k in ("worktree", "branch", "repo", "base") if k in reused})
             tasks[task["id"]] = task
             try:
                 _apply_selection(task, *_selection(parent, model, effort))
@@ -587,8 +614,15 @@ def apply(ctx, config):
             for task in owned:
                 if not task.get("worktree") or task.get("worktree_removed"):
                     continue
+                with lock:
+                    sharing = [t for t in tasks.values() if t is not task and t.get("worktree") == task["worktree"]]
+                if any(not t["resolved"] for t in sharing):
+                    kept.append(task["id"])  # a later task reusing this session still works in it
+                    continue
                 try:
                     _remove_worktree(task)
+                    for other in sharing:
+                        other["worktree_removed"] = True
                     removed.append(task["id"])
                 except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                     log.warning("conductor: could not remove worktree of %s: %s", task["id"], error)
@@ -850,7 +884,8 @@ def apply(ctx, config):
                     "enabled": sorted(enabled),
                     "tasks": [_public(t) for t in sorted(tasks.values(), key=lambda t: t["created"])
                               if enabled.get(t["parent"]) or not t["resolved"]],
-                    "children": {t["child"]: {"task_id": t["id"], "parent": t["parent"]} for t in tasks.values()},
+                    "children": {t["child"]: {"task_id": t["id"], "parent": t["parent"]}
+                                 for t in sorted(tasks.values(), key=lambda t: t["created"])},
                     "limits": _limits(current),
                     "current": current}
         except Exception:

@@ -76,6 +76,13 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
 - Tasks that edit the same repository in parallel should use `isolate: true`; each
   then works on its own branch `conductor/<task id>`. After review, merge the branch
   yourself (or dispatch a merge task) and resolve with `remove_worktree: true`.
+- Session reuse: when a new task directly continues a resolved task's work (same
+  files and context, e.g. tests for the module it just changed), pass
+  `reuse_task: <that task id>` so it runs in that session with its history (and warm
+  prompt cache if dispatched soon after on the same model). Otherwise dispatch fresh:
+  unrelated history distracts the child and costs tokens. The objective must still
+  be self-contained. Resolving with `remove_worktree` keeps a worktree that a later
+  unresolved task still shares.
 """
 
 WORKER_PROMPT = """
@@ -131,6 +138,9 @@ TOOLS = {
                                                        "conductor/<task id>, created from the workspace's current HEAD "
                                                        "(the workspace must be inside a git repository). Use for tasks "
                                                        "that edit files in parallel; merge the branch after review."},
+         "reuse_task": {"type": "string", "description": "Id of a resolved task whose session to continue in "
+                                                          "(optional): the child keeps that conversation, workspace "
+                                                          "and worktree. Not combinable with workspace/isolate."},
          **MODEL},
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
