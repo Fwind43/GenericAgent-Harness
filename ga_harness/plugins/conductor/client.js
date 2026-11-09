@@ -71,6 +71,25 @@
     const { data, sid, busy, run } = useConductor(api);
     const [open, setOpen] = react.useState(false);
     const box = react.useRef(null);
+    const pop = react.useRef(null);
+    react.useLayoutEffect(() => {
+      if (!open) return;
+      const fit = () => {
+        const el = pop.current;
+        if (!el) return;
+        el.style.transform = "";
+        const rect = el.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth || window.innerWidth;
+        const pad = 12;
+        let dx = 0;
+        if (rect.left < pad) dx = pad - rect.left;
+        else if (rect.right > vw - pad) dx = vw - pad - rect.right;
+        if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+      };
+      fit();
+      window.addEventListener("resize", fit);
+      return () => window.removeEventListener("resize", fit);
+    }, [open]);
     react.useEffect(() => {
       if (!open) return;
       const down = (event) => {
@@ -81,9 +100,11 @@
         if (event.key === "Escape") setOpen(false);
       };
       document.addEventListener("mousedown", down);
+      document.addEventListener("touchstart", down, { passive: true });
       document.addEventListener("keydown", key);
       return () => {
         document.removeEventListener("mousedown", down);
+        document.removeEventListener("touchstart", down);
         document.removeEventListener("keydown", key);
       };
     }, [open]);
@@ -122,7 +143,7 @@
           ]
         }
       ),
-      open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", role: "dialog", "aria-label": sdk.T("指挥家", "Conductor"), children: [
+      open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", ref: pop, role: "dialog", "aria-label": sdk.T("指挥家", "Conductor"), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
             /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useHost, T, defineReact, type PluginAPI } from '@gah/sdk';
 
 type Task = {
@@ -80,13 +80,35 @@ function Panel({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run } = useConductor(api);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    // Keep the popover inside the viewport: it is anchored to the chip's right edge,
+    // which on narrow (mobile) top bars pushes its left side off-screen.
+    const fit = () => {
+      const el = pop.current;
+      if (!el) return;
+      el.style.transform = '';
+      const rect = el.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth || window.innerWidth;
+      const pad = 12;
+      let dx = 0;
+      if (rect.left < pad) dx = pad - rect.left;
+      else if (rect.right > vw - pad) dx = vw - pad - rect.right;
+      if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [open]);
   useEffect(() => {
     if (!open) return;
-    const down = (event: MouseEvent) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
+    const down = (event: Event) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', down);
+    document.addEventListener('touchstart', down, { passive: true });
     document.addEventListener('keydown', key);
-    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('touchstart', down); document.removeEventListener('keydown', key); };
   }, [open]);
   useEffect(() => { setOpen(false); }, [sid]);
   if (!data || !sid) return null;
@@ -111,7 +133,7 @@ function Panel({ api }: { api: PluginAPI }) {
         <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" /></svg>
       </button>
       {open ? (
-        <div className="gah-cd" role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
+        <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
           <div className="gah-cd-bar">
             <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
             <span className="gah-cd-hint">

@@ -125,3 +125,25 @@ downloaded and decrypted; outbound files get an upload URL from `getuploadurl`,
 are encrypted with a fresh key and uploaded, then sent as image/video/file items.
 This needs `pycryptodome` or `cryptography`; text works without either. The QR is refreshed up to 3 times when it
 expires.
+
+## WeCom (Enterprise WeChat AI Bot) provider
+
+`ga_harness/plugins/wecom/` provides the `wecom` provider for Enterprise WeChat
+(企业微信) AI Bot long connections (`wss://openws.work.weixin.qq.com`, no public
+callback URL or webhook server required). Create a WeCom channel in Channels,
+fill in `bot_id` and `secret` from the WeCom Admin Console (智能机器人 -> API
+模式 -> 长连接), optionally set `allowed_users` (comma-separated `userid`s) and
+start it. Media decryption requires `pycryptodome>=3.19`, declared in the plugin
+manifest; install the dependency from Plugin management if it is missing.
+
+Capabilities:
+
+- Inbound text, voice (speech-to-text), image, file, video, mixed (`msg_item`)
+  and quoted messages, with AES-256-CBC media decryption (`aeskey`).
+- Real-time turn/tool progress updates and final replies via `aibot_respond_msg`
+  (`msgtype="stream"`), with automatic fallback to proactive `aibot_send_msg`
+  (`markdown`) when no callback `req_id` is active or when a response exceeds the
+  single-bubble length limit.
+- Outbound media/files (`send_file`) via chunked WebSocket upload
+  (`aibot_upload_media_init` -> `aibot_upload_media_chunk` ->
+  `aibot_upload_media_finish`) followed by `aibot_send_msg`.

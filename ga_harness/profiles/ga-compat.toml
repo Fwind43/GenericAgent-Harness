@@ -51,7 +51,7 @@ name = "project-memory"
 [[plugins]]
 name = "model-store"
 
-# chat-platform bridge (bind external chats to sessions) + Feishu/Lark (needs lark-oapi) and WeChat providers
+# chat-platform bridge (bind external chats to sessions) + Feishu/Lark (needs lark-oapi), WeChat and WeCom providers
 [[plugins]]
 name = "channels"
 
@@ -60,6 +60,9 @@ name = "feishu"
 
 [[plugins]]
 name = "weixin"
+
+[[plugins]]
+name = "wecom"
 
 # web page themes; an add-on for ui-web (dormant under other frontends)
 [[plugins]]

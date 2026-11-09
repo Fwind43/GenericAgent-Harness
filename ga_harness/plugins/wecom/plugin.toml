@@ -1,0 +1,8 @@
+name = "wecom"
+version = "0.1.0"
+entry = "main:apply"
+description = "WeCom (Enterprise WeChat AI Bot) channel provider: WebSocket long connection, streaming replies and media"
+description_zh = "企业微信智能机器人通道提供方：长连接收发、流式回复与文件收发"
+inject = ["channel_manager"]
+packages = ["pycryptodome>=3.19"]
+category = "service"
