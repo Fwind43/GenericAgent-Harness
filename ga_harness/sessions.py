@@ -345,6 +345,10 @@ class Sessions:
             # directory (e.g. a conductor task in a git worktree), validated by the caller.
             if parent_id and project_id is not None and project_id != base["project_id"]:
                 raise ValueError("a child must inherit its parent's project")
+            # A root chat never inherits the current chat's project: callers that
+            # want one (the project group's "+", channels) pass project_id explicitly.
+            if not parent_id and project_id is None:
+                project_id = ""
             if not parent_id and workspace is None and self.root_scope:
                 workspace, project_id = self.root_scope(base, project_id)
             with self._db() as db:

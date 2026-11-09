@@ -77,7 +77,9 @@ def test_scope_switch_isolation_and_restart(tmp_path):
     restored = ws.change({"action": "select", "id": a["project_id"]})
     assert restored["id"] == a["id"]
     assert raw.history == ["private alpha"]
-    inherited = sessions.change("new")
+    unbound = sessions.change("new")
+    assert unbound["project_id"] == "" and unbound["workspace"] == ws.default_workspace
+    inherited = sessions.change("new", project_id=a["project_id"])
     assert inherited["project_id"] == a["project_id"]
     other = tmp_path / "other"
     other.mkdir()

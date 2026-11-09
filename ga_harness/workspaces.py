@@ -71,8 +71,9 @@ class Workspaces:
         return self.directory(project["workspace"]) if project and project["workspace"] else self.default_workspace
 
     def root_scope(self, base, project_id=None):
-        """A new root chat keeps the project but never another chat's directory:
-        a project chat starts in the project's directory, an unbound one in the default."""
+        """A new root chat never takes another chat's directory: a chat created in a
+        project (explicit project_id) starts in the project's directory, an unbound
+        one in the default. Sessions.create passes project_id="" unless told otherwise."""
         pid = base["project_id"] if project_id is None else project_id
         project = next((p for p in self.projects() if p["id"] == pid), None) if pid else None
         return (self.project_workspace(project), pid) if project else (self.default_workspace, "")
