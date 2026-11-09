@@ -131,5 +131,9 @@ def test_sessions_unread_tracking(tmp_path):
     assert store.change("read_all")["id"] == second and not any(unread().values())
     # Pre-existing databases migrate with every chat read.
     with sqlite3.connect(path) as db:
+        # The old schema had neither read_at nor an index that references it.
+        db.execute("DROP INDEX session_listing")
         db.execute("ALTER TABLE sessions DROP COLUMN read_at")
     assert not any(r["unread"] for r in Sessions(agent(), path).listing())
+    with sqlite3.connect(path) as db:
+        assert "session_listing" in {r[1] for r in db.execute("PRAGMA index_list(sessions)")}
