@@ -46,6 +46,7 @@ function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (
   const canResolve = terminal && !task.resolved && (task.status !== 'done' || task.review === 'verified');
   return (
     <div className={`gah-cd-task ${task.status}${task.resolved ? ' resolved' : ''}`}>
+      <div className="gah-cd-row">
       <button type="button" className="gah-cd-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className={`gah-cd-dot ${task.status}`} />
         <span className="gah-cd-title" title={task.objective}>{task.title || task.id}</span>
@@ -58,6 +59,11 @@ function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (
         ) : null}
         {task.resolved ? <span className="gah-cd-tag">{T('\u5df2\u7ed3\u6848', 'Resolved')}</span> : null}
       </button>
+      <button type="button" className="gah-cd-enter" disabled={busy} onClick={() => enter(task)}
+        title={T('\u8fdb\u5165\u8be5\u5b50\u4efb\u52a1\u7684\u4f1a\u8bdd', 'Open this task\'s chat')} aria-label={T('\u8fdb\u5165\u4f1a\u8bdd', 'Open chat')}>
+        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M6 3h7v7M13 3L4 12" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      </div>
       {open ? (
         <div className="gah-cd-body">
           <div className="gah-cd-field"><b>{T('\u76ee\u6807', 'Objective')}</b><p>{task.objective}</p></div>

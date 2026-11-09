@@ -17,6 +17,16 @@
 .gah-cd-off:focus-visible{outline:2px solid var(--accent)}
 .gah-cd-task{border-radius:8px}
 .gah-cd-task.resolved{opacity:.55}
+.gah-cd-row{display:flex;align-items:center;gap:2px}
+
+.gah-cd-enter{all:unset;flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:6px;cursor:pointer;color:var(--muted,inherit)}
+
+.gah-cd-enter:hover:not(:disabled){background:color-mix(in srgb,var(--border) 45%,transparent);color:var(--accent)}
+
+.gah-cd-enter:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+.gah-cd-enter:disabled{opacity:.4;cursor:default}
+
 .gah-cd-head{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;cursor:pointer;border-radius:8px}
 .gah-cd-head:hover{background:color-mix(in srgb,var(--border) 45%,transparent)}
 .gah-cd-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}

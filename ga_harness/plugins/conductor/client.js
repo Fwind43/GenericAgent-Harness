@@ -34,13 +34,27 @@
     const terminal = task.status !== "running";
     const canResolve = terminal && !task.resolved && (task.status !== "done" || task.review === "verified");
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-cd-task ${task.status}${task.resolved ? " resolved" : ""}`, children: [
-      /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-cd-head", "aria-expanded": open, onClick: () => setOpen(!open), children: [
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-dot ${task.status}` }),
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-title", title: task.objective, children: task.title || task.id }),
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(STATUS, task.status) }),
-        task.review ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-tag review ${task.review}`, children: label(REVIEW, task.review) }) : null,
-        task.model || task.effort ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag model", title: sdk.T("子任务模型 / 推理强度", "Task model / reasoning effort"), children: [task.model, task.effort].filter(Boolean).join(" · ") }) : null,
-        task.resolved ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: sdk.T("已结案", "Resolved") }) : null
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-row", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-cd-head", "aria-expanded": open, onClick: () => setOpen(!open), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-dot ${task.status}` }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-title", title: task.objective, children: task.title || task.id }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(STATUS, task.status) }),
+          task.review ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-tag review ${task.review}`, children: label(REVIEW, task.review) }) : null,
+          task.model || task.effort ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag model", title: sdk.T("子任务模型 / 推理强度", "Task model / reasoning effort"), children: [task.model, task.effort].filter(Boolean).join(" · ") }) : null,
+          task.resolved ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: sdk.T("已结案", "Resolved") }) : null
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx(
+          "button",
+          {
+            type: "button",
+            className: "gah-cd-enter",
+            disabled: busy,
+            onClick: () => enter(task),
+            title: sdk.T("进入该子任务的会话", "Open this task's chat"),
+            "aria-label": sdk.T("进入会话", "Open chat"),
+            children: /* @__PURE__ */ jsxRuntime.jsx("svg", { viewBox: "0 0 16 16", width: "13", height: "13", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M6 3h7v7M13 3L4 12", stroke: "currentColor", strokeWidth: "1.6", fill: "none", strokeLinecap: "round", strokeLinejoin: "round" }) })
+          }
+        )
       ] }),
       open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
