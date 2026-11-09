@@ -592,6 +592,23 @@ class WebFrontend:
         except Exception:
             return 503, {"error": "package installation could not be started"}
 
+    def plugin_import(self, source, filename="", replace=False, subdir=None):
+        """Import a plugin from zip bytes or a git ``{"url", "ref"?}`` body; it stays disabled."""
+        if not self.plugins:
+            return 404, {"error": "plugin-manager is not enabled"}
+        # Cloning can take a while; never hold the frontend lock meanwhile.
+        with self.lock:
+            if self.running:
+                return 409, {"error": "wait for the running task to finish"}
+        try:
+            return 200, self.plugins.import_plugin(source, filename=filename, replace=replace, subdir=subdir)
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except RuntimeError as e:
+            return 409, {"error": str(e)}
+        except Exception:
+            return 503, {"error": "plugin import failed; check the log for details"}
+
     def model_config(self):
         if not self.models:
             return 404, {"error": "model-store is not enabled"}

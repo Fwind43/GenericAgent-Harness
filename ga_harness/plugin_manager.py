@@ -503,6 +503,46 @@ class PluginManager:
                     p.manifests[name] = m
         return self.catalog()
 
+    _import_lock = threading.Lock()
+
+    def import_plugin(self, source, filename="", replace=False, subdir=None):
+        """Install a user plugin from zip bytes or ``{"url", "ref", "subdir", "replace"}`` (git).
+
+        The plugin lands in the user directory and is rescanned but stays disabled.
+        Built-in names are refused; an existing user plugin is replaced only when it is disabled.
+        """
+        from . import plugin_import
+        if not isinstance(source, (bytes, bytearray, dict)):
+            raise ValueError("expected a zip archive or a git URL")
+        if not self._import_lock.acquire(blocking=False):
+            raise RuntimeError("another plugin import is in progress")
+        try:
+            items = {i["name"]: i for i in self.catalog()["items"]}
+            manifests = self.preferences.manifests
+            reserved = {n for n, m in manifests.items() if not user_plugin(m)} | PROTECTED
+            replaceable = {n for n, m in manifests.items()
+                           if user_plugin(m) and not items.get(n, {}).get("enabled")}
+            try:
+                result = plugin_import.install(source, user_plugin_dir(), reserved=reserved,
+                                               replaceable=replaceable, filename=filename,
+                                               replace=bool(replace), subdir=subdir or None)
+            except plugin_import.PluginImportError as e:
+                raise ValueError(str(e)) from None
+            except FileExistsError as e:
+                raise RuntimeError(str(e)) from None
+            if result["replaced"]:  # drop the cached old code so a later enable loads the new files
+                pkg = "ga_harness_ext_" + result["name"].replace("-", "_")
+                for mod in [k for k in sys.modules if k == pkg or k.startswith(pkg + ".")]:
+                    sys.modules.pop(mod, None)
+            old = manifests.get(result["name"])
+            # rescan only swaps manifests of hot-capable user plugins; others need a restart
+            result["restart_required"] = bool(result["replaced"] and old is not None
+                                              and not hot_capable(old, manifests))
+            catalog = self.rescan()
+            return {**catalog, "imported": result}
+        finally:
+            self._import_lock.release()
+
     def agent_control(self, body):
         """Small, revision-free surface for the agent: list / enable / disable / rescan.
 

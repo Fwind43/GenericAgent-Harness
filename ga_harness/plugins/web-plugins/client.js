@@ -154,6 +154,73 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       ] })
     ] });
   }
+  async function send(path, init) {
+    const response = await fetch(path, { method: "POST", ...init });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data && typeof data === "object" && "error" in data ? String(data.error) : `HTTP ${response.status}`);
+    if (!data || !data.imported) throw new Error("Invalid JSON response");
+    return data;
+  }
+  function ImportPlugin({ disabled, run, onError, onDone }) {
+    const [open, setOpen] = react.useState(false), [mode, setMode] = react.useState("zip");
+    const [file, setFile] = react.useState(null), [url, setUrl] = react.useState(""), [ref, setRef] = react.useState("");
+    const [subdir, setSubdir] = react.useState(""), [replace, setReplace] = react.useState(false);
+    const submit = (event) => {
+      event.preventDefault();
+      if (disabled) return;
+      if (mode === "zip" && !file) return onError(sdk.T("请选择 zip 文件", "Choose a zip file"));
+      if (mode === "git" && !url.trim()) return onError(sdk.T("请输入 Git 地址", "Enter a git URL"));
+      onError("");
+      void run(async () => {
+        let result;
+        if (mode === "zip" && file) {
+          const query = new URLSearchParams();
+          if (replace) query.set("replace", "1");
+          if (subdir.trim()) query.set("subdir", subdir.trim());
+          result = await send("/api/plugins/import" + (query.size ? "?" + query : ""), {
+            headers: { "Content-Type": "application/zip", "X-File-Name": encodeURIComponent(file.name) },
+            body: file
+          });
+        } else {
+          result = await send("/api/plugins/import", {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: url.trim(), ref: ref.trim() || void 0, subdir: subdir.trim() || void 0, replace })
+          });
+        }
+        setOpen(false);
+        setFile(null);
+        setUrl("");
+        setRef("");
+        setSubdir("");
+        setReplace(false);
+        onDone(result);
+      }, onError);
+    };
+    if (!open) return /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-import-toggle", disabled, onClick: () => setOpen(true), children: sdk.T("导入", "Import") });
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "plugin-import", onSubmit: submit, "aria-label": sdk.T("导入插件", "Import plugin"), children: [
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", children: ["zip", "git"].map((key) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", className: "plugin-filter", "aria-selected": mode === key, onClick: () => setMode(key), children: key === "zip" ? sdk.T("ZIP 文件", "ZIP file") : sdk.T("Git 地址", "Git URL") }, key)) }),
+      mode === "zip" ? /* @__PURE__ */ jsxRuntime.jsx("input", { type: "file", accept: ".zip,application/zip", disabled, onChange: (event) => {
+        var _a;
+        return setFile(((_a = event.target.files) == null ? void 0 : _a[0]) || null);
+      } }) : /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-row", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: url, placeholder: "https://github.com/owner/repo.git", "aria-label": sdk.T("Git 地址", "Git URL"), disabled, onChange: (event) => setUrl(event.target.value) }),
+        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: ref, placeholder: sdk.T("分支/标签（可选）", "Branch/tag (optional)"), "aria-label": sdk.T("分支/标签", "Branch/tag"), disabled, onChange: (event) => setRef(event.target.value) })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: subdir, placeholder: sdk.T("子目录（可选，包含多个插件时指定）", "Subdirectory (optional; when the source holds several plugins)"), "aria-label": sdk.T("子目录", "Subdirectory"), disabled, onChange: (event) => setSubdir(event.target.value) }),
+      /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-import-check", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", checked: replace, disabled, onChange: (event) => setReplace(event.target.checked) }),
+        sdk.T("覆盖同名的已停用用户插件", "Replace a disabled user plugin with the same name")
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", children: sdk.T("仅导入可信来源的插件：插件代码以当前用户权限运行。导入后默认未启用。", "Only import plugins you trust: plugin code runs with your user permissions. Imported plugins start disabled.") }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-actions", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("导入", "Import") }),
+        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => {
+          setOpen(false);
+          onError("");
+        }, children: sdk.T("取消", "Cancel") })
+      ] })
+    ] });
+  }
   function PluginManager({ api }) {
     const { state, changing } = sdk.useHost();
     const { busy, working, run } = sdk.useOperation(api, true);
@@ -242,6 +309,18 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         setConfig(result.catalog);
       }, setError);
     };
+    const imported = (result) => {
+      setConfig(result);
+      const { name, replaced, restart_required } = result.imported;
+      api.notice((replaced ? sdk.T("已替换 ", "Replaced ") : sdk.T("已导入 ", "Imported ")) + name + (restart_required ? sdk.T("；重启后生效", "; applies after restart") : sdk.T("，默认未启用", "; it starts disabled")));
+      if (result.items.some((plugin) => plugin.name === name)) {
+        setEditing(name);
+        requestAnimationFrame(() => {
+          var _a;
+          return (_a = back.current) == null ? void 0 : _a.focus();
+        });
+      }
+    };
     return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("插件", "Plugins"), icon: "puzzle", order: 30, className: "gah-plugin-dialog", onOpen: load, children: [
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "dialog-head", children: /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("插件管理", "Plugins") }) }),
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
@@ -250,7 +329,8 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改保存到本地；支持热插拔的插件立即生效，其余下次启动生效。", ". Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.") : "" }),
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
             /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") })
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") }),
+            /* @__PURE__ */ jsxRuntime.jsx(ImportPlugin, { disabled: working || changing || state.running, run, onError: setError, onDone: imported })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-categories", role: "tablist", "aria-label": sdk.T("按分类筛选", "Filter by category"), children: [["all", sdk.T("全部分类", "All categories")], ...present].map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-category", "data-category": key, "aria-selected": category === key, onClick: () => setCategory(key), children: [
             label,

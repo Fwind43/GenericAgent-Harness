@@ -430,6 +430,25 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": str(e)})
         self._json(200, {"ok": True, "file": info})
 
+    def _plugin_import_zip(self, n):
+        """Raw zip body; name in X-File-Name, options in the query (replace=1, subdir=...)."""
+        from urllib.parse import unquote
+        from ga_harness.plugin_import import MAX_ZIP
+        if n > MAX_ZIP:
+            self.close_connection = True
+            return self._json(413, {"error": f"archive exceeds {MAX_ZIP >> 20} MB"})
+        if n <= 0:
+            return self._json(400, {"error": "empty archive"})
+        data = self.rfile.read(n)
+        if len(data) != n:
+            self.close_connection = True
+            return self._json(400, {"error": "incomplete upload"})
+        q = parse_qs(urlsplit(self.path).query)
+        replace = (q.get("replace") or [""])[0] in ("1", "true", "yes")
+        subdir = (q.get("subdir") or [""])[0] or None
+        name = unquote(self.headers.get("X-File-Name") or "")
+        self._json(*self.frontend.plugin_import(data, filename=name, replace=replace, subdir=subdir))
+
     def do_POST(self):
         path = self.path.split("?", 1)[0]
         if not self._same_origin():
@@ -442,6 +461,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "invalid content length"})
         if path == "/api/upload":
             return self._upload(n)
+        if path == "/api/plugins/import" and not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return self._plugin_import_zip(n)
         if n < 0 or n > MAX_BODY:
             return self._json(413, {"error": "body too large"})
         raw = self.rfile.read(n) if n else b""
@@ -458,6 +479,10 @@ class _Handler(BaseHTTPRequestHandler):
                                           attachments=body.get("attachments")))
         elif path == "/api/sessions":
             self._json(*self.frontend.session_action(body))
+        elif path == "/api/plugins/import":
+            self._json(*self.frontend.plugin_import(
+                {k: body[k] for k in ("url", "ref", "subdir") if body.get(k)},
+                replace=body.get("replace") is True, subdir=body.get("subdir") or None))
         elif path == "/api/plugins":
             self._json(*self.frontend.plugin_action(body))
         elif path == "/api/effort":
