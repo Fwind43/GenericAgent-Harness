@@ -73,6 +73,9 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   with `conductor_instruct`, stop obsolete ones with `conductor_cancel`, dispatch
   new ones as needed, and say what you changed.
 - Report to the user only verified results; state clearly what is unverified.
+- Tasks that edit the same repository in parallel should use `isolate: true`; each
+  then works on its own branch `conductor/<task id>`. After review, merge the branch
+  yourself (or dispatch a merge task) and resolve with `remove_worktree: true`.
 """
 
 WORKER_PROMPT = """
@@ -121,7 +124,14 @@ TOOLS = {
         "conductor_dispatch",
         "Start a child task in its own session. The objective must be self-contained.",
         {"objective": {"type": "string", "description": "Complete task brief: context, scope, deliverable, verification."},
-         "title": {"type": "string", "description": "Short title (optional)."}, **MODEL},
+         "title": {"type": "string", "description": "Short title (optional)."},
+         "workspace": {"type": "string", "description": "Absolute directory the child works in (optional; "
+                                                        "defaults to your own workspace)."},
+         "isolate": {"type": "boolean", "description": "Run the child in its own git worktree on a new branch "
+                                                       "conductor/<task id>, created from the workspace's current HEAD "
+                                                       "(the workspace must be inside a git repository). Use for tasks "
+                                                       "that edit files in parallel; merge the branch after review."},
+         **MODEL},
         ("objective",)), "dispatch"),
     "conductor_collect": (_tool(
         "conductor_collect",
@@ -183,7 +193,9 @@ TOOLS = {
         ("policy",)), "set_policy"),
     "conductor_resolve": (_tool(
         "conductor_resolve", "Close reviewed task(s) (task_id or task_ids).",
-        {**TASK_ID, **TASK_IDS}), "resolve"),
+        {**TASK_ID, **TASK_IDS,
+         "remove_worktree": {"type": "boolean", "description": "Also delete the worktree directory of isolated "
+                                                               "task(s); the branch is kept for merging."}}), "resolve"),
 }
 
 

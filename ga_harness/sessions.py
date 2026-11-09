@@ -341,9 +341,10 @@ class Sessions:
             base = self.get(parent_id, light=True) if parent_id else self.current(light=True)
             if title is not None and (not isinstance(title, str) or not title.strip() or len(title.strip()) > 120):
                 raise ValueError("title must contain 1-120 characters")
-            if parent_id and ((workspace is not None and workspace != base["workspace"]) or
-                              (project_id is not None and project_id != base["project_id"])):
-                raise ValueError("a child must inherit its parent's workspace and project")
+            # A child stays in its parent's project; it may run in its own working
+            # directory (e.g. a conductor task in a git worktree), validated by the caller.
+            if parent_id and project_id is not None and project_id != base["project_id"]:
+                raise ValueError("a child must inherit its parent's project")
             if not parent_id and workspace is None and self.root_scope:
                 workspace, project_id = self.root_scope(base, project_id)
             with self._db() as db:

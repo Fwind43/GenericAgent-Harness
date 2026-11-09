@@ -22,6 +22,7 @@ State is written through to ``conductor.json`` beside the session database.
 import json
 import logging
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -53,6 +54,71 @@ WAKE_COALESCE = 0.3  # seconds to gather children finishing together into one wa
 def _store_path(sessions):
     base = getattr(sessions, "path", None)
     return Path(base).with_name("conductor.json") if base else HERE / "conductor.json"
+
+
+def _directory(value):
+    """An existing absolute directory, resolved (same rule as the workspaces plugin)."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("workspace must be an existing absolute directory")
+    path = Path(value.strip()).expanduser()
+    if not path.is_absolute() or not path.is_dir():
+        raise ValueError("workspace must be an existing absolute directory on the server")
+    return str(path.resolve())
+
+
+def _git(cwd, *args, timeout=60):
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, timeout=timeout,
+                          creationflags=flags, stdin=subprocess.DEVNULL)
+    out = done.stdout.decode("utf-8", "replace").strip()
+    if done.returncode:
+        err = done.stderr.decode("utf-8", "replace").strip() or out
+        raise RuntimeError(f"git {args[0]} failed: {err[:500]}")
+    return out
+
+
+def _add_worktree(source, root, task_id):
+    """Check out a fresh branch of the repository at `source` into its own directory.
+
+    Returns (working directory, branch, repository top, base commit, worktree root). The worktree
+    starts from the source's HEAD; uncommitted changes in the source are not copied.
+    """
+    try:
+        top = _git(source, "rev-parse", "--show-toplevel")
+    except (OSError, RuntimeError) as error:
+        raise ValueError(f"isolate needs a git repository: {source} ({error})") from None
+    top = str(Path(top).resolve())
+    base = _git(top, "rev-parse", "HEAD")
+    branch = f"conductor/{task_id}"
+    target = Path(root) / task_id
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _git(top, "worktree", "add", "-b", branch, str(target), base, timeout=300)
+    # Keep the task in the same subdirectory of the repository it was asked to work in.
+    rel = Path(source).resolve().relative_to(top) if Path(source).resolve() != Path(top) else Path()
+    workdir = target / rel
+    return str(workdir if workdir.is_dir() else target), branch, top, base, str(target)
+
+
+def _remove_worktree(task):
+    """Remove a task's worktree directory; the branch (and its commits) is kept."""
+    path = task.get("worktree")
+    if not path:
+        return
+    _git(task.get("repo") or path, "worktree", "remove", "--force", path, timeout=120)
+    task["worktree_removed"] = True
+
+
+def _worktree_changes(task):
+    """One-line `git status` / commit count of a task's worktree (best effort)."""
+    path = task.get("worktree")
+    if not path or task.get("worktree_removed") or not Path(path).is_dir():
+        return ""
+    try:
+        commits = _git(path, "rev-list", "--count", f"{task['base']}..HEAD", timeout=20)
+        dirty = _git(path, "status", "--porcelain", timeout=20).splitlines()
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        return ""
+    return f"{commits} new commit(s), {len(dirty)} uncommitted change(s)"
 
 
 def _message_text(message):
@@ -157,7 +223,13 @@ def apply(ctx, config):
     def _public(task, full=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
-                                        "model", "model_key", "effort")}
+                                        "model", "model_key", "effort", "workspace")}
+        if task.get("branch"):
+            out["branch"] = task["branch"]
+            out["worktree"] = None if task.get("worktree_removed") else task.get("worktree")
+            changes = _worktree_changes(task) if full and task.get("status") in TERMINAL else ""
+            if changes:
+                out["changes"] = changes
         out["objective"] = task["objective"] if full else _clip(task["objective"], 300)
         if task.get("status") in TERMINAL:
             out["result"] = task.get("result", "") if full else _clip(task.get("result", ""))
@@ -310,19 +382,49 @@ def apply(ctx, config):
         objective = _text(body, "objective")
         title = _text(body, "title", required=False, limit=100) or objective.splitlines()[0][:60]
         model, effort = _requested(body)
+        workspace, isolate = body.get("workspace"), body.get("isolate", False)
+        if not isinstance(isolate, bool):
+            raise ValueError("isolate must be true or false")
+        if workspace is not None:
+            workspace = _directory(workspace)
+        task_id = "t" + uuid.uuid4().hex[:8]
+        worktree = None
+        if isolate:
+            source = workspace or sessions.get(parent, light=True).get("workspace") or ""
+            if not source:
+                raise ValueError("isolate needs a workspace; pass one explicitly")
+            with lock:  # cheap pre-check so a refused dispatch does not create a worktree
+                if _counts(parent)["open"] >= MAX_OPEN:
+                    raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
+            worktree = _add_worktree(_directory(source), _store_path(sessions).with_name("conductor-worktrees"),
+                                     task_id)
+            workspace = worktree[0]
         failed = None
+        try:
+            with lock:
+                counts = _counts(parent)
+                if counts["total"] >= MAX_TOTAL:
+                    raise RuntimeError(f"task limit reached ({MAX_TOTAL} per conductor session)")
+                if counts["open"] >= MAX_OPEN:
+                    raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
+                if counts["running"] >= _max_running(parent):
+                    raise RuntimeError(f"{_max_running(parent)} tasks are already running (the running limit); end your turn and "
+                                       "dispatch more after you are woken by a finished task")
+                child = sessions.create(parent_id=parent, title=title, workspace=workspace)
+        except Exception:
+            if worktree:
+                try:
+                    _remove_worktree({"worktree": worktree[4], "repo": worktree[2]})
+                    _git(worktree[2], "branch", "-D", worktree[1])
+                except Exception:
+                    log.warning("conductor: could not clean up worktree %s", worktree[0], exc_info=True)
+            raise
         with lock:
-            counts = _counts(parent)
-            if counts["total"] >= MAX_TOTAL:
-                raise RuntimeError(f"task limit reached ({MAX_TOTAL} per conductor session)")
-            if counts["open"] >= MAX_OPEN:
-                raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
-            if counts["running"] >= _max_running(parent):
-                raise RuntimeError(f"{_max_running(parent)} tasks are already running (the running limit); end your turn and "
-                                   "dispatch more after you are woken by a finished task")
-            child = sessions.create(parent_id=parent, title=title)
-            task = {"id": "t" + uuid.uuid4().hex[:8], "parent": parent, "child": child["id"],
-                    "title": title, "objective": objective, "created": time.time(), "runs": 0}
+            task = {"id": task_id, "parent": parent, "child": child["id"],
+                    "title": title, "objective": objective, "created": time.time(), "runs": 0,
+                    "workspace": child.get("workspace") or workspace or ""}
+            if worktree:
+                task.update(worktree=worktree[4], branch=worktree[1], repo=worktree[2], base=worktree[3])
             tasks[task["id"]] = task
             try:
                 _apply_selection(task, *_selection(parent, model, effort))
@@ -480,8 +582,25 @@ def apply(ctx, config):
                 except RuntimeError as error:
                     raise RuntimeError(f"task {task['id']}: {error}") from None
             counts = _counts(parent)
+        removed, kept = [], []
+        if body.get("remove_worktree"):
+            for task in owned:
+                if not task.get("worktree") or task.get("worktree_removed"):
+                    continue
+                try:
+                    _remove_worktree(task)
+                    removed.append(task["id"])
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    log.warning("conductor: could not remove worktree of %s: %s", task["id"], error)
+                    kept.append(task["id"])
+            if removed:
+                with lock:
+                    store.save()
         _publish()
-        return {"resolved": [t["id"] for t in owned], **counts}
+        out = {"resolved": [t["id"] for t in owned], **counts}
+        if removed or kept:
+            out.update(worktrees_removed=removed, worktrees_kept=kept)
+        return out
 
     def toggle(body):
         sid = _sid(body)
@@ -663,6 +782,9 @@ def apply(ctx, config):
                 body = _clip(t.get("result", ""), WAKE_RESULT_LIMIT).strip() or "(no result text)"
                 if t.get("error"):
                     body = f"error: {t['error']}\n{body}"
+                if t.get("branch"):
+                    changes = _worktree_changes(t)
+                    body = f"branch {t['branch']}" + (f" ({changes})" if changes else "") + f"\n{body}"
                 # Quote the body so result text can never look like a task line to the UI.
                 details.append(f"=== {t['id']} result ===\n" + "\n".join("> " + x for x in body.splitlines()))
         text = ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
