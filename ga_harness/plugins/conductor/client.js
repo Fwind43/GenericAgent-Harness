@@ -29,7 +29,7 @@
     };
     return { data, sid, busy, run };
   }
-  function TaskRow({ task, busy, act }) {
+  function TaskRow({ task, busy, act, enter }) {
     const [open, setOpen] = react.useState(false);
     const terminal = task.status !== "running";
     const canResolve = terminal && !task.resolved && (task.status !== "done" || task.review === "verified");
@@ -59,10 +59,21 @@
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("验收依据", "Review basis") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: task.basis })
         ] }) : null,
-        !terminal || canResolve ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-actions", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-actions", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "button",
+            {
+              type: "button",
+              className: "primary",
+              disabled: busy,
+              onClick: () => enter(task),
+              title: sdk.T("进入该子任务的会话", "Open this task's chat"),
+              children: sdk.T("进入会话", "Open chat")
+            }
+          ),
           !terminal ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: busy, onClick: () => act("cancel", task), children: sdk.T("取消", "Cancel") }) : null,
           canResolve ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", disabled: busy, onClick: () => act("resolve", task), children: sdk.T("结案", "Resolve") }) : null
-        ] }) : null
+        ] })
       ] }) : null
     ] });
   }
@@ -126,6 +137,15 @@
     if (!on && !tasks.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
+    const enter = async (task) => {
+      setOpen(false);
+      try {
+        api.setState(await api.host.post("/api/sessions", { action: "select", id: task.child }), true);
+        sdk.pages.home();
+      } catch (error) {
+        api.notice(String((error == null ? void 0 : error.message) || error));
+      }
+    };
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", ref: box, children: [
       /* @__PURE__ */ jsxRuntime.jsxs(
         "button",
@@ -152,7 +172,7 @@
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
           on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
         ] }),
-        tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }) }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
+        tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
       ] }) : null
     ] });
   }

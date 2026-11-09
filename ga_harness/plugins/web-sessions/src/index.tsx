@@ -166,10 +166,17 @@ export function Sessions({ api }: { api: PluginAPI }) {
     if (s.project_id && st && projectStatus.get(s.project_id) !== 'running') projectStatus.set(s.project_id, st);
   }
   const q = query.trim().toLowerCase();
+  // Conductor task chats are opened from the Conductor panel, so the sidebar hides them unless searching
+  // or they lead to the open chat (which keeps the way back to the conductor visible).
+  const conductorKids = (state as unknown as { conductor?: { children?: Record<string, unknown> } }).conductor?.children ?? {};
+  const openPath = new Set<string>(state.session_id ? [state.session_id] : []);
+  { const all = new Map((state.sessions ?? []).map(s => [s.id, s] as const));
+    for (let s = all.get(state.session_id ?? ''); s?.parent_id && !openPath.has(s.parent_id); s = all.get(s.parent_id)) openPath.add(s.parent_id); }
+  const tucked = (s: Session) => !q && Object.prototype.hasOwnProperty.call(conductorKids, s.id) && !openPath.has(s.id);
   const known = new Set(projects.map(p => p.id)), byProject = new Map<string, Session[]>(), recentAll: Session[] = [];
   const projectName = new Map(projects.map(p => [p.id, p.name]));
   for (const s of state.sessions ?? []) {
-    if (q && !label(s).toLowerCase().includes(q) && !(s.workspace ?? '').toLowerCase().includes(q)) continue;
+    if (tucked(s) || (q && !label(s).toLowerCase().includes(q) && !(s.workspace ?? '').toLowerCase().includes(q))) continue;
     recentAll.push(s);
     if (s.project_id && known.has(s.project_id)) byProject.set(s.project_id, [...(byProject.get(s.project_id) ?? []), s]);
   }
@@ -317,7 +324,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
       {scope ? <>
         {shownSections.map(key => sections[key]())}
         {!shownSections.length && <div className="gah-sess-empty">{T('\u6240\u6709\u5206\u533a\u5df2\u9690\u85cf', 'All sections are hidden')} <button type="button" className="gah-sess-more" onClick={() => updateLayout(old => ({ ...old, sections: Object.fromEntries(SECTION_KEYS.map(k => [k, { ...old.sections[k], show: true }])) as Layout['sections'] }))}>{T('\u5168\u90e8\u663e\u793a', 'Show all')}</button></div>}
-      </> : <div className="gah-sess-items flat" role="list">{pinFirst((state.sessions ?? []).filter(s => !q || label(s).toLowerCase().includes(q))).map(s => row(s, 0))}</div>}
+      </> : <div className="gah-sess-items flat" role="list">{pinFirst((state.sessions ?? []).filter(s => !tucked(s) && (!q || label(s).toLowerCase().includes(q)))).map(s => row(s, 0))}</div>}
     </div></div></PluginSlot>;
 }
 

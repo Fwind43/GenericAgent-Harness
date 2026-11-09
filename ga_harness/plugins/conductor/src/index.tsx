@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useHost, T, defineReact, type PluginAPI } from '@gah/sdk';
+import { useHost, T, defineReact, pages, type HostState, type PluginAPI } from '@gah/sdk';
 
 type Task = {
   id: string; title: string; status: string; review?: string | null; basis?: string | null;
@@ -40,7 +40,7 @@ function useConductor(api: PluginAPI) {
   return { data, sid, busy, run };
 }
 
-function TaskRow({ task, busy, act }: { task: Task; busy: boolean; act: (path: string, task: Task) => void }) {
+function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (path: string, task: Task) => void; enter: (task: Task) => void }) {
   const [open, setOpen] = useState(false);
   const terminal = task.status !== 'running';
   const canResolve = terminal && !task.resolved && (task.status !== 'done' || task.review === 'verified');
@@ -64,12 +64,12 @@ function TaskRow({ task, busy, act }: { task: Task; busy: boolean; act: (path: s
           {task.result ? <div className="gah-cd-field"><b>{T('\u7ed3\u679c', 'Result')}</b><p>{task.result}</p></div> : null}
           {task.error ? <div className="gah-cd-field error"><b>{T('\u9519\u8bef', 'Error')}</b><p>{task.error}</p></div> : null}
           {task.basis ? <div className="gah-cd-field"><b>{T('\u9a8c\u6536\u4f9d\u636e', 'Review basis')}</b><p>{task.basis}</p></div> : null}
-          {!terminal || canResolve ? (
-            <div className="gah-cd-actions">
-              {!terminal ? <button type="button" className="danger" disabled={busy} onClick={() => act('cancel', task)}>{T('\u53d6\u6d88', 'Cancel')}</button> : null}
-              {canResolve ? <button type="button" disabled={busy} onClick={() => act('resolve', task)}>{T('\u7ed3\u6848', 'Resolve')}</button> : null}
-            </div>
-          ) : null}
+          <div className="gah-cd-actions">
+            <button type="button" className="primary" disabled={busy} onClick={() => enter(task)}
+              title={T('\u8fdb\u5165\u8be5\u5b50\u4efb\u52a1\u7684\u4f1a\u8bdd', 'Open this task\'s chat')}>{T('\u8fdb\u5165\u4f1a\u8bdd', 'Open chat')}</button>
+            {!terminal ? <button type="button" className="danger" disabled={busy} onClick={() => act('cancel', task)}>{T('\u53d6\u6d88', 'Cancel')}</button> : null}
+            {canResolve ? <button type="button" disabled={busy} onClick={() => act('resolve', task)}>{T('\u7ed3\u6848', 'Resolve')}</button> : null}
+          </div>
         </div>
       ) : null}
     </div>
@@ -124,6 +124,12 @@ function Panel({ api }: { api: PluginAPI }) {
   if (!on && !tasks.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
+  // Task chats are hidden from the sidebar; this is their entry point.
+  const enter = async (task: Task) => {
+    setOpen(false);
+    try { api.setState(await api.host.post<HostState>('/api/sessions', { action: 'select', id: task.child }), true); pages.home(); }
+    catch (error) { api.notice(String((error as Error)?.message || error)); }
+  };
   return (
     <div className="gah-cd-anchor" ref={box}>
       <button type="button" className={`gah-cd-chip${on ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} aria-haspopup="dialog"
@@ -144,7 +150,7 @@ function Panel({ api }: { api: PluginAPI }) {
             {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
           </div>
           {tasks.length ? <div className="gah-cd-list">{tasks.map(task => (
-            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} />
+            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} />
           ))}</div> : <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>}
         </div>
       ) : null}

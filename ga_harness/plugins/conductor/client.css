@@ -34,6 +34,8 @@
 .gah-cd-field.error p{color:#d24b4b}
 .gah-cd-actions{display:flex;gap:6px}
 .gah-cd-actions button{font-size:12px;padding:3px 10px;border-radius:6px}
+.gah-cd-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.gah-cd-actions button.primary:hover:not(:disabled){filter:brightness(1.08)}
 .gah-cd-pill{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:0;border-radius:15px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap}
 .gah-cd-pill:hover:not(:disabled){background:var(--surface-muted);color:var(--text)}
 .gah-cd-pill.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
