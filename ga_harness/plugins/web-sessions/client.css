@@ -44,6 +44,12 @@
 @keyframes gah-sess-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.gah-sess-status{animation:none;border-color:var(--accent,#2f80ed);border-right-color:transparent}.gah-sess-status.cancelling{border-color:var(--muted);border-right-color:transparent}}
 .gah-group-toggle .gah-sess-status{margin-right:0}
+/* Sub-chats running (parent itself idle): a dashed, slower ring so it reads as delegated work, not the chat's own run. */
+.gah-sess-status.sub{border-style:dashed;border-color:color-mix(in srgb,var(--accent,#2f80ed) 55%,transparent);animation-duration:2.4s}
+.gah-sess-status.sub.cancelling{border-color:var(--muted);animation:none}
+@media (prefers-reduced-motion:reduce){.gah-sess-status.sub{animation:none}}
+.gah-sess-kids.busy{color:var(--accent,#2f80ed)}
+.gah-sess-kids.busy.cancelling{color:var(--muted)}
 /* Unread: new content since the chat was last seen; hidden while running (the spinner wins).
    A solid dot with a soft halo sits at the far right, after the relative age. */
 .gah-sess-unread{flex:none;order:2;width:7px;height:7px;margin:0 5px 0 0;border-radius:50%;background:var(--accent,#2f80ed);

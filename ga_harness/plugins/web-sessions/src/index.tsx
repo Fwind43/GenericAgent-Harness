@@ -177,24 +177,37 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const byId = new Map((state.sessions ?? []).map(s => [s.id, s] as const)), lineage = new Set<string>();
   for (let s = byId.get(state.session_id ?? ''); s?.parent_id && !lineage.has(s.parent_id); s = byId.get(s.parent_id)) lineage.add(s.parent_id);
   const kidsOpen = (id: string) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
+  // Ancestors of a running sub-chat (e.g. a Conductor waiting on its tasks) get a separate, lighter indicator with the count.
+  const subActivity = new Map<string, { n: number; status: string }>();
+  for (const [id, st] of activity) {
+    const seen = new Set([id]);
+    for (let s = byId.get(id); s?.parent_id && !seen.has(s.parent_id); s = byId.get(s.parent_id)) {
+      seen.add(s.parent_id);
+      const cur = subActivity.get(s.parent_id) ?? { n: 0, status: st };
+      cur.n += 1; if (st === 'running') cur.status = 'running';
+      subActivity.set(s.parent_id, cur);
+    }
+  }
   const row = (session: Session, depth: number, home?: string, recent = false, kids = 0) => {
     const kidsShown = kids > 0 && kidsOpen(session.id);
     const menuKey = `s:${session.id}:${recent ? 'r' : 'p'}:${home ?? ''}`, menuOpen = menu === menuKey;
     const pick = (fn: () => void) => () => { setMenu(''); fn(); };
     // Rows are tagged with the project name only (Recent; inside a project group it is implied); the workspace lives in the tooltip.
     const project = session.project_id ? projectName.get(session.project_id) : undefined;
-    const status = activity.get(session.id), tag = recent ? project ?? '' : '';
+    const status = activity.get(session.id), sub = status ? undefined : subActivity.get(session.id), tag = recent ? project ?? '' : '';
+    const subLabel = sub && (sub.status === 'cancelling' ? T(`\u5b50\u4efb\u52a1\u6b63\u5728\u505c\u6b62 (${sub.n})`, `Sub-chats stopping (${sub.n})`) : T(`\u5b50\u4efb\u52a1\u8fd0\u884c\u4e2d (${sub.n})`, `Sub-chats running (${sub.n})`));
     const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
     // The open chat shows its draft in the composer; other rows flag unsent text or attachments.
     const draft = session.id !== state.session_id && drafts.has(session.id);
-    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
+    return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${sub ? ' sub-running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {draft && <span className="gah-sess-draft" title={T('\u6709\u672a\u53d1\u9001\u7684\u8349\u7a3f', 'Unsent draft')}>{T('\u8349\u7a3f', 'Draft')}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
-        {!status && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
-        {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}</button>
-      {kids > 0 && <button type="button" className={`gah-sess-kids${kidsShown ? ' open' : ''}`} aria-expanded={kidsShown} disabled={!!q}
+        {!status && !sub && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
+        {status && <span className={`gah-sess-status ${status}`} role="status" title={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} aria-label={status === 'cancelling' ? T('\u6b63\u5728\u505c\u6b62', 'Stopping') : T('\u8fd0\u884c\u4e2d', 'Running')} />}
+        {sub && <span className={`gah-sess-status sub ${sub.status}`} role="status" title={subLabel} aria-label={subLabel} />}</button>
+      {kids > 0 && <button type="button" className={`gah-sess-kids${kidsShown ? ' open' : ''}${sub ? ` busy ${sub.status}` : ''}`} aria-expanded={kidsShown} disabled={!!q}
         title={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
         aria-label={kidsShown ? T('\u6536\u8d77\u5b50\u4f1a\u8bdd', 'Collapse sub-chats') : T('\u5c55\u5f00\u5b50\u4f1a\u8bdd', 'Expand sub-chats')}
         onClick={() => toggle(`c:${session.id}`, kidsShown)}><span className="gah-sess-kids-n">{kids}</span><span className="gah-sess-caret" aria-hidden="true" /></button>}

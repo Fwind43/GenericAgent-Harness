@@ -207,6 +207,17 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const byId = new Map((state.sessions ?? []).map((s) => [s.id, s])), lineage = /* @__PURE__ */ new Set();
     for (let s = byId.get(state.session_id ?? ""); (s == null ? void 0 : s.parent_id) && !lineage.has(s.parent_id); s = byId.get(s.parent_id)) lineage.add(s.parent_id);
     const kidsOpen = (id) => !!q || (toggled[`c:${id}`] ?? lineage.has(id));
+    const subActivity = /* @__PURE__ */ new Map();
+    for (const [id, st] of activity) {
+      const seen = /* @__PURE__ */ new Set([id]);
+      for (let s = byId.get(id); (s == null ? void 0 : s.parent_id) && !seen.has(s.parent_id); s = byId.get(s.parent_id)) {
+        seen.add(s.parent_id);
+        const cur = subActivity.get(s.parent_id) ?? { n: 0, status: st };
+        cur.n += 1;
+        if (st === "running") cur.status = "running";
+        subActivity.set(s.parent_id, cur);
+      }
+    }
     const row = (session, depth, home, recent = false, kids = 0) => {
       const kidsShown = kids > 0 && kidsOpen(session.id);
       const menuKey = `s:${session.id}:${recent ? "r" : "p"}:${home ?? ""}`, menuOpen = menu === menuKey;
@@ -215,24 +226,26 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         fn();
       };
       const project = session.project_id ? projectName.get(session.project_id) : void 0;
-      const status = activity.get(session.id), tag = recent ? project ?? "" : "";
+      const status = activity.get(session.id), sub = status ? void 0 : subActivity.get(session.id), tag = recent ? project ?? "" : "";
+      const subLabel = sub && (sub.status === "cancelling" ? sdk.T(`子任务正在停止 (${sub.n})`, `Sub-chats stopping (${sub.n})`) : sdk.T(`子任务运行中 (${sub.n})`, `Sub-chats running (${sub.n})`));
       const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
       const draft = session.id !== state.session_id && drafts.has(session.id);
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${sub ? " sub-running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-title", children: depth ? label(session).replace(/^\u25b8\s*/, "") : label(session) }),
           tag && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-tag", children: tag }),
           draft && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-draft", title: sdk.T("有未发送的草稿", "Unsent draft"), children: sdk.T("草稿", "Draft") }),
           unread && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-unread", role: "status", title: sdk.T("未读", "Unread"), "aria-label": sdk.T("未读", "Unread") }),
-          !status && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
-          status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") })
+          !status && !sub && session.updated ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-age", children: ago(session.updated) }) : null,
+          status && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status ${status}`, role: "status", title: status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running"), "aria-label": status === "cancelling" ? sdk.T("正在停止", "Stopping") : sdk.T("运行中", "Running") }),
+          sub && /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sess-status sub ${sub.status}`, role: "status", title: subLabel, "aria-label": subLabel })
         ] }),
         kids > 0 && /* @__PURE__ */ jsxRuntime.jsxs(
           "button",
           {
             type: "button",
-            className: `gah-sess-kids${kidsShown ? " open" : ""}`,
+            className: `gah-sess-kids${kidsShown ? " open" : ""}${sub ? ` busy ${sub.status}` : ""}`,
             "aria-expanded": kidsShown,
             disabled: !!q,
             title: kidsShown ? sdk.T("收起子会话", "Collapse sub-chats") : sdk.T("展开子会话", "Expand sub-chats"),
