@@ -196,28 +196,69 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         onDone(result);
       }, onError);
     };
+    const [dragging, setDragging] = react.useState(false);
+    const pick = (next) => {
+      if (next) {
+        setFile(next);
+        onError("");
+      }
+    };
     if (!open) return /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-import-toggle", disabled, onClick: () => setOpen(true), children: sdk.T("导入", "Import") });
-    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "plugin-import", onSubmit: submit, "aria-label": sdk.T("导入插件", "Import plugin"), children: [
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", children: ["zip", "git"].map((key) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", className: "plugin-filter", "aria-selected": mode === key, onClick: () => setMode(key), children: key === "zip" ? sdk.T("ZIP 文件", "ZIP file") : sdk.T("Git 地址", "Git URL") }, key)) }),
-      mode === "zip" ? /* @__PURE__ */ jsxRuntime.jsx("input", { type: "file", accept: ".zip,application/zip", disabled, onChange: (event) => {
-        var _a;
-        return setFile(((_a = event.target.files) == null ? void 0 : _a[0]) || null);
-      } }) : /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-row", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: url, placeholder: "https://github.com/owner/repo.git", "aria-label": sdk.T("Git 地址", "Git URL"), disabled, onChange: (event) => setUrl(event.target.value) }),
-        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: ref, placeholder: sdk.T("分支/标签（可选）", "Branch/tag (optional)"), "aria-label": sdk.T("分支/标签", "Branch/tag"), disabled, onChange: (event) => setRef(event.target.value) })
-      ] }),
-      /* @__PURE__ */ jsxRuntime.jsx("input", { type: "text", value: subdir, placeholder: sdk.T("子目录（可选，包含多个插件时指定）", "Subdirectory (optional; when the source holds several plugins)"), "aria-label": sdk.T("子目录", "Subdirectory"), disabled, onChange: (event) => setSubdir(event.target.value) }),
-      /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-import-check", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", checked: replace, disabled, onChange: (event) => setReplace(event.target.checked) }),
-        sdk.T("覆盖同名的已停用用户插件", "Replace a disabled user plugin with the same name")
-      ] }),
-      /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", children: sdk.T("仅导入可信来源的插件：插件代码以当前用户权限运行。导入后默认未启用。", "Only import plugins you trust: plugin code runs with your user permissions. Imported plugins start disabled.") }),
-      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-actions", children: [
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled, children: sdk.T("导入", "Import") }),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => {
-          setOpen(false);
-          onError("");
-        }, children: sdk.T("取消", "Cancel") })
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-import-toggle", "aria-pressed": "true", disabled, onClick: () => {
+        setOpen(false);
+        onError("");
+      }, children: sdk.T("导入", "Import") }),
+      /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "plugin-import", onSubmit: submit, "aria-label": sdk.T("导入插件", "Import plugin"), children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-head", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("strong", { children: sdk.T("导入插件", "Import plugin") }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-import-modes", role: "tablist", children: ["zip", "git"].map((key) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": mode === key, disabled, onClick: () => setMode(key), children: key === "zip" ? sdk.T("ZIP 文件", "ZIP file") : sdk.T("Git 地址", "Git URL") }, key)) })
+        ] }),
+        mode === "zip" ? /* @__PURE__ */ jsxRuntime.jsxs(
+          "label",
+          {
+            className: "plugin-import-drop",
+            "data-dragging": dragging || void 0,
+            "data-filled": file ? true : void 0,
+            onDragOver: (event) => {
+              event.preventDefault();
+              setDragging(true);
+            },
+            onDragLeave: () => setDragging(false),
+            onDrop: (event) => {
+              var _a;
+              event.preventDefault();
+              setDragging(false);
+              pick((_a = event.dataTransfer.files) == null ? void 0 : _a[0]);
+            },
+            children: [
+              /* @__PURE__ */ jsxRuntime.jsx("input", { type: "file", accept: ".zip,application/zip", disabled, onChange: (event) => {
+                var _a;
+                return pick((_a = event.target.files) == null ? void 0 : _a[0]);
+              } }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-import-drop-title", children: file ? file.name : sdk.T("点击选择或拖入 .zip 文件", "Click to choose or drop a .zip file") }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-import-drop-hint", children: file ? `${(file.size / 1024).toFixed(1)} KB · ${sdk.T("点击更换", "click to change")}` : sdk.T("压缩包内需含 plugin.toml", "The archive must contain plugin.toml") })
+            ]
+          }
+        ) : /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-row", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-import-input", type: "text", value: url, placeholder: "https://github.com/owner/repo.git", "aria-label": sdk.T("Git 地址", "Git URL"), disabled, onChange: (event) => setUrl(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-import-input", type: "text", value: ref, placeholder: sdk.T("分支/标签（可选）", "Branch/tag (optional)"), "aria-label": sdk.T("分支/标签", "Branch/tag"), disabled, onChange: (event) => setRef(event.target.value) })
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-import-input", type: "text", value: subdir, placeholder: sdk.T("子目录（可选，包含多个插件时指定）", "Subdirectory (optional; when the source holds several plugins)"), "aria-label": sdk.T("子目录", "Subdirectory"), disabled, onChange: (event) => setSubdir(event.target.value) }),
+        /* @__PURE__ */ jsxRuntime.jsxs("label", { className: "plugin-import-check", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { type: "checkbox", checked: replace, disabled, onChange: (event) => setReplace(event.target.checked) }),
+          sdk.T("覆盖同名的已停用用户插件", "Replace a disabled user plugin with the same name")
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-foot", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-import-warn", children: sdk.T("仅导入可信来源的插件：插件代码以当前用户权限运行。导入后默认未启用。", "Only import plugins you trust: plugin code runs with your user permissions. Imported plugins start disabled.") }),
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-import-actions", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, onClick: () => {
+              setOpen(false);
+              onError("");
+            }, children: sdk.T("取消", "Cancel") }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", className: "plugin-import-submit", disabled: disabled || (mode === "zip" ? !file : !url.trim()), children: sdk.T("导入", "Import") })
+          ] })
+        ] })
       ] })
     ] });
   }

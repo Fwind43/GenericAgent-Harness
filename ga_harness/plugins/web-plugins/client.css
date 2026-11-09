@@ -7,7 +7,8 @@
 .gah-dialog.gah-plugin-dialog{width:min(1040px,calc(100vw - 24px))}
 .gah-plugin-dialog [hidden]{display:none!important}
 .gah-plugin-dialog .plugin-profile{margin:0 0 12px}
-.gah-plugin-dialog .plugin-toolbar{display:flex;gap:8px;align-items:center}
+.gah-plugin-dialog .plugin-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.gah-plugin-dialog .plugin-toolbar>button{white-space:nowrap;flex:none}
 .gah-plugin-dialog .plugin-search{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
 .gah-plugin-dialog .plugin-search:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
 .gah-plugin-dialog .plugin-categories{display:flex;gap:2px;margin:12px 0 0;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
@@ -75,7 +76,28 @@
 .gah-plugin-dialog .plugin-tag[data-tag="user"]{color:var(--accent);border-color:var(--accent)}
 .plugin-install{align-items:center}.plugin-mirror{display:flex;align-items:center;gap:6px;flex:1 1 260px;min-width:0}.plugin-mirror input{flex:1;min-width:0}
 .plugin-install-log{margin:8px 0;border:1px solid var(--border,#8884);border-radius:8px;overflow:hidden}.plugin-install-status{padding:6px 10px;font-size:12px}.plugin-install-log[data-state=failed] .plugin-install-status{color:var(--danger,#d33)}.plugin-install-log pre{margin:0;max-height:240px;overflow:auto;padding:8px 10px;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-all;background:var(--code-bg,#0001)}
-.gah-plugin-dialog .plugin-import { flex-basis: 100%; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border, rgba(127,127,127,.3)); border-radius: 8px; }
-.gah-plugin-dialog .plugin-import-row { display: grid; grid-template-columns: 1fr minmax(120px, 30%); gap: 8px; }
-.gah-plugin-dialog .plugin-import-check { display: flex; align-items: center; gap: 6px; }
-.gah-plugin-dialog .plugin-import-actions { display: flex; gap: 8px; }
+.gah-plugin-dialog .plugin-import-toggle[aria-pressed="true"]{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent)}
+.gah-plugin-dialog .plugin-import{flex:1 0 100%;display:grid;gap:10px;margin-top:4px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-muted);font-size:13px}
+.gah-plugin-dialog .plugin-import-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.gah-plugin-dialog .plugin-import-head strong{font-size:14px}
+.gah-plugin-dialog .plugin-import-modes{display:inline-flex;padding:2px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.gah-plugin-dialog .plugin-import-modes button{border:0;border-radius:6px;padding:4px 12px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
+.gah-plugin-dialog .plugin-import-modes button[aria-selected="true"]{background:var(--surface-muted);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.gah-plugin-dialog .plugin-import-drop{position:relative;display:grid;justify-items:center;gap:4px;padding:18px 12px;border:1.5px dashed var(--border);border-radius:8px;background:var(--bg);cursor:pointer;text-align:center;transition:border-color .15s,background .15s}
+.gah-plugin-dialog .plugin-import-drop:hover,.gah-plugin-dialog .plugin-import-drop[data-dragging]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--bg))}
+.gah-plugin-dialog .plugin-import-drop[data-filled]{border-style:solid}
+.gah-plugin-dialog .plugin-import-drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.gah-plugin-dialog .plugin-import-drop:focus-within{outline:2px solid var(--muted);outline-offset:1px}
+.gah-plugin-dialog .plugin-import-drop-title{font-weight:600;color:var(--text);overflow-wrap:anywhere}
+.gah-plugin-dialog .plugin-import-drop-hint{font-size:12px;color:var(--muted)}
+.gah-plugin-dialog .plugin-import-row{display:grid;grid-template-columns:1fr minmax(120px,30%);gap:8px}
+.gah-plugin-dialog .plugin-import-input{width:100%;box-sizing:border-box;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
+.gah-plugin-dialog .plugin-import-input:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
+.gah-plugin-dialog .plugin-import-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;width:fit-content}
+.gah-plugin-dialog .plugin-import-check input{width:15px;height:15px;margin:0;accent-color:var(--accent)}
+.gah-plugin-dialog .plugin-import-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border)}
+.gah-plugin-dialog .plugin-import-warn{flex:1 1 240px;margin:0;font-size:12px;color:var(--muted)}
+.gah-plugin-dialog .plugin-import-actions{display:flex;gap:8px;margin-left:auto}
+.gah-plugin-dialog .plugin-import-actions button{white-space:nowrap}
+.gah-plugin-dialog .plugin-import-submit{border-radius:8px;padding:6px 16px;font-size:13px}
+.gah-plugin-dialog .plugin-import-submit:disabled{opacity:.45;cursor:not-allowed}
