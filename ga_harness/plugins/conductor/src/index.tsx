@@ -5,6 +5,7 @@ type Task = {
   id: string; title: string; status: string; review?: string | null; basis?: string | null;
   resolved?: boolean; child: string; run_id?: string | null; objective: string;
   result?: string; error?: string; runs?: number; model?: string | null; effort?: string | null;
+  created?: number;
 };
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
@@ -126,7 +127,9 @@ function Panel({ api }: { api: PluginAPI }) {
     );
   }
   const on = data.enabled.includes(sid);
-  const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid);
+  // Newest task first, so the latest dispatch is at the top of the panel.
+  const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid)
+    .sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
   if (!on && !tasks.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;

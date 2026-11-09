@@ -147,7 +147,7 @@
     const tasks = data.tasks.filter((t) => {
       var _a2, _b;
       return ((_b = (_a2 = data.children) == null ? void 0 : _a2[t.child]) == null ? void 0 : _b.parent) === sid;
-    });
+    }).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
     if (!on && !tasks.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
