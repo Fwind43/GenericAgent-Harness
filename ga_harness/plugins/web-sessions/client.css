@@ -111,6 +111,9 @@
 /* Pinned chats: a small pin before the title; the pin action stays tinted while active. */
 .gah-sess-pin{flex:none;display:inline-flex;color:var(--muted);margin-right:4px}
 .gah-sess-pin .gah-ico{width:12px;height:12px}
+
+/* Conductor-mode chats: a baton mark before the title, tinted with the accent colour. */
+.gah-sess-conductor{flex:none;display:inline-flex;color:var(--accent,var(--muted));margin-right:4px}
 .gah-sess-act.on{color:var(--text)}
 
 /* Row actions live in one overflow menu. */

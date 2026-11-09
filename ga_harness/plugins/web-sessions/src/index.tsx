@@ -168,7 +168,10 @@ export function Sessions({ api }: { api: PluginAPI }) {
   const q = query.trim().toLowerCase();
   // Conductor task chats are opened from the Conductor panel, so the sidebar hides them unless searching
   // or they lead to the open chat (which keeps the way back to the conductor visible).
-  const conductorKids = (state as unknown as { conductor?: { children?: Record<string, unknown> } }).conductor?.children ?? {};
+  const conductorState = (state as unknown as { conductor?: { children?: Record<string, unknown>; enabled?: string[] } }).conductor;
+  const conductorKids = conductorState?.children ?? {};
+  // Chats in Conductor mode get a small baton mark so they stand out in the list.
+  const conductorOn = new Set<string>(conductorState?.enabled ?? []);
   const openPath = new Set<string>(state.session_id ? [state.session_id] : []);
   { const all = new Map((state.sessions ?? []).map(s => [s.id, s] as const));
     for (let s = all.get(state.session_id ?? ''); s?.parent_id && !openPath.has(s.parent_id); s = all.get(s.parent_id)) openPath.add(s.parent_id); }
@@ -208,7 +211,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const draft = session.id !== state.session_id && drafts.has(session.id);
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${sub ? ' sub-running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
       <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
-        {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
+        {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}{conductorOn.has(session.id) ? <span className="gah-sess-conductor" title={T('\u6307\u6325\u5bb6\u4f1a\u8bdd', 'Conductor chat')} aria-label={T('\u6307\u6325\u5bb6\u4f1a\u8bdd', 'Conductor chat')}><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h4M3 8h10M3 12.5h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" /><circle cx="11" cy="3.5" r="1.6" fill="currentColor" /><circle cx="12" cy="12.5" r="1.6" fill="currentColor" /></svg></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {draft && <span className="gah-sess-draft" title={T('\u6709\u672a\u53d1\u9001\u7684\u8349\u7a3f', 'Unsent draft')}>{T('\u8349\u7a3f', 'Draft')}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}
         {!status && !sub && session.updated ? <span className="gah-sess-age">{ago(session.updated)}</span> : null}
