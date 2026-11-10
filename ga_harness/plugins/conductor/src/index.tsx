@@ -179,16 +179,17 @@ function Toggle({ api }: { api: PluginAPI }) {
   if (!data || !sid || data.children?.[sid]) return null;
   const on = data.enabled.includes(sid);
   return (
-    <button type="button" className={`gah-cd-pill${on ? ' on' : ''}`} aria-pressed={on} disabled={busy}
+    <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={on} disabled={busy}
       onClick={() => run('toggle', { enabled: !on })}
       title={T('\u6307\u6325\u5bb6\u6a21\u5f0f\uff1a\u672c\u4f1a\u8bdd\u53ea\u62c6\u5206\u5e76\u5206\u6d3e\u5b50\u4efb\u52a1\uff0c\u6bcf\u4e2a\u5b50\u4efb\u52a1\u5728\u72ec\u7acb\u4f1a\u8bdd\u4e2d\u6267\u884c', 'Conductor mode: this session only splits and dispatches tasks; each task runs in its own session')}>
-      <Icon /><span>{T('\u6307\u6325\u5bb6', 'Conductor')}</span>
+      <Icon /><span>{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
+      {on ? <svg className="gah-menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
     </button>
   );
 }
 
 function ConductorPlugin({ api }: { api: PluginAPI }) {
-  useEffect(() => api.mount('composer', <Toggle api={api} />), [api]);
+  useEffect(() => api.mount('composer-menu', <Toggle api={api} />), [api]);
   useEffect(() => api.mount('header', <Panel api={api} />), [api]);
   return null;
 }

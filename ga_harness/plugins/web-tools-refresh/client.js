@@ -5,8 +5,8 @@
     {
       className: "gah-tr-icon",
       viewBox: "0 0 16 16",
-      width: "14",
-      height: "14",
+      width: "16",
+      height: "16",
       "aria-hidden": "true",
       fill: "none",
       stroke: "currentColor",
@@ -40,7 +40,8 @@
       "button",
       {
         type: "button",
-        className: "gah-tr-pill",
+        role: "menuitem",
+        className: "gah-menu-item",
         disabled: busy || state.running,
         onClick: send,
         title: sdk.T(
@@ -49,13 +50,13 @@
         ),
         children: [
           /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("工具", "Tools") })
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("刷新工具定义", "Refresh tool definitions") })
         ]
       }
     );
   }
   function ToolsRefreshPlugin({ api }) {
-    react.useEffect(() => api.mount("composer", /* @__PURE__ */ jsxRuntime.jsx(RefreshButton, { api })), [api]);
+    react.useEffect(() => api.mount("composer-menu", /* @__PURE__ */ jsxRuntime.jsx(RefreshButton, { api })), [api]);
     return null;
   }
   sdk.defineReact("web-tools-refresh", ToolsRefreshPlugin);

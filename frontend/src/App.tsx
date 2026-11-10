@@ -38,6 +38,33 @@ const savedSide = () => { const value = Number(saved('gah-side-width')); return 
 const NEW_TITLE = '\u65b0\u4f1a\u8bdd';
 const WINDOW = 40;
 
+// Composer "+" menu: attaching files plus plugin items mounted into the `composer-menu` slot.
+// The slot stays in the DOM while closed so plugins can mount at startup; any button click inside closes it.
+function ComposerMenu({ onAttach }: { onAttach: () => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null), button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (event: PointerEvent) => { if (!wrap.current?.contains(event.target as Node)) setOpen(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); button.current?.focus(); } };
+    document.addEventListener('pointerdown', down); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key); };
+  }, [open]);
+  return <div className="gah-plus" ref={wrap}>
+    <button type="button" ref={button} className={`icon-btn gah-attach-btn${open ? ' open' : ''}`} aria-haspopup="menu" aria-expanded={open}
+      aria-label={T('\u6dfb\u52a0\u6587\u4ef6\u548c\u66f4\u591a', 'Add files and more')} title={T('\u6dfb\u52a0\u6587\u4ef6\u548c\u66f4\u591a', 'Add files and more')} onClick={() => setOpen(value => !value)}>
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+    </button>
+    <div className="gah-plus-menu" role="menu" hidden={!open} onClick={event => { if ((event.target as Element).closest('button')) setOpen(false); }}>
+      <button type="button" role="menuitem" className="gah-menu-item" title={T('\u4e5f\u53ef\u7c98\u8d34\u6216\u62d6\u5165', 'You can also paste or drop')} onClick={onAttach}>
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 7.6 8.1 13a3.4 3.4 0 0 1-4.8-4.8l5.6-5.6a2.25 2.25 0 0 1 3.2 3.2L6.5 11.4a1.1 1.1 0 0 1-1.6-1.6l5-5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <span>{T('\u6dfb\u52a0\u56fe\u7247\u6216\u6587\u4ef6', 'Add images or files')}</span>
+      </button>
+      <Slot name="composer-menu" />
+    </div>
+  </div>;
+}
+
 export function App() {
   const { state, connected, changing, notice } = useHost();
   const draft = useSyncExternalStore(sessionDrafts.subscribe, () => sessionDrafts.get(state.session_id));
@@ -240,7 +267,7 @@ export function App() {
         }} />
         <div className="composer-row">
           <input ref={picker} type="file" multiple hidden onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
-          <button type="button" className="icon-btn gah-attach-btn" aria-label={T('添加图片或文件', 'Attach images or files')} title={T('添加图片或文件（也可粘贴或拖入）', 'Attach images or files (or paste / drop)')} onClick={() => picker.current?.click()}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 7.6 8.1 13a3.4 3.4 0 0 1-4.8-4.8l5.6-5.6a2.25 2.25 0 0 1 3.2 3.2L6.5 11.4a1.1 1.1 0 0 1-1.6-1.6l5-5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+          <ComposerMenu onAttach={() => picker.current?.click()} />
           <Slot name="composer" /><span className="spacer" />
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
           <button type="submit" id="send" disabled={changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>

@@ -238,6 +238,20 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .gah-attach-name small{opacity:.65}
 .gah-attach-x{position:absolute;top:3px;right:3px;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:12px;line-height:18px;cursor:pointer}
 .gah-attach-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0}
+.gah-attach-btn.open{background:var(--surface-muted);color:var(--text)}
+.gah-plus{position:relative;display:inline-flex}
+.gah-plus-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:30;min-width:210px;display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.gah-plus-menu[hidden]{display:none}
+.gah-plus-menu .gah-slot{display:flex;flex-direction:column;gap:2px}
+.gah-plus-menu .gah-slot:empty{display:none}
+.gah-plus-menu .gah-plugin-root:empty{display:none}
+.gah-menu-item{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;text-align:left;cursor:pointer;white-space:nowrap}
+.gah-menu-item>svg{flex:none;color:var(--muted)}
+.gah-menu-item>span{flex:1;min-width:0}
+.gah-menu-item:hover:not(:disabled){background:var(--surface-muted)}
+.gah-menu-item:disabled{opacity:.5;cursor:default}
+.gah-menu-item:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gah-menu-item .gah-menu-check{flex:none;color:var(--accent)}
 .gah-msg-attach{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-bottom:6px}
 .gah-msg-img img{display:block;max-width:220px;max-height:220px;border-radius:10px;object-fit:cover}
 .gah-msg-file{display:flex;align-items:center;gap:8px;max-width:240px;padding:8px 10px;border:1px solid rgba(0,0,0,.11);border-radius:10px;color:inherit;text-decoration:none;font-size:12px}

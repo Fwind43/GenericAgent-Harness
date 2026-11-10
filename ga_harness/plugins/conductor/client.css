@@ -46,10 +46,4 @@
 .gah-cd-actions button{font-size:12px;padding:3px 10px;border-radius:6px}
 .gah-cd-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .gah-cd-actions button.primary:hover:not(:disabled){filter:brightness(1.08)}
-.gah-cd-pill{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:0;border-radius:15px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap}
-.gah-cd-pill:hover:not(:disabled){background:var(--surface-muted);color:var(--text)}
-.gah-cd-pill.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
-.gah-cd-pill.on:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
-.gah-cd-pill:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-@media (max-width:560px){.gah-cd-pill span{display:none}.gah-cd-pill{padding:0 9px}}
 @media (max-width:560px){.gah-cd-head{flex-wrap:wrap;row-gap:2px}.gah-cd-title{flex:1 1 calc(100% - 15px)}.gah-cd-dot+.gah-cd-title+.gah-cd-tag{margin-left:15px}.gah-cd-tag{white-space:nowrap}.gah-cd-body{padding-left:10px}}

@@ -75,7 +75,7 @@ bundle.
 
 ## Plugin API
 
-Slots: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`,
+Slots: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`, `composer-menu` (items in the composer "+" menu; use `.gah-menu-item` buttons),
 `overlay`, `settings`, `view` and `page`. The host does not reconcile plugin-owned children inside slots.
 
 Plugin pages: `PagePanel({ api, label, icon, order })` from `@gah/sdk` registers a full
