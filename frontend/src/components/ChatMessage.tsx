@@ -138,6 +138,7 @@ export function isConductorWake(m: Message) {
 function ConductorWake({ m }: { m: Message }) {
   const text = m.text || '';
   const reflect = m.source === 'conductor-reflect';
+  const reflectSource = reflect ? /^\[Conductor event \u00b7 (.*?)\]$/.exec(text.split('\n', 1)[0])?.[1] : undefined;
   const active = !reflect && text.startsWith(ACTIVE_HEAD);
   const completed = !reflect && text.startsWith(WAKE_HEAD);
   const tasks = completed ? text.split('\n').flatMap(line => {
@@ -147,7 +148,8 @@ function ConductorWake({ m }: { m: Message }) {
   const still = completed ? Number(/(\d+) task\(s\) still running/.exec(text)?.[1] || 0) : 0;
   const label = reflect ? T('事件触发', 'Event triggered') : active ? T('主动续跑', 'Active continuation')
     : completed ? T('指挥家', 'Conductor') : T('待审阅提醒', 'Review reminder');
-  const description = reflect ? T('来自反射事件源', 'From a reflect event source')
+  const description = reflect
+    ? (reflectSource ? T(`来自事件源：${reflectSource}`, `From event source: ${reflectSource}`) : T('来自反射事件源', 'From a reflect event source'))
     : active ? T('指挥家自动继续处理任务', 'Conductor is continuing the task')
     : completed ? T(`${tasks.length || ''} 个子任务完成，继续审阅`, `${tasks.length || ''} subtask(s) finished, reviewing`)
     : T('子任务结果尚未审阅，继续检查', 'Subtask results are awaiting review');

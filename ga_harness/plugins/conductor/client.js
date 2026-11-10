@@ -29,6 +29,7 @@
   };
   const label = (map, key) => key ? map[key] ? sdk.T(map[key][0], map[key][1]) : key : "";
   function formatRemaining(expires) {
+    if (expires == null) return ["永久", "Permanent"];
     if (!expires) return null;
     const sec = Math.max(0, Math.round(expires - Date.now() / 1e3));
     if (sec <= 0) return ["已到期", "Expired"];
@@ -185,6 +186,10 @@
           rem ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: expText ? `${sdk.T("截止", "Expires")} ${expText}` : void 0, children: sdk.T(rem[0], rem[1]) }) : null,
           /* @__PURE__ */ jsxRuntime.jsx("code", { className: "gah-cd-id", children: item.id })
         ] }),
+        item.instruction ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("触发动作", "Action") }),
+          /* @__PURE__ */ jsxRuntime.jsx("p", { children: item.instruction })
+        ] }) : null,
         item.error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field error", children: [
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("异常", "Error") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: item.error })

@@ -74,13 +74,23 @@ class Reflections:
                 or any(not isinstance(a, str) or len(a) > 2000 for a in args)):
             raise ValueError("args must be at most 64 strings of at most 2000 characters")
         timeout, lifetime = body.get("timeout", 30), body.get("lifetime", 86400)
-        for name, value, upper in (("timeout", timeout, 300), ("lifetime", lifetime, 604800)):
-            if (isinstance(value, bool) or not isinstance(value, (int, float))
-                    or not math.isfinite(value) or not 1 <= value <= upper):
-                raise ValueError(f"{name} must be between 1 and {upper} seconds")
+        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout) or not 1 <= timeout <= 300):
+            raise ValueError("timeout must be between 1 and 300 seconds")
+        if lifetime in (0, "forever", "permanent"):
+            expires = None
+        elif (isinstance(lifetime, bool) or not isinstance(lifetime, (int, float))
+              or not math.isfinite(lifetime) or not 1 <= lifetime <= 604800):
+            raise ValueError("lifetime must be between 1 and 604800 seconds, or 0 for permanent")
+        else:
+            expires = time.time() + lifetime
         title = body.get("title") or (path.stem if path else "Reflect")
         if not isinstance(title, str) or len(title) > 120:
             raise ValueError("title must be a string of at most 120 characters")
+        raw_inst = body.get("instruction")
+        if raw_inst is not None and (not isinstance(raw_inst, str) or len(raw_inst) > 4000):
+            raise ValueError("instruction must be a string of at most 4000 characters")
+        instruction = (raw_inst or "").strip()
         with self.lock:
             if self.closed:
                 raise RuntimeError("conductor is stopping")
@@ -102,8 +112,9 @@ class Reflections:
                 path = self.directory / (rid + ".py")
                 path.write_text(code, encoding="utf-8")
             item = dict(id=rid, parent=parent, title=title, path=str(path), args=args,
-                        timeout=timeout, created=time.time(), expires=time.time() + lifetime,
-                        status="starting", interval=5, once=False, triggers=0)
+                        timeout=timeout, created=time.time(), expires=expires,
+                        status="starting", interval=5, once=False, triggers=0,
+                        **(dict(instruction=instruction) if instruction else {}))
             self.records[rid] = item
             control = {"stop": threading.Event(), "proc": None, "early": {}}
             self.workers[rid] = control
@@ -138,7 +149,11 @@ class Reflections:
 
     def claim(self, item):
         item["status"] = "submitting"
-        return item["message"]
+        msg = item["message"]
+        parts = [msg] if msg.startswith("[Conductor event") else [f"[Conductor event \u00b7 {item['title']} ({item['id']})]", msg]
+        if item.get("instruction"):
+            parts.append(f"Action: {item['instruction']}")
+        return "\n".join(parts)
 
     def submitted(self, item, run_id):
         if item["status"] != "submitting":
@@ -202,7 +217,9 @@ class Reflections:
                     staged = directory / "request.tmp"
                     staged.write_text(json.dumps(dict(seq=seq, op=op, **body)), encoding="utf-8")
                     os.replace(staged, directory / "request.json")
-                    deadline = min(time.time() + item["timeout"], item["expires"])
+                    deadline = time.time() + item["timeout"]
+                    if item.get("expires") is not None:
+                        deadline = min(deadline, item["expires"])
                     while not stop.is_set():
                         response = directory / "response.json"
                         if response.exists():
@@ -230,7 +247,7 @@ class Reflections:
                     with self.lock:
                         status = item["status"]
                         now = time.time()
-                        if now >= item["expires"]:
+                        if item.get("expires") is not None and now >= item["expires"]:
                             raise TimeoutError("reflect lifetime expired")
                         if status == "waiting" and now >= item["result_deadline"]:
                             raise TimeoutError("reflect run result not received within one hour")

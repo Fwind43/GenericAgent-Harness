@@ -10,7 +10,8 @@ type Task = {
 };
 type Reflection = {
   id: string; parent: string; title: string; status: string; triggers: number;
-  expires: number; error?: string; interval: number; once?: boolean; created?: number;
+  expires?: number | null; error?: string; interval: number; once?: boolean; created?: number;
+  instruction?: string;
 };
 const REFLECT_TERMINAL = new Set(['done', 'stopped', 'error', 'interrupted']);
 const REFLECT_STATUS: Record<string, [string, string]> = {
@@ -45,7 +46,8 @@ const REVIEW: Record<string, [string, string]> = {
 const label = (map: Record<string, [string, string]>, key?: string | null) =>
   key ? (map[key] ? T(map[key][0], map[key][1]) : key) : '';
 
-function formatRemaining(expires?: number): [string, string] | null {
+function formatRemaining(expires?: number | null): [string, string] | null {
+  if (expires == null) return ['\u6c38\u4e45', 'Permanent'];
   if (!expires) return null;
   const sec = Math.max(0, Math.round(expires - Date.now() / 1000));
   if (sec <= 0) return ['\u5df2\u5230\u671f', 'Expired'];
@@ -171,6 +173,7 @@ function ReflectRow({ item, busy, stop }: { item: Reflection; busy: boolean; sto
             {rem ? <span title={expText ? `${T('\u622a\u6b62', 'Expires')} ${expText}` : undefined}>{T(rem[0], rem[1])}</span> : null}
             <code className="gah-cd-id">{item.id}</code>
           </div>
+          {item.instruction ? <div className="gah-cd-field"><b>{T('\u89e6\u53d1\u52a8\u4f5c', 'Action')}</b><p>{item.instruction}</p></div> : null}
           {item.error ? <div className="gah-cd-field error"><b>{T('\u5f02\u5e38', 'Error')}</b><p>{item.error}</p></div> : null}
           {active ? (
             <div className="gah-cd-actions">
