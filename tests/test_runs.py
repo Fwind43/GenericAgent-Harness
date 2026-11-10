@@ -47,8 +47,14 @@ def test_child_inherits_scope_not_history(stores):
     assert child["project_id"] == parent["project_id"]
     assert child["messages"] == [] and child["state"] == {}
     assert sessions.current()["id"] == parent["id"]
+    # Isolated conductor tasks may choose their own workspace, but not a project.
+    isolated = sessions.create(parent_id=parent["id"], workspace="different")
+    assert isolated["workspace"] == "different"
+    assert isolated["project_id"] == parent["project_id"]
+    assert isolated["messages"] == [] and isolated["state"] == {}
+    assert sessions.current()["id"] == parent["id"]
     with pytest.raises(ValueError, match="inherit"):
-        sessions.create(parent_id=parent["id"], workspace="different")
+        sessions.create(parent_id=parent["id"], project_id="different")
 
 
 class ClosedConnection:
