@@ -70,7 +70,7 @@ export function UpdateSettings() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  useLayoutEffect(() => api ? settings.register({ id: ID, label: T('更新', 'Updates'), icon: 'settings', order: -90 }) : undefined, []);
+  useLayoutEffect(() => api ? settings.register({ id: ID, label: T('更新', 'Updates'), icon: 'refresh', order: -90 }) : undefined, []);
   useEffect(() => {
     if (!api) return;
     let alive = true;
