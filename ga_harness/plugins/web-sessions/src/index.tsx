@@ -144,16 +144,28 @@ export function Sessions({ api }: { api: PluginAPI }) {
     const box = el.getBoundingClientRect(); return { target: key.slice(2), after: y > box.top + box.height / 2 };
   };
   const current = scope?.project_id ? `p:${scope.project_id}` : 'recent', previous = useRef(current);
+  // Opening a chat from Recent must not unfold its project group: the row click pins the group closed
+  // (unless the user opened it) and names it here so the scope-change effect leaves that choice alone.
+  const quiet = useRef('');
   useEffect(() => {
-    if (previous.current !== current) { previous.current = current; setToggled(old => { const next = { ...old }; delete next[current]; return next; }); }
+    if (previous.current === current) return;
+    previous.current = current;
+    const keep = quiet.current === current; quiet.current = '';
+    if (!keep) setToggled(old => { const next = { ...old }; delete next[current]; return next; });
   }, [current]);
+  const openChat = (session: Session, recent: boolean) => {
+    const key = recent && session.project_id ? `p:${session.project_id}` : '';
+    quiet.current = key && key !== current ? key : '';
+    if (quiet.current) setToggled(old => old[key] === undefined ? { ...old, [key]: false } : old);
+    return act('select', { id: session.id });
+  };
   const change = (path: string, body: object, reset: boolean) => run(async () => {
     const next = await api.host.post<HostState>(path, body); api.setState(next, reset);
     // Opening or creating a chat leaves any plugin page route.
     if (reset) pages.home();
   });
   const act = (action: string, extra: object = {}) => change('/api/sessions', { action, id: state.session_id, ...extra }, ['new', 'select', 'delete', 'clear'].includes(action));
-  const scoped = (body: object, reset = true) => change('/api/p/web-workspaces/', body, reset);
+  const scoped = (body: object, reset = true) => { quiet.current = ''; return change('/api/p/web-workspaces/', body, reset); };
   const dialog = (action: string, id?: string) => window.dispatchEvent(new CustomEvent('gah:workspace-dialog', { detail: { action, id } }));
   const toggle = (key: string, open: boolean) => setToggled(old => { const next = { ...old, [key]: !open }; save('gah.sessions.groups', JSON.stringify(next)); persist('sidebar.groups', next); return next; });
   const activity = new Map<string, string>();
@@ -225,7 +237,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
     // The open chat shows its draft in the composer; other rows flag unsent text or attachments.
     const draft = session.id !== state.session_id && drafts.has(session.id);
     return <div key={session.id} className={`gah-sess-row${session.id === state.session_id ? ' current' : ''}${status ? ' running' : ''}${sub ? ' sub-running' : ''}${unread ? ' unread' : ''}${depth ? ' child' : ''}${kids ? ' parent' : ''}${menuOpen ? ' menu-open' : ''}`} style={depth ? { '--gah-depth': depth } as CSSProperties : undefined} role="listitem">
-      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void act('select', { id: session.id })} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
+      <button type="button" className="gah-sess-open" disabled={busy} data-gah-close="" onClick={() => void openChat(session, recent)} title={[label(session), project && `${T('\u9879\u76ee', 'Project')}: ${project}`, session.workspace && `${T('\u5de5\u4f5c\u533a', 'Workspace')}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join('\n')}>
         {session.pinned ? <span className="gah-sess-pin" aria-label={T('\u5df2\u7f6e\u9876', 'Pinned')}><Icon name="pin" /></span> : null}{conductorOn.has(session.id) ? <span className="gah-sess-conductor" title={T('\u6307\u6325\u5bb6\u4f1a\u8bdd', 'Conductor chat')} aria-label={T('\u6307\u6325\u5bb6\u4f1a\u8bdd', 'Conductor chat')}><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h4M3 8h10M3 12.5h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" /><circle cx="11" cy="3.5" r="1.6" fill="currentColor" /><circle cx="12" cy="12.5" r="1.6" fill="currentColor" /></svg></span> : null}<span className="gah-sess-title">{depth ? label(session).replace(/^\u25b8\s*/, '') : label(session)}</span>{tag && <span className="gah-sess-tag">{tag}</span>}
         {draft && <span className="gah-sess-draft" title={T('\u6709\u672a\u53d1\u9001\u7684\u8349\u7a3f', 'Unsent draft')}>{T('\u8349\u7a3f', 'Draft')}</span>}
         {unread && <span className="gah-sess-unread" role="status" title={T('\u672a\u8bfb', 'Unread')} aria-label={T('\u672a\u8bfb', 'Unread')} />}

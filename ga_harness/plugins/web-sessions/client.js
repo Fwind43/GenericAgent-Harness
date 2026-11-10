@@ -164,23 +164,34 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       return { target: key.slice(2), after: y > box.top + box.height / 2 };
     };
     const current = (scope == null ? void 0 : scope.project_id) ? `p:${scope.project_id}` : "recent", previous = react.useRef(current);
+    const quiet = react.useRef("");
     react.useEffect(() => {
-      if (previous.current !== current) {
-        previous.current = current;
-        setToggled((old) => {
-          const next = { ...old };
-          delete next[current];
-          return next;
-        });
-      }
+      if (previous.current === current) return;
+      previous.current = current;
+      const keep = quiet.current === current;
+      quiet.current = "";
+      if (!keep) setToggled((old) => {
+        const next = { ...old };
+        delete next[current];
+        return next;
+      });
     }, [current]);
+    const openChat = (session, recent) => {
+      const key = recent && session.project_id ? `p:${session.project_id}` : "";
+      quiet.current = key && key !== current ? key : "";
+      if (quiet.current) setToggled((old) => old[key] === void 0 ? { ...old, [key]: false } : old);
+      return act("select", { id: session.id });
+    };
     const change = (path, body, reset) => run(async () => {
       const next = await api.host.post(path, body);
       api.setState(next, reset);
       if (reset) sdk.pages.home();
     });
     const act = (action, extra = {}) => change("/api/sessions", { action, id: state.session_id, ...extra }, ["new", "select", "delete", "clear"].includes(action));
-    const scoped = (body, reset = true) => change("/api/p/web-workspaces/", body, reset);
+    const scoped = (body, reset = true) => {
+      quiet.current = "";
+      return change("/api/p/web-workspaces/", body, reset);
+    };
     const dialog = (action, id) => window.dispatchEvent(new CustomEvent("gah:workspace-dialog", { detail: { action, id } }));
     const toggle = (key, open) => setToggled((old) => {
       const next = { ...old, [key]: !open };
@@ -256,7 +267,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
       const draft = session.id !== state.session_id && drafts.has(session.id);
       return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${sub ? " sub-running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void act("select", { id: session.id }), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void openChat(session, recent), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           conductorOn.has(session.id) ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-conductor", title: sdk.T("指挥家会话", "Conductor chat"), "aria-label": sdk.T("指挥家会话", "Conductor chat"), children: /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 16 16", width: "12", height: "12", "aria-hidden": "true", children: [
             /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M3 3.5h4M3 8h10M3 12.5h6", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", fill: "none" }),
