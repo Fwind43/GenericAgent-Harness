@@ -5,12 +5,12 @@
 .gah-plugins .plugin-note[hidden]{display:none}
 /* Plugin manager: one card per plugin, detail opens in place. */
 .gah-dialog.gah-plugin-dialog{width:min(1040px,calc(100vw - 24px))}
-.gah-plugin-dialog [hidden]{display:none!important}
-.gah-plugin-dialog .plugin-profile{margin:0 0 12px}
-.gah-plugin-dialog .plugin-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.gah-plugin-dialog .plugin-toolbar>button{white-space:nowrap;flex:none}
-.gah-plugin-dialog .plugin-search{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
-.gah-plugin-dialog .plugin-search:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
+.gah-plugin-dialog [hidden],.gah-plugin-market-dialog [hidden]{display:none!important}
+.gah-plugin-dialog .plugin-profile,.gah-plugin-market-dialog .plugin-profile{margin:0 0 12px}
+.gah-plugin-dialog .plugin-toolbar,.gah-plugin-market-dialog .plugin-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.gah-plugin-dialog .plugin-toolbar>button,.gah-plugin-market-dialog .plugin-toolbar>button{white-space:nowrap;flex:none}
+.gah-plugin-dialog .plugin-search,.gah-plugin-market-dialog .plugin-search{flex:1;min-width:0;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--bg);color:var(--text)}
+.gah-plugin-dialog .plugin-search:focus-visible,.gah-plugin-market-dialog .plugin-search:focus-visible{outline:2px solid var(--muted);outline-offset:1px}
 .gah-plugin-dialog .plugin-categories{display:flex;gap:2px;margin:12px 0 0;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
 .gah-plugin-dialog .plugin-category{flex:none;display:inline-flex;align-items:center;gap:6px;margin-bottom:-1px;padding:8px 12px;border:none;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
 .gah-plugin-dialog .plugin-category:hover{color:var(--text)}
@@ -34,17 +34,18 @@
 .gah-plugin-dialog .plugin-card[data-state="disabled"] .plugin-name,.gah-plugin-dialog .plugin-card[data-state="removed"] .plugin-name{color:var(--muted)}
 .gah-plugin-dialog .plugin-card-head,.gah-plugin-dialog .plugin-detail-head{display:flex;align-items:center;gap:10px;min-width:0}
 .gah-plugin-dialog .plugin-name{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
-.gah-plugin-dialog .plugin-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:18px;padding:0 8px;border-radius:999px;color:var(--muted);background:var(--surface-muted);white-space:nowrap}
-.gah-plugin-dialog .plugin-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.gah-plugin-dialog .plugin-badge[data-state="active"]{color:#1a7f37;background:color-mix(in srgb,#1a7f37 10%,transparent)}
-.gah-plugin-dialog .plugin-badge[data-state="pending"]{color:#9a6700;background:color-mix(in srgb,#d4a72c 14%,transparent)}
-.gah-plugin-dialog .plugin-badge[data-state="error"]{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.gah-plugin-dialog .plugin-version,.gah-plugin-market-dialog .plugin-version{flex:none;padding:1px 6px;font-size:11px;font-family:var(--mono,ui-monospace,SFMono-Regular,Consolas,monospace);color:var(--muted);background:var(--surface-muted);border-radius:6px;line-height:16px}
+.gah-plugin-dialog .plugin-badge,.gah-plugin-market-dialog .plugin-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:18px;padding:0 8px;border-radius:999px;color:var(--muted);background:var(--surface-muted);white-space:nowrap}
+.gah-plugin-dialog .plugin-badge::before,.gah-plugin-market-dialog .plugin-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.gah-plugin-dialog .plugin-badge[data-state="active"],.gah-plugin-market-dialog .plugin-badge[data-state="active"]{color:#1a7f37;background:color-mix(in srgb,#1a7f37 10%,transparent)}
+.gah-plugin-dialog .plugin-badge[data-state="pending"],.gah-plugin-market-dialog .plugin-badge[data-state="pending"]{color:#9a6700;background:color-mix(in srgb,#d4a72c 14%,transparent)}
+.gah-plugin-dialog .plugin-badge[data-state="error"],.gah-plugin-market-dialog .plugin-badge[data-state="error"]{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
 .gah-plugin-dialog .plugin-card-desc{flex:none;max-height:3em;margin-bottom:auto;font-size:12px;line-height:1.5;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .gah-plugin-dialog .plugin-card-foot,.gah-plugin-dialog .plugin-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:20px}
-.gah-plugin-dialog .plugin-tag{font-size:11px;line-height:18px;padding:0 7px;border-radius:6px;border:1px solid var(--border);color:var(--muted)}
-.gah-plugin-dialog .plugin-tag[data-tag="pending"]{color:#9a6700;border-color:color-mix(in srgb,#d4a72c 45%,var(--border))}
+.gah-plugin-dialog .plugin-tag,.gah-plugin-market-dialog .plugin-tag{font-size:11px;line-height:18px;padding:0 7px;border-radius:6px;border:1px solid var(--border);color:var(--muted)}
+.gah-plugin-dialog .plugin-tag[data-tag="pending"],.gah-plugin-market-dialog .plugin-tag[data-tag="pending"]{color:#9a6700;border-color:color-mix(in srgb,#d4a72c 45%,var(--border))}
 .gah-plugin-dialog .plugin-card-meta{margin-left:auto;font-size:11px;color:var(--muted)}
-.gah-plugin-dialog .plugin-empty{margin:24px 0;text-align:center;font-size:13px;color:var(--muted)}
+.gah-plugin-dialog .plugin-empty,.gah-plugin-market-dialog .plugin-empty{margin:24px 0;text-align:center;font-size:13px;color:var(--muted)}
 .gah-plugin-dialog .plugin-back{margin-bottom:12px}
 .gah-plugin-dialog .plugin-detail-card{border:1px solid var(--border);border-radius:12px;padding:18px}
 .gah-plugin-dialog .plugin-title{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;overflow-wrap:anywhere}
@@ -99,5 +100,36 @@
 .gah-plugin-dialog .plugin-import-warn{flex:1 1 240px;margin:0;font-size:12px;color:var(--muted)}
 .gah-plugin-dialog .plugin-import-actions{display:flex;gap:8px;margin-left:auto}
 .gah-plugin-dialog .plugin-import-actions button{white-space:nowrap}
-.gah-plugin-dialog .plugin-import-submit{border-radius:8px;padding:6px 16px;font-size:13px}
-.gah-plugin-dialog .plugin-import-submit:disabled{opacity:.45;cursor:not-allowed}
+.gah-plugin-dialog .plugin-import-submit,.gah-plugin-market-dialog .plugin-import-submit{border-radius:8px;padding:6px 16px;font-size:13px}
+.gah-plugin-dialog .plugin-import-submit:disabled,.gah-plugin-market-dialog .plugin-import-submit:disabled{opacity:.45;cursor:not-allowed}
+.gah-plugin-dialog .plugin-profile code,.gah-plugin-market-dialog .plugin-profile code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;padding:1px 6px;border-radius:5px;background:var(--surface-muted);border:1px solid var(--border);color:var(--text)}
+.gah-plugin-market-dialog .plugin-market-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.gah-plugin-market-dialog .plugin-market-list:empty{display:none}
+.gah-plugin-market-dialog .plugin-market-item{display:flex;flex-direction:column;gap:12px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg);font-size:13px;transition:border-color .15s,background .15s}
+.gah-plugin-market-dialog .plugin-market-item:hover{border-color:color-mix(in srgb,var(--muted) 45%,var(--border))}
+.gah-plugin-market-dialog .plugin-market-top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0}
+.gah-plugin-market-dialog .plugin-market-main{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.gah-plugin-market-dialog .plugin-market-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.gah-plugin-market-dialog .plugin-market-title{font-size:14px;font-weight:600;line-height:1.35;color:var(--text)}
+.gah-plugin-market-dialog .plugin-market-name{font-size:12px;color:var(--muted);text-decoration:none;overflow-wrap:anywhere}
+.gah-plugin-market-dialog .plugin-market-name:hover{color:var(--text);text-decoration:underline}
+.gah-plugin-market-dialog .plugin-market-desc{margin:0;font-size:13px;color:color-mix(in srgb,var(--text) 85%,var(--muted));line-height:1.5;overflow-wrap:anywhere}
+.gah-plugin-market-dialog .plugin-market-foot{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:2px}
+.gah-plugin-market-dialog .plugin-market-caps{display:inline-flex;flex-wrap:wrap;gap:5px}
+.gah-plugin-market-dialog .plugin-market-meta{font-size:11px;color:var(--muted);line-height:18px}
+.gah-plugin-market-dialog .plugin-market-actions{display:flex;align-items:center;gap:8px;flex:none;white-space:nowrap}
+.gah-plugin-market-dialog .plugin-market-actions>button{flex:none;white-space:nowrap;padding:6px 12px;font-size:12px;border-radius:8px}
+.gah-plugin-market-dialog .plugin-market-readme{padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface-muted);font-size:13px;line-height:1.65;max-height:360px;overflow:auto;scrollbar-width:thin;overflow-wrap:anywhere}
+.gah-plugin-market-dialog .plugin-market-readme>:first-child{margin-top:0}
+.gah-plugin-market-dialog .plugin-market-readme>:last-child{margin-bottom:0}
+.gah-plugin-market-dialog .plugin-market-readme h1{font-size:16px;margin:14px 0 8px}
+.gah-plugin-market-dialog .plugin-market-readme h2{font-size:14px;margin:14px 0 6px}
+.gah-plugin-market-dialog .plugin-market-readme h3{font-size:13px;margin:12px 0 6px}
+.gah-plugin-market-dialog .plugin-market-readme p,.gah-plugin-market-dialog .plugin-market-readme ul,.gah-plugin-market-dialog .plugin-market-readme ol{margin:0 0 8px}
+.gah-plugin-market-dialog .plugin-market-readme .md-code{margin:8px 0;background:var(--bg);border:1px solid var(--border)}
+.gah-plugin-market-dialog .plugin-market-readme .output-copy{background:transparent;color:var(--muted);padding:2px 6px;border-radius:5px;font-size:11px}
+.gah-plugin-market-dialog .plugin-market-readme .output-copy:hover{background:var(--surface-muted);color:var(--text)}
+@media(max-width:600px){
+  .gah-plugin-market-dialog .plugin-market-top{flex-direction:column;align-items:stretch;gap:10px}
+  .gah-plugin-market-dialog .plugin-market-actions{justify-content:flex-end}
+}

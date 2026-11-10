@@ -79,22 +79,33 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-card", children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-head", children: [
         /* @__PURE__ */ jsxRuntime.jsx("h3", { className: "plugin-title", children: plugin.name }),
+        plugin.version && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-version", children: "v" + plugin.version.replace(/^v/i, "") }),
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge plugin-status", "data-state": plugin.state, children: stateLabel(plugin) })
       ] }),
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-tags", children: /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin }) }),
       /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-description", children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
-      /* @__PURE__ */ jsxRuntime.jsx("dl", { className: "plugin-deps", children: [
-        ["requires", sdk.T("依赖能力", "Requires")],
-        ["provides", sdk.T("提供能力", "Provides")],
-        ["dependents", sdk.T("被插件依赖", "Required by")],
-        ["packages", sdk.T("Python 依赖", "Python packages")]
-      ].map(([key, label]) => {
-        var _a2;
-        return /* @__PURE__ */ jsxRuntime.jsxs(react.Fragment, { children: [
-          /* @__PURE__ */ jsxRuntime.jsx("dt", { children: label }),
-          /* @__PURE__ */ jsxRuntime.jsx("dd", { children: ((_a2 = plugin[key]) == null ? void 0 : _a2.join(sdk.T("、", ", "))) || sdk.T("无", "None") })
-        ] }, key);
-      }) }),
+      /* @__PURE__ */ jsxRuntime.jsxs("dl", { className: "plugin-deps", children: [
+        [
+          ["requires", sdk.T("依赖能力", "Requires")],
+          ["provides", sdk.T("提供能力", "Provides")],
+          ["dependents", sdk.T("被插件依赖", "Required by")],
+          ["packages", sdk.T("Python 依赖", "Python packages")]
+        ].map(([key, label]) => {
+          var _a2;
+          return /* @__PURE__ */ jsxRuntime.jsxs(react.Fragment, { children: [
+            /* @__PURE__ */ jsxRuntime.jsx("dt", { children: label }),
+            /* @__PURE__ */ jsxRuntime.jsx("dd", { children: ((_a2 = plugin[key]) == null ? void 0 : _a2.join(sdk.T("、", ", "))) || sdk.T("无", "None") })
+          ] }, key);
+        }),
+        plugin.source_meta && /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntime.jsx("dt", { children: sdk.T("安装来源", "Install source") }),
+          /* @__PURE__ */ jsxRuntime.jsx("dd", { children: [
+            plugin.source_meta.type === "git" ? plugin.source_meta.url || "git" : plugin.source_meta.filename || "zip",
+            plugin.source_meta.commit ? plugin.source_meta.commit.slice(0, 7) : "",
+            plugin.source_meta.built_frontend ? sdk.T("已编译前端", "frontend built") : ""
+          ].filter(Boolean).join(" · ") })
+        ] })
+      ] }),
       !!((_c = plugin.workers) == null ? void 0 : _c.length) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-workers", children: sdk.T("依赖 ", "Depends on ") + plugin.workers.join(sdk.T("、", ", ")) + sdk.T("（任务进程内自动加载）", " (loaded automatically inside task workers)") }),
       warning && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-warning", children: warning }),
       !!((_d = plugin.missing_packages) == null ? void 0 : _d.length) && onInstall && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-actions plugin-install", children: [
@@ -262,11 +273,143 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       ] })
     ] });
   }
+  const cleanVer = (v) => (v || "").trim().replace(/^v/i, "");
+  function hasNewerVersion(localVer, remoteVer) {
+    const a = cleanVer(localVer), b = cleanVer(remoteVer);
+    if (!b) return false;
+    if (!a) return true;
+    if (a === b) return false;
+    const pa = a.split(".").map((s) => parseInt(s, 10)), pb = b.split(".").map((s) => parseInt(s, 10));
+    if (pa.every((n) => !Number.isNaN(n)) && pb.every((n) => !Number.isNaN(n))) {
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const na = pa[i] || 0, nb = pb[i] || 0;
+        if (nb !== na) return nb > na;
+      }
+      return false;
+    }
+    return a !== b;
+  }
+  async function request(path, init) {
+    const response = await fetch(path, init);
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data && typeof data === "object" && "error" in data ? String(data.error) : `HTTP ${response.status}`);
+    if (!data || typeof data !== "object") throw new Error("Invalid JSON response");
+    return data;
+  }
+  const guessName = (item) => item.plugin_name || item.name.replace(/^gah-plugin-/, "");
+  function MarketReadme({ text }) {
+    const ref = react.useRef(null);
+    react.useEffect(() => {
+      var _a;
+      const node = ref.current;
+      if (!node) return;
+      if ((_a = window.GAHOutput) == null ? void 0 : _a.setMarkdown) window.GAHOutput.setMarkdown(node, text);
+      else node.textContent = text;
+    }, [text]);
+    return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: "plugin-market-readme md" });
+  }
+  function Market({ api, disabled, catalog, ensureCatalog, run, onDone }) {
+    const [list, setList] = react.useState(null);
+    const [loading, setLoading] = react.useState(false), [failure, setFailure] = react.useState(""), [query, setQuery] = react.useState("");
+    const [expanded, setExpanded] = react.useState({});
+    const load = async (refresh) => {
+      setLoading(true);
+      setFailure("");
+      try {
+        setList(await request("/api/plugins/market" + (refresh ? "?refresh=1" : "")));
+      } catch (error) {
+        setFailure(error instanceof Error ? error.message : String(error));
+      } finally {
+        setLoading(false);
+      }
+    };
+    const open = () => {
+      ensureCatalog();
+      if (!list && !loading) void load(false);
+    };
+    const install = async (item, replace = false) => {
+      if (disabled) return;
+      const ok = await sdk.confirmDialog({
+        title: (replace ? sdk.T("更新插件", "Update plugin") : sdk.T("安装插件", "Install plugin")) + " " + item.full_name,
+        message: replace ? sdk.T("将从 GitHub 拉取最新代码覆盖当前插件（若含前端源码将自动打包）；已启用的热插拔插件会立即热重载生效。", "Pull the latest code from GitHub and replace the installed plugin (frontend sources are built automatically); active hot-pluggable plugins hot-reload immediately.") : sdk.T("市场条目来自 GitHub 上的第三方仓库，未经审核；插件代码以当前用户权限运行。仅安装你信任的来源。安装后默认未启用。", "Market entries are unreviewed third-party GitHub repositories; plugin code runs with your user permissions. Only install sources you trust. Installed plugins start disabled.")
+      });
+      if (!ok) return;
+      setFailure("");
+      void run(async () => {
+        const result = await request("/api/plugins/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: item.clone_url, replace }) });
+        if (!result.imported) throw new Error("Invalid JSON response");
+        onDone(result);
+      }, setFailure);
+    };
+    const shown = ((list == null ? void 0 : list.items) || []).filter((item) => sdk.matches(query, item.full_name, item.plugin_name, item.version, item.description, item.description_zh, item.category, item.readme));
+    return /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("插件市场", "Plugin market"), icon: "download", order: 31, className: "gah-plugin-market-dialog", onOpen: open, children: [
+      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "dialog-head", children: /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("插件市场", "Plugin market") }) }),
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("p", { className: "plugin-note plugin-profile", children: [
+          sdk.T("数据来自 GitHub topic ", "Listed from the GitHub topic "),
+          /* @__PURE__ */ jsxRuntime.jsx("code", { children: (list == null ? void 0 : list.topic) || "ga-harness-plugin" }),
+          sdk.T("，未经审核。给自己的插件仓库打上该 topic 即可出现在这里；安装后请到“插件”页启用。", ", unreviewed. Tag your plugin repository with this topic to list it here; enable installed plugins under Plugins.")
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索市场插件名称或说明", "Search market plugin names or descriptions"), "aria-label": sdk.T("搜索市场插件", "Search market plugins"), onChange: (event) => setQuery(event.target.value) }),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: loading, onClick: () => void load(true), children: sdk.T("刷新", "Refresh") })
+        ] }),
+        failure && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: failure }),
+        loading && !list && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-empty", children: sdk.T("加载中...", "Loading...") }),
+        list && !shown.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-empty", children: list.items.length ? sdk.T("没有符合条件的插件", "No matching plugins") : sdk.T("市场里还没有插件", "No plugins in the market yet") }),
+        /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "plugin-market-list", "aria-label": sdk.T("插件市场列表", "Plugin market list"), children: shown.map((item) => {
+          var _a, _b, _c, _d, _e, _f;
+          const pluginId = guessName(item);
+          const local = catalog.find((plugin) => plugin.name === pluginId);
+          const conflict = !!local && !local.hot;
+          const have = !!local && !!local.hot;
+          const localVer = cleanVer(local == null ? void 0 : local.version);
+          const remoteVer = cleanVer(item.version);
+          const outdated = have && hasNewerVersion(localVer, remoteVer);
+          const desc = descriptionOf(item);
+          const isOpen = !!expanded[item.full_name];
+          return /* @__PURE__ */ jsxRuntime.jsxs("li", { className: "plugin-market-item", "data-expanded": isOpen || void 0, children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-top", children: [
+              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-main", children: [
+                /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-head", children: [
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-market-title", children: pluginId }),
+                  remoteVer && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-version", children: "v" + remoteVer }),
+                  item.category && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", children: categoryOf(item)[1] }),
+                  have && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", "data-tag": outdated ? "pending" : "override", children: outdated ? localVer ? sdk.T("已装 v", "Installed v") + localVer + " → v" + remoteVer : sdk.T("可更新 v", "Update v") + remoteVer : localVer ? sdk.T("已安装 v", "Installed v") + localVer : sdk.T("已安装", "Installed") }),
+                  /* @__PURE__ */ jsxRuntime.jsx("a", { className: "plugin-market-name", href: item.url, target: "_blank", rel: "noreferrer noopener", children: item.full_name })
+                ] }),
+                /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-market-desc", children: desc || sdk.T("暂无说明", "No description") }),
+                /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-foot", children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-market-meta", children: [
+                    "★ " + item.stars,
+                    item.license && item.license !== "NOASSERTION" ? " · " + item.license : "",
+                    item.updated_at ? " · " + item.updated_at.slice(0, 10) : "",
+                    item.fork ? " · fork" : ""
+                  ] }),
+                  !!(((_a = item.requires) == null ? void 0 : _a.length) || ((_b = item.provides) == null ? void 0 : _b.length) || ((_c = item.packages) == null ? void 0 : _c.length)) && /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-caps", children: [
+                    !!((_d = item.requires) == null ? void 0 : _d.length) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", children: sdk.T("依赖: ", "Requires: ") + item.requires.join(", ") }),
+                    !!((_e = item.provides) == null ? void 0 : _e.length) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", children: sdk.T("提供: ", "Provides: ") + item.provides.join(", ") }),
+                    !!((_f = item.packages) == null ? void 0 : _f.length) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-tag", children: "pip: " + item.packages.join(", ") })
+                  ] })
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-market-actions", children: [
+                item.readme && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-market-detail-btn", "aria-expanded": isOpen, onClick: () => setExpanded((prev) => ({ ...prev, [item.full_name]: !isOpen })), children: isOpen ? sdk.T("收起说明", "Hide details") : sdk.T("详细说明", "Details") }),
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: have && !outdated ? "secondary" : "plugin-import-submit", disabled: disabled || conflict, title: conflict ? sdk.T("与内置受保护插件同名，不可覆盖", "Conflicts with a protected builtin plugin") : have ? sdk.T("从 GitHub 拉取最新代码覆盖并热重载", "Pull latest code from GitHub and hot-reload") : void 0, onClick: () => void install(item, have), children: conflict ? sdk.T("内置同名", "Builtin") : have ? outdated ? sdk.T("更新 v", "Update v") + remoteVer : localVer && remoteVer ? sdk.T("重新安装", "Reinstall") : sdk.T("更新", "Update") : sdk.T("安装", "Install") })
+              ] })
+            ] }),
+            item.readme && isOpen && /* @__PURE__ */ jsxRuntime.jsx(MarketReadme, { text: item.readme })
+          ] }, item.full_name);
+        }) })
+      ] })
+    ] });
+  }
   function PluginManager({ api }) {
     const { state, changing } = sdk.useHost();
     const { busy, working, run } = sdk.useOperation(api, true);
     const lockedByRun = (plugin) => state.running && !plugin.run_safe;
     const [config, setConfig] = react.useState(null);
+    const [marketApi] = react.useState(() => ({ ...api, name: "web-plugins-market" }));
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
     const [query, setQuery] = react.useState(""), [filter, setFilter] = react.useState("all"), [source, setSource] = react.useState("all"), [category, setCategory] = react.useState("all");
     const cards = react.useRef(null), back = react.useRef(null);
@@ -350,11 +493,13 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         setConfig(result.catalog);
       }, setError);
     };
-    const imported = (result) => {
+    const imported = (result, openDetail = true) => {
       setConfig(result);
-      const { name, replaced, restart_required } = result.imported;
-      api.notice((replaced ? sdk.T("已替换 ", "Replaced ") : sdk.T("已导入 ", "Imported ")) + name + (restart_required ? sdk.T("；重启后生效", "; applies after restart") : sdk.T("，默认未启用", "; it starts disabled")));
-      if (result.items.some((plugin) => plugin.name === name)) {
+      const { name, version, replaced, hot_reloaded, restart_required } = result.imported;
+      const label = name + (version ? " v" + version.replace(/^v/i, "") : "");
+      const suffix = restart_required ? sdk.T("；重启后生效", "; applies after restart") : hot_reloaded ? sdk.T("，已热重载生效", "; hot-reloaded") : replaced ? "" : sdk.T("，默认未启用", "; it starts disabled");
+      api.notice((replaced ? sdk.T("已更新 ", "Updated ") : sdk.T("已导入 ", "Imported ")) + label + suffix);
+      if (openDetail && result.items.some((plugin) => plugin.name === name)) {
         setEditing(name);
         requestAnimationFrame(() => {
           var _a;
@@ -362,69 +507,75 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         });
       }
     };
-    return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children: state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("插件", "Plugins"), icon: "puzzle", order: 30, className: "gah-plugin-dialog", onOpen: load, children: [
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: "dialog-head", children: /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("插件管理", "Plugins") }) }),
-      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
-        (config == null ? void 0 : config.restart_required) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", role: "status", children: sdk.T("已保存，下次启动生效", "Saved; applies on next start") }),
-        /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-catalog", hidden: !!selected, children: [
-          /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改保存到本地；支持热插拔的插件立即生效，其余下次启动生效。", ". Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.") : "" }),
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") }),
-            /* @__PURE__ */ jsxRuntime.jsx(ImportPlugin, { disabled: working || changing || state.running, run, onError: setError, onDone: imported })
-          ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-categories", role: "tablist", "aria-label": sdk.T("按分类筛选", "Filter by category"), children: [["all", sdk.T("全部分类", "All categories")], ...present].map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-category", "data-category": key, "aria-selected": category === key, onClick: () => setCategory(key), children: [
-            label,
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: base.filter((plugin) => inCategory(plugin, key)).length })
-          ] }, key)) }),
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-filter-bar", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsxs(sdk.SettingsPanel, { api, label: sdk.T("插件", "Plugins"), icon: "puzzle", order: 30, className: "gah-plugin-dialog", onOpen: load, children: [
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "dialog-head", children: /* @__PURE__ */ jsxRuntime.jsx("h2", { children: sdk.T("插件管理", "Plugins") }) }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "dialog-content", children: [
+          (config == null ? void 0 : config.restart_required) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", role: "status", children: sdk.T("已保存，下次启动生效", "Saved; applies on next start") }),
+          /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-catalog", hidden: !!selected, children: [
+            /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note plugin-profile", hidden: !config, children: config ? sdk.T("配置方案：", "Profile: ") + config.profile + sdk.T("。更改保存到本地；支持热插拔的插件立即生效，其余下次启动生效。", ". Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.") : "" }),
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") }),
+              /* @__PURE__ */ jsxRuntime.jsx(ImportPlugin, { disabled: working || changing || state.running, run, onError: setError, onDone: imported })
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-categories", role: "tablist", "aria-label": sdk.T("按分类筛选", "Filter by category"), children: [["all", sdk.T("全部分类", "All categories")], ...present].map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-category", "data-category": key, "aria-selected": category === key, onClick: () => setCategory(key), children: [
               label,
-              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inFilter(plugin, key)).length })
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: base.filter((plugin) => inCategory(plugin, key)).length })
             ] }, key)) }),
-            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters plugin-sources", role: "tablist", "aria-label": sdk.T("按来源筛选", "Filter by source"), children: sources.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-source": key, "aria-selected": source === key, onClick: () => setSource(key), children: [
-              label,
-              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inSource(plugin, key)).length })
-            ] }, key)) })
-          ] }),
-          error && !selected && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-groups", ref: cards, "aria-label": sdk.T("插件列表", "Plugin list"), children: categories.map(([key, label]) => {
-            const items = shown.filter((plugin) => categoryOf(plugin)[0] === key);
-            return items.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-group", "data-category": key, children: [
-              /* @__PURE__ */ jsxRuntime.jsxs("h3", { className: "plugin-group-title", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-filter-bar", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters", role: "tablist", "aria-label": sdk.T("按状态筛选", "Filter by status"), children: filters.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-filter": key, "aria-selected": filter === key, onClick: () => setFilter(key), children: [
                 label,
-                /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: items.length })
-              ] }),
-              /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "plugin-grid", "aria-label": label, children: items.map((plugin) => /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
-                /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "plugin-card", "data-plugin": plugin.name, "data-state": plugin.state, "aria-label": plugin.name + sdk.T("，", ", ") + stateLabel(plugin), disabled: working, onClick: () => {
-                  setEditing(plugin.name);
-                  setError("");
-                  requestAnimationFrame(() => {
-                    var _a;
-                    return (_a = back.current) == null ? void 0 : _a.focus();
-                  });
-                }, children: [
-                  /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-head", children: [
-                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-name", title: plugin.name, children: plugin.name }),
-                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", "data-state": plugin.state, children: stateLabel(plugin) }),
-                    (plugin.protected || plugin.hot) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-switch-slot" })
-                  ] }),
-                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-desc", title: descriptionOf(plugin) || void 0, children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
-                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-foot", children: /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin, compact: true }) })
+                /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inFilter(plugin, key)).length })
+              ] }, key)) }),
+              /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-filters plugin-sources", role: "tablist", "aria-label": sdk.T("按来源筛选", "Filter by source"), children: sources.map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-filter", "data-source": key, "aria-selected": source === key, onClick: () => setSource(key), children: [
+                label,
+                /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: visible.filter((plugin) => inSource(plugin, key)).length })
+              ] }, key)) })
+            ] }),
+            error && !selected && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
+            /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-groups", ref: cards, "aria-label": sdk.T("插件列表", "Plugin list"), children: categories.map(([key, label]) => {
+              const items = shown.filter((plugin) => categoryOf(plugin)[0] === key);
+              return items.length > 0 && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-group", "data-category": key, children: [
+                /* @__PURE__ */ jsxRuntime.jsxs("h3", { className: "plugin-group-title", children: [
+                  label,
+                  /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-count", children: items.length })
                 ] }),
-                plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: plugin.enabled, disabled: working || changing || lockedByRun(plugin), label: (plugin.enabled ? sdk.T("停用 ", "Disable ") : sdk.T("启用 ", "Enable ")) + plugin.name, onToggle: (next) => toggle(plugin, next) }),
-                plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-lock", title: sdk.T("受保护：必须加载，不可停用", "Protected: always loaded"), "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("svg", { viewBox: "0 0 16 16", width: "14", height: "14", children: /* @__PURE__ */ jsxRuntime.jsx("path", { fill: "currentColor", d: "M8 1.5a3.5 3.5 0 0 0-3.5 3.5v2H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V5A3.5 3.5 0 0 0 8 1.5Zm2 5.5H6V5a2 2 0 1 1 4 0v2Z" }) }) })
-              ] }, plugin.name)) })
-            ] }, key);
-          }) }),
-          !shown.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-empty", children: working ? sdk.T("加载中...", "Loading...") : (config == null ? void 0 : config.items.length) ? sdk.T("没有符合条件的插件", "No matching plugins") : sdk.T("没有发现可管理的插件", "No manageable plugins found") })
-        ] }),
-        selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
-          /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: lockedByRun(selected), error, onChange: change, onToggle: (next) => toggle(selected, next), job: (job == null ? void 0 : job.name) === selected.name ? job : null, installing, packageIndex: (config == null ? void 0 : config.package_index) || "", onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
+                /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "plugin-grid", "aria-label": label, children: items.map((plugin) => /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
+                  /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "plugin-card", "data-plugin": plugin.name, "data-state": plugin.state, "aria-label": plugin.name + sdk.T("，", ", ") + stateLabel(plugin), disabled: working, onClick: () => {
+                    setEditing(plugin.name);
+                    setError("");
+                    requestAnimationFrame(() => {
+                      var _a;
+                      return (_a = back.current) == null ? void 0 : _a.focus();
+                    });
+                  }, children: [
+                    /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-card-head", children: [
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-name", title: plugin.name, children: plugin.name }),
+                      plugin.version && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-version", children: "v" + plugin.version.replace(/^v/i, "") }),
+                      /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-badge", "data-state": plugin.state, children: stateLabel(plugin) }),
+                      (plugin.protected || plugin.hot) && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-switch-slot" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-desc", title: descriptionOf(plugin) || void 0, children: descriptionOf(plugin) || sdk.T("暂无说明", "No description") }),
+                    /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-card-foot", children: /* @__PURE__ */ jsxRuntime.jsx(PluginTags, { plugin, compact: true }) })
+                  ] }),
+                  plugin.hot && !plugin.protected && /* @__PURE__ */ jsxRuntime.jsx(Switch, { checked: plugin.enabled, disabled: working || changing || lockedByRun(plugin), label: (plugin.enabled ? sdk.T("停用 ", "Disable ") : sdk.T("启用 ", "Enable ")) + plugin.name, onToggle: (next) => toggle(plugin, next) }),
+                  plugin.protected && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "plugin-lock", title: sdk.T("受保护：必须加载，不可停用", "Protected: always loaded"), "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("svg", { viewBox: "0 0 16 16", width: "14", height: "14", children: /* @__PURE__ */ jsxRuntime.jsx("path", { fill: "currentColor", d: "M8 1.5a3.5 3.5 0 0 0-3.5 3.5v2H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V5A3.5 3.5 0 0 0 8 1.5Zm2 5.5H6V5a2 2 0 1 1 4 0v2Z" }) }) })
+                ] }, plugin.name)) })
+              ] }, key);
+            }) }),
+            !shown.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-empty", children: working ? sdk.T("加载中...", "Loading...") : (config == null ? void 0 : config.items.length) ? sdk.T("没有符合条件的插件", "No matching plugins") : sdk.T("没有发现可管理的插件", "No manageable plugins found") })
+          ] }),
+          selected && /* @__PURE__ */ jsxRuntime.jsxs("section", { className: "plugin-detail", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { ref: back, type: "button", className: "secondary plugin-back", disabled: working, onClick: toGrid, children: sdk.T("← 全部插件", "← All plugins") }),
+            /* @__PURE__ */ jsxRuntime.jsx(PluginDetails, { plugin: selected, busy: working || changing, running: lockedByRun(selected), error, onChange: change, onToggle: (next) => toggle(selected, next), job: (job == null ? void 0 : job.name) === selected.name ? job : null, installing, packageIndex: (config == null ? void 0 : config.package_index) || "", onInstall: install }, selected.name + ":" + (config == null ? void 0 : config.revision))
+          ] })
         ] })
-      ] })
-    ] }) });
+      ] }),
+      state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsx(Market, { api: marketApi, disabled: working || changing || state.running, catalog: (config == null ? void 0 : config.items) || [], ensureCatalog: () => {
+        if (!config) void load();
+      }, run, onDone: (result) => imported(result, false) })
+    ] });
   }
   sdk.defineReact("web-plugins", PluginManager);
   exports.PluginManager = PluginManager;

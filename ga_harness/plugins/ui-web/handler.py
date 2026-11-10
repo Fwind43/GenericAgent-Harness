@@ -399,6 +399,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(*self.frontend.session_export(parse_qs(urlsplit(self.path).query)))
         elif path == "/api/runs":
             self._json(*self.frontend.run_query(parse_qs(urlsplit(self.path).query)))
+        elif path == "/api/plugins/market":
+            self._json(*self.frontend.plugin_market(parse_qs(urlsplit(self.path).query)))
         elif path == "/api/plugins":
             self._json(*self.frontend.plugin_catalog())
         elif path == "/api/models/config":

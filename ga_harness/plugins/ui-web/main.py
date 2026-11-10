@@ -610,6 +610,20 @@ class WebFrontend:
         except Exception:
             return 503, {"error": "plugin import failed; check the log for details"}
 
+    def plugin_market(self, query=None):
+        """List market plugins (public GitHub repositories tagged ``ga-harness-plugin``)."""
+        if not self.plugins:
+            return 404, {"error": "plugin-manager is not enabled"}
+        from ga_harness import plugin_market
+        refresh = (query or {}).get("refresh", [""])[0] == "1"
+        # Network call; never hold the frontend lock meanwhile.
+        try:
+            return 200, plugin_market.search(refresh=refresh)
+        except plugin_market.MarketError as e:
+            return 502, {"error": str(e)}
+        except Exception:
+            return 503, {"error": "plugin market is unavailable; check the log for details"}
+
     def model_config(self):
         if not self.models:
             return 404, {"error": "model-store is not enabled"}

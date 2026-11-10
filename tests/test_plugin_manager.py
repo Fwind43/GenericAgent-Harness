@@ -247,7 +247,7 @@ def test_bundled_plugin_settings_are_editable():
     ms = discover([PLUGINS])
     expect = {"ga-timing": {"print"},
               "ga-stdout": {"passthrough", "file"}, "ga-prompt": {"prepend", "append", "replace_file"},
-              "ga-events": {"max_data"}}
+              "ga-events": {"max_data", "max_prompt"}}
     for name, keys in expect.items():
         fields = public_fields(ms[name])
         assert set(fields) == keys, name
@@ -279,5 +279,36 @@ def test_run_safe_plugins(tmp_path):
         assert not m.run_safe("missing") and not m.run_safe(None)
         assert item(m.catalog(), "web-tailscale")["run_safe"] is True
         assert item(m.catalog(), "demo")["run_safe"] is False
+    finally:
+        rt.dispose()
+
+
+def test_import_replace_hot_reloads_enabled_user_plugin(tmp_path, monkeypatch):
+    import io, sys, zipfile
+    from ga_harness.plugin_manager import user_plugin_dir
+    monkeypatch.setenv("GAH_HOME", str(tmp_path / "home"))
+    def make_zip(version, marker):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("plugin.toml", f'name = "hot-user"\nversion = "{version}"\nentry = "main:apply"\nrequires = ["ga.hooks"]\n')
+            zf.writestr("main.py", f'MARKER = "{marker}"\ndef apply(ctx, config):\n    return lambda: None\n')
+        return buf.getvalue()
+    rt, m = make_manager(tmp_path)
+    m.preferences.plugin_dirs = [PLUGINS, user_plugin_dir()]
+    try:
+        r1 = m.import_plugin(make_zip("0.1.0", "v1"), filename="hot-0.1.0.zip")
+        assert r1["imported"]["version"] == "0.1.0" and r1["imported"]["replaced"] is False
+        assert item(r1, "hot-user")["version"] == "0.1.0"
+        assert item(r1, "hot-user")["source_meta"]["version"] == "0.1.0"
+        c1 = change(m, "hot-user", True)
+        assert item(c1, "hot-user")["state"] == "active" and "hot-user" in rt.handles
+        assert sys.modules["ga_harness_ext_hot_user.main"].MARKER == "v1"
+        r2 = m.import_plugin(make_zip("0.2.0", "v2"), filename="hot-0.2.0.zip", replace=True)
+        assert r2["imported"]["replaced"] is True
+        assert r2["imported"]["hot_reloaded"] is True
+        assert r2["imported"]["restart_required"] is False
+        assert item(r2, "hot-user")["version"] == "0.2.0"
+        assert item(r2, "hot-user")["state"] == "active"
+        assert sys.modules["ga_harness_ext_hot_user.main"].MARKER == "v2"
     finally:
         rt.dispose()

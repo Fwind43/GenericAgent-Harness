@@ -32,12 +32,17 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onToggle
     onChange('save', enabled, config);
   };
   return <div className="plugin-detail-card">
-    <div className="plugin-detail-head"><h3 className="plugin-title">{plugin.name}</h3><span className="plugin-badge plugin-status" data-state={plugin.state}>{stateLabel(plugin)}</span></div>
+    <div className="plugin-detail-head"><h3 className="plugin-title">{plugin.name}</h3>{plugin.version && <span className="plugin-version">{'v' + plugin.version.replace(/^v/i, '')}</span>}<span className="plugin-badge plugin-status" data-state={plugin.state}>{stateLabel(plugin)}</span></div>
     <div className="plugin-tags"><PluginTags plugin={plugin} /></div>
     <p className="plugin-description">{descriptionOf(plugin) || T('\u6682\u65e0\u8bf4\u660e', 'No description')}</p>
     <dl className="plugin-deps">{([
       ['requires', T('\u4f9d\u8d56\u80fd\u529b', 'Requires')], ['provides', T('\u63d0\u4f9b\u80fd\u529b', 'Provides')], ['dependents', T('\u88ab\u63d2\u4ef6\u4f9d\u8d56', 'Required by')], ['packages', T('Python \u4f9d\u8d56', 'Python packages')],
-    ] as const).map(([key, label]) => <Fragment key={key}><dt>{label}</dt><dd>{plugin[key]?.join(T('\u3001', ', ')) || T('\u65e0', 'None')}</dd></Fragment>)}</dl>
+    ] as const).map(([key, label]) => <Fragment key={key}><dt>{label}</dt><dd>{plugin[key]?.join(T('\u3001', ', ')) || T('\u65e0', 'None')}</dd></Fragment>)}
+    {plugin.source_meta && <><dt>{T('\u5b89\u88c5\u6765\u6e90', 'Install source')}</dt><dd>{[
+      plugin.source_meta.type === 'git' ? (plugin.source_meta.url || 'git') : (plugin.source_meta.filename || 'zip'),
+      plugin.source_meta.commit ? plugin.source_meta.commit.slice(0, 7) : '',
+      plugin.source_meta.built_frontend ? T('\u5df2\u7f16\u8bd1\u524d\u7aef', 'frontend built') : '',
+    ].filter(Boolean).join(' \u00b7 ')}</dd></>}</dl>
     {!!plugin.workers?.length && <p className="plugin-note plugin-workers">{T('\u4f9d\u8d56 ', 'Depends on ') + plugin.workers.join(T('\u3001', ', ')) + T('\uff08\u4efb\u52a1\u8fdb\u7a0b\u5185\u81ea\u52a8\u52a0\u8f7d\uff09', ' (loaded automatically inside task workers)')}</p>}
     {warning && <p className="plugin-note plugin-warning">{warning}</p>}
     {!!plugin.missing_packages?.length && onInstall && <div className="plugin-actions plugin-install">

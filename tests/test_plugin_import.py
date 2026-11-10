@@ -93,3 +93,23 @@ def test_git_rejects_local_and_unsafe_urls(tmp_path, url):
 def test_git_rejects_option_refs(tmp_path):
     with pytest.raises(pi.PluginImportError, match="branch"):
         _install({"url": "https://example.com/x.git", "ref": "--upload-pack=x"}, tmp_path)
+
+
+def test_version_source_metadata_and_frontend_build_hook(tmp_path, monkeypatch):
+    import json
+    built = []
+    def fake_build(root):
+        built.append(root.name)
+        (root / "client.js").write_text("// built\n", encoding="utf-8")
+        return True
+    monkeypatch.setattr(pi, "build_frontend", fake_build)
+    files = {
+        "plugin.toml": 'name = "demo"\nversion = "1.2.3"\nentry = "main:apply"\n',
+        "main.py": "def apply(app):\n    pass\n",
+        "src/index.tsx": "export default 1;\n",
+    }
+    out = _install(_zip(files), tmp_path)
+    assert out["version"] == "1.2.3" and out["built_frontend"] is True and built
+    meta = json.loads((tmp_path / "demo" / ".gah-source.json").read_text(encoding="utf-8"))
+    assert meta["type"] == "zip" and meta["version"] == "1.2.3" and meta["built_frontend"] is True
+    assert (tmp_path / "demo" / "client.js").read_text(encoding="utf-8") == "// built\n"

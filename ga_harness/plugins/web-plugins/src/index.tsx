@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type PluginAPI, type PluginCatalog, type PluginInfo, useHost, T, SettingsPanel, useOperation, matches, confirmDialog, defineReact } from '@gah/sdk';
 import { PluginDetails, type PluginChange } from './PluginDetails';
 import { ImportPlugin, type ImportResult } from './ImportPlugin';
+import { Market } from './Market';
 import { categories, categoryOf, descriptionOf, filters, inFilter, inSource, PluginTags, sources, stateLabel, Switch } from './helpers';
 
 export function PluginManager({ api }: { api: PluginAPI }) {
@@ -10,6 +11,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
   const { busy, working, run } = useOperation(api, true);
   const lockedByRun = (plugin: PluginInfo) => state.running && !plugin.run_safe;
   const [config, setConfig] = useState<PluginCatalog | null>(null);
+  const [marketApi] = useState<PluginAPI>(() => ({ ...api, name: 'web-plugins-market' }));
   const [editing, setEditing] = useState<string | null>(null), [error, setError] = useState('');
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [source, setSource] = useState('all'), [category, setCategory] = useState('all');
   const cards = useRef<HTMLDivElement>(null), back = useRef<HTMLButtonElement>(null);
@@ -81,11 +83,19 @@ export function PluginManager({ api }: { api: PluginAPI }) {
       setConfig(result.catalog);
     }, setError);
   };
-  const imported = (result: ImportResult) => {
+  const imported = (result: ImportResult, openDetail = true) => {
     setConfig(result);
-    const { name, replaced, restart_required } = result.imported;
-    api.notice((replaced ? T('\u5df2\u66ff\u6362 ', 'Replaced ') : T('\u5df2\u5bfc\u5165 ', 'Imported ')) + name + (restart_required ? T('\uff1b\u91cd\u542f\u540e\u751f\u6548', '; applies after restart') : T('\uff0c\u9ed8\u8ba4\u672a\u542f\u7528', '; it starts disabled')));
-    if (result.items.some(plugin => plugin.name === name)) { setEditing(name); requestAnimationFrame(() => back.current?.focus()); }
+    const { name, version, replaced, hot_reloaded, restart_required } = result.imported;
+    const label = name + (version ? ' v' + version.replace(/^v/i, '') : '');
+    const suffix = restart_required
+      ? T('\uff1b\u91cd\u542f\u540e\u751f\u6548', '; applies after restart')
+      : hot_reloaded
+        ? T('\uff0c\u5df2\u70ed\u91cd\u8f7d\u751f\u6548', '; hot-reloaded')
+        : replaced
+          ? ''
+          : T('\uff0c\u9ed8\u8ba4\u672a\u542f\u7528', '; it starts disabled');
+    api.notice((replaced ? T('\u5df2\u66f4\u65b0 ', 'Updated ') : T('\u5df2\u5bfc\u5165 ', 'Imported ')) + label + suffix);
+    if (openDetail && result.items.some(plugin => plugin.name === name)) { setEditing(name); requestAnimationFrame(() => back.current?.focus()); }
   };
   return <>
     {state.plugins_enabled && <SettingsPanel api={api} label={T('\u63d2\u4ef6', 'Plugins')} icon="puzzle" order={30} className="gah-plugin-dialog" onOpen={load}>
@@ -102,7 +112,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
           <div className="plugin-groups" ref={cards} aria-label={T('\u63d2\u4ef6\u5217\u8868', 'Plugin list')}>{categories.map(([key, label]) => {
             const items = shown.filter(plugin => categoryOf(plugin)[0] === key);
             return items.length > 0 && <section key={key} className="plugin-group" data-category={key}><h3 className="plugin-group-title">{label}<span className="plugin-count">{items.length}</span></h3><ul className="plugin-grid" aria-label={label}>{items.map(plugin => <li key={plugin.name}><button type="button" className="plugin-card" data-plugin={plugin.name} data-state={plugin.state} aria-label={plugin.name + T('\uff0c', ', ') + stateLabel(plugin)} disabled={working} onClick={() => { setEditing(plugin.name); setError(''); requestAnimationFrame(() => back.current?.focus()); }}>
-              <span className="plugin-card-head"><span className="plugin-name" title={plugin.name}>{plugin.name}</span><span className="plugin-badge" data-state={plugin.state}>{stateLabel(plugin)}</span>{(plugin.protected || plugin.hot) && <span className="plugin-switch-slot" />}</span>
+              <span className="plugin-card-head"><span className="plugin-name" title={plugin.name}>{plugin.name}</span>{plugin.version && <span className="plugin-version">{'v' + plugin.version.replace(/^v/i, '')}</span>}<span className="plugin-badge" data-state={plugin.state}>{stateLabel(plugin)}</span>{(plugin.protected || plugin.hot) && <span className="plugin-switch-slot" />}</span>
               <span className="plugin-card-desc" title={descriptionOf(plugin) || undefined}>{descriptionOf(plugin) || T('\u6682\u65e0\u8bf4\u660e', 'No description')}</span>
               <span className="plugin-card-foot"><PluginTags plugin={plugin} compact /></span>
             </button>{plugin.hot && !plugin.protected && <Switch checked={plugin.enabled} disabled={working || changing || lockedByRun(plugin)} label={(plugin.enabled ? T('\u505c\u7528 ', 'Disable ') : T('\u542f\u7528 ', 'Enable ')) + plugin.name} onToggle={next => toggle(plugin, next)} />}{plugin.protected && <span className="plugin-lock" title={T('\u53d7\u4fdd\u62a4\uff1a\u5fc5\u987b\u52a0\u8f7d\uff0c\u4e0d\u53ef\u505c\u7528', 'Protected: always loaded')} aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M8 1.5a3.5 3.5 0 0 0-3.5 3.5v2H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-.5V5A3.5 3.5 0 0 0 8 1.5Zm2 5.5H6V5a2 2 0 1 1 4 0v2Z"/></svg></span>}</li>)}</ul></section>;
@@ -112,6 +122,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
         {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={lockedByRun(selected)} error={error} onChange={change} onToggle={next => toggle(selected, next)} job={job?.name === selected.name ? job : null} installing={installing} packageIndex={config?.package_index || ''} onInstall={install} /></section>}
       </div>
     </SettingsPanel>}
+    {state.plugins_enabled && <Market api={marketApi} disabled={working || changing || state.running} catalog={config?.items || []} ensureCatalog={() => { if (!config) void load(); }} run={run} onDone={result => imported(result, false)} />}
   </>;
 }
 

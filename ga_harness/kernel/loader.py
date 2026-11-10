@@ -51,6 +51,7 @@ class Manifest:
     isolated: bool = False  # packages live in <home>/plugin-envs/<name>, used by a child process
     # Worker-only plugins this plugin requests (display metadata; loading stays in code).
     workers: list[str] = field(default_factory=list)
+    version: str = ""
 
     def load_apply(self) -> Callable:
         mod_name, _, attr = self.entry.partition(":")
@@ -70,6 +71,15 @@ class Manifest:
         return Plugin(self.name, self.load_apply(), list(self.inject), list(self.provides))
 
 
+def unload_plugin_modules(name: str) -> None:
+    """Purge cached Python modules for ``name`` so an updated plugin reloads from disk."""
+    pkg = "ga_harness_ext_" + name.replace("-", "_")
+    prefix = pkg + "."
+    for key in [k for k in list(sys.modules) if k == pkg or k.startswith(prefix)]:
+        sys.modules.pop(key, None)
+    importlib.invalidate_caches()
+
+
 def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
     found: dict[str, Manifest] = {}
     for d in dirs:
@@ -86,7 +96,8 @@ def discover(dirs: list[Path | str]) -> dict[str, Manifest]:
                          packages=[str(x) for x in data.get("packages", []) or []],
                          worker_only=data.get("worker_only") is True,
                          isolated=data.get("isolated") is True,
-                         workers=[str(x) for x in data.get("workers", []) or []])
+                         workers=[str(x) for x in data.get("workers", []) or []],
+                         version=str(data.get("version") or "").strip())
             found[m.name] = m  # later dirs override earlier ones
     return found
 

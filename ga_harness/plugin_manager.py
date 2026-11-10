@@ -315,7 +315,9 @@ class PluginManager:
                            or (not current["disabled"] and h is None and name in getattr(
                                self.ctx.runtime, "unmet_packages", {})))
                 lack = missing_packages(m)
-                items.append({"name": name, "description": m.description,
+                from .plugin_import import read_source_meta
+                items.append({"name": name, "version": getattr(m, "version", "") or "",
+                              "description": m.description,
                               "description_zh": getattr(m, "description_zh", ""),
                               "category": getattr(m, "category", "other"),
                               "worker_only": getattr(m, "worker_only", False),
@@ -328,6 +330,7 @@ class PluginManager:
                               "protected": protected(m), "hot": hot_capable(m, p.manifests),
                               "run_safe": run_safe(m, p.manifests),
                               "source": "user" if user_plugin(m) else "builtin",
+                              "source_meta": read_source_meta(m.path) if user_plugin(m) else {},
                               "fields": fields, "config": values,
                               "requires": m.inject, "provides": m.provides,
                               "missing": [c for c in m.inject if not c.endswith("?") and not self.ctx.has(c)],
@@ -521,7 +524,7 @@ class PluginManager:
             manifests = self.preferences.manifests
             reserved = {n for n, m in manifests.items() if not user_plugin(m)} | PROTECTED
             replaceable = {n for n, m in manifests.items()
-                           if user_plugin(m) and not items.get(n, {}).get("enabled")}
+                           if user_plugin(m) and (not items.get(n, {}).get("enabled") or hot_capable(m, manifests))}
             try:
                 result = plugin_import.install(source, user_plugin_dir(), reserved=reserved,
                                                replaceable=replaceable, filename=filename,
@@ -530,15 +533,36 @@ class PluginManager:
                 raise ValueError(str(e)) from None
             except FileExistsError as e:
                 raise RuntimeError(str(e)) from None
-            if result["replaced"]:  # drop the cached old code so a later enable loads the new files
-                pkg = "ga_harness_ext_" + result["name"].replace("-", "_")
-                for mod in [k for k in sys.modules if k == pkg or k.startswith(pkg + ".")]:
-                    sys.modules.pop(mod, None)
-            old = manifests.get(result["name"])
-            # rescan only swaps manifests of hot-capable user plugins; others need a restart
-            result["restart_required"] = bool(result["replaced"] and old is not None
-                                              and not hot_capable(old, manifests))
-            catalog = self.rescan()
+            name = result["name"]
+            old = manifests.get(name)
+            was_enabled = bool(items.get(name, {}).get("enabled"))
+            old_hot = bool(old is not None and hot_capable(old, manifests))
+            if result["replaced"]:  # drop the cached old code so remount/enable loads the new files
+                purge_modules(name)
+            self.rescan()
+            new_m = self.preferences.manifests.get(name)
+            new_hot = bool(new_m is not None and hot_capable(new_m, self.preferences.manifests))
+            if result["replaced"] and was_enabled:
+                if old_hot and new_hot:
+                    p = self.preferences
+                    with p.lock:
+                        data, _ = p.read()
+                        entry = next((e for e in p.resolve(data) if e["name"] == name),
+                                     {"name": name, "disabled": False, "config": {}})
+                    try:
+                        self._hot_apply(name, entry)
+                        result["applied"] = True
+                        result["hot_reloaded"] = True
+                        result["restart_required"] = False
+                    except Exception as error:
+                        result["applied"] = False
+                        result["restart_required"] = True
+                        result["hot_error"] = f"hot apply failed ({type(error).__name__}); restart to apply"
+                else:
+                    result["restart_required"] = True
+            else:
+                result["restart_required"] = bool(result["replaced"] and old is not None and not old_hot)
+            catalog = self.catalog()
             return {**catalog, "imported": result}
         finally:
             self._import_lock.release()
@@ -569,7 +593,7 @@ class PluginManager:
             catalog = self.catalog()
         else:
             raise ValueError("unknown action; use list, enable, disable or rescan")
-        items = [{k: i[k] for k in ("name", "category", "state", "enabled", "hot", "source", "restart_required",
+        items = [{k: i[k] for k in ("name", "version", "category", "state", "enabled", "hot", "source", "restart_required",
                                     "description", "missing_packages", "requires", "provides", "missing")} for i in catalog["items"]
                  if not i.get("worker_only")]
         out = {"items": items, "issues": catalog["issues"]}

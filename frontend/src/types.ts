@@ -70,9 +70,14 @@ export interface PluginField {
   description?: string; description_zh?: string; multiline?: boolean; min?: number; max?: number;
   options?: { value: string; label?: string; label_zh?: string }[];
 }
+export interface PluginSourceMeta {
+  type?: string; url?: string; ref?: string | null; commit?: string | null; filename?: string;
+  subdir?: string | null; version?: string; built_frontend?: boolean; installed_at?: number;
+}
 export interface PluginInfo {
-  name: string; state: string; category?: string; description?: string; description_zh?: string;
+  name: string; version?: string; state: string; category?: string; description?: string; description_zh?: string;
   enabled: boolean; protected?: boolean; overridden?: boolean; restart_required?: boolean; hot?: boolean; run_safe?: boolean; source?: 'user' | 'builtin';
+  source_meta?: PluginSourceMeta | null;
   requires?: string[]; provides?: string[]; dependents?: string[]; missing?: string[];
   packages?: string[]; missing_packages?: string[]; worker_only?: boolean; workers?: string[];
   error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;

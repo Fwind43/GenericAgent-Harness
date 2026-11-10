@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type PluginCatalog, T } from '@gah/sdk';
 
-export type ImportResult = PluginCatalog & { imported: { name: string; replaced: boolean; restart_required?: boolean; packages: string[] } };
+export type ImportResult = PluginCatalog & { imported: { name: string; version?: string; replaced: boolean; hot_reloaded?: boolean; built_frontend?: boolean; restart_required?: boolean; packages: string[] } };
 
 async function send(path: string, init: RequestInit): Promise<ImportResult> {
   const response = await fetch(path, { method: 'POST', ...init });

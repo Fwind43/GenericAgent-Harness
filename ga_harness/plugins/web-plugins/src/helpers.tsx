@@ -10,7 +10,7 @@ const states: Record<string, string> = { active: T('\u8fd0\u884c\u4e2d', 'Runnin
 export const sources = [['all', T('\u5168\u90e8\u6765\u6e90', 'All sources')], ['user', T('\u6211\u7684\u63d2\u4ef6', 'My plugins')], ['builtin', T('\u5185\u7f6e', 'Built-in')]] as const;
 export const inSource = (plugin: PluginInfo, source: string) => source === 'all' || (plugin.source || 'builtin') === source;
 export const stateLabel = (plugin: PluginInfo) => states[plugin.state] || plugin.state;
-export const categoryOf = (plugin: PluginInfo) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
+export const categoryOf = (plugin: { category?: string }) => categories.find(([key]) => key === plugin.category) || categories[categories.length - 1];
 export const descriptionOf = (item: { description?: string; description_zh?: string }) => T(item.description_zh || item.description || '', item.description || '');
 export const inFilter = (plugin: PluginInfo, filter: string) => filter === 'all' || (filter === 'active' ? plugin.state === 'active' : filter === 'off' ? ['disabled', 'removed'].includes(plugin.state) : ['error', 'pending', 'missing_packages'].includes(plugin.state) || !!plugin.missing?.length || !!plugin.missing_packages?.length || !!plugin.error);
 export function Switch({ checked, disabled, label, onToggle }: { checked: boolean; disabled?: boolean; label: string; onToggle: (next: boolean) => void }) {
