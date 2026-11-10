@@ -5,7 +5,8 @@ type Task = {
   id: string; title: string; status: string; review?: string | null; basis?: string | null;
   resolved?: boolean; child: string; run_id?: string | null; objective: string;
   result?: string; error?: string; runs?: number; model?: string | null; effort?: string | null;
-  created?: number;
+  created?: number; stage?: number;
+  result_complete?: boolean; result_truncated?: boolean; result_source?: string;
   partial?: boolean;  // the snapshot holds previews of the long text fields
 };
 type Reflection = {
@@ -21,10 +22,22 @@ const REFLECT_STATUS: Record<string, [string, string]> = {
   stopped: ['\u5df2\u505c\u6b62', 'Stopped'], done: ['\u5df2\u5b8c\u6210', 'Done'],
   error: ['\u51fa\u9519', 'Error'], interrupted: ['\u5df2\u4e2d\u65ad', 'Interrupted'],
 };
+type Progress = {
+  stage: number; goal?: string; next_step?: string; status: string; reason?: string;
+};
+const PROGRESS_STATUS: Record<string, [string, string]> = {
+  active: ['\u63a8\u8fdb\u4e2d', 'Active'],
+  waiting_children: ['\u7b49\u5f85\u5b50\u4efb\u52a1', 'Waiting for tasks'],
+  waiting_external: ['\u7b49\u5f85\u5916\u90e8\u4e8b\u4ef6', 'Waiting for event'],
+  paused: ['\u5df2\u6682\u505c', 'Paused'],
+  blocked: ['\u9700\u8981\u7528\u6237\u5904\u7406', 'Blocked'],
+  done: ['\u5df2\u5b8c\u6210', 'Done'],
+};
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
   active?: string[];  // conductor sessions in active mode
   reflections?: Reflection[];
+  progress?: Progress;
   children: Record<string, { task_id: string; parent: string }>;
   limits: { running: number; open: number; total: number };
 };
@@ -90,10 +103,11 @@ function TaskRow({ task, busy, act, enter, load }: {
   const [open, setOpen] = useState(false);
   const [full, setFull] = useState<Partial<Task> | null>(null);
   // Refetch when anything that changes the text fields changes.
-  const stamp = [task.id, task.status, task.review || '', task.runs || 0, task.result?.length || 0, task.basis?.length || 0].join('|');
+  const stamp = [task.id, task.status, task.review || '', task.runs || 0, task.result?.length || 0, task.basis?.length || 0, task.result_complete, task.result_source].join('|');
   useEffect(() => {
     if (!open || !task.partial) { setFull(null); return; }
     let live = true;
+    setFull(null);
     load(task).then(value => { if (live) setFull(value); });
     return () => { live = false; };
   }, [open, task.partial, stamp]);
@@ -124,6 +138,13 @@ function TaskRow({ task, busy, act, enter, load }: {
         <div className="gah-cd-body">
           <div className="gah-cd-field"><b>{T('\u76ee\u6807', 'Objective')}</b><p>{text.objective}</p></div>
           {text.result ? <div className="gah-cd-field"><b>{T('\u7ed3\u679c', 'Result')}</b><p>{text.result}</p></div> : null}
+          {terminal && text.result_complete === false ? (
+            <div className="gah-cd-field error"><p>{T('\u672a\u6536\u5230\u5b8c\u6574\u6700\u7ec8\u4ea4\u4ed8\uff1b\u8bf7\u8865\u5145\u62a5\u544a\u6216\u72ec\u7acb\u6838\u5bf9\u4ea7\u7269\u540e\u518d\u9a8c\u6536\u3002', 'No complete final delivery. Request a report or independently inspect artifacts before verifying.')}</p></div>
+          ) : null}
+          {text.result_truncated || (task.partial && !full) ? (
+            <div className="gah-cd-hint">{T('\u5f53\u524d\u4e3a\u6458\u8981\uff1b\u5b8c\u6574\u5185\u5bb9\u53ef\u5728\u5b50\u4efb\u52a1\u4f1a\u8bdd\u4e2d\u67e5\u770b\u3002', 'Preview only; open the task chat for full details.')}</div>
+          ) : null}
+          {task.stage ? <div className="gah-cd-meta">{T(`\u9636\u6bb5 ${task.stage}`, `Stage ${task.stage}`)}</div> : null}
           {text.error ? <div className="gah-cd-field error"><b>{T('\u9519\u8bef', 'Error')}</b><p>{text.error}</p></div> : null}
           {text.basis ? <div className="gah-cd-field"><b>{T('\u9a8c\u6536\u4f9d\u636e', 'Review basis')}</b><p>{text.basis}</p></div> : null}
           <div className="gah-cd-actions">
@@ -240,6 +261,8 @@ function Panel({ api }: { api: PluginAPI }) {
   if (!on && !tasks.length && !reflections.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
+  const progress = data.progress;
+  const stageTotal = tasks.filter(t => (t.stage ?? 1) === (progress?.stage ?? 1)).length;
   const showReflect = on || reflections.length > 0;
   const showTasks = on || tasks.length > 0;
   // Task chats are hidden from the sidebar; this is their entry point.
@@ -299,6 +322,7 @@ function Panel({ api }: { api: PluginAPI }) {
           >
             {running ? <span className="gah-cd-dot running" /> : <Icon />}
             <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
+            {on && progress ? <span className="gah-cd-tag">{label(PROGRESS_STATUS, progress.status)}</span> : null}
             <Caret />
           </button>
           {open === 'tasks' ? (
@@ -312,6 +336,14 @@ function Panel({ api }: { api: PluginAPI }) {
                 </span>
                 {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
               </div>
+              {progress ? (
+                <div className="gah-cd-body">
+                  <div className="gah-cd-meta">{T(`\u9636\u6bb5 ${progress.stage} \u00b7 \u989d\u5ea6 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} \u00b7 quota ${stageTotal}/${data.limits.total}`)} {'\u00b7'} {label(PROGRESS_STATUS, progress.status)}</div>
+                  {progress.goal ? <div className="gah-cd-field"><b>{T('\u603b\u76ee\u6807', 'Goal')}</b><p>{progress.goal}</p></div> : null}
+                  {progress.next_step ? <div className="gah-cd-field"><b>{T('\u4e0b\u4e00\u6b65', 'Next step')}</b><p>{progress.next_step}</p></div> : null}
+                  {progress.reason ? <div className="gah-cd-field"><b>{T('\u72b6\u6001\u539f\u56e0', 'Reason')}</b><p>{progress.reason}</p></div> : null}
+                </div>
+              ) : null}
               {tasks.length ? (
                 <div className="gah-cd-list">
                   {tasks.map(task => (

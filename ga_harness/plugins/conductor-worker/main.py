@@ -33,9 +33,14 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
 - Split the request into independent, verifiable tasks; dispatch each with
   `conductor_dispatch` (a complete, self-contained objective: context, scope,
   deliverable, how to verify). Children cannot see this conversation.
-- Limits: at most @RUNNING@ tasks run at once, @OPEN@ may be unresolved, @TOTAL@ per
-  session. If the running limit is reached, end your turn and dispatch the rest after
-  you are woken; do not retry in a loop.
+- Limits: at most @RUNNING@ tasks run at once, @OPEN@ may be unresolved, @TOTAL@ new
+  tasks per stage. If the running limit is reached, end your turn and dispatch the
+  rest after you are woken; do not retry in a loop. Save the goal and next_step with
+  `conductor_checkpoint`. At the stage quota, review and resolve all tasks, then
+  checkpoint(action="advance", handoff=..., next_step=...). This renews the budget,
+  not the conversation: historical evidence and child sessions remain available.
+  Reuse a resolved child's session with dispatch(reuse_task=...); do not reopen it
+  with instruct. A handoff names completed work, evidence, risks and the next goal.
 - You may change your own running (concurrency) limit with `conductor_set_limit`
   (1 to @RUNNING_CAP@): raise it when many small independent tasks are ready, lower it
   when tasks compete for the same files, ports or rate-limited resources. Lowering
@@ -65,6 +70,11 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   it accepts `task_ids` to judge several at once.
   * `verified` only with concrete evidence in `basis` (files, commands, outputs the
     child reported, or what you spot-checked); add `resolve: true` to close it.
+    A task status of done is not proof of delivery. Check result_complete; if false,
+    request a final report or independently inspect the artifacts before verifying.
+    Never claim tests/builds passed unless actually authorized and run. Cite what
+    was checked and explicitly list what remains unverified. Avoid rereading the
+    same evidence unless it changed or a concrete discrepancy needs investigation.
   * otherwise `needs_work` with the reason in `basis`, and either `instruction` to
     continue the same task, or `resolve: true` to abandon it (failed/cancelled only).
   A task cannot be resolved while unreviewed; `awaiting_review` in replies lists
@@ -87,8 +97,11 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   to take when that source triggers (different sources can trigger different actions),
   report the source id, lifetime (`0` = permanent) and stop method, then
   `conductor_finish` when appropriate: this pauses active continuation but leaves
-  sources running. Stop the old id before replacing a source. Manage with list/stop
-  or the panel. Disable conductor mode to stop all sources in this session.
+  sources running. If a source exits with an error, you are woken with
+  `[Conductor event error · <title> (<id>)]`: diagnose and fix/re-register the source
+  (or report the blocker to the user). Stop the old id before replacing a source.
+  Manage with list/stop or the panel. Disable conductor mode to stop all sources in
+  this session.
 - Report to the user only verified results; state clearly what is unverified.
 - Tasks that edit the same repository in parallel should use `isolate: true`; each
   then works on its own branch `conductor/<task id>`. After review, merge the branch
@@ -100,6 +113,14 @@ pages (`file_read`, `web_scan`) to spot-check a result, but never edit or run th
   unrelated history distracts the child and costs tokens. The objective must still
   be self-contained. Resolving with `remove_worktree` keeps a worktree that a later
   unresolved task still shares.
+- The total task limit is per stage, not a lifetime session cap. Keep a compact
+  conductor_checkpoint with goal, next_step and waiting reason. At the stage cap,
+  review and resolve all old tasks, then advance with a handoff; never use reflect
+  as an executor to bypass the limit. Read-only/settings/checkpoint operations do
+  not count as work progress and cannot keep active mode spinning.
+- Reflect scripts are event monitors only: observe and report external changes.
+  Delegate builds, edits, commands and deliverables to child tasks, not scripts.
+  For waiting_external, register a live event source first and save the reason.
 """
 
 WORKER_PROMPT = """
@@ -245,6 +266,20 @@ TOOLS = {
         {**TASK_ID, **TASK_IDS,
          "remove_worktree": {"type": "boolean", "description": "Also delete the worktree directory of isolated "
                                                                "task(s); the branch is kept for merging."}}), "resolve"),
+    "conductor_checkpoint": (_tool(
+        "conductor_checkpoint",
+        "Get or save the compact goal/next step/waiting state. Advance to a fresh stage only "
+        "after all old tasks are reviewed and resolved, with a handoff and next_step. "
+        "The 48-task budget is per stage; historical tasks remain inspectable. "
+        "Checkpoint/settings/reads are not task progress.",
+        {"action": {"type": "string", "enum": ["get", "update", "advance"]},
+         "goal": {"type": "string", "description": "Current user goal (up to 4000 characters)."},
+         "next_step": {"type": "string", "description": "Concrete next action (up to 4000 characters)."},
+         "status": {"type": "string", "enum": ["active", "waiting_children", "waiting_external"],
+                    "description": "waiting_external requires a live reflect monitor and a reason."},
+         "reason": {"type": "string", "description": "Why work is waiting (up to 4000 characters)."},
+         "handoff": {"type": "string", "description": "For advance: completed work, evidence, risks and next goal."}},
+        ("action",)), "checkpoint"),
     "conductor_finish": (_tool(
         "conductor_finish",
         "Declare the user's whole request finished. In active mode you are prompted to keep "
@@ -265,7 +300,8 @@ ACTIVE_PROMPT = (
     "is running, you are prompted to continue. So do not end a turn just to report progress. "
     "While delegated tasks run you may end the turn (you are woken when they finish). If you "
     "are waiting on work outside your tasks (an external job, a build, a remote service), "
-    "dispatch a task that waits for it and reports back, rather than stopping. When everything "
+    "dispatch a task that waits for it and reports back, or register a monitor-only reflect "
+    "source and checkpoint(status=\"waiting_external\", reason=...). When everything "
     "is delivered and verified call conductor_finish(status=\"done\"); if you need the user's "
     "decision or input call conductor_finish(status=\"blocked\", reason=...) and then ask.\n")
 
@@ -315,6 +351,7 @@ def apply(ctx, config):
         state["limits"] = info.get("limits")
         state["policy"] = info.get("policy")
         state["active"] = bool(info.get("active"))
+        state["progress"] = info.get("progress")
         if state["role"] != "parent":
             return
         for schema, op in TOOLS.values():
@@ -337,6 +374,12 @@ def apply(ctx, config):
         text = nxt(text)
         if state["role"] == "parent":
             out = text + "\n" + _parent_prompt(state["limits"])
+            progress = state.get("progress")
+            if isinstance(progress, dict):
+                out += ("\n### Saved conductor checkpoint\n"
+                        "Use this handoff instead of reconstructing the whole conversation. "
+                        "The latest user request takes precedence.\n"
+                        + json.dumps(progress, ensure_ascii=False) + "\n")
             policy = state.get("policy")
             if isinstance(policy, str) and policy.strip():
                 out += ("\n### Model selection policy\n"

@@ -35,9 +35,11 @@ class Reflections:
                             "Register again explicitly; the last event may already have run.",
                             finished=time.time())
                 item.pop("message", None)
+            item.pop("notify_error", None)
+            item.pop("retry_at", None)
 
     def public(self, item):
-        return {k: v for k, v in item.items() if k not in {"message", "result", "args"}}
+        return {k: v for k, v in item.items() if k not in {"message", "result", "args", "notify_error"}}
 
     def listing(self, parent):
         with self.lock:
@@ -52,6 +54,8 @@ class Reflections:
                 item = self.records.get(body.get("reflect_id"))
                 if not item or item["parent"] != parent:
                     raise ValueError("unknown reflect_id for this session")
+                item.pop("notify_error", None)
+                item.pop("retry_at", None)
                 self._end(item, "stopped")
             self.publish()
             return self.public(item)
@@ -125,13 +129,19 @@ class Reflections:
         self.publish()
         return self.public(item)
 
-    def _end(self, item, status, error=""):
+    def _end(self, item, status, error="", notify=False):
         # Caller holds the shared conductor lock. Never wait for a process here.
         if item["status"] in TERMINAL:
             return
         item.update(status=status, error=error[:4000], finished=time.time())
         item.pop("message", None)
         item.pop("result", None)
+        if notify and status == "error":
+            item.update(notify_error="pending", retries=0)
+            item.pop("retry_at", None)
+        else:
+            item.pop("notify_error", None)
+            item.pop("retry_at", None)
         control = self.workers.get(item["id"])
         if control:
             control["stop"].set()
@@ -140,14 +150,26 @@ class Reflections:
         with self.lock:
             for item in self.records.values():
                 if item["parent"] == parent:
+                    item.pop("notify_error", None)
+                    item.pop("retry_at", None)
                     self._end(item, "stopped", "Conductor mode turned off")
 
     def ready(self, parent):
         # Caller holds lock; one event per run, so on_done receives its own result.
         return next((r for r in self.records.values() if r["parent"] == parent
-                     and r["status"] == "pending" and r.get("retry_at", 0) <= time.time()), None)
+                     and (r["status"] == "pending" or r.get("notify_error") == "pending")
+                     and r.get("retry_at", 0) <= time.time()), None)
 
     def claim(self, item):
+        if item.get("notify_error") == "pending":
+            item["notify_error"] = "submitting"
+            parts = [
+                f"[Conductor event error \u00b7 {item['title']} ({item['id']})]",
+                f"Event source exited with error and is now stopped:\n{item.get('error') or 'Unknown error'}",
+            ]
+            if item.get("instruction"):
+                parts.append(f"Action: {item['instruction']}")
+            return "\n".join(parts)
         item["status"] = "submitting"
         msg = item["message"]
         parts = [msg] if msg.startswith("[Conductor event") else [f"[Conductor event \u00b7 {item['title']} ({item['id']})]", msg]
@@ -156,6 +178,10 @@ class Reflections:
         return "\n".join(parts)
 
     def submitted(self, item, run_id):
+        if item.get("notify_error") == "submitting":
+            item.pop("notify_error", None)
+            item.pop("retry_at", None)
+            return
         if item["status"] != "submitting":
             return
         item.update(status="waiting", run_id=run_id, triggers=item["triggers"] + 1,
@@ -166,6 +192,14 @@ class Reflections:
             item.update(status="callback", result=early)
 
     def failed(self, item, error, retries, delay):
+        if item.get("notify_error") == "submitting":
+            count = item.get("retries", 0) + 1
+            if count > retries:
+                item.pop("notify_error", None)
+                item.pop("retry_at", None)
+            else:
+                item.update(notify_error="pending", retries=count, retry_at=time.time() + delay)
+            return
         if item["status"] != "submitting":
             return
         count = item.get("retries", 0) + 1
@@ -277,8 +311,11 @@ class Reflections:
                     stop.wait(0.5)
         except Exception as error:
             with self.lock:
-                self._end(item, "error", str(error))
+                notify = item["status"] not in TERMINAL and not self.closed
+                self._end(item, "error", str(error), notify=notify)
             self.publish()
+            if notify:
+                self.wake(item["parent"])
         finally:
             with self.lock:
                 self.workers.pop(item["id"], None)

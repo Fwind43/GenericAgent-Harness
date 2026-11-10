@@ -41,7 +41,8 @@ log = logging.getLogger(__name__)
 
 MAX_RUNNING = 5
 MAX_OPEN = 12
-MAX_TOTAL = 48
+MAX_TOTAL = 48  # new tasks per stage, not a lifetime session cap
+STAGE_HISTORY = 12  # bounded handoffs; old task/session records remain inspectable
 RUNNING_CAP = 8  # highest running limit a conductor may set for itself
 MAX_TEXT = 20_000
 RESULT_LIMIT = 4_000
@@ -127,32 +128,50 @@ def _worktree_changes(task):
     return f"{commits} new commit(s), {len(dirty)} uncommitted change(s)"
 
 
+def _message_result(message):
+    """Return a delivery, never the raw execution transcript or an earlier plan.
+
+    Only the last structured assistant turn can be the final answer. A run ending
+    on a tool, an empty turn or a partial reply has no complete delivery.
+    """
+    missing = {"result": "", "result_complete": False, "result_source": "missing_final"}
+    if not isinstance(message, dict):
+        return missing
+    turns = message.get("turns")
+    if not isinstance(turns, list) or not turns or not isinstance(turns[-1], dict):
+        return missing
+    turn = turns[-1]
+    reply = turn.get("reply")
+    if not isinstance(reply, str) or not reply.strip():
+        return missing
+    tools = turn.get("tools") or []
+    if any(not isinstance(t, dict) or t.get("name") != "no_tool" for t in tools):
+        return missing
+    complete = (turn.get("status") == "done"
+                and message.get("status", "done") == "done")
+    return {"result": reply.strip(), "result_complete": complete,
+            "result_source": "final_turn" if complete else "partial_turn"}
+
+
 def _message_text(message):
-    if isinstance(message, str):
-        return message
-    if isinstance(message, dict):
-        for key in ("content", "text", "message"):
-            value = message.get(key)
-            if isinstance(value, str):
-                return value
-            if isinstance(value, list):
-                parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in value]
-                return "\n".join(p for p in parts if p)
-    return ""
+    return _message_result(message)["result"]
 
 
 def _clip(text, limit=RESULT_LIMIT):
     text = text or ""
     if len(text) <= limit:
         return text
-    return text[:limit] + f"\n...[{len(text) - limit} more chars; use conductor_inspect]"
+    # Preserve the end too: it commonly holds evidence, caveats and blockers.
+    head = limit * 2 // 3
+    return (text[:head] + f"\n...[{len(text) - limit} chars omitted; use conductor_inspect]...\n"
+            + text[-(limit - head):])
 
 
 class Store:
     def __init__(self, path):
         self.path = Path(path)
         self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {},
-                     "active": {}, "reflections": {}}
+                     "active": {}, "reflections": {}, "progress": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -160,6 +179,12 @@ class Store:
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["active"] = {k: True for k, v in dict(loaded.get("active") or {}).items() if v}
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
+                    self.data["progress"] = {k: v for k, v in dict(loaded.get("progress") or {}).items()
+                                             if isinstance(v, dict)}
+                    for task in self.data["tasks"].values():
+                        if "result_source" not in task:
+                            # Legacy result was the tool transcript, not a final delivery.
+                            task.update(result="", result_complete=False, result_source="legacy_unavailable")
                     self.data["reflections"] = {k: v for k, v in dict(loaded.get("reflections") or {}).items()
                                                 if isinstance(v, dict)}
                     self.data["limits"] = dict(loaded.get("limits") or {})
@@ -201,6 +226,7 @@ def apply(ctx, config):
     # "idle" counts consecutive continuation turns in which the conductor used no conductor
     # operation; "ops" counts operations since the last parent run ended.
     auto = {}
+    progress = store.data["progress"]  # durable goal, stage handoff and wait state
     wake_retries = {}  # parent -> failed wake-up submissions in a row
     defaults = store.data["defaults"]  # parent -> {"model": name, "model_key": key, "effort": level}; absent = inherit
 
@@ -241,7 +267,9 @@ def apply(ctx, config):
     def _public(task, full=False, brief=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
-                                        "model", "model_key", "effort", "workspace", "reused_from")}
+                                        "model", "model_key", "effort", "workspace", "reused_from", "stage",
+                                        "result_complete", "result_source")}
+        out["result_truncated"] = bool(not full and len(task.get("result") or "") > RESULT_LIMIT)
         if task.get("branch"):
             out["branch"] = task["branch"]
             out["worktree"] = None if task.get("worktree_removed") else task.get("worktree")
@@ -272,11 +300,18 @@ def apply(ctx, config):
         return {"running": _max_running(parent), "open": MAX_OPEN, "total": MAX_TOTAL,
                 "running_cap": RUNNING_CAP}
 
+    def _progress(parent):
+        return progress.setdefault(parent, {"stage": 1, "goal": "", "next_step": "",
+                                            "status": "active", "reason": "", "history": []})
+
     def _counts(parent):
         items = _children(parent)
+        state = _progress(parent)
         return {"running": sum(t["status"] == "running" for t in items),
                 "open": sum(not t["resolved"] for t in items),
-                "total": len(items),
+                "total": len(items),  # historical count for compatibility
+                "stage_total": sum(t.get("stage", 1) == state["stage"] for t in items),
+                "progress": {**state, "history": list(state.get("history", []))},
                 "limits": _limits(parent),
                 "awaiting_review": [t["id"] for t in items
                                     if t["status"] in TERMINAL and not t["resolved"]
@@ -390,7 +425,8 @@ def apply(ctx, config):
     def _start(task, text):
         record = runs.start(text, session_id=task["child"], source=SOURCE)
         task.update(status="running", run_id=record["id"], finished=None, review="pending",
-                    basis="", resolved=False, acked=False, notified=False, error="")
+                    basis="", resolved=False, acked=False, notified=False, error="",
+                    result="", result_complete=False, result_source="missing_final")
         task["runs"] = task.get("runs", 0) + 1
 
     # ---- operations (shared by the RPC service and the web routes) -------
@@ -436,8 +472,10 @@ def apply(ctx, config):
         try:
             with lock:
                 counts = _counts(parent)
-                if counts["total"] >= MAX_TOTAL:
-                    raise RuntimeError(f"task limit reached ({MAX_TOTAL} per conductor session)")
+                if counts["stage_total"] >= MAX_TOTAL:
+                    raise RuntimeError(f"stage task limit reached ({MAX_TOTAL}); review and resolve all "
+                                       "tasks, then use conductor_checkpoint(action='advance') with a "
+                                       "handoff and next step; never use reflect to execute work")
                 if counts["open"] >= MAX_OPEN:
                     raise RuntimeError(f"{MAX_OPEN} tasks are unresolved; review and resolve some first")
                 if counts["running"] >= _max_running(parent):
@@ -471,6 +509,7 @@ def apply(ctx, config):
         with lock:
             task = {"id": task_id, "parent": parent, "child": child["id"],
                     "title": title, "objective": objective, "created": time.time(), "runs": 0,
+                    "stage": _progress(parent)["stage"],
                     "workspace": child.get("workspace") or workspace or ""}
             if worktree:
                 task.update(worktree=worktree[4], branch=worktree[1], repo=worktree[2], base=worktree[3])
@@ -482,6 +521,7 @@ def apply(ctx, config):
             try:
                 _apply_selection(task, *_selection(parent, model, effort))
                 _start(task, objective)
+                _progress(parent).update(status="waiting_children", reason="")
             except Exception as error:
                 failed = error
                 task.update(status="error", error=str(error), finished=time.time(), result="",
@@ -502,6 +542,8 @@ def apply(ctx, config):
                 task["acked"] = task["notified"] = True
             result = {"finished": [_public(t) for t in ready],
                       "running": [_public(t) for t in _children(parent) if t["status"] == "running"],
+                      "wait": not ready,
+                      "next_action": "review" if ready else "end_turn",
                       **_counts(parent)}
         if ready:
             _publish()
@@ -706,6 +748,48 @@ def apply(ctx, config):
         _publish()
         return {"active": on}
 
+    def checkpoint(body):
+        """Explicit durable handoff; reading/updating a plan is not execution progress."""
+        parent = _sid(body)
+        action = body.get("action", "get")
+        if action not in ("get", "update", "advance"):
+            raise ValueError("action must be get, update or advance")
+        updates = {key: _text(body, key, required=False, limit=4000)
+                   for key in ("goal", "next_step", "reason") if key in body}
+        status = body.get("status")
+        if status is not None and status not in ("active", "waiting_children", "waiting_external"):
+            raise ValueError("use finish for done/blocked; status must be active or a waiting state")
+        with lock:
+            state = _progress(parent)
+            counts = _counts(parent)
+            if action == "advance":
+                if counts["open"] or counts["running"]:
+                    raise RuntimeError("review and resolve every task before advancing the stage")
+                handoff = _text(body, "handoff", limit=4000)
+                next_step = _text(body, "next_step", limit=4000)
+                goal = updates.get("goal", state.get("goal"))
+                if not goal:
+                    raise ValueError("goal is required before advancing the stage")
+                history = [*state.get("history", []),
+                           {"stage": state["stage"], "handoff": handoff, "finished": time.time()}]
+                state.update(stage=state["stage"] + 1, history=history[-STAGE_HISTORY:],
+                             goal=goal, next_step=next_step, status="active", reason="")
+            elif action == "update":
+                if status == "waiting_children" and not counts["running"]:
+                    raise RuntimeError("no child is running; choose an actionable next step")
+                if status == "waiting_external":
+                    reason = updates.get("reason", state.get("reason"))
+                    sources = reflections.listing(parent)
+                    if not reason or not any(r.get("status") not in TERMINAL + ("stopped",) for r in sources):
+                        raise RuntimeError("waiting_external needs a reason and a live reflect event source")
+                state.update(updates)
+                if status is not None:
+                    state["status"] = status
+            out = _counts(parent)
+        if action != "get":
+            _publish()
+        return out
+
     def finish(body):
         """The conductor declares the user's request done or blocked; active mode then
         stops prompting it until the user sends another message."""
@@ -721,6 +805,8 @@ def apply(ctx, config):
                     "collect and review them first, or finish as blocked with the reason"
                     % (counts["running"], len(counts["awaiting_review"])))
             auto.setdefault(parent, {})["finished"] = True
+            _progress(parent).update(status=status, reason=body.get("reason") or "")
+        _publish()
         return {"finished": status, "active": bool(active.get(parent))}
 
     def set_limit(body):
@@ -833,7 +919,7 @@ def apply(ctx, config):
 
     OPS = {"reflect": reflect, "set_default": set_default, "set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve,
-           "finish": finish}
+           "finish": finish, "checkpoint": checkpoint}
     # Operations that count as progress for active mode (reads and settings do not).
     PROGRESS_OPS = {"dispatch", "instruct", "cancel", "review", "resolve"}
 
@@ -851,11 +937,18 @@ def apply(ctx, config):
         if op is None:
             raise ValueError("unknown conductor operation")
         _require_parent(body)
+        def fingerprint():
+            # No-op reviews/resolves must not keep active mode alive forever.
+            return tuple((t["id"], t.get("run_id"), t["status"], t.get("review"),
+                          t.get("resolved"), t.get("runs", 0)) for t in _children(_sid(body)))
+        with lock:
+            before = fingerprint() if name in PROGRESS_OPS else None
         result = op(body)
         if name in PROGRESS_OPS:
             with lock:
-                state = auto.setdefault(_sid(body), {})
-                state["ops"] = state.get("ops", 0) + 1
+                if fingerprint() != before or (name == "instruct" and result.get("steered")):
+                    state = auto.setdefault(_sid(body), {})
+                    state["ops"] = state.get("ops", 0) + 1
         return result
 
     # ---- wake the parent when children finish ----------------------------
@@ -889,6 +982,7 @@ def apply(ctx, config):
                 return
             text = reflections.claim(item)
             waking.add(parent)
+        delay = 0.05
         try:
             code, reply = frontend.submit(text, session_id=parent, source=REFLECT_SOURCE)
             if code >= 400:
@@ -900,6 +994,7 @@ def apply(ctx, config):
             log.warning("conductor: could not deliver reflection to %s: %s", parent, error)
             with lock:
                 reflections.failed(item, error, WAKE_RETRIES, WAKE_RETRY_DELAY)
+            delay = WAKE_RETRY_DELAY
         else:
             with lock:
                 reflections.submitted(item, run_id)
@@ -908,7 +1003,7 @@ def apply(ctx, config):
                 waking.discard(parent)
             _publish()
             # Also covers a run that finishes before submit returns.
-            _schedule_wake(parent)
+            _schedule_wake(parent, delay)
 
     def _wake(parent):
         with lock:
@@ -935,7 +1030,11 @@ def apply(ctx, config):
             other = [i for i in _counts(parent)["awaiting_review"] if i not in {t["id"] for t in pending}]
             details = []
             for t in pending:
-                body = _clip(t.get("result", ""), WAKE_RESULT_LIMIT).strip() or "(no result text)"
+                body = _clip(t.get("result", ""), WAKE_RESULT_LIMIT).strip() or "(no final delivery)"
+                if not t.get("result_complete"):
+                    body = "INCOMPLETE DELIVERY: request a final report; do not verify from tool output.\n" + body
+                if len(t.get("result") or "") > WAKE_RESULT_LIMIT:
+                    body = "TRUNCATED DELIVERY: inspect if evidence needed for review is missing.\n" + body
                 if t.get("error"):
                     body = f"error: {t['error']}\n{body}"
                 if t.get("branch"):
@@ -996,11 +1095,21 @@ def apply(ctx, config):
         if by_user:
             state["idle"] = 0
             state.pop("nudged", None)
+            if not finished and _progress(parent).get("status") in ("done", "blocked", "paused"):
+                _progress(parent).update(status="active", reason="")
         if (record.get("status") or "done") != "done" or finished:
             return False  # stopped, failed, or declared done/blocked: leave it to the user
         counts = _counts(parent)
         if counts["running"] or _unreported(parent):
+            _progress(parent).update(status="waiting_children", reason="")
             return False  # a wake-up is already on its way
+        plan = _progress(parent)
+        if not by_user and plan.get("status") in ("done", "blocked", "paused"):
+            return False
+        if plan.get("status") == "waiting_external":
+            if any(r.get("status") not in TERMINAL + ("stopped",) for r in reflections.listing(parent)):
+                return False
+            plan.update(status="active", reason="external source ended; choose the next action")
         awaiting = set(counts["awaiting_review"])
         if not active.get(parent):
             # Not in active mode: only remind once about results left unreviewed.
@@ -1013,6 +1122,7 @@ def apply(ctx, config):
         elif not by_user:
             state["idle"] = state.get("idle", 0) + 1
         if state.get("idle", 0) >= ACTIVE_IDLE_LIMIT:
+            _progress(parent).update(status="paused", reason="no task progress; waiting for user input")
             log.info("conductor: active mode paused for %s after %d turns without a task operation",
                      parent, state["idle"])
             return False
@@ -1031,6 +1141,8 @@ def apply(ctx, config):
             peek = ctx.get("run_queue.peek")
             if callable(peek) and peek(parent) is not None:
                 return  # the user's queued message goes first
+            if _progress(parent).get("status") in ("done", "blocked", "paused", "waiting_external"):
+                return  # a delayed continuation must respect a newer explicit state
             counts = _counts(parent)
             if counts["running"] or _unreported(parent) or reflections.ready(parent):
                 return
@@ -1084,7 +1196,9 @@ def apply(ctx, config):
                     status = record.get("status") or "done"
                     task["status"] = status if status in TERMINAL else "done"
                     task["finished"] = time.time()
-                    task["result"] = _message_text(data.get("message"))
+                    task.update(_message_result(data.get("message")))
+                    if task["status"] != "done":
+                        task["result_complete"] = False
                     task["error"] = record.get("error") or ""
                     task["acked"] = task["notified"] = False
                     parent = task["parent"]
@@ -1093,6 +1207,7 @@ def apply(ctx, config):
                 elif sid and enabled.get(sid):
                     parent = sid  # the parent went idle: deliver anything that finished meanwhile
                     proceed = _note_parent_run(sid, record)
+                    store.save()  # persist waiting/paused state even without a tool call
             if parent:
                 _schedule_wake(parent)
             if proceed:
@@ -1118,6 +1233,7 @@ def apply(ctx, config):
                                  if current in (t["parent"], t["child"])},
                     "reflections": reflections.listing(current),
                     "limits": _limits(current),
+                    "progress": _counts(current)["progress"],
                     "current": current}
         except Exception:
             pass

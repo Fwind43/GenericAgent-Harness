@@ -1,4 +1,37 @@
-# Conductor reflect sources
+# Conductor task delivery and stages
+
+The conductor receives only the final structured assistant reply of a child, not
+its tool transcript or an earlier planning message. `result_complete` distinguishes
+a complete final report from missing/partial output; run status `done` alone is not
+proof of delivery. Summaries preserve the beginning and end, including closing
+caveats. Use `conductor_inspect` or the child chat to inspect the full result.
+Reviews still require concrete evidence; request a final report or independently
+inspect artifacts when the delivery is incomplete. Never claim tests/builds ran
+unless authorized and actually executed.
+
+## Durable checkpoints and stage budgets
+
+`conductor_checkpoint` supports `get`, `update` and `advance`. The checkpoint keeps
+`goal`, `next_step`, `status` and `reason` in `conductor.json` and restores them in
+the parent's system prompt. Each text field is limited to 4000 characters.
+
+- The limits remain 5 running tasks by default (configurable up to 8), 12 unresolved
+  tasks, and 48 **new tasks per stage**, rather than 48 over the session's lifetime.
+- Before `advance`, review and resolve all tasks. Supply `handoff`, `next_step`,
+  and a saved or new `goal`. The stage budget resets; old task records and child
+  sessions remain inspectable. The last 12 handoffs are retained in the checkpoint.
+- Reuse a resolved child's context with `dispatch(reuse_task=...)`, which creates a
+  new task record in the current stage. `instruct` does not reopen resolved tasks.
+- Set `waiting_children` only while a child runs. `waiting_external` requires a
+  reason and a live reflect source; it is not a substitute for continuing work.
+- `conductor_finish` records `done` or `blocked`. Active mode pauses after repeated
+  turns without real task progress. Reading/updating checkpoints and repeating
+  identical reviews/resolves do not reset that guard.
+
+The task panel displays stage usage, goal, next step, waiting/paused reason, and
+incomplete-delivery warnings. Stage advances do not reset the conversation itself.
+
+## Conductor reflect sources
 
 `conductor_reflect` lets a conductor implement a user-requested recurring event
 source without spending model turns on polling. The conductor can provide Python

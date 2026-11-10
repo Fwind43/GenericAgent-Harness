@@ -138,7 +138,8 @@ export function isConductorWake(m: Message) {
 function ConductorWake({ m }: { m: Message }) {
   const text = m.text || '';
   const reflect = m.source === 'conductor-reflect';
-  const reflectSource = reflect ? /^\[Conductor event \u00b7 (.*?)\]$/.exec(text.split('\n', 1)[0])?.[1] : undefined;
+  const reflectError = reflect && text.startsWith('[Conductor event error \u00b7 ');
+  const reflectSource = reflect ? /^\[Conductor event(?: error)? \u00b7 (.*?)\]$/.exec(text.split('\n', 1)[0])?.[1] : undefined;
   const active = !reflect && text.startsWith(ACTIVE_HEAD);
   const completed = !reflect && text.startsWith(WAKE_HEAD);
   const tasks = completed ? text.split('\n').flatMap(line => {
@@ -146,25 +147,26 @@ function ConductorWake({ m }: { m: Message }) {
     return hit ? [{ id: hit[1], title: hit[2], status: hit[3] }] : [];
   }) : [];
   const still = completed ? Number(/(\d+) task\(s\) still running/.exec(text)?.[1] || 0) : 0;
-  const label = reflect ? T('事件触发', 'Event triggered') : active ? T('主动续跑', 'Active continuation')
-    : completed ? T('指挥家', 'Conductor') : T('待审阅提醒', 'Review reminder');
+  const label = reflectError ? T('\u4e8b\u4ef6\u6e90\u5f02\u5e38', 'Event source error')
+    : reflect ? T('\u4e8b\u4ef6\u89e6\u53d1', 'Event triggered') : active ? T('\u4e3b\u52a8\u7eed\u8dd1', 'Active continuation')
+    : completed ? T('\u6307\u6325\u5bb6', 'Conductor') : T('\u5f85\u5ba1\u9605\u63d0\u9192', 'Review reminder');
   const description = reflect
-    ? (reflectSource ? T(`来自事件源：${reflectSource}`, `From event source: ${reflectSource}`) : T('来自反射事件源', 'From a reflect event source'))
-    : active ? T('指挥家自动继续处理任务', 'Conductor is continuing the task')
-    : completed ? T(`${tasks.length || ''} 个子任务完成，继续审阅`, `${tasks.length || ''} subtask(s) finished, reviewing`)
-    : T('子任务结果尚未审阅，继续检查', 'Subtask results are awaiting review');
+    ? (reflectSource ? T(`\u6765\u81ea\u4e8b\u4ef6\u6e90\uff1a${reflectSource}`, `From event source: ${reflectSource}`) : T('\u6765\u81ea\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'From a reflect event source'))
+    : active ? T('\u6307\u6325\u5bb6\u81ea\u52a8\u7ee7\u7eed\u5904\u7406\u4efb\u52a1', 'Conductor is continuing the task')
+    : completed ? T(`${tasks.length || ''} \u4e2a\u5b50\u4efb\u52a1\u5b8c\u6210\uff0c\u7ee7\u7eed\u5ba1\u9605`, `${tasks.length || ''} subtask(s) finished, reviewing`)
+    : T('\u5b50\u4efb\u52a1\u7ed3\u679c\u5c1a\u672a\u5ba1\u9605\uff0c\u7ee7\u7eed\u68c0\u67e5', 'Subtask results are awaiting review');
   return <div className="msg conductor-wake">
     <div className="cw-head">
       <span className="cw-label">{label}</span>
       <span>{description}</span>
-      {still > 0 && <span className="cw-still">{T(`另有 ${still} 个运行中`, `${still} still running`)}</span>}
+      {still > 0 && <span className="cw-still">{T(`\u53e6\u6709 ${still} \u4e2a\u8fd0\u884c\u4e2d`, `${still} still running`)}</span>}
       <MessageTime message={m} />
     </div>
     {tasks.length ? <ul className="cw-tasks">{tasks.map(t => <li key={t.id}>
       <span className={'cw-status ' + t.status}>{TASK_STATUS[t.status]?.() ?? t.status}</span>
       <span className="cw-title">{t.title}</span><code className="cw-id">{t.id}</code>
     </li>)}</ul> : null}
-    {text && <Disclosure className="cw-details" chevron="start" title={reflect ? T('事件正文', 'Event content') : T('触发详情', 'Trigger details')}>
+    {text && <Disclosure className="cw-details" chevron="start" title={reflectError ? T('\u5f02\u5e38\u8be6\u60c5', 'Error details') : reflect ? T('\u4e8b\u4ef6\u6b63\u6587', 'Event content') : T('\u89e6\u53d1\u8be6\u60c5', 'Trigger details')}>
       <div className="cw-text">{text}</div>
     </Disclosure>}
   </div>;
