@@ -1,6 +1,0 @@
-name = "ga-tools-refresh"
-category = "agent"
-entry = "main:apply"
-description = "/tools command: resend GA's full tool definitions on the next model call (for weak models that start writing tool calls as plain text in long chats)."
-description_zh = "/tools \u547d\u4ee4\uff1a\u4e0b\u4e00\u6b21\u6a21\u578b\u8c03\u7528\u91cd\u65b0\u5b8c\u6574\u6ce8\u5165 GA \u5de5\u5177\u5b9a\u4e49\uff08\u957f\u4f1a\u8bdd\u91cc\u5f31\u6a21\u578b\u628a\u5de5\u5177\u8c03\u7528\u5199\u8fdb\u6b63\u6587\u65f6\u7528\uff09\u3002"
-inject = ["ga.agent"]

@@ -89,10 +89,6 @@ name = "web-channels"
 [[plugins]]
 name = "web-trace"
 
-# composer "Tools" button: sends /tools to resend full GA tool definitions
-[[plugins]]
-name = "web-tools-refresh"
-
 # "Context" view: the saved LLM context of the chat (messages by block type, working memory)
 [[plugins]]
 name = "web-context"
@@ -129,7 +125,3 @@ name = "conductor"
 # vision_ask tool: send local images to the current model or a mykey.py model
 [[plugins]]
 name = "vlm-tool"
-
-# /tools command: resend GA's full tool definitions on the next model call
-[[plugins]]
-name = "ga-tools-refresh"
