@@ -17,10 +17,14 @@ type Conductor = {
 const STATUS: Record<string, [string, string]> = {
   running: ['\u8fd0\u884c\u4e2d', 'Running'],
   done: ['\u5df2\u5b8c\u6210', 'Done'],
+  error: ['\u51fa\u9519', 'Error'],
+  aborted: ['\u5df2\u53d6\u6d88', 'Cancelled'],
+  interrupted: ['\u5df2\u4e2d\u65ad', 'Interrupted'],
   failed: ['\u5931\u8d25', 'Failed'],
   cancelled: ['\u5df2\u53d6\u6d88', 'Cancelled'],
 };
 const REVIEW: Record<string, [string, string]> = {
+  pending: ['\u5f85\u9a8c\u6536', 'Awaiting review'],
   verified: ['\u5df2\u9a8c\u6536', 'Verified'],
   needs_work: ['\u9700\u8fd4\u5de5', 'Needs work'],
 };
@@ -72,7 +76,7 @@ function TaskRow({ task, busy, act, enter, load }: {
         <span className={`gah-cd-dot ${task.status}`} />
         <span className="gah-cd-title" title={task.objective}>{task.title || task.id}</span>
         <span className="gah-cd-tag">{label(STATUS, task.status)}</span>
-        {task.review ? <span className={`gah-cd-tag review ${task.review}`}>{label(REVIEW, task.review)}</span> : null}
+        {task.review && task.status === 'done' ? <span className={`gah-cd-tag review ${task.review}`}>{label(REVIEW, task.review)}</span> : null}
         {task.model || task.effort ? (
           <span className="gah-cd-tag model" title={T('\u5b50\u4efb\u52a1\u6a21\u578b / \u63a8\u7406\u5f3a\u5ea6', 'Task model / reasoning effort')}>
             {[task.model, task.effort].filter(Boolean).join(' \u00b7 ')}

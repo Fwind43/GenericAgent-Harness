@@ -3,10 +3,14 @@
   const STATUS = {
     running: ["运行中", "Running"],
     done: ["已完成", "Done"],
+    error: ["出错", "Error"],
+    aborted: ["已取消", "Cancelled"],
+    interrupted: ["已中断", "Interrupted"],
     failed: ["失败", "Failed"],
     cancelled: ["已取消", "Cancelled"]
   };
   const REVIEW = {
+    pending: ["待验收", "Awaiting review"],
     verified: ["已验收", "Verified"],
     needs_work: ["需返工", "Needs work"]
   };
@@ -64,7 +68,7 @@
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-dot ${task.status}` }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-title", title: task.objective, children: task.title || task.id }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(STATUS, task.status) }),
-          task.review ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-tag review ${task.review}`, children: label(REVIEW, task.review) }) : null,
+          task.review && task.status === "done" ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-tag review ${task.review}`, children: label(REVIEW, task.review) }) : null,
           task.model || task.effort ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag model", title: sdk.T("子任务模型 / 推理强度", "Task model / reasoning effort"), children: [task.model, task.effort].filter(Boolean).join(" · ") }) : null,
           task.resolved ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: sdk.T("已结案", "Resolved") }) : null
         ] }),
