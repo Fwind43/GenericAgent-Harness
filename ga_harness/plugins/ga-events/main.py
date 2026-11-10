@@ -165,10 +165,15 @@ def _blocks(content):
     return "\n\n".join(out)
 
 
+_TEXT_TOOLS_MARK = "### Tools (mounted, always in effect):"
+
+
 def _prompt(arg, backend, seen):
     """Render one backend.ask argument; ``seen`` keeps the last native system/tools."""
     if isinstance(arg, str):
-        return "text", arg, []
+        # GA's text protocol re-sends the full tool list under this fixed heading only
+        # when it injects tools again; otherwise it sends a one-line reminder instead.
+        return "text", arg, (["tools"] if _TEXT_TOOLS_MARK in arg else [])
     sections, injected = [], []
     if backend is not None:
         for key in ("system", "tools"):
