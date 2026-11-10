@@ -131,22 +131,24 @@ const REVIEW_HEAD = '[Conductor] Task(s) still awaiting your review:';
 const TASK_STATUS: Record<string, () => string> = { done: () => T('完成', 'done'), error: () => T('失败', 'failed'), aborted: () => T('已停止', 'stopped'), cancelled: () => T('已取消', 'cancelled'), interrupted: () => T('中断', 'interrupted') };
 export function isConductorWake(m: Message) {
   if (m.role !== 'user') return false;
+  if (m.metadata?.conductor) return true;
   if (m.source === 'conductor-reflect') return true;
   if (m.source && m.source !== 'conductor') return false;
   return [WAKE_HEAD, ACTIVE_HEAD, REVIEW_HEAD].some(head => m.text?.startsWith(head));
 }
 function ConductorWake({ m }: { m: Message }) {
   const text = m.text || '';
-  const reflect = m.source === 'conductor-reflect';
-  const reflectError = reflect && text.startsWith('[Conductor event error \u00b7 ');
-  const reflectSource = reflect ? /^\[Conductor event(?: error)? \u00b7 (.*?)\]$/.exec(text.split('\n', 1)[0])?.[1] : undefined;
-  const active = !reflect && text.startsWith(ACTIVE_HEAD);
-  const completed = !reflect && text.startsWith(WAKE_HEAD);
-  const tasks = completed ? text.split('\n').flatMap(line => {
+  const notice = m.metadata?.conductor;
+  const reflect = notice ? ['reflect', 'reflect_error'].includes(notice.kind) : m.source === 'conductor-reflect';
+  const reflectError = notice ? notice.kind === 'reflect_error' : reflect && text.startsWith('[Conductor event error \u00b7 ');
+  const reflectSource = notice?.title ?? (reflect ? /^\[Conductor event(?: error)? \u00b7 (.*?)\]$/.exec(text.split('\n', 1)[0])?.[1] : undefined);
+  const active = notice ? notice.kind === 'active' : !reflect && text.startsWith(ACTIVE_HEAD);
+  const completed = notice ? notice.kind === 'wake' : !reflect && text.startsWith(WAKE_HEAD);
+  const tasks = notice ? notice.tasks || [] : completed ? text.split('\n').flatMap(line => {
     const hit = /^- (\S+) \u00b7 (.*) \u00b7 (\w+)$/.exec(line.trim());
     return hit ? [{ id: hit[1], title: hit[2], status: hit[3] }] : [];
   }) : [];
-  const still = completed ? Number(/(\d+) task\(s\) still running/.exec(text)?.[1] || 0) : 0;
+  const still = notice ? notice.running || 0 : completed ? Number(/(\d+) task\(s\) still running/.exec(text)?.[1] || 0) : 0;
   const label = reflectError ? T('\u4e8b\u4ef6\u6e90\u5f02\u5e38', 'Event source error')
     : reflect ? T('\u4e8b\u4ef6\u89e6\u53d1', 'Event triggered') : active ? T('\u4e3b\u52a8\u7eed\u8dd1', 'Active continuation')
     : completed ? T('\u6307\u6325\u5bb6', 'Conductor') : T('\u5f85\u5ba1\u9605\u63d0\u9192', 'Review reminder');

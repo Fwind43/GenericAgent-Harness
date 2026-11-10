@@ -119,3 +119,35 @@ process trees). Keep credentials out of inline code, arguments and event text.
 Use the reflect tool for monitoring, not as a general execution escape hatch.
 Report the source id, lifetime and stop method to the user when registering it.
 Stop the old id before replacing a source.
+
+## Delivery reliability and task history
+
+- Task-result wakes are persisted before submission. Acceptance acknowledges only
+  the task/run generations in that wake; a durable request id prevents duplicate
+  parent runs when retrying after a lost submit response or acknowledgement save.
+  This is an outbox/idempotency boundary, not a transaction across JSON and SQLite.
+- Pending wakes resume on plugin startup or re-enable. Failed submissions retry
+  indefinitely with exponential backoff capped at five minutes. Busy sessions and
+  earlier user messages defer delivery without counting as submission failures.
+  Disabled conductors remain dormant. Reflect scripts still require explicit
+  re-registration after restart; their execution is not replayed.
+- The panel exposes save/archive errors and repeatedly failing deliveries. Storage
+  must become writable again for delivery intents and acknowledgements to survive
+  a host crash; an in-memory warning is not a substitute for durable storage.
+- Delegated workers cannot use `ask_user`: report an unverified/blocked result to
+  the parent instead. Failures carry `failure_kind` and `retryable` hints; unknown
+  errors stay generic rather than being guessed to be model outages.
+- Idle-loop guards persist. Task records expose run duration, turn count and
+  available token usage, plus totals across follow-up runs. Missing usage is not
+  inferred or billed, and hints do not automatically retry worker execution.
+- Resolved tasks from older stages keep their identifiers, routing metadata and
+  previews in `conductor.json`. Full objective/result/basis/error fields live in
+  the sibling `conductor-archive` directory and load on inspect/detail. Preserve
+  that directory with backups; missing archives are reported, not passed off as
+  complete evidence. This reduces heavy fields, not the count of task records.
+- Reflect instructions are included when an event source is active or the latest
+  user request indicates monitoring. Task-result wake cards use structured message
+  metadata, with text parsing retained for older messages.
+
+These changes include regression test definitions only. This source delivery has
+not run tests, built frontend bundles, restarted the host or exercised live models.

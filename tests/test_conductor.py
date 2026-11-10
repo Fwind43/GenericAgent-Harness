@@ -125,6 +125,9 @@ def harness(conductor, tmp_path, monkeypatch):
         def start(self):
             timers.append(self)
 
+        def cancel(self):
+            self.cancelled = True
+
     monkeypatch.setattr(conductor.threading, "Timer", Timer)
 
     def register_rpc(name, callback):
@@ -141,7 +144,7 @@ def harness(conductor, tmp_path, monkeypatch):
             register_worker_plugin=lambda name: lambda: None,
             active_for=lambda sid: None,
         ),
-        "sessions": SimpleNamespace(path=tmp_path / "sessions.json"),
+        "sessions": SimpleNamespace(path=tmp_path / "sessions.json", get=lambda sid: {"messages": []}),
     })
     ctx = SimpleNamespace(
         get=services.get, provide=services.__setitem__, on=callbacks.__setitem__,
@@ -159,7 +162,7 @@ def harness(conductor, tmp_path, monkeypatch):
         })
 
     yield SimpleNamespace(call=call, finish=finish, store=store, timers=timers,
-                          services=services)
+                          services=services, callbacks=callbacks, cleanup=cleanup, ctx=ctx)
     for close in reversed(cleanup):
         if callable(close):
             close()
@@ -321,3 +324,171 @@ def test_finish_stays_terminal_until_new_user_input(harness):
     assert harness.call("role")["progress"]["status"] == "done"
     harness.finish(source="web")
     assert harness.call("role")["progress"]["status"] == "active"
+
+
+def test_store_reports_write_failure_and_recovers(conductor, tmp_path, monkeypatch):
+    store = conductor.Store(tmp_path / 'state.json')
+    original = type(store.path).replace
+    monkeypatch.setattr(type(store.path), 'replace', lambda *a: (_ for _ in ()).throw(OSError('disk full')))
+    assert store.save() is False
+    assert 'disk full' in store.persistence_error
+    monkeypatch.setattr(type(store.path), 'replace', original)
+    assert store.save() is True
+    assert store.persistence_error is None
+
+
+def pending_task(harness, index=0):
+    task = task_record(index, resolved=False, review=None)
+    task.update(acked=False, notified=False, run_id=f'child-run-{index}', finished=1)
+    harness.store.data['tasks'][task['id']] = task
+    return task
+
+
+def fire_next(harness):
+    while harness.timers:
+        timer = harness.timers.pop(0)
+        if not getattr(timer, 'cancelled', False):
+            timer.callback(*timer.args, **timer.kwargs)
+            return
+    pytest.fail('expected a scheduled delivery')
+
+
+def test_delivery_retries_beyond_old_limit_and_acks_after_submit(harness, conductor, monkeypatch):
+    task = pending_task(harness)
+    calls = []
+    clock = [100.0]
+    monkeypatch.setattr(conductor.time, 'time', lambda: clock[0])
+
+    def submit(text, **kwargs):
+        assert not task['notified']
+        calls.append(kwargs)
+        if len(calls) <= conductor.WAKE_RETRIES + 2:
+            return 503, {'error': 'temporarily unavailable'}
+        return 202, {'run_id': 'delivery-run'}
+
+    harness.services['web.host'].frontend.submit = submit
+    harness.finish()
+    for _ in range(conductor.WAKE_RETRIES + 3):
+        clock[0] += 1000
+        fire_next(harness)
+    assert task['notified_run_id'] == 'delivery-run'
+    assert task['acked'] and task['notified']
+    assert len({call['request_id'] for call in calls}) == 1
+    assert not harness.store.data['deliveries']
+
+
+def test_delivery_coalesces_children_and_carries_metadata(harness):
+    tasks = [pending_task(harness, i) for i in range(3)]
+    calls = []
+    harness.services['web.host'].frontend.submit = lambda text, **kw: (calls.append(kw) or (202, {'run_id': 'wake'}))
+    harness.finish()
+    harness.finish()
+    fire_next(harness)
+    assert len(calls) == 1
+    assert len(calls[0]['metadata']['conductor']['tasks']) == 3
+    assert all(t['notified_run_id'] == 'wake' for t in tasks)
+
+
+def test_busy_parent_retains_delivery(harness):
+    pending_task(harness)
+    harness.services['runs'].active_for = lambda sid: {'id': 'busy'}
+    harness.finish()
+    fire_next(harness)
+    assert harness.timers  # busy is a deferral, not loss of notification
+    assert not harness.store.data['tasks']['task-0']['notified']
+
+
+def test_store_recovers_unacknowledged_notification(conductor, tmp_path):
+    path = tmp_path / 'state.json'
+    store = conductor.Store(path)
+    task = task_record(resolved=False, review=None)
+    task.update(notified=False, acked=False)
+    store.data['tasks'][task['id']] = task
+    store.data['deliveries']['parent:wake'] = {'id': 'stable-request', 'parent': 'parent', 'kind': 'wake', 'attempts': 8}
+    assert store.save()
+    restored = conductor.Store(path)
+    assert restored.data['deliveries']['parent:wake']['id'] == 'stable-request'
+    assert not restored.data['tasks'][task['id']]['notified']
+
+
+def test_startup_schedules_persisted_delivery_without_user_input(harness, conductor, monkeypatch):
+    pending_task(harness)
+    assert harness.store.save()
+    restored = type(harness.store)(harness.store.path)
+    for close in reversed(harness.cleanup):
+        close()
+    harness.cleanup.clear()
+    harness.timers.clear()
+    monkeypatch.setattr(conductor, "Store", lambda path: restored)
+    calls = []
+    harness.services["web.host"].frontend.submit = lambda text, **kw: (calls.append(kw) or (202, {"run_id": "recovered"}))
+    conductor.apply(harness.ctx, {})
+    fire_next(harness)
+    assert len(calls) == 1
+    assert restored.data["tasks"]["task-0"]["notified_run_id"] == "recovered"
+    assert type(restored)(restored.path).data["tasks"]["task-0"]["acked"]
+
+
+def test_archive_keeps_full_delivery_and_only_reduces_old_resolved_tasks(conductor, tmp_path):
+    store = conductor.Store(tmp_path / "state.json")
+    old = task_record()
+    old.update(result="evidence " * 1000, objective="objective " * 1000, basis="verified " * 1000)
+    current = task_record(1, stage=2)
+    open_task = task_record(2, resolved=False)
+    store.data["tasks"] = {t["id"]: t for t in (old, current, open_task)}
+    store.data["progress"]["parent"] = {"stage": 2}
+    expected = dict(old)
+    assert store.save()
+    assert old["archived"] and len(old["result"]) <= conductor.BRIEF_LIMIT
+    assert not current.get("archived") and not open_task.get("archived")
+    restored = conductor.Store(store.path)
+    full = restored.full_task(restored.data["tasks"][old["id"]])
+    for key in ("result", "objective", "basis", "child", "run_id"):
+        assert full.get(key) == expected.get(key)
+    snapshot = restored.data.copy()
+    assert restored.save()
+    assert conductor.Store(store.path).data == snapshot
+
+
+def test_archive_write_failure_preserves_full_fields(conductor, tmp_path, monkeypatch):
+    store = conductor.Store(tmp_path / "state.json")
+    task = task_record()
+    task["result"] = "evidence " * 1000
+    store.data["tasks"][task["id"]] = task
+    store.data["progress"]["parent"] = {"stage": 2}
+    original = type(store.path).replace
+
+    def replace(path, target):
+        if target.parent.name.endswith("-archive"):
+            raise OSError("archive unavailable")
+        return original(path, target)
+
+    monkeypatch.setattr(type(store.path), "replace", replace)
+    assert store.save()
+    assert "archive unavailable" in store.archive_error
+    assert not task.get("archived") and task["result"] == "evidence " * 1000
+
+
+def test_monitor_hint_uses_latest_user_request(conductor):
+    assert conductor._reflect_requested([{"role": "user", "text": "Monitor the build"}])
+    assert not conductor._reflect_requested([
+        {"role": "user", "text": "Monitor the build"},
+        {"role": "user", "text": "Explain this function"},
+        {"role": "user", "text": "monitor", "source": conductor.SOURCE},
+    ])
+
+
+def test_role_exposes_monitor_hint(harness):
+    harness.services["sessions"].get = lambda sid: {"messages": [{"role": "user", "text": "Watch this job"}]}
+    assert harness.call("role")["reflect_requested"] is True
+
+
+def test_failure_and_metrics_helpers(conductor):
+    assert conductor._failure({"status": "aborted"}) == {"failure_kind": "user_aborted", "retryable": False}
+    assert conductor._failure({"status": "interrupted"}) == {"failure_kind": "host_restart", "retryable": True}
+    assert conductor._failure({"status": "error", "error": "unknown"})["failure_kind"] == "execution_error"
+    metrics = conductor._task_metrics({"created": 10, "ended": 13}, {"turns": [
+        {"usage": {"input": 12, "output": 3}}, {"usage": {"input": 4, "output": 2}},
+    ]})
+    assert metrics["seconds"] == 3 and metrics["turns"] == 2
+    assert metrics["usage"]["input"] == 16 and metrics["usage"]["output"] == 5

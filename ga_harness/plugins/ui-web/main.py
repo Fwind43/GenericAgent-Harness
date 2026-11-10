@@ -929,14 +929,15 @@ class WebFrontend:
         }
         return 200, self._redact(bundle)
 
-    def submit(self, task, *, session_id=None, source="user", attachments=None):
+    def submit(self, task, *, session_id=None, source="user", attachments=None,
+               request_id=None, metadata=None):
         if self.runs:
             if not isinstance(session_id, str) or not session_id:
                 return 400, {"error": "session_id is required"}
             try:
                 # No frontend lock here: start emits committed run events.
                 run = self.runs.start(task, session_id=session_id, source=source, timeout=self._timeout,
-                                      attachments=attachments)
+                                      attachments=attachments, request_id=request_id, metadata=metadata)
                 return 202, {"ok": True, "run": run, "session_id": run["session_id"], "run_id": run["id"]}
             except ValueError as e:
                 return 400, {"error": str(e)}

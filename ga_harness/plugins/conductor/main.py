@@ -22,6 +22,7 @@ State is written through to ``conductor.json`` beside the session database.
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -56,6 +57,20 @@ WAKE_RETRIES = 5  # further attempts when a wake-up message could not be submitt
 WAKE_RETRY_DELAY = 5.0  # seconds between those attempts
 CONTINUE_DELAY = 1.0  # seconds after the conductor's turn ends before prompting it again
 ACTIVE_IDLE_LIMIT = 3  # active mode: consecutive prompted turns without a task operation
+
+
+def _reflect_requested(messages):
+    """A prompt-size hint, not permission to start an event source."""
+    for message in reversed(messages):
+        if message.get("role") != "user" or message.get("source", "user") != "user":
+            continue
+        text = message.get("text") or ""
+        return bool(re.search(
+            r"\b(?:monitor(?:ing)?|watch(?:ing)?|poll(?:ing)?|periodic(?:ally)?|"
+            r"schedule[d]?|notify|notification[s]?|reflect)\b|"
+            r"监控|监听|盯盘|轮询|定时|定期|通知我|提醒我",
+            text, re.IGNORECASE))
+    return False
 
 
 def _store_path(sessions):
@@ -153,6 +168,42 @@ def _message_result(message):
             "result_source": "final_turn" if complete else "partial_turn"}
 
 
+def _failure(record, message=None):
+    """Prefer explicit worker classifications; never guess that every error is a model error."""
+    status = record.get("status")
+    if status == "aborted":
+        return {"failure_kind": "user_aborted", "retryable": False}
+    if status == "interrupted":
+        return {"failure_kind": "host_restart", "retryable": True}
+    if status != "error":
+        return {"failure_kind": None, "retryable": False}
+    kind = record.get("failure_kind")
+    if kind:
+        return {"failure_kind": kind, "retryable": bool(record.get("retryable"))}
+    text = str(record.get("error") or "").lower()
+    if any(word in text for word in ("rate limit", "429", "503", "502", "model unavailable",
+                                     "connection error", "connectionerror", "timed out", "timeout")):
+        return {"failure_kind": "model_unavailable", "retryable": True}
+    turns = (message or {}).get("turns") or []
+    if any(tool.get("ok") is False or tool.get("status") == "error"
+           for turn in turns[-1:] for tool in (turn.get("tools") or []) if isinstance(tool, dict)):
+        return {"failure_kind": "tool_error", "retryable": False}
+    return {"failure_kind": "execution_error", "retryable": False}
+
+
+def _task_metrics(record, message):
+    message = message or {}
+    turns = message.get("turns") or []
+    usage = message.get("usage")
+    keys = ("calls", "input", "output", "cache_read", "cache_write")
+    if not isinstance(usage, dict):
+        usage = {k: sum((t.get("usage") or {}).get(k, 0) or 0 for t in turns) for k in keys}
+    created, ended = record.get("created"), record.get("ended")
+    seconds = max(0, ended - created) if isinstance(created, (int, float)) and isinstance(ended, (int, float)) else None
+    return {"seconds": seconds, "turns": len(turns),
+            "usage": {k: usage[k] for k in keys if isinstance(usage.get(k), (int, float))}}
+
+
 def _message_text(message):
     return _message_result(message)["result"]
 
@@ -170,12 +221,17 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
+        self.persistence_error = None
+        self.archive_error = None
         self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {},
-                     "active": {}, "reflections": {}, "progress": {}}
+                     "active": {}, "reflections": {}, "progress": {}, "deliveries": {}, "auto": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
+                    for key in ("deliveries", "auto"):
+                        self.data[key] = {k: v for k, v in dict(loaded.get(key) or {}).items()
+                                          if isinstance(v, dict)}
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["active"] = {k: True for k, v in dict(loaded.get("active") or {}).items() if v}
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
@@ -199,17 +255,74 @@ class Store:
             if task.get("status") == "running":
                 task["status"] = "interrupted"
                 task["finished"] = task.get("finished") or time.time()
+                task.update(failure_kind="host_restart", retryable=True, acked=False, notified=False)
+
+    def _archive_path(self, task):
+        name = uuid.uuid5(uuid.NAMESPACE_URL, str(task["id"])).hex + ".json"
+        return self.path.with_name(self.path.stem + "-archive") / name
+
+    def full_task(self, task):
+        if not task.get("archived"):
+            return task
+        # Do not silently present a preview as the full delivery if the archive is lost.
+        fields = json.loads(self._archive_path(task).read_text(encoding="utf-8"))
+        return {**task, **fields}
+
+    def archive(self):
+        """Move heavy fields of resolved, previous-stage tasks out of the hot store.
+
+        Keep routing/review/worktree metadata and previews so old tasks can still be
+        inspected or reused. Write the immutable archive before replacing any fields.
+        A crash before the main save only leaves a harmless duplicate archive.
+        """
+        self.archive_error = None
+        for task in self.data["tasks"].values():
+            stage = self.data["progress"].get(task.get("parent"), {}).get("stage", 1)
+            if (task.get("archived") or not task.get("resolved")
+                    or task.get("stage", 1) >= stage):
+                continue
+            tmp = None
+            try:
+                path = self._archive_path(task)
+                fields = {k: task.get(k) or "" for k in ("objective", "result", "error", "basis")}
+                path.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(prefix=".archive-", dir=str(path.parent))
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(fields, fh, ensure_ascii=False)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                Path(tmp).replace(path)
+                task.update({k: v[:BRIEF_LIMIT] for k, v in fields.items()})
+                task["archived"] = True
+            except Exception as error:
+                self.archive_error = str(error)
+                log.warning("conductor: could not archive task: %s", error)
+                break  # keep the original full fields and retry on the next save
+            finally:
+                if tmp is not None:
+                    Path(tmp).unlink(missing_ok=True)
 
     def save(self):
-        text = json.dumps(self.data, ensure_ascii=False, indent=1)
+        self.archive()
+        tmp = None
         try:
+            text = json.dumps(self.data, ensure_ascii=False, indent=1)
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(prefix=".conductor-", dir=str(self.path.parent))
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(text)
-            os.replace(tmp, self.path)
+                fh.flush()
+                os.fsync(fh.fileno())
+            Path(tmp).replace(self.path)
+            self.persistence_error = None
+            return True
         except Exception as error:
+            self.persistence_error = str(error)
             log.warning("conductor: could not save state: %s", error)
+            return False
+        finally:
+            if tmp is not None:
+                Path(tmp).unlink(missing_ok=True)
 
 
 def apply(ctx, config):
@@ -217,17 +330,17 @@ def apply(ctx, config):
     frontend = host.frontend
     lock = threading.RLock()
     changed = threading.Condition(lock)
-    scheduled, waking = set(), set()  # parents with a pending / in-flight wake-up
+    scheduled, waking = {}, set()  # cancellable timers / in-flight parents
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
     policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
     active = store.data["active"]  # parents in active mode: keep going until conductor_finish
-    # Active-mode progress per parent (in memory): {"finished": bool, "idle": int, "ops": int}.
+    # Durable active-mode progress per parent: {"finished": bool, "idle": int, "ops": int}.
     # "idle" counts consecutive continuation turns in which the conductor used no conductor
     # operation; "ops" counts operations since the last parent run ended.
-    auto = {}
+    auto = store.data["auto"]
     progress = store.data["progress"]  # durable goal, stage handoff and wait state
-    wake_retries = {}  # parent -> failed wake-up submissions in a row
+    deliveries = store.data["deliveries"]
     defaults = store.data["defaults"]  # parent -> {"model": name, "model_key": key, "effort": level}; absent = inherit
 
     # ---- helpers ---------------------------------------------------------
@@ -265,11 +378,16 @@ def apply(ctx, config):
         return found
 
     def _public(task, full=False, brief=False):
+        if full:
+            task = store.full_task(task)
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
                                         "model", "model_key", "effort", "workspace", "reused_from", "stage",
-                                        "result_complete", "result_source")}
-        out["result_truncated"] = bool(not full and len(task.get("result") or "") > RESULT_LIMIT)
+                                        "result_complete", "result_source", "failure_kind", "retryable",
+                                        "metrics", "total_metrics")}
+        out["result_truncated"] = bool(not full and (task.get("archived") or len(task.get("result") or "") > RESULT_LIMIT))
+        if task.get("archived") and not full:
+            out["partial"] = True
         if task.get("branch"):
             out["branch"] = task["branch"]
             out["worktree"] = None if task.get("worktree_removed") else task.get("worktree")
@@ -426,7 +544,8 @@ def apply(ctx, config):
         record = runs.start(text, session_id=task["child"], source=SOURCE)
         task.update(status="running", run_id=record["id"], finished=None, review="pending",
                     basis="", resolved=False, acked=False, notified=False, error="",
-                    result="", result_complete=False, result_source="missing_final")
+                    result="", result_complete=False, result_source="missing_final",
+                    failure_kind=None, retryable=False, metrics=None)
         task["runs"] = task.get("runs", 0) + 1
 
     # ---- operations (shared by the RPC service and the web routes) -------
@@ -435,7 +554,10 @@ def apply(ctx, config):
         with lock:
             if enabled.get(sid):
                 return {"role": "parent", **_counts(sid), "policy": policies.get(sid),
-                        "active": bool(active.get(sid))}
+                        "active": bool(active.get(sid)),
+                        "reflect_requested": _reflect_requested((sessions.get(sid) or {}).get("messages") or []),
+                        "reflect_active": any(r.get("status") in ("running", "pending", "submitting", "waiting", "callback")
+                                              for r in reflections.listing(sid))}
             task = _task_of_child(sid)
             if task is not None:
                 return {"role": "worker", "task_id": task["id"], "parent": task["parent"]}
@@ -574,6 +696,7 @@ def apply(ctx, config):
         parent = _sid(body)
         with lock:
             task = _owned(parent, body.get("task_id"))
+            task = store.full_task(task)
             out = {"id": task["id"], "objective": task["objective"], "basis": task.get("basis") or ""}
             if task.get("status") in TERMINAL:
                 out["result"] = task.get("result", "")
@@ -733,6 +856,8 @@ def apply(ctx, config):
                 reflections.stop_parent(sid)
                 auto.pop(sid, None)
         _publish()
+        if on:
+            _schedule_wake(sid)
         return {"enabled": on}
 
     def set_active(body):
@@ -956,20 +1081,36 @@ def apply(ctx, config):
 
     # ---- wake the parent when children finish ----------------------------
     def _schedule_wake(parent, delay=WAKE_COALESCE):
-        # Children that finish close together are reported in one wake-up: the
-        # first finish opens a short window, later ones join the same message.
+        # One cancellable timer per parent. A new event can advance a backoff
+        # timer, but the persisted delivery deadline still gates submission.
         with lock:
-            if reflections.closed or parent in scheduled:
+            if reflections.closed:
                 return
-            scheduled.add(parent)
+            due = time.time() + max(0, delay)
+            previous = scheduled.get(parent)
+            if previous and previous[0] <= due:
+                return
+            if previous:
+                previous[1].cancel()
 
-        def fire():
-            with lock:
-                scheduled.discard(parent)
-            _wake(parent)
-        timer = threading.Timer(delay, fire)
-        timer.name, timer.daemon = "conductor-wake", True
-        timer.start()
+            def fire():
+                with lock:
+                    if scheduled.get(parent, (None, None))[1] is not timer:
+                        return
+                    scheduled.pop(parent, None)
+                _wake(parent)
+
+            timer = threading.Timer(max(0, delay), fire)
+            timer.name, timer.daemon = "conductor-wake", True
+            scheduled[parent] = (due, timer)
+            timer.start()
+
+    def _retry_delivery(item, error):
+        attempts = item.get("attempts", 0) + 1
+        delay = min(300, WAKE_RETRY_DELAY * 2 ** min(attempts - 1, 6))
+        item.update(attempts=attempts, error=str(error), retry_at=time.time() + delay)
+        store.save()
+        _schedule_wake(item["parent"], delay)
 
     def _wake_reflection(parent):
         with lock:
@@ -1012,75 +1153,88 @@ def apply(ctx, config):
         with lock:
             if reflections.closed or not enabled.get(parent) or parent in waking:
                 return
-            pending = [t for t in _children(parent)
-                       if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
-            if runs.active_for(parent):
-                return
-            # One queue in arrival order (as GA's conductor inbox): a user message
-            # queued before these finished goes first; its run's end wakes us again.
-            peek = ctx.get("run_queue.peek")
-            queued = peek(parent) if callable(peek) else None
-            if pending and queued is not None and queued < min(t.get("finished") or 0 for t in pending):
-                return
-            for task in pending:
-                task["notified"] = task["acked"] = True  # results travel in this message
-            if pending:
-                waking.add(parent)  # until the run is registered, so no second wake races in
-            # The "- id \u00b7 title \u00b7 status" lines and "N task(s) still running" are
-            # parsed by the web UI (ChatMessage.tsx); keep their format.
-            lines = [f"- {t['id']} \u00b7 {t['title']} \u00b7 {t['status']}" for t in pending]
-            still = sum(t["status"] == "running" for t in _children(parent))
-            other = [i for i in _counts(parent)["awaiting_review"] if i not in {t["id"] for t in pending}]
-            details = []
-            for t in pending:
-                body = _clip(t.get("result", ""), WAKE_RESULT_LIMIT).strip() or "(no final delivery)"
-                if not t.get("result_complete"):
-                    body = "INCOMPLETE DELIVERY: request a final report; do not verify from tool output.\n" + body
-                if len(t.get("result") or "") > WAKE_RESULT_LIMIT:
-                    body = "TRUNCATED DELIVERY: inspect if evidence needed for review is missing.\n" + body
-                if t.get("error"):
-                    body = f"error: {t['error']}\n{body}"
-                if t.get("branch"):
-                    changes = _worktree_changes(t)
-                    body = f"branch {t['branch']}" + (f" ({changes})" if changes else "") + f"\n{body}"
-                # Quote the body so result text can never look like a task line to the UI.
-                details.append(f"=== {t['id']} result ===\n" + "\n".join("> " + x for x in body.splitlines()))
-        if not pending:
+            key = f"{parent}:wake"
+            item = deliveries.get(key)
+            pending = _unreported(parent)
+            if not item and pending:
+                # Persist the intent before crossing the submit boundary. Freeze
+                # payload + task run ids: later completions belong to another item.
+                still = sum(t["status"] == "running" for t in _children(parent))
+                lines, details = [], []
+                for t in pending:
+                    lines.append(f"- {t['id']} · {t['title']} · {t['status']}")
+                    body = _clip(t.get("result"), WAKE_RESULT_LIMIT) or "(no final delivery)"
+                    if not t.get("result_complete"):
+                        body = "INCOMPLETE DELIVERY: request a final report; do not verify from tool output.\n" + body
+                    if len(t.get("result") or "") > WAKE_RESULT_LIMIT:
+                        body = "TRUNCATED DELIVERY: inspect if evidence needed for review is missing.\n" + body
+                    if t.get("error"):
+                        body = f"error: {t['error']}\n" + body
+                    if t.get("failure_kind"):
+                        body = f"failure_kind={t['failure_kind']}; retryable={t.get('retryable', False)}\n" + body
+                    if t.get("branch"):
+                        body = f"branch {t['branch']} (inspect changes before review)\n" + body
+                    details.append(f"=== {t['id']} result ===\n" + "\n".join("> " + x for x in body.splitlines()))
+                item = {
+                    "id": uuid.uuid4().hex, "parent": parent, "kind": "wake", "attempts": 0,
+                    "created": min(t.get("finished") or 0 for t in pending),
+                    "tasks": [{"id": t["id"], "run_id": t.get("run_id")} for t in pending],
+                    "text": ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
+                             + f"\n{still} task(s) still running.\n\n" + "\n\n".join(details)
+                             + "\n\nReview these in this turn with conductor_review (task_ids for several at once; "
+                               "resolve=true to close verified ones, or needs_work + instruction to continue). "
+                               "Use conductor_inspect if evidence is missing. Retry infrastructure failures "
+                               "without treating them as a rejected delivery."),
+                    "metadata": {"conductor": {"kind": "wake", "tasks": [
+                        {k: t.get(k) for k in ("id", "title", "status", "failure_kind", "retryable")}
+                        for t in pending], "running": still}},
+                }
+                deliveries[key] = item
+            if item:
+                if not store.save():
+                    _schedule_wake(parent, WAKE_RETRY_DELAY)
+                    return
+                remaining = item.get("retry_at", 0) - time.time()
+                if remaining > 0:
+                    _schedule_wake(parent, remaining)
+                    return
+                # A busy session or earlier user queue is not a failed delivery.
+                # Keep a fallback timer as well as the run-finished callback.
+                peek = ctx.get("run_queue.peek")
+                queued = peek(parent) if callable(peek) else None
+                if runs.active_for(parent) or (queued is not None and queued < item["created"]):
+                    _schedule_wake(parent, WAKE_RETRY_DELAY)
+                    return
+                waking.add(parent)
+        if not item:
             _wake_reflection(parent)
             return
-        text = ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
-                + f"\n{still} task(s) still running."
-                + (f" Also awaiting review from earlier: {', '.join(other)}." if other else "")
-                + "\n\n" + "\n\n".join(details)
-                + "\n\nReview these in this turn with conductor_review (task_ids for several at once; "
-                  "resolve=true to close verified ones, or needs_work + instruction to continue). "
-                  "Use conductor_inspect only if a clipped result is not enough.")
-        retry = False
         try:
-            code, reply = frontend.submit(text, session_id=parent, source=SOURCE)
-            if code >= 400:
-                raise RuntimeError((reply or {}).get("error") or "run could not be started")
+            code, reply = frontend.submit(item["text"], session_id=parent, source=SOURCE,
+                                          request_id=item["id"], metadata=item["metadata"])
+            run_id = (reply or {}).get("run_id")
+            if code >= 400 or not run_id:
+                raise RuntimeError((reply or {}).get("error") or "wake submission returned no run_id")
         except Exception as error:
             log.warning("conductor: could not wake %s: %s", parent, error)
             with lock:
-                for task in pending:
-                    task["notified"] = task["acked"] = False
-                # Nothing else would deliver these results if the parent stays idle.
-                tries = wake_retries.get(parent, 0) + 1
-                retry = tries <= WAKE_RETRIES
-                if retry:
-                    wake_retries[parent] = tries
-                else:
-                    wake_retries.pop(parent, None)
+                _retry_delivery(item, error)
         else:
             with lock:
-                wake_retries.pop(parent, None)
+                # Ack only this generation, after the run is durably accepted.
+                # If this save fails, the disk still contains the same request id;
+                # Runs.start will return the original run on restart, not repeat it.
+                for ref in item["tasks"]:
+                    task = tasks.get(ref["id"])
+                    if task and task.get("run_id") == ref.get("run_id"):
+                        task.update(notified=True, acked=True, notified_run_id=run_id)
+                deliveries.pop(key, None)
+                store.save()
+                _schedule_wake(parent, 0.05)
         finally:
             with lock:
                 waking.discard(parent)
-        _publish()
-        if retry:
-            _schedule_wake(parent, WAKE_RETRY_DELAY)
+            _publish()
 
     # ---- keep the parent going when its turn ends early -------------------
     def _unreported(parent):
@@ -1203,6 +1357,14 @@ def apply(ctx, config):
                     if task["status"] != "done":
                         task["result_complete"] = False
                     task["error"] = record.get("error") or ""
+                    task.update(_failure(record, data.get("message")))
+                    metric = _task_metrics(record, data.get("message"))
+                    task["metrics"] = metric
+                    total = task.setdefault("total_metrics", {"seconds": 0, "turns": 0, "usage": {}})
+                    total["seconds"] += metric["seconds"] or 0
+                    total["turns"] += metric["turns"]
+                    for key, value in metric["usage"].items():
+                        total["usage"][key] = total["usage"].get(key, 0) + value
                     task["acked"] = task["notified"] = False
                     parent = task["parent"]
                     store.save()
@@ -1237,7 +1399,10 @@ def apply(ctx, config):
                     "reflections": reflections.listing(current),
                     "limits": _limits(current),
                     "progress": _counts(current)["progress"],
-                    "current": current}
+                    "current": current,
+                    "persistence_error": store.persistence_error or store.archive_error,
+                    "deliveries": [{k: item.get(k) for k in ("id", "kind", "created", "attempts", "retry_at", "error")}
+                                   for item in deliveries.values() if item.get("parent") == current]}
         except Exception:
             pass
         return nxt(data) if nxt else data
@@ -1283,4 +1448,16 @@ def apply(ctx, config):
                                         ("POST", "task"): _route(detail, guard=False),
                                         ("POST", "cancel"): _route(cancel),
                                         ("POST", "resolve"): _route(resolve)}))
-    ctx.scope.add(reflections.close)
+    def close():
+        reflections.close()
+        with lock:
+            for _, timer in scheduled.values():
+                timer.cancel()
+            scheduled.clear()
+            store.save()
+    ctx.scope.add(close)
+    # Recover terminal tasks and persisted delivery intents without requiring a
+    # new user message. Disabled parents remain dormant until explicitly enabled.
+    for parent in list(enabled):
+        if _unreported(parent) or any(d.get("parent") == parent for d in deliveries.values()):
+            _schedule_wake(parent)

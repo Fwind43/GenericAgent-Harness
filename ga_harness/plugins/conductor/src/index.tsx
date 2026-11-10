@@ -6,6 +6,9 @@ type Task = {
   resolved?: boolean; child: string; run_id?: string | null; objective: string;
   result?: string; error?: string; runs?: number; model?: string | null; effort?: string | null;
   created?: number; stage?: number;
+  failure_kind?: string | null; retryable?: boolean;
+  metrics?: { seconds?: number | null; turns?: number; usage?: Record<string, number> };
+  total_metrics?: Task['metrics'];
   result_complete?: boolean; result_truncated?: boolean; result_source?: string;
   partial?: boolean;  // the snapshot holds previews of the long text fields
 };
@@ -38,6 +41,8 @@ type Conductor = {
   active?: string[];  // conductor sessions in active mode
   reflections?: Reflection[];
   progress?: Progress;
+  persistence_error?: string | null;
+  deliveries?: { id: string; kind: string; attempts?: number; retry_at?: number; error?: string }[];
   children: Record<string, { task_id: string; parent: string }>;
   limits: { running: number; open: number; total: number };
 };
@@ -137,6 +142,8 @@ function TaskRow({ task, busy, act, enter, load }: {
       {open ? (
         <div className="gah-cd-body">
           <div className="gah-cd-field"><b>{T('\u76ee\u6807', 'Objective')}</b><p>{text.objective}</p></div>
+          {task.metrics ? <div className="gah-cd-meta">{T('\u672c\u6b21\u8fd0\u884c ', 'Last run')}{task.metrics.seconds == null ? '' : `${task.metrics.seconds.toFixed(1)}s \u00b7 `}{task.metrics.turns ?? 0} {T('\u8f6e', 'turns')} {'\u00b7'} {task.metrics.usage?.input ?? 0} in / {task.metrics.usage?.output ?? 0} out</div> : null}
+          {task.failure_kind ? <div className="gah-cd-field error"><p>{task.failure_kind}{task.retryable ? T('\uff08\u53ef\u91cd\u8bd5\u7684\u57fa\u7840\u8bbe\u65bd\u6545\u969c\uff09', ' (retryable infrastructure failure)') : ''}</p></div> : null}
           {text.result ? <div className="gah-cd-field"><b>{T('\u7ed3\u679c', 'Result')}</b><p>{text.result}</p></div> : null}
           {terminal && text.result_complete === false ? (
             <div className="gah-cd-field error"><p>{T('\u672a\u6536\u5230\u5b8c\u6574\u6700\u7ec8\u4ea4\u4ed8\uff1b\u8bf7\u8865\u5145\u62a5\u544a\u6216\u72ec\u7acb\u6838\u5bf9\u4ea7\u7269\u540e\u518d\u9a8c\u6536\u3002', 'No complete final delivery. Request a report or independently inspect artifacts before verifying.')}</p></div>
@@ -336,6 +343,8 @@ function Panel({ api }: { api: PluginAPI }) {
                 </span>
                 {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
               </div>
+              {data.persistence_error ? <div className="gah-cd-body gah-cd-field error" role="alert"><b>{T('\u72b6\u6001\u5c1a\u672a\u4fdd\u5b58', 'State is not saved')}</b><p>{data.persistence_error}</p></div> : null}
+              {(data.deliveries || []).filter(d => (d.attempts || 0) >= 5).map(d => <div className="gah-cd-body gah-cd-field error" role="alert" key={d.id}><b>{T('\u901a\u77e5\u6295\u9012\u6301\u7eed\u5931\u8d25', 'Notification delivery keeps failing')}</b><p>{d.error} ({d.attempts})</p><p>{T('\u4e0b\u6b21\u91cd\u8bd5\uff1a', 'Retry scheduled: ')}{d.retry_at ? new Date(d.retry_at * 1000).toLocaleString() : '-'}</p></div>)}
               {progress ? (
                 <div className="gah-cd-body">
                   <div className="gah-cd-meta">{T(`\u9636\u6bb5 ${progress.stage} \u00b7 \u989d\u5ea6 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} \u00b7 quota ${stageTotal}/${data.limits.total}`)} {'\u00b7'} {label(PROGRESS_STATUS, progress.status)}</div>

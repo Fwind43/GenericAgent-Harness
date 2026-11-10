@@ -19,6 +19,12 @@ export interface Message {
   attachments?: Attachment[];
   /** Who started the run when not the user, e.g. "conductor" wake-ups. */
   source?: string;
+  /** Structured machine notices; historical messages may only have text. */
+  metadata?: { conductor?: {
+    kind: 'wake' | 'active' | 'review' | 'reflect' | 'reflect_error';
+    tasks?: { id: string; title: string; status: string; failure_kind?: string | null; retryable?: boolean }[];
+    running?: number; title?: string;
+  }; [key: string]: unknown };
 }
 export interface Attachment { id?: string; name: string; mime: string; size: number; image: boolean; url: string; path?: string }
 export interface MessageNote { kind: string; text: string; turn: number; created_at?: number; /** Plugin-specific structured payload; ``text`` is the plain fallback. */ data?: unknown }

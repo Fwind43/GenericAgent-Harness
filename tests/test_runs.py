@@ -170,3 +170,34 @@ def test_run_finish_preserves_session_preset(stores):
     saved = sessions.get(sid)["state"]
     assert saved["history"] == ["worker-turn"]
     assert saved["preset"] == "creative"
+
+
+def test_request_id_is_durable_scoped_and_preserves_message_metadata(stores):
+    sessions, scope = stores
+    sid = sessions.current()["id"]
+    metadata = {"conductor": {"kind": "tasks", "tasks": [{"id": "t1"}]}}
+    runs = Runs(sessions, scope, lambda *mode: [], process_context=FailedSpawn())
+    first = runs.start("delivery", session_id=sid, source="conductor",
+                       request_id="delivery-1", metadata=metadata)
+    saved_messages = sessions.get(sid)["messages"]
+    saved_events = runs.events(first["id"])
+    metadata["conductor"]["kind"] = "changed"
+    assert saved_messages[-2]["metadata"]["conductor"]["kind"] == "tasks"
+    runs.close()
+
+    # Recreate the service: deduplication must come from the run database, not RAM.
+    recovered = Runs(sessions, scope, lambda *mode: [], process_context=FailedSpawn())
+    try:
+        duplicate = recovered.start("delivery", session_id=sid, source="conductor",
+                                    request_id="delivery-1")
+        assert duplicate["id"] == first["id"]
+        assert sessions.get(sid)["messages"] == saved_messages
+        assert recovered.events(first["id"]) == saved_events
+        other_source = recovered.start("delivery", session_id=sid, source="other",
+                                       request_id="delivery-1")
+        child = sessions.create(parent_id=sid)
+        other_session = recovered.start("delivery", session_id=child["id"], source="conductor",
+                                        request_id="delivery-1")
+        assert len({first["id"], other_source["id"], other_session["id"]}) == 3
+    finally:
+        recovered.close()

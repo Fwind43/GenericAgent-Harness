@@ -269,7 +269,8 @@ class Runs:
             state["effort"] = getattr(agent, "gah_reasoning_effort", None)
         return state
 
-    def start(self, task, *, session_id=None, source="user", timeout=None, attachments=None):
+    def start(self, task, *, session_id=None, source="user", timeout=None, attachments=None,
+              request_id=None, metadata=None):
         files = uploads.resolve(attachments)
         if not isinstance(task, str) or not (task.strip() or files):
             raise ValueError("empty task")
@@ -277,12 +278,25 @@ class Runs:
             raise ValueError("invalid source")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 86400):
             raise ValueError("timeout must be between 0 and 86400 seconds")
+        if request_id is not None and (not isinstance(request_id, str) or not request_id or len(request_id) > 200):
+            raise ValueError("invalid request_id")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object")
         parent = child = process = None
         with self.lock:
             if self.closed:
                 raise RuntimeError("run service is stopping")
             session = self.sessions.get(session_id) if session_id is not None else self.sessions.current()
             sid = session["id"]
+            # Scope the durable id to both the session and its producer. Retrying
+            # after a lost submit response must return the original run, even busy.
+            rid = (uuid.uuid5(uuid.NAMESPACE_URL, json.dumps([sid, source, request_id])).hex
+                   if request_id is not None else uuid.uuid4().hex)
+            if request_id is not None:
+                with self.sessions._db() as db:
+                    existing = db.execute("SELECT * FROM runs WHERE id=?", (rid,)).fetchone()
+                if existing is not None:
+                    return self._row(existing)
             if self.active_for(sid):
                 raise SessionBusy("this session already has an active run")
             scope = self.workspaces.context(sid)
@@ -295,13 +309,14 @@ class Runs:
             recipe = self.recipe(preset["plugins"] if preset else ())
             if preset:
                 recipe = presets.apply(recipe, preset)
-            rid = uuid.uuid4().hex
             created_at = time.time()
             # A session that never stored a model/effort runs with the selection the
             # UI shows (the host agent's), not the worker's config default.
             session["state"] = self._seed_selection(session["state"])
             messages = copy.deepcopy(session["messages"])
             user = {"role": "user", "text": task.strip(), "run_id": rid, "created_at": created_at}
+            if metadata:
+                user["metadata"] = copy.deepcopy(metadata)
             if source and source != "user":
                 user["source"] = source  # e.g. "conductor": plugin-written wake-up, rendered as a notice
             if files:
