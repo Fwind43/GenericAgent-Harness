@@ -13,6 +13,14 @@
     error: ["出错", "Error"],
     interrupted: ["已中断", "Interrupted"]
   };
+  const PROGRESS_STATUS = {
+    active: ["推进中", "Active"],
+    waiting_children: ["等待子任务", "Waiting for tasks"],
+    waiting_external: ["等待外部事件", "Waiting for event"],
+    paused: ["已暂停", "Paused"],
+    blocked: ["需要用户处理", "Blocked"],
+    done: ["已完成", "Done"]
+  };
   const STATUS = {
     running: ["运行中", "Running"],
     done: ["已完成", "Done"],
@@ -73,13 +81,14 @@
     var _a, _b;
     const [open, setOpen] = react.useState(false);
     const [full, setFull] = react.useState(null);
-    const stamp = [task.id, task.status, task.review || "", task.runs || 0, ((_a = task.result) == null ? void 0 : _a.length) || 0, ((_b = task.basis) == null ? void 0 : _b.length) || 0].join("|");
+    const stamp = [task.id, task.status, task.review || "", task.runs || 0, ((_a = task.result) == null ? void 0 : _a.length) || 0, ((_b = task.basis) == null ? void 0 : _b.length) || 0, task.result_complete, task.result_source].join("|");
     react.useEffect(() => {
       if (!open || !task.partial) {
         setFull(null);
         return;
       }
       let live = true;
+      setFull(null);
       load(task).then((value) => {
         if (live) setFull(value);
       });
@@ -122,6 +131,9 @@
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("结果", "Result") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: text.result })
         ] }) : null,
+        terminal && text.result_complete === false ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-field error", children: /* @__PURE__ */ jsxRuntime.jsx("p", { children: sdk.T("未收到完整最终交付；请补充报告或独立核对产物后再验收。", "No complete final delivery. Request a report or independently inspect artifacts before verifying.") }) }) : null,
+        text.result_truncated || task.partial && !full ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-hint", children: sdk.T("当前为摘要；完整内容可在子任务会话中查看。", "Preview only; open the task chat for full details.") }) : null,
+        task.stage ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-meta", children: sdk.T(`阶段 ${task.stage}`, `Stage ${task.stage}`) }) : null,
         text.error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field error", children: [
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("错误", "Error") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: text.error })
@@ -262,6 +274,8 @@
     if (!on && !tasks.length && !reflections.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
+    const progress = data.progress;
+    const stageTotal = tasks.filter((t) => (t.stage ?? 1) === ((progress == null ? void 0 : progress.stage) ?? 1)).length;
     const showReflect = on || reflections.length > 0;
     const showTasks = on || tasks.length > 0;
     const enter = async (task) => {
@@ -315,6 +329,7 @@
             children: [
               running ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: tasks.length ? `${done}/${tasks.length}` : sdk.T("指挥家", "Conductor") }),
+              on && progress ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(PROGRESS_STATUS, progress.status) }) : null,
               /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
             ]
           }
@@ -328,6 +343,27 @@
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
             on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
           ] }),
+          progress ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
+              sdk.T(`阶段 ${progress.stage} · 额度 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} · quota ${stageTotal}/${data.limits.total}`),
+              " ",
+              "·",
+              " ",
+              label(PROGRESS_STATUS, progress.status)
+            ] }),
+            progress.goal ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("总目标", "Goal") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.goal })
+            ] }) : null,
+            progress.next_step ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("下一步", "Next step") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.next_step })
+            ] }) : null,
+            progress.reason ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态原因", "Reason") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.reason })
+            ] }) : null
+          ] }) : null,
           tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
         ] }) : null
       ] }) : null
