@@ -395,6 +395,8 @@ class _Handler(BaseHTTPRequestHandler):
             with self.frontend.lock:
                 snap = self.frontend.snapshot()
             self._json(200, snap)
+        elif path == "/api/session-export":
+            self._json(*self.frontend.session_export(parse_qs(urlsplit(self.path).query)))
         elif path == "/api/runs":
             self._json(*self.frontend.run_query(parse_qs(urlsplit(self.path).query)))
         elif path == "/api/plugins":

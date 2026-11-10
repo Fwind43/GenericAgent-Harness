@@ -811,6 +811,110 @@ class WebFrontend:
         except Exception:
             return 503, {"error": "run storage could not be read"}
 
+    _SECRET_KEY = re.compile(r"^(?:.*[_-])?(?:api_?key|apikey|secret|password|passwd|authorization|cookie|token)$", re.I)
+    EXPORT_RUNS = 50
+    EXPORT_EVENTS = 5000
+    EXPORT_LOG_SCAN = 8 * 1024 * 1024
+    EXPORT_LOG_LINES = 20000
+    EXPORT_FAULTS_TAIL = 64 * 1024
+
+    @classmethod
+    def _redact(cls, value):
+        """Copy ``value`` with credential-like dictionary keys masked (message text is kept)."""
+        if isinstance(value, dict):
+            return {k: ("***" if isinstance(k, str) and cls._SECRET_KEY.match(k) and v not in (None, "")
+                        else cls._redact(v)) for k, v in value.items()}
+        if isinstance(value, list):
+            return [cls._redact(v) for v in value]
+        return value
+
+    def _export_logs(self, needles):
+        """Log lines mentioning the session or one of its runs, plus the faults.log tail."""
+        from ga_harness import logfile
+        result = {"dir": None, "files": [], "faults": None}
+        try:
+            root = logfile.log_dir().resolve()
+        except Exception as e:  # noqa: BLE001 - an export without logs is still useful
+            result["error"] = f"log directory unavailable: {e}"
+            return result
+        result["dir"] = str(root)
+        budget = self.EXPORT_LOG_LINES
+        files = sorted((f for f in root.glob("*.log*") if f.is_file() and _Handler.LOG_NAME.match(f.name)),
+                       key=lambda f: f.stat().st_mtime)
+        for f in files:
+            try:
+                size = f.stat().st_size
+                with f.open("rb") as fh:
+                    start = max(0, size - (self.EXPORT_FAULTS_TAIL if f.name == "faults.log" else self.EXPORT_LOG_SCAN))
+                    fh.seek(start)
+                    data = fh.read()
+            except OSError as e:
+                result["files"].append({"name": f.name, "error": str(e)})
+                continue
+            text = data.decode("utf-8", "replace")
+            if f.name == "faults.log":
+                result["faults"] = {"name": f.name, "size": size, "truncated": start > 0, "text": text}
+                continue
+            hits = [line for line in text.splitlines() if any(n in line for n in needles)]
+            if not hits:
+                continue
+            clipped = len(hits) > budget
+            hits = hits[-budget:] if budget > 0 else []
+            budget -= len(hits)
+            result["files"].append({"name": f.name, "size": size, "scanned_from": start,
+                                    "clipped": clipped, "lines": hits})
+        return result
+
+    def session_export(self, query):
+        """GET /api/session-export?session_id=SID: one JSON bundle for debugging a conversation.
+
+        Contains the stored session (messages + agent state, credential-like keys masked),
+        its recent runs with their recorded events, the in-memory transcript of an active
+        run, and log lines that mention the session id or one of its run ids.
+        """
+        if not self.sessions:
+            return 404, {"error": "sessions are not enabled"}
+        sid = query.get("session_id", [None])[0]
+        if not sid:
+            with self.lock:
+                sid = self.sessions.current(light=True)["id"]
+        try:
+            session = self.sessions.get(sid)
+        except ValueError as e:
+            return 404, {"error": str(e)}
+        except Exception as e:  # noqa: BLE001
+            return 503, {"error": f"session storage could not be read: {e}"}
+        runs, live = [], None
+        if self.runs:
+            try:
+                for run in self.runs.listing(session_id=sid, limit=self.EXPORT_RUNS):
+                    events, after = [], 0
+                    while len(events) < self.EXPORT_EVENTS:
+                        page = self.runs.events(run["id"], after=after, limit=500)
+                        if not page:
+                            break
+                        events.extend(page)
+                        after = page[-1]["seq"]
+                    runs.append({**run, "events": events[:self.EXPORT_EVENTS],
+                                 "events_clipped": len(events) >= self.EXPORT_EVENTS})
+                live = self.runs.live_snapshot(sid)
+            except Exception as e:  # noqa: BLE001 - keep what was read
+                runs.append({"error": f"run storage could not be read: {e}"})
+        needles = [sid] + [r["id"] for r in runs if r.get("id")]
+        from ga_harness import __version__
+        bundle = {
+            "format": "gah-session-export/1",
+            "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "harness_version": __version__,
+            "python": sys.version.split()[0],
+            "platform": sys.platform,
+            "session": session,
+            "runs": runs,
+            "live": live,
+            "logs": self._export_logs(needles),
+        }
+        return 200, self._redact(bundle)
+
     def submit(self, task, *, session_id=None, source="user", attachments=None):
         if self.runs:
             if not isinstance(session_id, str) or not session_id:
