@@ -8,7 +8,8 @@ state saved before keys existed.
 
 GA source is left untouched: ``install`` wraps ``resolve_client`` in the agent
 module's namespace (non-mixin entries) and ``GenericAgent.load_llm_sessions``
-(failover groups, which GA builds in mykey.py order).
+(failover groups, which GA builds in mykey.py order), and subclasses the
+module's ``MixinSession`` so failover members resolve by configuration key.
 """
 from __future__ import annotations
 
@@ -61,6 +62,27 @@ def _llm_key(name: str) -> bool:
     return any(x in name for x in ("api", "config", "cookie"))   # GA's own filter
 
 
+MIXIN_KEYS = "gah_llm_keys"
+
+
+def mixin_cfg(all_sessions, cfg):
+    """Failover config with ``llm_nos`` turned into indices of the keyed members.
+
+    Falls back to GA's own name lookup unless every key matches exactly one live client.
+    """
+    keys = cfg.get(MIXIN_KEYS) if isinstance(cfg, dict) else None
+    if not isinstance(keys, list) or not keys:
+        return cfg
+    index = {}
+    for i, s in enumerate(all_sessions or []):
+        k = None if isinstance(s, dict) else key_of(s)
+        if k:
+            index.setdefault(k, []).append(i)
+    if any(not isinstance(k, str) or len(index.get(k, ())) != 1 for k in keys):
+        return cfg
+    return dict(cfg, llm_nos=[index[k][0] for k in keys])
+
+
 def _tag_mixins(agent) -> None:
     clients = getattr(agent, "llmclients", None) or []
     untagged = [c for c in clients if key_of(c) is None]
@@ -97,6 +119,15 @@ def install(mod) -> None:
                     pass
             return client
         mod.resolve_client = resolve_client
+    mixin = getattr(mod, "MixinSession", None)
+    if isinstance(mixin, type):
+        # GA resolves llm_nos by display name (first match), so groups saved by the
+        # harness also carry the member configuration keys. Same class name: GA's
+        # frontends detect failover groups by type(...).__name__.
+        mod.MixinSession = type(mixin.__name__, (mixin,), {
+            "__init__": lambda self, all_sessions, cfg: mixin.__init__(self, all_sessions, mixin_cfg(all_sessions, cfg)),
+            "__module__": mixin.__module__, "__qualname__": mixin.__qualname__,
+        })
     cls = getattr(mod, "GenericAgent", None)
     load = getattr(cls, "load_llm_sessions", None)
     if callable(load):

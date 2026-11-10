@@ -470,38 +470,42 @@ def make_mixin_models(tmp_path):
     return store
 
 
+ONE, TWO = "native_oai_config_one", "native_oai_config_two"
+
+
 def save_mixin(store, members=None, **options):
     return change(store, action="mixin_save", key="mixin_config_main",
-                  values={"llm_nos": ["One", "Two"] if members is None else members, **options})
+                  values={"llm_keys": [ONE, TWO] if members is None else members, **options})
 
 
 def test_mixin_crud_order_defaults_and_unrelated_fields(tmp_path):
     store = make_mixin_models(tmp_path)
     result = save_mixin(store, max_retries=4, base_delay=0.5, spring_back=0)
     assert result["mixins"] == [{"key": "mixin_config_main", "members": ["One", "Two"],
-                                 "indexed": False, "values": {
+                                 "member_keys": [ONE, TWO], "indexed": False, "values": {
                                      "max_retries": 4, "base_delay": 0.5, "spring_back": 0}}]
     data = read_cfg(store.source.file)
     assert data["native_oai_config_one"]["apikey"] == "test-secret-one"
     data["mixin_config_main"]["custom_field"] = "keep"
     write_mykey(store.source.file, data)
-    save_mixin(store, ["Two", "One"], max_retries=None, base_delay="", spring_back=None)
+    save_mixin(store, [TWO, ONE], max_retries=None, base_delay="", spring_back=None)
     assert read_cfg(store.source.file)["mixin_config_main"] == {
-        "llm_nos": ["Two", "One"], "custom_field": "keep"}
+        "llm_nos": ["Two", "One"], "gah_llm_keys": [TWO, ONE], "custom_field": "keep"}
     result = change(store, action="mixin_delete", key="mixin_config_main")
     assert result["mixins"] == []
     assert "mixin_config_main" not in read_cfg(store.source.file)
 
 
 @pytest.mark.parametrize("values", [
-    {"llm_nos": ["One"]}, {"llm_nos": ["One", "One"]},
-    {"llm_nos": ["One", "Missing"]}, {"llm_nos": [0, 1]},
-    {"llm_nos": ["One", "Two"], "max_retries": True},
-    {"llm_nos": ["One", "Two"], "max_retries": 1.5},
-    {"llm_nos": ["One", "Two"], "max_retries": 21},
-    {"llm_nos": ["One", "Two"], "base_delay": -1},
-    {"llm_nos": ["One", "Two"], "spring_back": 86401},
-    {"llm_nos": ["One", "Two"], "unknown_option": 1},
+    {"llm_keys": [ONE]}, {"llm_keys": [ONE, ONE]},
+    {"llm_keys": [ONE, "native_oai_config_missing"]}, {"llm_keys": [0, 1]},
+    {"llm_nos": ["One", "Two"]},
+    {"llm_keys": [ONE, TWO], "max_retries": True},
+    {"llm_keys": [ONE, TWO], "max_retries": 1.5},
+    {"llm_keys": [ONE, TWO], "max_retries": 21},
+    {"llm_keys": [ONE, TWO], "base_delay": -1},
+    {"llm_keys": [ONE, TWO], "spring_back": 86401},
+    {"llm_keys": [ONE, TWO], "unknown_option": 1},
 ])
 def test_mixin_invalid_fields_do_not_write(tmp_path, values):
     store = make_mixin_models(tmp_path)
@@ -511,46 +515,57 @@ def test_mixin_invalid_fields_do_not_write(tmp_path, values):
     assert store.source.file.read_bytes() == original
 
 
-def test_mixin_requires_unique_names_and_compatible_types(tmp_path):
+def test_mixin_members_by_key_allow_duplicate_names_but_not_mixed_types(tmp_path):
     store = make_mixin_models(tmp_path)
     data = read_cfg(store.source.file)
-    data["native_oai_config_two"]["name"] = "One"
-    with pytest.raises(ValueError, match="unique"):
-        store._mixin_change(data, "mixin_save", {
-            "key": "mixin_config_main", "values": {"llm_nos": ["One", "Two"]}})
-    data["oai_config_plain"] = dict(data.pop("native_oai_config_two"), name="Plain")
+    data[TWO]["name"] = "One"
+    store._mixin_change(data, "mixin_save", {"key": "mixin_config_main", "values": {"llm_keys": [TWO, ONE]}})
+    assert data["mixin_config_main"] == {"llm_nos": ["One", "One"], "gah_llm_keys": [TWO, ONE]}
+    del data["mixin_config_main"]
+    data["oai_config_plain"] = dict(data.pop(TWO), name="Plain")
     with pytest.raises(ValueError, match="cannot mix"):
         store._mixin_change(data, "mixin_save", {
-            "key": "mixin_config_main", "values": {"llm_nos": ["One", "Plain"]}})
+            "key": "mixin_config_main", "values": {"llm_keys": [ONE, "oai_config_plain"]}})
     assert "mixin_config_main" not in data
 
 
-def test_model_display_names_must_be_unique(tmp_path):
+def test_model_display_names_may_repeat(tmp_path):
     store = make_mixin_models(tmp_path)
-    original = store.source.file.read_bytes()
-    with pytest.raises(ValueError, match="unique"):
-        change(store, key="native_oai_config_duplicate", values={
-            "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
-            "apikey": "test-duplicate"})
-    with pytest.raises(ValueError, match="unique"):
-        change(store, values={"name": "Two"})
-    assert store.source.file.read_bytes() == original
+    save_mixin(store)
+    change(store, key="native_oai_config_duplicate", values={
+        "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
+        "apikey": "test-duplicate"})
+    change(store, values={"name": "Two"})
+    data = read_cfg(store.source.file)
+    assert data[ONE]["name"] == data["native_oai_config_duplicate"]["name"] == "Two"
+    assert data["mixin_config_main"]["llm_nos"] == ["Two", "Two"]
+    assert data["mixin_config_main"]["gah_llm_keys"] == [ONE, TWO]
+    assert store.config()["mixins"][0]["member_keys"] == [ONE, TWO]
+
+
+def test_legacy_name_groups_resolve_and_get_pinned(tmp_path):
+    store = make_mixin_models(tmp_path)
+    data = read_cfg(store.source.file)
+    data["mixin_config_main"] = {"llm_nos": ["One", "Two"]}
+    write_mykey(store.source.file, data)
+    assert store.config()["mixins"][0]["member_keys"] == [ONE, TWO]
+    # A newcomer sharing a referenced name must not take over the group.
+    change(store, key="native_oai_config_duplicate", values={
+        "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
+        "apikey": "test-duplicate"})
+    assert read_cfg(store.source.file)["mixin_config_main"] == {
+        "llm_nos": ["One", "Two"], "gah_llm_keys": [ONE, TWO]}
 
 
 def test_mixin_rename_references_and_delete_protection(tmp_path):
     store = make_mixin_models(tmp_path)
     save_mixin(store)
     change(store, values={"name": "Renamed"})
-    assert read_cfg(store.source.file)["mixin_config_main"]["llm_nos"] == ["Renamed", "Two"]
+    cfg = read_cfg(store.source.file)["mixin_config_main"]
+    assert cfg["llm_nos"] == ["Renamed", "Two"] and cfg["gah_llm_keys"] == [ONE, TWO]
     original = store.source.file.read_bytes()
     with pytest.raises(ValueError, match="used by failover"):
         change(store, action="delete")
-    with pytest.raises(ValueError, match="ambiguous"):
-        change(store, values={"name": "Two"})
-    with pytest.raises(ValueError, match="ambiguous"):
-        change(store, key="native_oai_config_duplicate", values={
-            "name": "Two", "model": "duplicate", "apibase": "https://example.invalid/v1",
-            "apikey": "test-duplicate"})
     assert store.source.file.read_bytes() == original
 
 
@@ -561,6 +576,7 @@ def test_mixin_numeric_indices_are_not_guessed_and_block_model_deletion(tmp_path
     write_mykey(store.source.file, data)
     entry = store.config()["mixins"][0]
     assert entry["members"] == ["#0", "#9"] and entry["indexed"]
+    assert entry["member_keys"] == [None, None]
     original = store.source.file.read_bytes()
     with pytest.raises(ValueError, match="by position"):
         change(store, action="delete")
@@ -568,6 +584,23 @@ def test_mixin_numeric_indices_are_not_guessed_and_block_model_deletion(tmp_path
     save_mixin(store)
     assert not store.config()["mixins"][0]["indexed"]
     assert read_cfg(store.source.file)["mixin_config_main"]["llm_nos"] == ["One", "Two"]
+
+
+def test_mixin_session_resolves_members_by_key():
+    from types import SimpleNamespace
+    from ga_harness import model_keys
+
+    def client(key, name):
+        c = SimpleNamespace(backend=SimpleNamespace(name=name))
+        if key:
+            c._gah_key = key
+        return c
+    sessions = [client("a", "Same"), {"bad": 1}, client("b", "Same")]
+    cfg = {"llm_nos": ["Same", "Same"], "gah_llm_keys": ["b", "a"], "max_retries": 2}
+    assert model_keys.mixin_cfg(sessions, cfg) == dict(cfg, llm_nos=[2, 0])
+    # Missing or ambiguous keys leave GA's own name lookup in place.
+    assert model_keys.mixin_cfg(sessions, dict(cfg, gah_llm_keys=["b", "zzz"])) == dict(cfg, gah_llm_keys=["b", "zzz"])
+    assert model_keys.mixin_cfg(sessions, {"llm_nos": ["Same"]}) == {"llm_nos": ["Same"]}
 
 
 def test_mixin_reload_failure_restores_file_and_active_model(tmp_path):

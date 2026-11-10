@@ -721,17 +721,20 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
   function MixinForm({ entry, config, disabled, onSave, onDirtyChange, onReset }) {
     var _a;
     const [id, setId] = react.useState((entry == null ? void 0 : entry.key) || "mixin_config_" + Date.now());
-    const [members, setMembers] = react.useState((entry == null ? void 0 : entry.indexed) ? [] : (entry == null ? void 0 : entry.members) || []);
+    const [members, setMembers] = react.useState((entry == null ? void 0 : entry.indexed) ? [] : ((entry == null ? void 0 : entry.member_keys) || []).map((key) => key || ""));
     const [retries, setRetries] = react.useState(String((entry == null ? void 0 : entry.values.max_retries) ?? ""));
     const [delay, setDelay] = react.useState(String((entry == null ? void 0 : entry.values.base_delay) ?? ""));
     const [spring, setSpring] = react.useState(String((entry == null ? void 0 : entry.values.spring_back) ?? ""));
     const [error, setError] = react.useState("");
     const dirty = useDraft({ id, members, retries, delay, spring }, onDirtyChange);
     const models = config.entries.map((item) => ({ key: item.key, name: item.values.name || item.values.model || "" }));
-    const unique = models.filter((item) => item.name && models.filter((other) => other.name === item.name).length === 1);
-    const selected = members.map((name) => unique.find((item) => item.name === name));
+    const selected = members.map((key) => models.find((item) => item.key === key));
+    const label = (index) => {
+      var _a2;
+      return ((_a2 = selected[index]) == null ? void 0 : _a2.name) || (entry == null ? void 0 : entry.members[index]) || members[index];
+    };
     const native = (_a = selected.find((item) => item)) == null ? void 0 : _a.key.includes("native");
-    const available = unique.filter((item) => !members.includes(item.name) && (native === void 0 || item.key.includes("native") === native));
+    const available = models.filter((item) => !members.includes(item.key) && (native === void 0 || item.key.includes("native") === native));
     const invalid = selected.some((item) => !item) || new Set(members).size !== members.length || new Set(selected.filter((item) => item).map((item) => item.key.includes("native"))).size > 1;
     const move = (index, offset) => {
       setMembers((old) => {
@@ -751,11 +754,11 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         return;
       }
       if (invalid || members.length < 2 || members.length > 20) {
-        setError(sdk.T("请选择 2–20 个名称唯一、类型兼容的模型。", "Choose 2–20 uniquely named, compatible models."));
+        setError(sdk.T("请选择 2–20 个不同且类型兼容的模型。", "Choose 2–20 different, compatible models."));
         return;
       }
       setError("");
-      onSave("mixin_save", id, { llm_nos: members, max_retries: retries === "" ? null : Number(retries), base_delay: delay === "" ? null : Number(delay), spring_back: spring === "" ? null : Number(spring) });
+      onSave("mixin_save", id, { llm_keys: members, max_retries: retries === "" ? null : Number(retries), base_delay: delay === "" ? null : Number(delay), spring_back: spring === "" ? null : Number(spring) });
     }, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-form-content", children: [
         error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: error }),
@@ -763,37 +766,41 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           /* @__PURE__ */ jsxRuntime.jsx("input", { required: true, pattern: "[A-Za-z][A-Za-z0-9_]{0,99}", value: id, disabled: disabled || !!entry, onChange: (event) => setId(event.target.value), autoComplete: "off", spellCheck: false }),
           /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("例如 mixin_config_primary；保存后标识不可修改。", "For example, mixin_config_primary; the identifier cannot be changed after saving.") })
         ] }) }),
-        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("模型顺序", "Model order"), hint: sdk.T("使用模型名称引用，不使用易变的数字下标。Native 与非 Native 模型不能混在同一组。", "References use model names, not fragile numeric indices. Native and non-native models cannot be mixed in one group."), children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "wide mixin-members", children: [
-          (entry == null ? void 0 : entry.indexed) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("此组原来使用数字下标；请重新选择成员，保存后改用名称引用。", "This group uses numeric indices. Reselect its members to save name-based references.") }),
-          invalid && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: sdk.T("成员缺失、重名或类型不兼容，请移除后重新选择。", "Some members are missing, ambiguous or incompatible. Remove and reselect them.") }),
-          /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "mixin-member-list", children: members.map((name, index) => /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
-            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "mixin-member-name", children: [
-              /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
-                index === 0 ? sdk.T("首选", "Primary") : sdk.T("备选", "Fallback"),
-                " ",
-                index + 1
+        /* @__PURE__ */ jsxRuntime.jsx(Section, { title: sdk.T("模型顺序", "Model order"), hint: sdk.T("按模型配置标识引用，模型可以重名；不使用易变的数字下标。Native 与非 Native 模型不能混在同一组。", "Members are referenced by configuration identifier, so display names may repeat; no fragile numeric indices. Native and non-native models cannot be mixed in one group."), children: /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "wide mixin-members", children: [
+          (entry == null ? void 0 : entry.indexed) && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("此组原来使用数字下标；请重新选择成员，保存后改用配置标识引用。", "This group uses numeric indices. Reselect its members to save identifier-based references.") }),
+          invalid && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-error", role: "alert", children: sdk.T("成员缺失、无法唯一对应或类型不兼容，请移除后重新选择。", "Some members are missing, ambiguous or incompatible. Remove and reselect them.") }),
+          /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "mixin-member-list", children: members.map((key, index) => {
+            const name = label(index);
+            return /* @__PURE__ */ jsxRuntime.jsxs("li", { children: [
+              /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "mixin-member-name", children: [
+                /* @__PURE__ */ jsxRuntime.jsxs("small", { children: [
+                  index === 0 ? sdk.T("首选", "Primary") : sdk.T("备选", "Fallback"),
+                  " ",
+                  index + 1
+                ] }),
+                /* @__PURE__ */ jsxRuntime.jsx("strong", { children: name }),
+                key && /* @__PURE__ */ jsxRuntime.jsx("small", { children: key })
               ] }),
-              /* @__PURE__ */ jsxRuntime.jsx("strong", { children: name })
-            ] }),
-            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mixin-member-actions", children: [
-              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === 0, "aria-label": sdk.T("上移 ", "Move up ") + name, onClick: () => move(index, -1), children: "↑" }),
-              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === members.length - 1, "aria-label": sdk.T("下移 ", "Move down ") + name, onClick: () => move(index, 1), children: "↓" }),
-              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, "aria-label": sdk.T("移除 ", "Remove ") + name, onClick: () => setMembers((old) => old.filter((_, pos) => pos !== index)), children: sdk.T("移除", "Remove") })
-            ] })
-          ] }, index)) }),
+              /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "mixin-member-actions", children: [
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === 0, "aria-label": sdk.T("上移 ", "Move up ") + name, onClick: () => move(index, -1), children: "↑" }),
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: disabled || index === members.length - 1, "aria-label": sdk.T("下移 ", "Move down ") + name, onClick: () => move(index, 1), children: "↓" }),
+                /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled, "aria-label": sdk.T("移除 ", "Remove ") + name, onClick: () => setMembers((old) => old.filter((_, pos) => pos !== index)), children: sdk.T("移除", "Remove") })
+              ] })
+            ] }, index);
+          }) }),
           !members.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "model-help", children: sdk.T("先添加首选模型，再添加至少一个备选模型。", "Add a primary model, then at least one fallback.") }),
           /* @__PURE__ */ jsxRuntime.jsxs(Field, { label: sdk.T("添加成员", "Add member"), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("select", { value: "", disabled: disabled || members.length >= 20 || !available.length, onChange: (event) => {
               if (event.target.value) setMembers((old) => [...old, event.target.value]);
             }, children: [
               /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("选择模型…", "Choose a model…") }),
-              available.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: item.name, children: [
-                item.name,
+              available.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("option", { value: item.key, children: [
+                item.name || item.key,
                 " · ",
                 item.key
               ] }, item.key))
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅列出名称唯一且与当前组兼容的模型；重名模型请先在模型页改名。", "Only uniquely named, compatible models are listed. Rename duplicate models in the Models tab first.") })
+            /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅列出与当前组兼容的模型；重名模型通过配置标识区分。", "Only compatible models are listed; models with the same name are told apart by identifier.") })
           ] })
         ] }) }),
         /* @__PURE__ */ jsxRuntime.jsxs(Section, { title: sdk.T("可选参数", "Optional settings"), hint: sdk.T("留空使用 GA 默认值；回切设为 0 时，下次请求立即尝试首选模型。", "Leave empty for GA defaults; 0 retries the primary model on the next request."), children: [

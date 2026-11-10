@@ -119,6 +119,29 @@ def _mixin_lists(data):
             yield key, nos
 
 
+def _is_index(n):
+    return isinstance(n, int) and not isinstance(n, bool)
+
+
+def _member_keys(data, value):
+    """Configuration keys of a failover group's members (None where unknown).
+
+    Harness-saved groups store them in ``gah_llm_keys``; older groups only have display
+    names in ``llm_nos``, which resolve when exactly one model carries that name.
+    """
+    nos = value.get("llm_nos")
+    nos = nos if isinstance(nos, list) else []
+    keys = value.get(model_keys.MIXIN_KEYS)
+    if (isinstance(keys, list) and len(keys) == len(nos)
+            and all(isinstance(k, str) and _supported(k, data.get(k)) for k in keys)):
+        return list(keys)
+    out = []
+    for n in nos:
+        hits = [] if _is_index(n) else [k for k, v in data.items() if _supported(k, v) and _model_name(v) == n]
+        out.append(hits[0] if len(hits) == 1 else None)
+    return out
+
+
 def _model_name(value):
     """GA's runtime model name (backend.name) as written in mykey.py."""
     return str(value.get("name") or value.get("model") or "")
@@ -656,16 +679,19 @@ class Models:
                 continue
             nos = value.get("llm_nos")
             nos = nos if isinstance(nos, list) else []
+            keys = _member_keys(data, value)
             members = []
-            for n in nos:
-                if isinstance(n, int) and not isinstance(n, bool):
+            for n, k in zip(nos, keys):
+                if k:
+                    members.append(_model_name(data[k]))
+                elif _is_index(n):
                     # Runtime indices include sessions not exposed by this editor.
                     # Never guess a name from dictionary order.
                     members.append(f"#{n}")
                 else:
                     members.append(str(n))
-            out.append({"key": key, "members": members,
-                        "indexed": any(isinstance(n, int) and not isinstance(n, bool) for n in nos),
+            out.append({"key": key, "members": members, "member_keys": keys,
+                        "indexed": any(_is_index(n) for n in nos),
                         "values": {k: value[k] for k in _MIXIN_OPTS if isinstance(value.get(k), (int, float))}})
         return out
 
@@ -682,24 +708,23 @@ class Models:
         if key in data and not _is_mixin(key, data[key]):
             raise ValueError("configuration identifier already exists")
         values = body.get("values")
-        if not isinstance(values, dict) or set(values) - set(_MIXIN_OPTS) - {"llm_nos"}:
+        if not isinstance(values, dict) or set(values) - set(_MIXIN_OPTS) - {"llm_keys"}:
             raise ValueError("unsupported failover group fields")
-        members = values.get("llm_nos")
+        members = values.get("llm_keys")
         if (not isinstance(members, list) or not 2 <= len(members) <= 20
-                or any(not isinstance(m, str) or not m.strip() for m in members)
+                or any(not isinstance(m, str) for m in members)
                 or len(set(members)) != len(members)):
             raise ValueError("choose 2-20 different models for a failover group")
-        named = [(_model_name(v), k) for k, v in data.items() if _supported(k, v)]
-        groups = set()
         for m in members:
-            keys = [k for n, k in named if n == m]
-            if len(keys) != 1:
-                raise ValueError(f"model {m!r} is not a unique configured model name")
-            groups.add("native" in keys[0])
-        if len(groups) != 1:
+            if not _supported(m, data.get(m)):
+                raise ValueError(f"unknown model configuration {m!r}")
+        if len({"native" in m for m in members}) != 1:
             raise ValueError("a failover group cannot mix native and non-native models")
         cfg = dict(data.get(key) or {})
-        cfg["llm_nos"] = list(members)
+        # llm_nos keeps display names so GA alone still loads the group; the harness
+        # resolves members by gah_llm_keys, so display names may repeat.
+        cfg["llm_nos"] = [_model_name(data[m]) for m in members]
+        cfg[model_keys.MIXIN_KEYS] = list(members)
         for opt, (lo, hi, whole) in _MIXIN_OPTS.items():
             v = values.get(opt)
             if v is None or v == "":
@@ -711,11 +736,19 @@ class Models:
         data[key] = cfg
 
     @staticmethod
-    def _mixin_rename(data, old, new):
+    def _mixin_rename(data, key, new):
+        """Rewrite the display name of model ``key`` in every group that contains it."""
         for k, v in list(data.items()):
-            nos = v.get("llm_nos") if _is_mixin(k, v) else None
-            if isinstance(nos, list) and old in nos:
-                data[k] = dict(v, llm_nos=[new if n == old else n for n in nos])
+            if not _is_mixin(k, v) or not isinstance(v.get("llm_nos"), list):
+                continue
+            keys = _member_keys(data, v)
+            if key not in keys or any(_is_index(n) for n in v["llm_nos"]):
+                continue
+            nos = [new if mk == key else n for n, mk in zip(v["llm_nos"], keys)]
+            cfg = dict(v, llm_nos=nos)
+            if all(keys):
+                cfg[model_keys.MIXIN_KEYS] = keys  # pin legacy name-only groups to keys
+            data[k] = cfg
 
     def _provider_change(self, data, action, body):
         providers = self._providers(data)
@@ -927,9 +960,10 @@ class Models:
                         raise ValueError("unknown model configuration")
                     name = _model_name(data[key])
                     for mk, nos in _mixin_lists(data):
-                        if any(isinstance(n, int) and not isinstance(n, bool) for n in nos):
+                        if any(_is_index(n) for n in nos):
                             raise ValueError(f"failover group {mk} references models by position; save it once in settings before deleting a model")
-                        if name in nos:
+                        keys = _member_keys(data, data[mk])
+                        if key in keys or any(k is None and n == name for n, k in zip(nos, keys)):
                             raise ValueError(f"this model is used by failover group {mk}; remove it there first")
                     del data[key]
                 elif action == "save":
@@ -1018,17 +1052,15 @@ class Models:
         old = _model_name(data[key]) if _supported(key, data.get(key)) else None
         new = _model_name(cfg)
         if old != new:
-            refs = {n for _, nos in _mixin_lists(data) for n in nos if isinstance(n, str)}
-            others = [_model_name(v) for k, v in data.items() if k != key and _supported(k, v)]
-            if new in refs and new in others:
-                raise ValueError("this name would make an existing failover group ambiguous")
-            if old in refs:
-                if old in others or not new or new in others:
-                    raise ValueError("failover group references would be ambiguous; edit the group before renaming")
-                self._mixin_rename(data, old, new)
-            if new in others:
-                # GA, saved sessions and run workers all pick a model by this name;
-                # a duplicate would silently resolve to whichever comes first.
-                raise ValueError("another model already uses this display name; choose a unique name")
+            # A model taking a name that legacy name-only groups use: pin those groups
+            # to their current members first so they do not switch to this model.
+            for mk, nos in list(_mixin_lists(data)):
+                keys = _member_keys(data, data[mk])
+                if new in nos and all(keys) and model_keys.MIXIN_KEYS not in data[mk]:
+                    data[mk] = dict(data[mk], **{model_keys.MIXIN_KEYS: keys})
+        if old is not None and old != new:
+            # Display names may repeat: sessions, workers and failover groups refer to
+            # models by configuration key. llm_nos follows the new name for GA alone.
+            self._mixin_rename(data, key, new)
         data[key] = cfg
         return expanded
