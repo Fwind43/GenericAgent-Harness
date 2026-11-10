@@ -28,6 +28,20 @@
     needs_work: ["需返工", "Needs work"]
   };
   const label = (map, key) => key ? map[key] ? sdk.T(map[key][0], map[key][1]) : key : "";
+  function formatRemaining(expires) {
+    if (!expires) return null;
+    const sec = Math.max(0, Math.round(expires - Date.now() / 1e3));
+    if (sec <= 0) return ["已到期", "Expired"];
+    if (sec < 60) return [`剩余 ${sec}s`, `${sec}s left`];
+    const mins = Math.floor(sec / 60);
+    if (mins < 60) return [`剩余 ${mins}m`, `${mins}m left`];
+    const hours = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    if (hours < 48) return [remMins ? `剩余 ${hours}h ${remMins}m` : `剩余 ${hours}h`, remMins ? `${hours}h ${remMins}m left` : `${hours}h left`];
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return [remHours ? `剩余 ${days}d ${remHours}h` : `剩余 ${days}d`, remHours ? `${days}d ${remHours}h left` : `${days}d left`];
+  }
   function useConductor(api) {
     const { state } = sdk.useHost();
     const [busy, setBusy] = react.useState(false);
@@ -133,6 +147,52 @@
       ] }) : null
     ] });
   }
+  function ReflectRow({ item, busy, stop }) {
+    const [open, setOpen] = react.useState(item.status === "error" || item.status === "interrupted");
+    const active = !REFLECT_TERMINAL.has(item.status);
+    const dotClass = active ? "running" : item.status;
+    const cadence = item.once ? sdk.T("单次", "Once") : `${item.interval ?? 5}s`;
+    const rem = active ? formatRemaining(item.expires) : null;
+    const expText = item.expires ? new Date(item.expires * 1e3).toLocaleString() : "";
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-cd-task${active ? "" : " resolved"}`, children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-row", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-cd-head", "aria-expanded": open, onClick: () => setOpen(!open), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-cd-dot ${dotClass}` }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-title", children: item.title || item.id }),
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-tag model", title: sdk.T("检查周期 / 已触发次数", "Poll interval / trigger count"), children: [
+            cadence,
+            (item.triggers ?? 0) > 0 ? ` · #${item.triggers}` : ""
+          ] }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(REFLECT_STATUS, item.status) })
+        ] }),
+        active ? /* @__PURE__ */ jsxRuntime.jsx(
+          "button",
+          {
+            type: "button",
+            className: "gah-cd-enter stop",
+            disabled: busy,
+            onClick: () => stop(item),
+            title: sdk.T("停止监听", "Stop source"),
+            "aria-label": sdk.T("停止监听", "Stop source"),
+            children: /* @__PURE__ */ jsxRuntime.jsx("svg", { viewBox: "0 0 16 16", width: "13", height: "13", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("rect", { x: "4", y: "4", width: "8", height: "8", rx: "1.5", fill: "currentColor" }) })
+          }
+        ) : null
+      ] }),
+      open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.once ? sdk.T("单次触发", "One-shot") : sdk.T(`每 ${item.interval ?? 5}s 检查`, `Every ${item.interval ?? 5}s`) }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T(`已触发 ${item.triggers ?? 0} 次`, `Triggered ${item.triggers ?? 0}x`) }),
+          rem ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: expText ? `${sdk.T("截止", "Expires")} ${expText}` : void 0, children: sdk.T(rem[0], rem[1]) }) : null,
+          /* @__PURE__ */ jsxRuntime.jsx("code", { className: "gah-cd-id", children: item.id })
+        ] }),
+        item.error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field error", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("异常", "Error") }),
+          /* @__PURE__ */ jsxRuntime.jsx("p", { children: item.error })
+        ] }) : null,
+        active ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-actions", children: /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "danger", disabled: busy, onClick: () => stop(item), children: sdk.T("停止监听", "Stop source") }) }) : null
+      ] }) : null
+    ] });
+  }
   function Panel({ api }) {
     var _a;
     const { data, sid, busy, run, load } = useConductor(api);
@@ -190,11 +250,18 @@
       var _a2, _b;
       return ((_b = (_a2 = data.children) == null ? void 0 : _a2[t.child]) == null ? void 0 : _b.parent) === sid;
     }).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
-    const reflections = (data.reflections || []).filter((r) => r.parent === sid);
+    const reflections = (data.reflections || []).filter((r) => r.parent === sid).sort(
+      (a, b) => Number(REFLECT_TERMINAL.has(a.status)) - Number(REFLECT_TERMINAL.has(b.status)) || (b.created ?? 0) - (a.created ?? 0)
+    );
     const watching = reflections.filter((r) => !REFLECT_TERMINAL.has(r.status)).length;
     if (!on && !tasks.length && !reflections.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
+    const chipLabel = tasks.length ? watching ? `${done}/${tasks.length} · ${watching}` : `${done}/${tasks.length}` : watching ? sdk.T(`监听 ${watching}`, `Watching ${watching}`) : sdk.T("指挥家", "Conductor");
+    const barHint = tasks.length && reflections.length ? sdk.T(
+      `任务 ${tasks.length} (${running}/${data.limits.running}) · 事件源 ${watching}/${reflections.length}`,
+      `${tasks.length} tasks (${running}/${data.limits.running}) · ${watching}/${reflections.length} sources`
+    ) : tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : reflections.length ? sdk.T(`事件源 ${reflections.length} · 监听中 ${watching}`, `${reflections.length} sources · ${watching} watching`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself");
     const enter = async (task) => {
       setOpen(false);
       try {
@@ -216,7 +283,7 @@
           title: sdk.T("指挥家任务", "Conductor tasks"),
           children: [
             running || watching ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: tasks.length ? `${done}/${tasks.length}` : sdk.T("指挥家", "Conductor") }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: chipLabel }),
             /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-cd-caret", viewBox: "0 0 10 10", width: "9", height: "9", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 3.5l3 3 3-3", stroke: "currentColor", strokeWidth: "1.4", fill: "none", strokeLinecap: "round" }) })
           ]
         }
@@ -227,50 +294,31 @@
             /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
             sdk.T("指挥家模式", "Conductor mode")
           ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: barHint }),
           on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
         ] }),
         reflections.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-list", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-hint", children: [
-            sdk.T("反射事件源", "Reflect sources"),
-            " (",
-            watching,
-            "/",
-            reflections.length,
-            ")"
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-sec", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("事件源", "Event sources") }),
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              watching,
+              "/",
+              reflections.length
+            ] })
           ] }),
-          reflections.map((r) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("b", { children: r.title }),
-            " · ",
-            label(REFLECT_STATUS, r.status),
-            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
-              /* @__PURE__ */ jsxRuntime.jsx("code", { children: r.id }),
-              " · ",
-              sdk.T("触发", "Triggers"),
-              ": ",
-              r.triggers,
-              " · ",
-              r.interval,
-              "s"
-            ] }),
-            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
-              sdk.T("到期", "Expires"),
-              ": ",
-              new Date(r.expires * 1e3).toLocaleString()
-            ] }),
-            r.error ? /* @__PURE__ */ jsxRuntime.jsx("p", { children: r.error }) : null,
-            !REFLECT_TERMINAL.has(r.status) ? /* @__PURE__ */ jsxRuntime.jsx(
-              "button",
-              {
-                type: "button",
-                disabled: busy,
-                onClick: () => run("reflect", { action: "stop", reflect_id: r.id }),
-                children: sdk.T("停止监听", "Stop watching")
-              }
-            ) : null
-          ] }, r.id))
+          reflections.map((r) => /* @__PURE__ */ jsxRuntime.jsx(ReflectRow, { item: r, busy, stop: (item) => run("reflect", { action: "stop", reflect_id: item.id }) }, r.id))
         ] }) : null,
-        tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
+        tasks.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-list", children: [
+          reflections.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-sec", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("子任务", "Subtasks") }),
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              done,
+              "/",
+              tasks.length
+            ] })
+          ] }) : null,
+          tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id))
+        ] }) : !reflections.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") }) : null
       ] }) : null
     ] });
   }

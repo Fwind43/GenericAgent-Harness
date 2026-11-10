@@ -10,7 +10,7 @@ type Task = {
 };
 type Reflection = {
   id: string; parent: string; title: string; status: string; triggers: number;
-  expires: number; error?: string; interval: number;
+  expires: number; error?: string; interval: number; once?: boolean; created?: number;
 };
 const REFLECT_TERMINAL = new Set(['done', 'stopped', 'error', 'interrupted']);
 const REFLECT_STATUS: Record<string, [string, string]> = {
@@ -44,6 +44,21 @@ const REVIEW: Record<string, [string, string]> = {
 };
 const label = (map: Record<string, [string, string]>, key?: string | null) =>
   key ? (map[key] ? T(map[key][0], map[key][1]) : key) : '';
+
+function formatRemaining(expires?: number): [string, string] | null {
+  if (!expires) return null;
+  const sec = Math.max(0, Math.round(expires - Date.now() / 1000));
+  if (sec <= 0) return ['\u5df2\u5230\u671f', 'Expired'];
+  if (sec < 60) return [`\u5269\u4f59 ${sec}s`, `${sec}s left`];
+  const mins = Math.floor(sec / 60);
+  if (mins < 60) return [`\u5269\u4f59 ${mins}m`, `${mins}m left`];
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 48) return [remMins ? `\u5269\u4f59 ${hours}h ${remMins}m` : `\u5269\u4f59 ${hours}h`, remMins ? `${hours}h ${remMins}m left` : `${hours}h left`];
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return [remHours ? `\u5269\u4f59 ${days}d ${remHours}h` : `\u5269\u4f59 ${days}d`, remHours ? `${days}d ${remHours}h left` : `${days}d left`];
+}
 
 function useConductor(api: PluginAPI) {
   const { state } = useHost();
@@ -121,6 +136,53 @@ function TaskRow({ task, busy, act, enter, load }: {
   );
 }
 
+function ReflectRow({ item, busy, stop }: { item: Reflection; busy: boolean; stop: (r: Reflection) => void }) {
+  const [open, setOpen] = useState(item.status === 'error' || item.status === 'interrupted');
+  const active = !REFLECT_TERMINAL.has(item.status);
+  const dotClass = active ? 'running' : item.status;
+  const cadence = item.once ? T('\u5355\u6b21', 'Once') : `${item.interval ?? 5}s`;
+  const rem = active ? formatRemaining(item.expires) : null;
+  const expText = item.expires ? new Date(item.expires * 1000).toLocaleString() : '';
+  return (
+    <div className={`gah-cd-task${ active ? '' : ' resolved'}`}>
+      <div className="gah-cd-row">
+        <button type="button" className="gah-cd-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span className={`gah-cd-dot ${dotClass}`} />
+          <span className="gah-cd-title">{item.title || item.id}</span>
+          <span className="gah-cd-tag model" title={T('\u68c0\u67e5\u5468\u671f / \u5df2\u89e6\u53d1\u6b21\u6570', 'Poll interval / trigger count')}>
+            {cadence}{(item.triggers ?? 0) > 0 ? ` \u00b7 #${item.triggers}` : ''}
+          </span>
+          <span className="gah-cd-tag">{label(REFLECT_STATUS, item.status)}</span>
+        </button>
+        {active ? (
+          <button type="button" className="gah-cd-enter stop" disabled={busy} onClick={() => stop(item)}
+            title={T('\u505c\u6b62\u76d1\u542c', 'Stop source')} aria-label={T('\u505c\u6b62\u76d1\u542c', 'Stop source')}>
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <div className="gah-cd-body">
+          <div className="gah-cd-meta">
+            <span>{item.once ? T('\u5355\u6b21\u89e6\u53d1', 'One-shot') : T(`\u6bcf ${item.interval ?? 5}s \u68c0\u67e5`, `Every ${item.interval ?? 5}s`)}</span>
+            <span>{T(`\u5df2\u89e6\u53d1 ${item.triggers ?? 0} \u6b21`, `Triggered ${item.triggers ?? 0}x`)}</span>
+            {rem ? <span title={expText ? `${T('\u622a\u6b62', 'Expires')} ${expText}` : undefined}>{T(rem[0], rem[1])}</span> : null}
+            <code className="gah-cd-id">{item.id}</code>
+          </div>
+          {item.error ? <div className="gah-cd-field error"><b>{T('\u5f02\u5e38', 'Error')}</b><p>{item.error}</p></div> : null}
+          {active ? (
+            <div className="gah-cd-actions">
+              <button type="button" className="danger" disabled={busy} onClick={() => stop(item)}>{T('\u505c\u6b62\u76d1\u542c', 'Stop source')}</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Panel({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run, load } = useConductor(api);
   const [open, setOpen] = useState(false);
@@ -168,11 +230,28 @@ function Panel({ api }: { api: PluginAPI }) {
   // Newest task first, so the latest dispatch is at the top of the panel.
   const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid)
     .sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
-  const reflections = (data.reflections || []).filter(r => r.parent === sid);
+  const reflections = (data.reflections || []).filter(r => r.parent === sid).sort(
+    (a, b) => Number(REFLECT_TERMINAL.has(a.status)) - Number(REFLECT_TERMINAL.has(b.status)) || (b.created ?? 0) - (a.created ?? 0),
+  );
   const watching = reflections.filter(r => !REFLECT_TERMINAL.has(r.status)).length;
   if (!on && !tasks.length && !reflections.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
+  const chipLabel = tasks.length
+    ? (watching ? `${done}/${tasks.length} \u00b7 ${watching}` : `${done}/${tasks.length}`)
+    : watching
+      ? T(`\u76d1\u542c ${watching}`, `Watching ${watching}`)
+      : T('\u6307\u6325\u5bb6', 'Conductor');
+  const barHint = tasks.length && reflections.length
+    ? T(
+      `\u4efb\u52a1 ${tasks.length} (${running}/${data.limits.running}) \u00b7 \u4e8b\u4ef6\u6e90 ${watching}/${reflections.length}`,
+      `${tasks.length} tasks (${running}/${data.limits.running}) \u00b7 ${watching}/${reflections.length} sources`,
+    )
+    : tasks.length
+      ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
+      : reflections.length
+        ? T(`\u4e8b\u4ef6\u6e90 ${reflections.length} \u00b7 \u76d1\u542c\u4e2d ${watching}`, `${reflections.length} sources \u00b7 ${watching} watching`)
+        : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself');
   // Task chats are hidden from the sidebar; this is their entry point.
   const enter = async (task: Task) => {
     setOpen(false);
@@ -184,36 +263,42 @@ function Panel({ api }: { api: PluginAPI }) {
       <button type="button" className={`gah-cd-chip${on ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} aria-haspopup="dialog"
         onClick={() => setOpen(!open)} title={T('\u6307\u6325\u5bb6\u4efb\u52a1', 'Conductor tasks')}>
         {running || watching ? <span className="gah-cd-dot running" /> : <Icon />}
-        <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
+        <span>{chipLabel}</span>
         <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" /></svg>
       </button>
       {open ? (
         <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
           <div className="gah-cd-bar">
             <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
-            <span className="gah-cd-hint">
-              {tasks.length
-                ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
-                : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself')}
-            </span>
+            <span className="gah-cd-hint">{barHint}</span>
             {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
           </div>
-          {reflections.length ? <div className="gah-cd-list">
-            <div className="gah-cd-hint">{T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Reflect sources')} ({watching}/{reflections.length})</div>
-            {reflections.map(r => <div key={r.id} className="gah-cd-field">
-              <b>{r.title}</b> · {label(REFLECT_STATUS, r.status)}
-              <p><code>{r.id}</code> · {T('\u89e6\u53d1', 'Triggers')}: {r.triggers} · {r.interval}s</p>
-              <p>{T('\u5230\u671f', 'Expires')}: {new Date(r.expires * 1000).toLocaleString()}</p>
-              {r.error ? <p>{r.error}</p> : null}
-              {!REFLECT_TERMINAL.has(r.status) ? <button type="button" disabled={busy}
-                onClick={() => run('reflect', { action: 'stop', reflect_id: r.id })}>
-                {T('\u505c\u6b62\u76d1\u542c', 'Stop watching')}
-              </button> : null}
-            </div>)}
-          </div> : null}
-          {tasks.length ? <div className="gah-cd-list">{tasks.map(task => (
-            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
-          ))}</div> : <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>}
+          {reflections.length ? (
+            <div className="gah-cd-list">
+              <div className="gah-cd-sec">
+                <span>{T('\u4e8b\u4ef6\u6e90', 'Event sources')}</span>
+                <span>{watching}/{reflections.length}</span>
+              </div>
+              {reflections.map(r => (
+                <ReflectRow key={r.id} item={r} busy={busy} stop={item => run('reflect', { action: 'stop', reflect_id: item.id })} />
+              ))}
+            </div>
+          ) : null}
+          {tasks.length ? (
+            <div className="gah-cd-list">
+              {reflections.length ? (
+                <div className="gah-cd-sec">
+                  <span>{T('\u5b50\u4efb\u52a1', 'Subtasks')}</span>
+                  <span>{done}/{tasks.length}</span>
+                </div>
+              ) : null}
+              {tasks.map(task => (
+                <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
+              ))}
+            </div>
+          ) : !reflections.length ? (
+            <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>
+          ) : null}
         </div>
       ) : null}
     </div>
