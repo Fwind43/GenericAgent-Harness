@@ -10,6 +10,7 @@ type Task = {
 };
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
+  active?: string[];  // conductor sessions in active mode
   children: Record<string, { task_id: string; parent: string }>;
   limits: { running: number; open: number; total: number };
 };
@@ -198,17 +199,32 @@ const Icon = () => (
   </svg>
 );
 
+const Check = () => (
+  <svg className="gah-menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
 function Toggle({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run } = useConductor(api);
   if (!data || !sid || data.children?.[sid]) return null;
   const on = data.enabled.includes(sid);
+  const active = on && !!data.active?.includes(sid);
   return (
-    <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={on} disabled={busy}
-      onClick={() => run('toggle', { enabled: !on })}
-      title={T('\u6307\u6325\u5bb6\u6a21\u5f0f\uff1a\u672c\u4f1a\u8bdd\u53ea\u62c6\u5206\u5e76\u5206\u6d3e\u5b50\u4efb\u52a1\uff0c\u6bcf\u4e2a\u5b50\u4efb\u52a1\u5728\u72ec\u7acb\u4f1a\u8bdd\u4e2d\u6267\u884c', 'Conductor mode: this session only splits and dispatches tasks; each task runs in its own session')}>
-      <Icon /><span>{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
-      {on ? <svg className="gah-menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
-    </button>
+    <>
+      <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={on} disabled={busy}
+        onClick={() => run('toggle', { enabled: !on })}
+        title={T('\u6307\u6325\u5bb6\u6a21\u5f0f\uff1a\u672c\u4f1a\u8bdd\u53ea\u62c6\u5206\u5e76\u5206\u6d3e\u5b50\u4efb\u52a1\uff0c\u6bcf\u4e2a\u5b50\u4efb\u52a1\u5728\u72ec\u7acb\u4f1a\u8bdd\u4e2d\u6267\u884c', 'Conductor mode: this session only splits and dispatches tasks; each task runs in its own session')}>
+        <Icon /><span>{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
+        {on ? <Check /> : null}
+      </button>
+      {on ? (
+        <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={active} disabled={busy}
+          onClick={() => run('active', { active: !active })}
+          title={T('\u4e3b\u52a8\u6a21\u5f0f\uff1a\u4efb\u52a1\u672a\u5b8c\u6210\u65f6\u81ea\u52a8\u7eed\u8dd1\uff0c\u76f4\u5230\u6307\u6325\u5bb6\u58f0\u660e\u5b8c\u6210\u6216\u53d7\u963b', 'Active mode: keep the conductor going until it declares the work done or blocked')}>
+          <Icon /><span>{T('\u6307\u6325\u5bb6\u4e3b\u52a8\u6a21\u5f0f', 'Conductor active mode')}</span>
+          {active ? <Check /> : null}
+        </button>
+      ) : null}
+    </>
   );
 }
 

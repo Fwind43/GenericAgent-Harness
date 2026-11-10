@@ -206,7 +206,29 @@ TOOLS = {
         {**TASK_ID, **TASK_IDS,
          "remove_worktree": {"type": "boolean", "description": "Also delete the worktree directory of isolated "
                                                                "task(s); the branch is kept for merging."}}), "resolve"),
+    "conductor_finish": (_tool(
+        "conductor_finish",
+        "Declare the user's whole request finished. In active mode you are prompted to keep "
+        "going whenever your turn ends without this call. status=done: everything is delivered "
+        "and verified (refused while tasks are running or awaiting review). status=blocked: you "
+        "cannot continue without the user; give the reason. Call it once, right before your "
+        "final reply to the user.",
+        {"status": {"type": "string", "enum": ["done", "blocked"]},
+         "reason": {"type": "string", "description": "For blocked: what you need from the user."}},
+        ("status",)), "finish"),
 }
+
+
+ACTIVE_PROMPT = (
+    "\n### Active mode\n"
+    "Active mode is on for this session: you own the user's request until it is complete. "
+    "Ending your turn does not end the work; if you stop without conductor_finish and nothing "
+    "is running, you are prompted to continue. So do not end a turn just to report progress. "
+    "While delegated tasks run you may end the turn (you are woken when they finish). If you "
+    "are waiting on work outside your tasks (an external job, a build, a remote service), "
+    "dispatch a task that waits for it and reports back, rather than stopping. When everything "
+    "is delivered and verified call conductor_finish(status=\"done\"); if you need the user's "
+    "decision or input call conductor_finish(status=\"blocked\", reason=...) and then ask.\n")
 
 
 def apply(ctx, config):
@@ -253,6 +275,7 @@ def apply(ctx, config):
         state["role"] = info.get("role")
         state["limits"] = info.get("limits")
         state["policy"] = info.get("policy")
+        state["active"] = bool(info.get("active"))
         if state["role"] != "parent":
             return
         for schema, op in TOOLS.values():
@@ -281,6 +304,8 @@ def apply(ctx, config):
                         "Set earlier in this session (via conductor_set_policy). Follow it when "
                         "choosing model/effort for tasks; the user's explicit request overrides it.\n"
                         + policy.strip() + "\n")
+            if state.get("active"):
+                out += ACTIVE_PROMPT
             return out
         if state["role"] == "worker":
             return text + "\n" + WORKER_PROMPT

@@ -50,6 +50,10 @@ TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
 SOURCE = "conductor"
 WAKE_COALESCE = 0.3  # seconds to gather children finishing together into one wake-up
+WAKE_RETRIES = 5  # further attempts when a wake-up message could not be submitted
+WAKE_RETRY_DELAY = 5.0  # seconds between those attempts
+CONTINUE_DELAY = 1.0  # seconds after the conductor's turn ends before prompting it again
+ACTIVE_IDLE_LIMIT = 3  # active mode: consecutive prompted turns without a task operation
 
 
 def _store_path(sessions):
@@ -146,12 +150,14 @@ def _clip(text, limit=RESULT_LIMIT):
 class Store:
     def __init__(self, path):
         self.path = Path(path)
-        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {}}
+        self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {},
+                     "active": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
+                    self.data["active"] = {k: True for k, v in dict(loaded.get("active") or {}).items() if v}
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
                     self.data["limits"] = dict(loaded.get("limits") or {})
                     self.data["defaults"] = {k: v for k, v in dict(loaded.get("defaults") or {}).items()
@@ -187,6 +193,12 @@ def apply(ctx, config):
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
     policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
+    active = store.data["active"]  # parents in active mode: keep going until conductor_finish
+    # Active-mode progress per parent (in memory): {"finished": bool, "idle": int, "ops": int}.
+    # "idle" counts consecutive continuation turns in which the conductor used no conductor
+    # operation; "ops" counts operations since the last parent run ended.
+    auto = {}
+    wake_retries = {}  # parent -> failed wake-up submissions in a row
     defaults = store.data["defaults"]  # parent -> {"model": name, "model_key": key, "effort": level}; absent = inherit
 
     # ---- helpers ---------------------------------------------------------
@@ -383,7 +395,8 @@ def apply(ctx, config):
         sid = _sid(body)
         with lock:
             if enabled.get(sid):
-                return {"role": "parent", **_counts(sid), "policy": policies.get(sid)}
+                return {"role": "parent", **_counts(sid), "policy": policies.get(sid),
+                        "active": bool(active.get(sid))}
             task = _task_of_child(sid)
             if task is not None:
                 return {"role": "worker", "task_id": task["id"], "parent": task["parent"]}
@@ -669,8 +682,42 @@ def apply(ctx, config):
                 enabled[sid] = True
             else:
                 enabled.pop(sid, None)
+                auto.pop(sid, None)
         _publish()
         return {"enabled": on}
+
+    def set_active(body):
+        """Switch active mode for a conductor session: when on, the conductor is prompted
+        to continue whenever its turn ends with the work neither finished nor blocked."""
+        sid = _sid(body)
+        on = body.get("active")
+        if not isinstance(on, bool):
+            raise ValueError("active must be a boolean")
+        with lock:
+            if on:
+                active[sid] = True
+            else:
+                active.pop(sid, None)
+            auto.pop(sid, None)
+        _publish()
+        return {"active": on}
+
+    def finish(body):
+        """The conductor declares the user's request done or blocked; active mode then
+        stops prompting it until the user sends another message."""
+        parent = _sid(body)
+        status = body.get("status")
+        if status not in ("done", "blocked"):
+            raise ValueError("status must be 'done' or 'blocked'")
+        with lock:
+            counts = _counts(parent)
+            if status == "done" and (counts["running"] or counts["awaiting_review"]):
+                raise RuntimeError(
+                    "cannot finish as done: %d task(s) still running, %d awaiting review; "
+                    "collect and review them first, or finish as blocked with the reason"
+                    % (counts["running"], len(counts["awaiting_review"])))
+            auto.setdefault(parent, {})["finished"] = True
+        return {"finished": status, "active": bool(active.get(parent))}
 
     def set_limit(body):
         """Change this conductor session's own running (concurrency) limit. Lowering it
@@ -775,7 +822,10 @@ def apply(ctx, config):
         return out
 
     OPS = {"set_default": set_default, "set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
-           "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve}
+           "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve,
+           "finish": finish}
+    # Operations that count as progress for active mode (reads and settings do not).
+    PROGRESS_OPS = {"dispatch", "instruct", "cancel", "review", "resolve"}
 
     def _require_parent(body):
         with lock:
@@ -791,10 +841,15 @@ def apply(ctx, config):
         if op is None:
             raise ValueError("unknown conductor operation")
         _require_parent(body)
-        return op(body)
+        result = op(body)
+        if name in PROGRESS_OPS:
+            with lock:
+                state = auto.setdefault(_sid(body), {})
+                state["ops"] = state.get("ops", 0) + 1
+        return result
 
     # ---- wake the parent when children finish ----------------------------
-    def _schedule_wake(parent):
+    def _schedule_wake(parent, delay=WAKE_COALESCE):
         # Children that finish close together are reported in one wake-up: the
         # first finish opens a short window, later ones join the same message.
         with lock:
@@ -806,7 +861,7 @@ def apply(ctx, config):
             with lock:
                 scheduled.discard(parent)
             _wake(parent)
-        timer = threading.Timer(WAKE_COALESCE, fire)
+        timer = threading.Timer(delay, fire)
         timer.name, timer.daemon = "conductor-wake", True
         timer.start()
 
@@ -849,6 +904,7 @@ def apply(ctx, config):
                 + "\n\nReview these in this turn with conductor_review (task_ids for several at once; "
                   "resolve=true to close verified ones, or needs_work + instruction to continue). "
                   "Use conductor_inspect only if a clipped result is not enough.")
+        retry = False
         try:
             code, reply = frontend.submit(text, session_id=parent, source=SOURCE)
             if code >= 400:
@@ -858,10 +914,97 @@ def apply(ctx, config):
             with lock:
                 for task in pending:
                     task["notified"] = task["acked"] = False
+                # Nothing else would deliver these results if the parent stays idle.
+                tries = wake_retries.get(parent, 0) + 1
+                retry = tries <= WAKE_RETRIES
+                if retry:
+                    wake_retries[parent] = tries
+                else:
+                    wake_retries.pop(parent, None)
+        else:
+            with lock:
+                wake_retries.pop(parent, None)
         finally:
             with lock:
                 waking.discard(parent)
         _publish()
+        if retry:
+            _schedule_wake(parent, WAKE_RETRY_DELAY)
+
+    # ---- keep the parent going when its turn ends early -------------------
+    def _unreported(parent):
+        return [t for t in _children(parent)
+                if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
+
+    def _note_parent_run(parent, record):
+        """A conductor's own run ended (lock held): should it be prompted to continue?"""
+        state = auto.setdefault(parent, {})
+        ops = state.pop("ops", 0)
+        finished = state.pop("finished", False)  # conductor_finish was called in this run
+        by_user = record.get("source") != SOURCE
+        if by_user:
+            state["idle"] = 0
+            state.pop("nudged", None)
+        if (record.get("status") or "done") != "done" or finished:
+            return False  # stopped, failed, or declared done/blocked: leave it to the user
+        counts = _counts(parent)
+        if counts["running"] or _unreported(parent):
+            return False  # a wake-up is already on its way
+        awaiting = set(counts["awaiting_review"])
+        if not active.get(parent):
+            # Not in active mode: only remind once about results left unreviewed.
+            if not awaiting or awaiting <= state.get("nudged", set()):
+                return False
+            state["nudged"] = awaiting
+            return True
+        if ops:
+            state["idle"] = 0
+        elif not by_user:
+            state["idle"] = state.get("idle", 0) + 1
+        if state.get("idle", 0) >= ACTIVE_IDLE_LIMIT:
+            log.info("conductor: active mode paused for %s after %d turns without a task operation",
+                     parent, state["idle"])
+            return False
+        return True
+
+    def _schedule_continue(parent):
+        timer = threading.Timer(CONTINUE_DELAY, _continue, args=(parent,))
+        timer.name, timer.daemon = "conductor-continue", True
+        timer.start()
+
+    def _continue(parent):
+        with lock:
+            if not enabled.get(parent) or parent in waking or runs.active_for(parent):
+                return
+            peek = ctx.get("run_queue.peek")
+            if callable(peek) and peek(parent) is not None:
+                return  # the user's queued message goes first
+            counts = _counts(parent)
+            if counts["running"] or _unreported(parent):
+                return
+            awaiting = counts["awaiting_review"]
+            is_active = bool(active.get(parent))
+        if not is_active and not awaiting:
+            return
+        review = (f"Task(s) still awaiting your review: {', '.join(awaiting)}. Review them with "
+                  "conductor_review (resolve=true to close verified ones).") if awaiting else ""
+        if is_active:
+            text = ("[Conductor] Active mode: your turn ended without conductor_finish, and no "
+                    "delegated task is running. " + (review + " " if review else "")
+                    + "Check what the user's request still needs and keep going: dispatch or "
+                      "instruct tasks, verify results, and if you are waiting on external work, "
+                      "dispatch a task that waits for it and reports back instead of stopping. When the "
+                      "whole request is done and verified call conductor_finish(status='done'); "
+                      "if you cannot continue without the user call "
+                      "conductor_finish(status='blocked', reason=...).")
+        else:
+            text = "[Conductor] " + review
+        try:
+            code, reply = frontend.submit(text, session_id=parent, source=SOURCE)
+            if code >= 400:
+                raise RuntimeError((reply or {}).get("error") or "run could not be started")
+        except Exception as error:
+            log.warning("conductor: could not continue %s: %s", parent, error)
 
     def pending_since(parent):
         """Finish time of the oldest unreported child, else None (read by run-queue)."""
@@ -876,7 +1019,7 @@ def apply(ctx, config):
         try:
             sid, run_id = data.get("session_id"), data.get("run_id")
             record = data.get("run") or {}
-            parent = None
+            parent, proceed = None, False
             with lock:
                 task = _task_of_child(sid) if sid else None
                 if task is not None and task.get("run_id") == run_id and task["status"] == "running":
@@ -891,8 +1034,11 @@ def apply(ctx, config):
                     changed.notify_all()
                 elif sid and enabled.get(sid):
                     parent = sid  # the parent went idle: deliver anything that finished meanwhile
+                    proceed = _note_parent_run(sid, record)
             if parent:
                 _schedule_wake(parent)
+            if proceed:
+                _schedule_continue(parent)
         except Exception as error:
             log.warning("conductor: run.finished handling failed: %s", error)
         return nxt(data) if nxt else None
@@ -903,6 +1049,7 @@ def apply(ctx, config):
             with lock:
                 data["conductor"] = {
                     "enabled": sorted(enabled),
+                    "active": sorted(active),
                     # Only what the selected session's page shows: its own tasks, and
                     # whether it is itself a task session. Other conductors' tasks would
                     # ride along on every broadcast without ever being rendered.
@@ -950,6 +1097,7 @@ def apply(ctx, config):
     ctx.scope.add(host.register("conductor", script=script if script.is_file() else None,
                                 style=style if style.is_file() else None, order=36,
                                 routes={("POST", "toggle"): _route(toggle, guard=False),
+                                        ("POST", "active"): _route(set_active),
                                         ("POST", "task"): _route(detail, guard=False),
                                         ("POST", "cancel"): _route(cancel),
                                         ("POST", "resolve"): _route(resolve)}))
