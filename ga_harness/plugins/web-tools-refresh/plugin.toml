@@ -1,0 +1,6 @@
+name = "web-tools-refresh"
+category = "ui"
+entry = "main:apply"
+description = "Composer button for ui-web that sends /tools, so the next model call resends GA's full tool definitions (needs ga-tools-refresh)."
+description_zh = "ui-web \u8f93\u5165\u6846\u6309\u94ae\uff1a\u53d1\u9001 /tools\uff0c\u8ba9\u4e0b\u4e00\u6b21\u6a21\u578b\u8c03\u7528\u91cd\u65b0\u5b8c\u6574\u6ce8\u5165 GA \u5de5\u5177\u5b9a\u4e49\uff08\u4f9d\u8d56 ga-tools-refresh\uff09\u3002"
+inject = ["web.host"]

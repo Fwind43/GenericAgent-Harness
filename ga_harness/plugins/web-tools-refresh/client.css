@@ -1,0 +1,5 @@
+.gah-tr-icon{flex:none}
+.gah-tr-pill{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:0;border-radius:15px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap}
+.gah-tr-pill:hover:not(:disabled){background:var(--surface-muted);color:var(--text)}
+.gah-tr-pill:disabled{opacity:.5;cursor:default}
+.gah-tr-pill:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}

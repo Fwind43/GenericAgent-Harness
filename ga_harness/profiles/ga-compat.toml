@@ -89,6 +89,10 @@ name = "web-channels"
 [[plugins]]
 name = "web-trace"
 
+# composer "Tools" button: sends /tools to resend full GA tool definitions
+[[plugins]]
+name = "web-tools-refresh"
+
 # "Context" view: the saved LLM context of the chat (messages by block type, working memory)
 [[plugins]]
 name = "web-context"
