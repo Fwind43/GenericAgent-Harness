@@ -328,6 +328,31 @@ def test_search_and_provider_filter_crud(browser, models_app):
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+def test_reopened_settings_ignores_queued_close(browser, models_app, width):
+    _, base = models_app
+    page = browser.new_page(locale="zh-CN", viewport={"width": width, "height": 844})
+    try:
+        dialog = open_models(page, base)
+        shell = page.locator("#gah-settings")
+        # close() queues a native event; reopening before delivery must win.
+        shell.evaluate("""async dialog => {
+            dialog.close();
+            dialog.showModal();
+            await new Promise(requestAnimationFrame);
+            await new Promise(requestAnimationFrame);
+        }""")
+        pw.expect(shell).to_be_visible()
+        pw.expect(dialog.locator(".model-layout")).to_be_visible()
+        # A real native close still synchronizes the store and unmounts the editor.
+        shell.evaluate("dialog => dialog.close()")
+        pw.expect(dialog.locator(".model-layout")).to_have_count(0)
+        open_settings(page)
+        pw.expect(dialog.locator(".model-layout")).to_be_visible()
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 def test_draft_close_reset_and_mobile_drill_in(browser, models_app, width):
     store, base = models_app
     original = store.source.file.read_bytes()

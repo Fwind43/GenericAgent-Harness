@@ -21,7 +21,10 @@ export function Settings({ children }: { children: ReactNode }) {
     </button>}
     {createPortal(<dialog ref={ref} id="gah-settings" className="gah-dialog gah-settings-dialog" aria-labelledby="gah-settings-title" onCancel={event => {
       event.preventDefault(); if (!changing) settings.close();
-    }} onClose={settings.close}>
+    }} onClose={event => {
+      // A queued native close event may arrive after the dialog was reopened.
+      if (!event.currentTarget.open) settings.close();
+    }}>
       <nav className="gah-settings-nav">
       <div className="gah-settings-head"><h2 id="gah-settings-title">{T('\u8bbe\u7f6e', 'Settings')}</h2></div>
       <div className="gah-settings-tabs" aria-orientation="vertical" role="tablist" aria-label={T('\u8bbe\u7f6e\u5206\u7c7b', 'Settings sections')} onKeyDown={event => {
