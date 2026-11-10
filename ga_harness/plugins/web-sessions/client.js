@@ -227,6 +227,22 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         subActivity.set(s.parent_id, cur);
       }
     }
+    const exportChat = async (id) => {
+      try {
+        const data = await api.host.get("/api/session-export?session_id=" + encodeURIComponent(id));
+        const ts = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `gah-session-${id.slice(0, 12)}-${ts}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1e4);
+      } catch (e) {
+        api.notice(sdk.T("导出失败：", "Export failed: ") + ((e == null ? void 0 : e.message) || String(e)));
+      }
+    };
     const row = (session, depth, home, recent = false, kids = 0) => {
       const kidsShown = kids > 0 && kidsOpen(session.id);
       const menuKey = `s:${session.id}:${recent ? "r" : "p"}:${home ?? ""}`, menuOpen = menu === menuKey;
@@ -288,6 +304,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy || !!status, onClick: pick(() => setMoving(session.id)), children: [
               /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder" }),
               sdk.T("移动到项目", "Move to project")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", onClick: pick(() => void exportChat(session.id)), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "download" }),
+              sdk.T("导出调试日志", "Export debug log")
             ] }),
             /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sess-menu-sep" }),
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item danger", disabled: busy, onClick: pick(async () => {

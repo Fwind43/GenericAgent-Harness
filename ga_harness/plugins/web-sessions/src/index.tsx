@@ -198,6 +198,21 @@ export function Sessions({ api }: { api: PluginAPI }) {
       subActivity.set(s.parent_id, cur);
     }
   }
+  // Debug bundle for one chat (messages, agent state, run events, matching log lines) from
+  // GET /api/session-export, saved as JSON. Read-only, so it stays available while a run is active.
+  const exportChat = async (id: string) => {
+    try {
+      const data = await api.host.get<unknown>('/api/session-export?session_id=' + encodeURIComponent(id));
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `gah-session-${id.slice(0, 12)}-${ts}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      api.notice(T('\u5bfc\u51fa\u5931\u8d25\uff1a', 'Export failed: ') + ((e as Error)?.message || String(e)));
+    }
+  };
   const row = (session: Session, depth: number, home?: string, recent = false, kids = 0) => {
     const kidsShown = kids > 0 && kidsOpen(session.id);
     const menuKey = `s:${session.id}:${recent ? 'r' : 'p'}:${home ?? ''}`, menuOpen = menu === menuKey;
@@ -227,6 +242,7 @@ export function Sessions({ api }: { api: PluginAPI }) {
           <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy} onClick={pick(() => void act(session.pinned ? 'unpin' : 'pin', { id: session.id }))}><Icon name="pin" />{session.pinned ? T('\u53d6\u6d88\u7f6e\u9876', 'Unpin') : T('\u7f6e\u9876', 'Pin')}</button>
           <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy} onClick={pick(async () => { const title = await promptDialog({ title: T('\u91cd\u547d\u540d\u4f1a\u8bdd', 'Rename chat'), placeholder: T('\u4f1a\u8bdd\u540d\u79f0', 'Chat name'), value: session.title, confirm: T('\u4fdd\u5b58', 'Save') }); if (title?.trim()) void act('rename', { id: session.id, title: title.trim() }); })}><Icon name="pencil" />{T('\u91cd\u547d\u540d', 'Rename')}</button>
           <button type="button" role="menuitem" className="gah-sess-menu-item" disabled={busy || !!status} onClick={pick(() => setMoving(session.id))}><Icon name="folder" />{T('\u79fb\u52a8\u5230\u9879\u76ee', 'Move to project')}</button>
+          <button type="button" role="menuitem" className="gah-sess-menu-item" onClick={pick(() => void exportChat(session.id))}><Icon name="download" />{T('\u5bfc\u51fa\u8c03\u8bd5\u65e5\u5fd7', 'Export debug log')}</button>
           <div className="gah-sess-menu-sep" />
           <button type="button" role="menuitem" className="gah-sess-menu-item danger" disabled={busy} onClick={pick(async () => { if (await confirmDialog({ title: T('\u5220\u9664\u4f1a\u8bdd', 'Remove chat'), danger: true, confirm: T('\u5220\u9664', 'Remove'), message: T('\u4ece\u5217\u8868\u5220\u9664\u6b64\u4f1a\u8bdd\uff1f\u5386\u53f2\u8bb0\u5f55\u4fdd\u7559\u5728\u672c\u5730\u6570\u636e\u5e93\u3002', 'Remove this chat from the list? History stays in the local database.') })) void act('delete', { id: session.id }); })}><Icon name="trash" />{T('\u5220\u9664', 'Remove')}</button>
         </div>}</span>

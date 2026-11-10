@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { request } from '../api';
 import { T } from '../i18n';
 import { settings, useSettings } from '../settings';
-import { host } from '../store';
 
 // Built-in "Logs" settings section: browse the program log files (host.log, worker-*.log,
 // faults.log, the desktop shell's backend.log) served read-only by GET /api/logs.
@@ -29,7 +28,6 @@ export function LogSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const boxRef = useRef<HTMLPreElement>(null);
   const stick = useRef(true);   // keep the view pinned to the end unless the user scrolled up
 
@@ -90,25 +88,6 @@ export function LogSettings() {
   const shown = needle ? lines.filter(l => l.toLowerCase().includes(needle)) : lines;
   const text = shown.join('\n');
   const copy = () => navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined);
-  // Debug bundle for the selected conversation: messages, agent state, run events and the
-  // log lines that mention it (GET /api/session-export), saved as a JSON file.
-  const exportSession = async () => {
-    const sid = host.getSnapshot().state.session_id;
-    setExporting(true); setError('');
-    try {
-      const data = await request<unknown>('/api/session-export' + (sid ? '?session_id=' + encodeURIComponent(sid) : ''));
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = `gah-session-${(sid || 'current').slice(0, 12)}-${stamp}.json`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (e) {
-      setError((e as Error)?.message || String(e));
-    } finally {
-      setExporting(false);
-    }
-  };
   const openDir = () => { if (list?.dir && desktop?.openPath) desktop.openPath(list.dir).catch((e: Error) => setError(e?.message || String(e))); };
 
   return <section id={'gah-settings-panel-' + ID} role="tabpanel" aria-labelledby={'gah-settings-tab-' + ID}
@@ -121,13 +100,6 @@ export function LogSettings() {
             <span className="gah-ga-path">{list.dir}</span></div>
           {desktop?.openPath && <button type="button" className="gah-update-btn" onClick={openDir}>{T('\u6253\u5f00\u76ee\u5f55', 'Open folder')}</button>}
         </div>}
-        <div className="gah-setting-row">
-          <div className="gah-setting-text"><strong>{T('\u5bfc\u51fa\u5f53\u524d\u4f1a\u8bdd', 'Export current session')}</strong>
-            <span>{T('\u5305\u542b\u5f53\u524d\u4f1a\u8bdd\u7684\u6d88\u606f\u3001\u72b6\u6001\u3001\u8fd0\u884c\u4e8b\u4ef6\u548c\u76f8\u5173\u65e5\u5fd7\u884c\uff1b\u5bc6\u94a5\u7c7b\u5b57\u6bb5\u5df2\u906e\u853d\uff0c\u6d88\u606f\u6b63\u6587\u672a\u8131\u654f',
-              'Messages, state, run events and related log lines of this session; credential fields are masked, message text is not')}</span></div>
-          <button type="button" className="gah-update-btn" disabled={exporting} onClick={exportSession}>
-            {exporting ? T('\u5bfc\u51fa\u4e2d\u2026', 'Exporting\u2026') : T('\u5bfc\u51fa JSON', 'Export JSON')}</button>
-        </div>
         <div className="gah-log-toolbar">
           <select className="gah-update-select" value={name} disabled={!list?.files.length}
             onChange={e => setName(e.target.value)} aria-label={T('\u65e5\u5fd7\u6587\u4ef6', 'Log file')}>
