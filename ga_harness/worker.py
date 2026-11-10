@@ -13,7 +13,7 @@ from . import model_keys
 
 EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
-          "usage", "usage.total", "llm.start", "llm.timed")
+          "usage", "usage.total", "llm.start", "llm.timed", "llm.prompt")
 # Host/UI/storage plugins must never be mounted in a worker. DEFAULT_PLUGINS are
 # the runtime infrastructure every run needs; they follow the host (mounted with
 # the host config while active there). Everything the agent can do beyond that,

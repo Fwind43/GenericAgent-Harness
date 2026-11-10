@@ -27,6 +27,13 @@ are literal reply content. A frontend can append ``text`` to the matching field.
 ``no_tool`` (GA's pseudo tool for a plain reply) is not reported as a tool.
 config:
   max_data  truncate string results to this many chars (default 20000, 0 = no limit)
+  max_prompt  truncate each ``llm.prompt`` to this many chars (default 100000, 0 = no limit)
+
+``llm.prompt`` reports what one LLM call actually sends: the argument GA passes to
+``client.backend.ask`` (tapped once per call, like ``client.chat``). Text-protocol
+clients send one string that already holds any system/tool injection; native clients
+send one message, and the backend's system prompt and tool schemas are included
+whenever they differ from the previous call in this worker (always on the first).
 """
 from __future__ import annotations
 import json
@@ -136,8 +143,60 @@ def _core_ttft(w0):
     return first - start
 
 
+def _blocks(content):
+    if isinstance(content, str):
+        return content
+    out = []
+    for b in content if isinstance(content, list) else [content]:
+        if not isinstance(b, dict):
+            out.append(str(b))
+            continue
+        kind = b.get("type")
+        if kind == "text":
+            out.append(b.get("text") or "")
+        elif kind == "tool_result":
+            out.append(f"[tool_result {b.get('tool_use_id', '')}]\n{_blocks(b.get('content') or '')}")
+        elif kind == "tool_use":
+            out.append(f"[tool_use {b.get('name', '')}] {_text(b.get('input'), 0)}")
+        elif kind in ("image", "image_url", "input_image"):
+            out.append("[image]")
+        else:
+            out.append(_text(b, 0))
+    return "\n\n".join(out)
+
+
+def _prompt(arg, backend, seen):
+    """Render one backend.ask argument; ``seen`` keeps the last native system/tools."""
+    if isinstance(arg, str):
+        return "text", arg, []
+    sections, injected = [], []
+    if backend is not None:
+        for key in ("system", "tools"):
+            value = getattr(backend, key, None)
+            if not value:
+                continue
+            body = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=1, default=str)
+            if seen.get(key) != body:
+                seen[key] = body
+                injected.append(key)
+                sections.append(f"### {key}\n{body}")
+    if isinstance(arg, dict) and "content" in arg:
+        sections.append(f"### {arg.get('role') or 'message'}\n{_blocks(arg.get('content'))}")
+    elif isinstance(arg, list):
+        for m in arg:
+            if isinstance(m, dict):
+                sections.append(f"### {m.get('role') or 'message'}\n{_blocks(m.get('content'))}")
+            else:
+                sections.append(_text(m, 0))
+    else:
+        sections.append(_text(arg, 0) or "")
+    return "native", "\n\n".join(sections), injected
+
+
 def apply(ctx, config):
     limit = int(config.get("max_data", 20000) or 0)
+    prompt_limit = int(config.get("max_prompt", 100000) or 0)
+    seen: dict = {}
     started: dict[int, float] = {}
 
     def turn_of(g):
@@ -162,6 +221,44 @@ def apply(ctx, config):
         if d is not None and getattr(d.get("chat"), "_ga_events_tap", False):
             del d["chat"]
 
+    asks = {}  # id(backend) -> (backend, had_instance_attr, previous)
+
+    def untap(client):
+        backend = getattr(client, "backend", None)
+        saved = asks.pop(id(backend), None)
+        if saved is None:
+            return
+        d = getattr(backend, "__dict__", None)
+        if d is not None and getattr(d.get("ask"), "_ga_events_tap", False):
+            if saved[1]:
+                d["ask"] = saved[2]
+            else:
+                del d["ask"]
+
+    def tap_ask(client, turn):
+        backend = getattr(client, "backend", None)
+        orig = getattr(backend, "ask", None)
+        d = getattr(backend, "__dict__", None)
+        if d is None or not callable(orig) or getattr(orig, "_ga_events_tap", False):
+            return
+
+        def ask(*a, **k):
+            untap(client)                   # one call only; retries are not repeated
+            try:
+                arg = a[0] if a else next(iter(k.values()), None)
+                kind, text, injected = _prompt(arg, backend, seen)
+                ctx.emit("llm.prompt", {"turn": turn, "kind": kind, "chars": len(text),
+                                        "injected": injected, "text": _text(text, prompt_limit)})
+            except Exception:
+                pass                        # reporting must never break the call
+            return orig(*a, **k)
+        ask._ga_events_tap = True
+        asks[id(backend)] = (backend, "ask" in d, d.get("ask"))
+        try:
+            backend.ask = ask
+        except Exception:
+            asks.pop(id(backend), None)
+
     # t0/first: our own timer (llm_before -> first visible chunk); w0: wall-clock
     # start, used to tell whether llmcore.STATS belongs to this call.
     llm = {"t0": None, "w0": None, "first": None}
@@ -170,6 +267,7 @@ def apply(ctx, config):
         client, turn = g.get("client"), g.get("turn")
         llm.update(t0=time.monotonic(), w0=time.time(), first=None)
         ctx.emit("llm.start", {"turn": turn, "started": round(llm["w0"], 3)})
+        tap_ask(client, turn)
         orig = getattr(client, "chat", None)
         if callable(orig) and not getattr(orig, "_ga_events_tap", False):
             def chat(*a, **k):
@@ -208,6 +306,7 @@ def apply(ctx, config):
 
     def on_llm_after(g, nxt):
         unwrap(g.get("client"))
+        untap(g.get("client"))
         t0, w0, first = llm["t0"], llm["w0"], llm["first"]
         llm.update(t0=None, w0=None, first=None)
         if t0 is not None:

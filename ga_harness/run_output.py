@@ -58,3 +58,5 @@ def apply_event(messages, name, data):
         turn["llm"] = {"started": data.get("started")}
     elif name == "llm.timed":
         turn["llm"] = {k: data.get(k) for k in ("seconds", "ttft")}
+    elif name == "llm.prompt":
+        turn["prompt"] = {k: copy.deepcopy(data.get(k)) for k in ("kind", "chars", "injected", "text")}

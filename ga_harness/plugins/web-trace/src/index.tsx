@@ -4,13 +4,14 @@ import { type PluginAPI, useHost, T, ViewPanel, defineReact } from '@gah/sdk';
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Usage = { input?: number; output?: number; cache_read?: number; calls?: number };
 type Tool = { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number };
-type Turn = { turn: number; summary?: string; thinking?: string; reply?: string; status?: string; tools?: Tool[]; usage?: Usage; llm?: { seconds?: number; ttft?: number | null } };
+type Turn = { turn: number; summary?: string; thinking?: string; reply?: string; status?: string; tools?: Tool[]; usage?: Usage; llm?: { seconds?: number; ttft?: number | null }; prompt?: Prompt };
+type Prompt = { kind?: string; chars?: number; injected?: string[]; text?: string };
 type Note = { kind: string; text: string; turn: number };
 type Message = { role: 'user' | 'assistant'; text?: string; status?: string; error?: string; turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; notes?: Note[] };
 
 // One flat trace event. lane picks the timeline row; kind picks the chip and colour.
 type Lane = 'input' | 'model' | 'tool';
-type Kind = 'input' | 'context' | 'model' | 'output' | 'tool' | 'error';
+type Kind = 'input' | 'context' | 'prompt' | 'model' | 'output' | 'tool' | 'error';
 export type TraceEvent = {
   key: string; run: number; lane: Lane; kind: Kind;
   name?: string; args?: string; result?: string; text: string;
@@ -50,6 +51,15 @@ export function buildTrace(messages: Message[]): TraceRun[] {
       const said = turn.reply || turn.summary || '';
       if (turn.reply) lastReply = turn.reply;
       seconds += turn.llm?.seconds || 0;
+      const prompt = turn.prompt;
+      if (prompt?.text != null) {
+        const injected = prompt.injected || [];
+        const cut = prompt.chars != null && prompt.text.length < prompt.chars;
+        push({ key: index + ':p' + turn.turn, lane: 'input', kind: 'prompt',
+          name: injected.length ? injected.join(' + ') : undefined,
+          text: [T('第 ', 'Turn ') + turn.turn + T(' 轮', ''), num(prompt.chars) + T(' 字符', ' chars'), cut ? T('已截断', 'truncated') : ''].filter(Boolean).join(' · '),
+          detail: prompt.text + (cut ? '\n\n' + T('…（已截断，原长 ', '… (truncated, original ') + prompt.chars + T(' 字符）', ' chars)') : '') });
+      }
       push({ key: index + ':m' + turn.turn, lane: 'model', kind: 'model',
         text: line(said) || T('第 ', 'Turn ') + turn.turn + T(' 轮', ''), seconds: turn.llm?.seconds,
         detail: join(
@@ -86,7 +96,7 @@ export function layout(events: TraceEvent[], mode: Mode) {
 
 const LANES: Array<[Lane, () => string]> = [['input', () => T('输入', 'Input')], ['model', () => T('模型', 'Model')], ['tool', () => T('工具', 'Tool')]];
 const CHIP: Record<Kind, () => string> = {
-  input: () => T('用户', 'User'), context: () => T('上下文', 'Context'), model: () => T('助手', 'Assistant'),
+  input: () => T('用户', 'User'), context: () => T('上下文', 'Context'), prompt: () => T('提示词', 'Prompt'), model: () => T('助手', 'Assistant'),
   output: () => T('输出', 'Output'), tool: () => T('工具', 'Tool'), error: () => T('错误', 'Error'),
 };
 const statusLabel = (status?: string) => ({ running: T('运行中', 'Running'), done: T('完成', 'Done'), error: T('出错', 'Error'), aborted: T('已中止', 'Aborted'), interrupted: T('已中断', 'Interrupted') } as Record<string, string>)[status || ''] || status || '';

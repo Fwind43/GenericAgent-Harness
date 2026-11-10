@@ -55,8 +55,9 @@ from ga_harness.sessions import EFFORTS, apply_effort
 
 from .handler import _Handler, _clip
 
-EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.start", "llm.timed")
+EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.start", "llm.timed", "llm.prompt")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
+PROMPT_KEYS = ("kind", "chars", "injected", "text")
 # SSE replay window for reconnecting pages; past it they get a full snapshot instead.
 BACKLOG_EVENTS = 5000
 BACKLOG_BYTES = 4 * 1024 * 1024
@@ -790,6 +791,8 @@ class WebFrontend:
                 t["llm"] = {"started": d.get("started")}
             elif name == "llm.timed":
                 t["llm"] = {"seconds": d.get("seconds"), "ttft": d.get("ttft")}
+            elif name == "llm.prompt":
+                t["prompt"] = {k: d.get(k) for k in PROMPT_KEYS}
             self._push(turns, i)
 
     def run_query(self, query):

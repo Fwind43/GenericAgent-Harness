@@ -13,3 +13,11 @@ label_zh = "工具事件最大字符数"
 default = 20000
 min = 100
 max = 200000
+
+[settings.max_prompt]
+type = "integer"
+label = "Maximum prompt characters per LLM call"
+label_zh = "单次模型调用提示词最大字符数"
+default = 100000
+min = 0
+max = 2000000

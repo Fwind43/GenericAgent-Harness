@@ -18,7 +18,7 @@
 .gah-tl-block{position:absolute;top:2px;bottom:2px;min-width:3px;padding:0;border:0;border-radius:2px;cursor:pointer;opacity:.9}
 .gah-tl-block:hover,.gah-tl-block.on{opacity:1;outline:2px solid var(--text);outline-offset:1px;z-index:1}
 .gah-tl-block.dim{opacity:.15}
-.gah-tl-block.k-input{background:#3b82f6}.gah-tl-block.k-context{background:#10b981}
+.gah-tl-block.k-input{background:#3b82f6}.gah-tl-block.k-context{background:#10b981}.gah-tl-block.k-prompt{background:#8b5cf6}
 .gah-tl-block.k-model{background:#8b5cf6}.gah-tl-block.k-output{background:#a78bfa}
 .gah-tl-block.k-tool{background:#f59e0b}.gah-tl-block.failed{background:var(--danger)}
 .gah-trace-hint{margin:6px 0 0 44px;color:var(--muted);font-size:11.5px}
@@ -35,6 +35,7 @@
 .gah-tr-chip{flex:none;min-width:44px;text-align:center;padding:1px 7px;border-radius:5px;font-size:11.5px;font-weight:500;white-space:nowrap}
 .k-input .gah-tr-chip{background:rgba(59,130,246,.12);color:#2563eb}
 .k-context .gah-tr-chip{background:rgba(16,185,129,.13);color:#059669}
+.k-prompt .gah-tr-chip{background:rgba(139,92,246,.13);color:#7c3aed}
 .k-model .gah-tr-chip,.k-output .gah-tr-chip{background:rgba(139,92,246,.12);color:#7c3aed}
 .k-tool .gah-tr-chip{background:rgba(245,158,11,.15);color:#b45309}
 .failed .gah-tr-chip{background:rgba(220,38,38,.12);color:var(--danger)}

@@ -44,6 +44,19 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
         const said = turn.reply || turn.summary || "";
         if (turn.reply) lastReply = turn.reply;
         seconds += ((_a = turn.llm) == null ? void 0 : _a.seconds) || 0;
+        const prompt = turn.prompt;
+        if ((prompt == null ? void 0 : prompt.text) != null) {
+          const injected = prompt.injected || [];
+          const cut = prompt.chars != null && prompt.text.length < prompt.chars;
+          push({
+            key: index + ":p" + turn.turn,
+            lane: "input",
+            kind: "prompt",
+            name: injected.length ? injected.join(" + ") : void 0,
+            text: [sdk.T("第 ", "Turn ") + turn.turn + sdk.T(" 轮", ""), num(prompt.chars) + sdk.T(" 字符", " chars"), cut ? sdk.T("已截断", "truncated") : ""].filter(Boolean).join(" · "),
+            detail: prompt.text + (cut ? "\n\n" + sdk.T("…（已截断，原长 ", "… (truncated, original ") + prompt.chars + sdk.T(" 字符）", " chars)") : "")
+          });
+        }
         push({
           key: index + ":m" + turn.turn,
           lane: "model",
@@ -100,6 +113,7 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
   const CHIP = {
     input: () => sdk.T("用户", "User"),
     context: () => sdk.T("上下文", "Context"),
+    prompt: () => sdk.T("提示词", "Prompt"),
     model: () => sdk.T("助手", "Assistant"),
     output: () => sdk.T("输出", "Output"),
     tool: () => sdk.T("工具", "Tool"),
