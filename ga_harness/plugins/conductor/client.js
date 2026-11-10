@@ -1,5 +1,18 @@
 (function(jsxRuntime, react, sdk) {
   "use strict";
+  const REFLECT_TERMINAL = /* @__PURE__ */ new Set(["done", "stopped", "error", "interrupted"]);
+  const REFLECT_STATUS = {
+    starting: ["启动中", "Starting"],
+    sleeping: ["监听中", "Watching"],
+    pending: ["等待唤醒", "Pending"],
+    submitting: ["唤醒中", "Submitting"],
+    waiting: ["等待回执", "Waiting for result"],
+    callback: ["回调中", "Callback"],
+    stopped: ["已停止", "Stopped"],
+    done: ["已完成", "Done"],
+    error: ["出错", "Error"],
+    interrupted: ["已中断", "Interrupted"]
+  };
   const STATUS = {
     running: ["运行中", "Running"],
     done: ["已完成", "Done"],
@@ -177,7 +190,9 @@
       var _a2, _b;
       return ((_b = (_a2 = data.children) == null ? void 0 : _a2[t.child]) == null ? void 0 : _b.parent) === sid;
     }).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
-    if (!on && !tasks.length) return null;
+    const reflections = (data.reflections || []).filter((r) => r.parent === sid);
+    const watching = reflections.filter((r) => !REFLECT_TERMINAL.has(r.status)).length;
+    if (!on && !tasks.length && !reflections.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
     const enter = async (task) => {
@@ -200,7 +215,7 @@
           onClick: () => setOpen(!open),
           title: sdk.T("指挥家任务", "Conductor tasks"),
           children: [
-            running ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+            running || watching ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: tasks.length ? `${done}/${tasks.length}` : sdk.T("指挥家", "Conductor") }),
             /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-cd-caret", viewBox: "0 0 10 10", width: "9", height: "9", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 3.5l3 3 3-3", stroke: "currentColor", strokeWidth: "1.4", fill: "none", strokeLinecap: "round" }) })
           ]
@@ -215,6 +230,46 @@
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
           on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
         ] }),
+        reflections.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-list", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-hint", children: [
+            sdk.T("反射事件源", "Reflect sources"),
+            " (",
+            watching,
+            "/",
+            reflections.length,
+            ")"
+          ] }),
+          reflections.map((r) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("b", { children: r.title }),
+            " · ",
+            label(REFLECT_STATUS, r.status),
+            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+              /* @__PURE__ */ jsxRuntime.jsx("code", { children: r.id }),
+              " · ",
+              sdk.T("触发", "Triggers"),
+              ": ",
+              r.triggers,
+              " · ",
+              r.interval,
+              "s"
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+              sdk.T("到期", "Expires"),
+              ": ",
+              new Date(r.expires * 1e3).toLocaleString()
+            ] }),
+            r.error ? /* @__PURE__ */ jsxRuntime.jsx("p", { children: r.error }) : null,
+            !REFLECT_TERMINAL.has(r.status) ? /* @__PURE__ */ jsxRuntime.jsx(
+              "button",
+              {
+                type: "button",
+                disabled: busy,
+                onClick: () => run("reflect", { action: "stop", reflect_id: r.id }),
+                children: sdk.T("停止监听", "Stop watching")
+              }
+            ) : null
+          ] }, r.id))
+        ] }) : null,
         tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
       ] }) : null
     ] });
@@ -224,28 +279,49 @@
     /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "11", cy: "3.5", r: "1.6", fill: "currentColor" }),
     /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "12", cy: "12.5", r: "1.6", fill: "currentColor" })
   ] });
+  const Check = () => /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-menu-check", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "m3.5 8.5 3 3 6-7", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round" }) });
   function Toggle({ api }) {
-    var _a;
+    var _a, _b;
     const { data, sid, busy, run } = useConductor(api);
     if (!data || !sid || ((_a = data.children) == null ? void 0 : _a[sid])) return null;
     const on = data.enabled.includes(sid);
-    return /* @__PURE__ */ jsxRuntime.jsxs(
-      "button",
-      {
-        type: "button",
-        role: "menuitemcheckbox",
-        className: "gah-menu-item",
-        "aria-checked": on,
-        disabled: busy,
-        onClick: () => run("toggle", { enabled: !on }),
-        title: sdk.T("指挥家模式：本会话只拆分并分派子任务，每个子任务在独立会话中执行", "Conductor mode: this session only splits and dispatches tasks; each task runs in its own session"),
-        children: [
-          /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("指挥家模式", "Conductor mode") }),
-          on ? /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-menu-check", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "m3.5 8.5 3 3 6-7", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round" }) }) : null
-        ]
-      }
-    );
+    const active = on && !!((_b = data.active) == null ? void 0 : _b.includes(sid));
+    return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsxs(
+        "button",
+        {
+          type: "button",
+          role: "menuitemcheckbox",
+          className: "gah-menu-item",
+          "aria-checked": on,
+          disabled: busy,
+          onClick: () => run("toggle", { enabled: !on }),
+          title: sdk.T("指挥家模式：本会话只拆分并分派子任务，每个子任务在独立会话中执行", "Conductor mode: this session only splits and dispatches tasks; each task runs in its own session"),
+          children: [
+            /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("指挥家模式", "Conductor mode") }),
+            on ? /* @__PURE__ */ jsxRuntime.jsx(Check, {}) : null
+          ]
+        }
+      ),
+      on ? /* @__PURE__ */ jsxRuntime.jsxs(
+        "button",
+        {
+          type: "button",
+          role: "menuitemcheckbox",
+          className: "gah-menu-item",
+          "aria-checked": active,
+          disabled: busy,
+          onClick: () => run("active", { active: !active }),
+          title: sdk.T("主动模式：任务未完成时自动续跑，直到指挥家声明完成或受阻", "Active mode: keep the conductor going until it declares the work done or blocked"),
+          children: [
+            /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("指挥家主动模式", "Conductor active mode") }),
+            active ? /* @__PURE__ */ jsxRuntime.jsx(Check, {}) : null
+          ]
+        }
+      ) : null
+    ] });
   }
   function ConductorPlugin({ api }) {
     react.useEffect(() => api.mount("composer-menu", /* @__PURE__ */ jsxRuntime.jsx(Toggle, { api })), [api]);
