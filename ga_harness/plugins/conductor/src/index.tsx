@@ -8,9 +8,22 @@ type Task = {
   created?: number;
   partial?: boolean;  // the snapshot holds previews of the long text fields
 };
+type Reflection = {
+  id: string; parent: string; title: string; status: string; triggers: number;
+  expires: number; error?: string; interval: number;
+};
+const REFLECT_TERMINAL = new Set(['done', 'stopped', 'error', 'interrupted']);
+const REFLECT_STATUS: Record<string, [string, string]> = {
+  starting: ['\u542f\u52a8\u4e2d', 'Starting'], sleeping: ['\u76d1\u542c\u4e2d', 'Watching'],
+  pending: ['\u7b49\u5f85\u5524\u9192', 'Pending'], submitting: ['\u5524\u9192\u4e2d', 'Submitting'],
+  waiting: ['\u7b49\u5f85\u56de\u6267', 'Waiting for result'], callback: ['\u56de\u8c03\u4e2d', 'Callback'],
+  stopped: ['\u5df2\u505c\u6b62', 'Stopped'], done: ['\u5df2\u5b8c\u6210', 'Done'],
+  error: ['\u51fa\u9519', 'Error'], interrupted: ['\u5df2\u4e2d\u65ad', 'Interrupted'],
+};
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
   active?: string[];  // conductor sessions in active mode
+  reflections?: Reflection[];
   children: Record<string, { task_id: string; parent: string }>;
   limits: { running: number; open: number; total: number };
 };
@@ -155,7 +168,9 @@ function Panel({ api }: { api: PluginAPI }) {
   // Newest task first, so the latest dispatch is at the top of the panel.
   const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid)
     .sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
-  if (!on && !tasks.length) return null;
+  const reflections = (data.reflections || []).filter(r => r.parent === sid);
+  const watching = reflections.filter(r => !REFLECT_TERMINAL.has(r.status)).length;
+  if (!on && !tasks.length && !reflections.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
   // Task chats are hidden from the sidebar; this is their entry point.
@@ -168,7 +183,7 @@ function Panel({ api }: { api: PluginAPI }) {
     <div className="gah-cd-anchor" ref={box}>
       <button type="button" className={`gah-cd-chip${on ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} aria-haspopup="dialog"
         onClick={() => setOpen(!open)} title={T('\u6307\u6325\u5bb6\u4efb\u52a1', 'Conductor tasks')}>
-        {running ? <span className="gah-cd-dot running" /> : <Icon />}
+        {running || watching ? <span className="gah-cd-dot running" /> : <Icon />}
         <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
         <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" /></svg>
       </button>
@@ -183,6 +198,19 @@ function Panel({ api }: { api: PluginAPI }) {
             </span>
             {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
           </div>
+          {reflections.length ? <div className="gah-cd-list">
+            <div className="gah-cd-hint">{T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Reflect sources')} ({watching}/{reflections.length})</div>
+            {reflections.map(r => <div key={r.id} className="gah-cd-field">
+              <b>{r.title}</b> · {label(REFLECT_STATUS, r.status)}
+              <p><code>{r.id}</code> · {T('\u89e6\u53d1', 'Triggers')}: {r.triggers} · {r.interval}s</p>
+              <p>{T('\u5230\u671f', 'Expires')}: {new Date(r.expires * 1000).toLocaleString()}</p>
+              {r.error ? <p>{r.error}</p> : null}
+              {!REFLECT_TERMINAL.has(r.status) ? <button type="button" disabled={busy}
+                onClick={() => run('reflect', { action: 'stop', reflect_id: r.id })}>
+                {T('\u505c\u6b62\u76d1\u542c', 'Stop watching')}
+              </button> : null}
+            </div>)}
+          </div> : null}
           {tasks.length ? <div className="gah-cd-list">{tasks.map(task => (
             <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
           ))}</div> : <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>}

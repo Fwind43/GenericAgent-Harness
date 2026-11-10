@@ -32,6 +32,7 @@ from types import SimpleNamespace
 
 from ga_harness import model_keys
 from ga_harness.sessions import EFFORTS
+from .reflections import Reflections, SOURCE as REFLECT_SOURCE
 
 POLICY_MAX = 4000  # characters of model-selection policy text
 
@@ -151,7 +152,7 @@ class Store:
     def __init__(self, path):
         self.path = Path(path)
         self.data = {"enabled": {}, "tasks": {}, "limits": {}, "policies": {}, "defaults": {},
-                     "active": {}}
+                     "active": {}, "reflections": {}}
         try:
             if self.path.is_file():
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -159,6 +160,8 @@ class Store:
                     self.data["enabled"] = dict(loaded.get("enabled") or {})
                     self.data["active"] = {k: True for k, v in dict(loaded.get("active") or {}).items() if v}
                     self.data["tasks"] = dict(loaded.get("tasks") or {})
+                    self.data["reflections"] = {k: v for k, v in dict(loaded.get("reflections") or {}).items()
+                                                if isinstance(v, dict)}
                     self.data["limits"] = dict(loaded.get("limits") or {})
                     self.data["defaults"] = {k: v for k, v in dict(loaded.get("defaults") or {}).items()
                                           if isinstance(v, dict) and v}
@@ -682,6 +685,7 @@ def apply(ctx, config):
                 enabled[sid] = True
             else:
                 enabled.pop(sid, None)
+                reflections.stop_parent(sid)
                 auto.pop(sid, None)
         _publish()
         return {"enabled": on}
@@ -821,7 +825,13 @@ def apply(ctx, config):
         out["note"] = "applies to tasks dispatched from now on; running tasks keep their model"
         return out
 
-    OPS = {"set_default": set_default, "set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
+    def reflect(body):
+        _sid(body)
+        if body.get("action", "list") == "start":
+            _require_parent(body)
+        return reflections.operation(body)
+
+    OPS = {"reflect": reflect, "set_default": set_default, "set_limit": set_limit, "models": models_op, "set_policy": set_policy, "dispatch": dispatch, "collect": collect, "tasks": tasks_op, "inspect": inspect,
            "instruct": instruct, "cancel": cancel, "review": review, "resolve": resolve,
            "finish": finish}
     # Operations that count as progress for active mode (reads and settings do not).
@@ -853,7 +863,7 @@ def apply(ctx, config):
         # Children that finish close together are reported in one wake-up: the
         # first finish opens a short window, later ones join the same message.
         with lock:
-            if parent in scheduled:
+            if reflections.closed or parent in scheduled:
                 return
             scheduled.add(parent)
 
@@ -865,23 +875,59 @@ def apply(ctx, config):
         timer.name, timer.daemon = "conductor-wake", True
         timer.start()
 
+    def _wake_reflection(parent):
+        with lock:
+            if (reflections.closed or not enabled.get(parent) or parent in waking
+                    or runs.active_for(parent) or _unreported(parent)):
+                return
+            # Reflections never jump ahead of queued user input.
+            peek = ctx.get("run_queue.peek")
+            if callable(peek) and peek(parent) is not None:
+                return
+            item = reflections.ready(parent)
+            if item is None:
+                return
+            text = reflections.claim(item)
+            waking.add(parent)
+        try:
+            code, reply = frontend.submit(text, session_id=parent, source=REFLECT_SOURCE)
+            if code >= 400:
+                raise RuntimeError((reply or {}).get("error") or "run could not be started")
+            run_id = (reply or {}).get("run_id")
+            if not run_id:
+                raise RuntimeError("wake submission returned no run_id")
+        except Exception as error:
+            log.warning("conductor: could not deliver reflection to %s: %s", parent, error)
+            with lock:
+                reflections.failed(item, error, WAKE_RETRIES, WAKE_RETRY_DELAY)
+        else:
+            with lock:
+                reflections.submitted(item, run_id)
+        finally:
+            with lock:
+                waking.discard(parent)
+            _publish()
+            # Also covers a run that finishes before submit returns.
+            _schedule_wake(parent)
+
     def _wake(parent):
         with lock:
-            if not enabled.get(parent) or parent in waking:
+            if reflections.closed or not enabled.get(parent) or parent in waking:
                 return
             pending = [t for t in _children(parent)
                        if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
-            if not pending or runs.active_for(parent):
+            if runs.active_for(parent):
                 return
             # One queue in arrival order (as GA's conductor inbox): a user message
             # queued before these finished goes first; its run's end wakes us again.
             peek = ctx.get("run_queue.peek")
             queued = peek(parent) if callable(peek) else None
-            if queued is not None and queued < min(t.get("finished") or 0 for t in pending):
+            if pending and queued is not None and queued < min(t.get("finished") or 0 for t in pending):
                 return
             for task in pending:
                 task["notified"] = task["acked"] = True  # results travel in this message
-            waking.add(parent)  # until the run is registered, so no second wake races in
+            if pending:
+                waking.add(parent)  # until the run is registered, so no second wake races in
             # The "- id \u00b7 title \u00b7 status" lines and "N task(s) still running" are
             # parsed by the web UI (ChatMessage.tsx); keep their format.
             lines = [f"- {t['id']} \u00b7 {t['title']} \u00b7 {t['status']}" for t in pending]
@@ -897,6 +943,9 @@ def apply(ctx, config):
                     body = f"branch {t['branch']}" + (f" ({changes})" if changes else "") + f"\n{body}"
                 # Quote the body so result text can never look like a task line to the UI.
                 details.append(f"=== {t['id']} result ===\n" + "\n".join("> " + x for x in body.splitlines()))
+        if not pending:
+            _wake_reflection(parent)
+            return
         text = ("[Conductor] Delegated task(s) finished:\n" + "\n".join(lines)
                 + f"\n{still} task(s) still running."
                 + (f" Also awaiting review from earlier: {', '.join(other)}." if other else "")
@@ -941,7 +990,9 @@ def apply(ctx, config):
         state = auto.setdefault(parent, {})
         ops = state.pop("ops", 0)
         finished = state.pop("finished", False)  # conductor_finish was called in this run
-        by_user = record.get("source") != SOURCE
+        by_user = record.get("source") not in {SOURCE, REFLECT_SOURCE}
+        if record.get("source") == REFLECT_SOURCE:
+            return False  # reflection cadence, not active-mode continuation, owns this turn
         if by_user:
             state["idle"] = 0
             state.pop("nudged", None)
@@ -974,18 +1025,20 @@ def apply(ctx, config):
 
     def _continue(parent):
         with lock:
-            if not enabled.get(parent) or parent in waking or runs.active_for(parent):
+            if (reflections.closed or not enabled.get(parent) or parent in waking
+                    or runs.active_for(parent)):
                 return
             peek = ctx.get("run_queue.peek")
             if callable(peek) and peek(parent) is not None:
                 return  # the user's queued message goes first
             counts = _counts(parent)
-            if counts["running"] or _unreported(parent):
+            if counts["running"] or _unreported(parent) or reflections.ready(parent):
                 return
             awaiting = counts["awaiting_review"]
             is_active = bool(active.get(parent))
-        if not is_active and not awaiting:
-            return
+            if not is_active and not awaiting:
+                return
+            waking.add(parent)
         review = (f"Task(s) still awaiting your review: {', '.join(awaiting)}. Review them with "
                   "conductor_review (resolve=true to close verified ones).") if awaiting else ""
         if is_active:
@@ -1005,6 +1058,10 @@ def apply(ctx, config):
                 raise RuntimeError((reply or {}).get("error") or "run could not be started")
         except Exception as error:
             log.warning("conductor: could not continue %s: %s", parent, error)
+        finally:
+            with lock:
+                waking.discard(parent)
+            _schedule_wake(parent)
 
     def pending_since(parent):
         """Finish time of the oldest unreported child, else None (read by run-queue)."""
@@ -1019,6 +1076,7 @@ def apply(ctx, config):
         try:
             sid, run_id = data.get("session_id"), data.get("run_id")
             record = data.get("run") or {}
+            reflections.finished(sid, run_id, record, _message_text(data.get("message")))
             parent, proceed = None, False
             with lock:
                 task = _task_of_child(sid) if sid else None
@@ -1058,6 +1116,7 @@ def apply(ctx, config):
                     "children": {t["child"]: {"task_id": t["id"], "parent": t["parent"]}
                                  for t in sorted(tasks.values(), key=lambda t: t["created"])
                                  if current in (t["parent"], t["child"])},
+                    "reflections": reflections.listing(current),
                     "limits": _limits(current),
                     "current": current}
         except Exception:
@@ -1078,6 +1137,9 @@ def apply(ctx, config):
             return 200, {"ok": True, **(result or {})}
         return route
 
+    reflections = Reflections(store.data["reflections"], store.path.parent / "conductor-reflect",
+                              lock, _publish, _schedule_wake)
+    store.save()  # persist interrupted sources after a host/plugin restart
     ctx.scope.add(runs.register_rpc("conductor", rpc))
     ctx.scope.add(runs.register_worker_plugin("conductor-worker"))
     ctx.scope.add(runs.register_worker_plugin("ga-steer"))
@@ -1098,6 +1160,8 @@ def apply(ctx, config):
                                 style=style if style.is_file() else None, order=36,
                                 routes={("POST", "toggle"): _route(toggle, guard=False),
                                         ("POST", "active"): _route(set_active),
+                                        ("POST", "reflect"): _route(reflect, guard=False),
                                         ("POST", "task"): _route(detail, guard=False),
                                         ("POST", "cancel"): _route(cancel),
                                         ("POST", "resolve"): _route(resolve)}))
+    ctx.scope.add(reflections.close)
