@@ -6,6 +6,7 @@ type Task = {
   resolved?: boolean; child: string; run_id?: string | null; objective: string;
   result?: string; error?: string; runs?: number; model?: string | null; effort?: string | null;
   created?: number;
+  partial?: boolean;  // the snapshot holds previews of the long text fields
 };
 type Conductor = {
   enabled: string[]; tasks: Task[]; current?: string | null;
@@ -38,11 +39,30 @@ function useConductor(api: PluginAPI) {
     catch (error) { api.notice(String((error as Error)?.message || error)); }
     finally { setBusy(false); }
   };
-  return { data, sid, busy, run };
+  // Full text of one task: the snapshot only carries previews (see `partial`).
+  const load = async (task: Task): Promise<Partial<Task> | null> => {
+    if (!sid) return null;
+    try { return (await api.post<{ task?: Partial<Task> }>('task', { session_id: sid, task_id: task.id })).task || null; }
+    catch { return null; }
+  };
+  return { data, sid, busy, run, load };
 }
 
-function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (path: string, task: Task) => void; enter: (task: Task) => void }) {
+function TaskRow({ task, busy, act, enter, load }: {
+  task: Task; busy: boolean; act: (path: string, task: Task) => void; enter: (task: Task) => void;
+  load: (task: Task) => Promise<Partial<Task> | null>;
+}) {
   const [open, setOpen] = useState(false);
+  const [full, setFull] = useState<Partial<Task> | null>(null);
+  // Refetch when anything that changes the text fields changes.
+  const stamp = [task.id, task.status, task.review || '', task.runs || 0, task.result?.length || 0, task.basis?.length || 0].join('|');
+  useEffect(() => {
+    if (!open || !task.partial) { setFull(null); return; }
+    let live = true;
+    load(task).then(value => { if (live) setFull(value); });
+    return () => { live = false; };
+  }, [open, task.partial, stamp]);
+  const text = { ...task, ...(full || {}) };
   const terminal = task.status !== 'running';
   const canResolve = terminal && !task.resolved && (task.status !== 'done' || task.review === 'verified');
   return (
@@ -67,10 +87,10 @@ function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (
       </div>
       {open ? (
         <div className="gah-cd-body">
-          <div className="gah-cd-field"><b>{T('\u76ee\u6807', 'Objective')}</b><p>{task.objective}</p></div>
-          {task.result ? <div className="gah-cd-field"><b>{T('\u7ed3\u679c', 'Result')}</b><p>{task.result}</p></div> : null}
-          {task.error ? <div className="gah-cd-field error"><b>{T('\u9519\u8bef', 'Error')}</b><p>{task.error}</p></div> : null}
-          {task.basis ? <div className="gah-cd-field"><b>{T('\u9a8c\u6536\u4f9d\u636e', 'Review basis')}</b><p>{task.basis}</p></div> : null}
+          <div className="gah-cd-field"><b>{T('\u76ee\u6807', 'Objective')}</b><p>{text.objective}</p></div>
+          {text.result ? <div className="gah-cd-field"><b>{T('\u7ed3\u679c', 'Result')}</b><p>{text.result}</p></div> : null}
+          {text.error ? <div className="gah-cd-field error"><b>{T('\u9519\u8bef', 'Error')}</b><p>{text.error}</p></div> : null}
+          {text.basis ? <div className="gah-cd-field"><b>{T('\u9a8c\u6536\u4f9d\u636e', 'Review basis')}</b><p>{text.basis}</p></div> : null}
           <div className="gah-cd-actions">
             <button type="button" className="primary" disabled={busy} onClick={() => enter(task)}
               title={T('\u8fdb\u5165\u8be5\u5b50\u4efb\u52a1\u7684\u4f1a\u8bdd', 'Open this task\'s chat')}>{T('\u8fdb\u5165\u4f1a\u8bdd', 'Open chat')}</button>
@@ -84,7 +104,7 @@ function TaskRow({ task, busy, act, enter }: { task: Task; busy: boolean; act: (
 }
 
 function Panel({ api }: { api: PluginAPI }) {
-  const { data, sid, busy, run } = useConductor(api);
+  const { data, sid, busy, run, load } = useConductor(api);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
@@ -159,7 +179,7 @@ function Panel({ api }: { api: PluginAPI }) {
             {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
           </div>
           {tasks.length ? <div className="gah-cd-list">{tasks.map(task => (
-            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} />
+            <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
           ))}</div> : <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>}
         </div>
       ) : null}

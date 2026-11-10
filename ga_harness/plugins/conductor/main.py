@@ -44,6 +44,7 @@ MAX_TOTAL = 48
 RUNNING_CAP = 8  # highest running limit a conductor may set for itself
 MAX_TEXT = 20_000
 RESULT_LIMIT = 4_000
+BRIEF_LIMIT = 200  # per text field in the page snapshot; the panel loads the rest on demand
 WAKE_RESULT_LIMIT = 1_500  # per task in the wake-up message; full text via collect/inspect
 TERMINAL = ("done", "error", "aborted", "interrupted")
 VERDICTS = ("verified", "needs_work")
@@ -222,7 +223,7 @@ def apply(ctx, config):
                 found = task
         return found
 
-    def _public(task, full=False):
+    def _public(task, full=False, brief=False):
         out = {k: task.get(k) for k in ("id", "title", "status", "review", "basis", "resolved",
                                         "child", "run_id", "created", "finished", "runs",
                                         "model", "model_key", "effort", "workspace", "reused_from")}
@@ -237,6 +238,15 @@ def apply(ctx, config):
             out["result"] = task.get("result", "") if full else _clip(task.get("result", ""))
             if task.get("error"):
                 out["error"] = task["error"]
+        if brief:
+            # The snapshot is rebroadcast on every state change: send previews only and
+            # flag the task so the panel fetches the full text when a row is opened.
+            for key, limit in (("objective", 300), ("result", BRIEF_LIMIT),
+                               ("error", BRIEF_LIMIT), ("basis", BRIEF_LIMIT)):
+                text = task.get(key) or ""
+                if key in out and len(text) > limit:
+                    out[key] = text[:limit] + "\u2026"
+                    out["partial"] = True
         return out
 
     def _max_running(parent):
@@ -496,6 +506,17 @@ def apply(ctx, config):
                                   for r in runs.listing(task["child"], limit=5)]
         except Exception:
             pass
+        return {"task": out}
+
+    def detail(body):
+        """Full text fields of one task for the web panel (the snapshot carries previews)."""
+        parent = _sid(body)
+        with lock:
+            task = _owned(parent, body.get("task_id"))
+            out = {"id": task["id"], "objective": task["objective"], "basis": task.get("basis") or ""}
+            if task.get("status") in TERMINAL:
+                out["result"] = task.get("result", "")
+                out["error"] = task.get("error") or ""
         return {"task": out}
 
     def instruct(body):
@@ -882,10 +903,14 @@ def apply(ctx, config):
             with lock:
                 data["conductor"] = {
                     "enabled": sorted(enabled),
-                    "tasks": [_public(t) for t in sorted(tasks.values(), key=lambda t: t["created"])
-                              if enabled.get(t["parent"]) or not t["resolved"]],
+                    # Only what the selected session's page shows: its own tasks, and
+                    # whether it is itself a task session. Other conductors' tasks would
+                    # ride along on every broadcast without ever being rendered.
+                    "tasks": [_public(t, brief=True) for t in _children(current)
+                              if enabled.get(current) or not t["resolved"]],
                     "children": {t["child"]: {"task_id": t["id"], "parent": t["parent"]}
-                                 for t in sorted(tasks.values(), key=lambda t: t["created"])},
+                                 for t in sorted(tasks.values(), key=lambda t: t["created"])
+                                 if current in (t["parent"], t["child"])},
                     "limits": _limits(current),
                     "current": current}
         except Exception:
@@ -925,5 +950,6 @@ def apply(ctx, config):
     ctx.scope.add(host.register("conductor", script=script if script.is_file() else None,
                                 style=style if style.is_file() else None, order=36,
                                 routes={("POST", "toggle"): _route(toggle, guard=False),
+                                        ("POST", "task"): _route(detail, guard=False),
                                         ("POST", "cancel"): _route(cancel),
                                         ("POST", "resolve"): _route(resolve)}))

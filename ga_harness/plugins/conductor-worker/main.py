@@ -23,7 +23,7 @@ KEEP = ("ask_user", "update_working_checkpoint", "no_tool",
 RPC_TIMEOUT = 150.0
 
 # Limits are filled in from the host's ``role`` reply (fallbacks match the host).
-DEFAULT_LIMITS = {"running": 3, "open": 12, "total": 48, "running_cap": 8}
+DEFAULT_LIMITS = {"running": 5, "open": 12, "total": 48, "running_cap": 8}
 
 PARENT_PROMPT = """
 ### Conductor mode
