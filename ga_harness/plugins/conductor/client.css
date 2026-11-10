@@ -1,3 +1,4 @@
+.gah-cd-group{display:inline-flex;align-items:center;gap:6px}
 .gah-cd-anchor{position:relative;display:inline-flex}
 .gah-cd-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--muted);font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer;white-space:nowrap}
 .gah-cd-chip:hover,.gah-cd-chip.open{color:var(--text);background:var(--surface-muted)}

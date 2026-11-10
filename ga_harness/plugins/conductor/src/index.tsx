@@ -185,7 +185,7 @@ function ReflectRow({ item, busy, stop }: { item: Reflection; busy: boolean; sto
 
 function Panel({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run, load } = useConductor(api);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<'tasks' | 'reflect' | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -210,14 +210,14 @@ function Panel({ api }: { api: PluginAPI }) {
   }, [open]);
   useEffect(() => {
     if (!open) return;
-    const down = (event: Event) => { if (!box.current?.contains(event.target as Node)) setOpen(false); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    const down = (event: Event) => { if (!box.current?.contains(event.target as Node)) setOpen(null); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(null); };
     document.addEventListener('mousedown', down);
     document.addEventListener('touchstart', down, { passive: true });
     document.addEventListener('keydown', key);
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('touchstart', down); document.removeEventListener('keydown', key); };
   }, [open]);
-  useEffect(() => { setOpen(false); }, [sid]);
+  useEffect(() => { setOpen(null); }, [sid]);
   if (!data || !sid) return null;
   if (data.children?.[sid]) {
     return (
@@ -237,73 +237,107 @@ function Panel({ api }: { api: PluginAPI }) {
   if (!on && !tasks.length && !reflections.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
-  const chipLabel = tasks.length
-    ? (watching ? `${done}/${tasks.length} \u00b7 ${watching}` : `${done}/${tasks.length}`)
-    : watching
-      ? T(`\u76d1\u542c ${watching}`, `Watching ${watching}`)
-      : T('\u6307\u6325\u5bb6', 'Conductor');
-  const barHint = tasks.length && reflections.length
-    ? T(
-      `\u4efb\u52a1 ${tasks.length} (${running}/${data.limits.running}) \u00b7 \u4e8b\u4ef6\u6e90 ${watching}/${reflections.length}`,
-      `${tasks.length} tasks (${running}/${data.limits.running}) \u00b7 ${watching}/${reflections.length} sources`,
-    )
-    : tasks.length
-      ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
-      : reflections.length
-        ? T(`\u4e8b\u4ef6\u6e90 ${reflections.length} \u00b7 \u76d1\u542c\u4e2d ${watching}`, `${reflections.length} sources \u00b7 ${watching} watching`)
-        : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself');
+  const showReflect = on || reflections.length > 0;
+  const showTasks = on || tasks.length > 0;
   // Task chats are hidden from the sidebar; this is their entry point.
   const enter = async (task: Task) => {
-    setOpen(false);
+    setOpen(null);
     try { api.setState(await api.host.post<HostState>('/api/sessions', { action: 'select', id: task.child }), true); pages.home(); }
     catch (error) { api.notice(String((error as Error)?.message || error)); }
   };
   return (
-    <div className="gah-cd-anchor" ref={box}>
-      <button type="button" className={`gah-cd-chip${on ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} aria-haspopup="dialog"
-        onClick={() => setOpen(!open)} title={T('\u6307\u6325\u5bb6\u4efb\u52a1', 'Conductor tasks')}>
-        {running || watching ? <span className="gah-cd-dot running" /> : <Icon />}
-        <span>{chipLabel}</span>
-        <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" /></svg>
-      </button>
-      {open ? (
-        <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
-          <div className="gah-cd-bar">
-            <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
-            <span className="gah-cd-hint">{barHint}</span>
-            {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
-          </div>
-          {reflections.length ? (
-            <div className="gah-cd-list">
-              <div className="gah-cd-sec">
-                <span>{T('\u4e8b\u4ef6\u6e90', 'Event sources')}</span>
-                <span>{watching}/{reflections.length}</span>
+    <div className="gah-cd-group" ref={box}>
+      {showReflect ? (
+        <div className="gah-cd-anchor">
+          <button
+            type="button"
+            className={`gah-cd-chip${watching ? ' on' : ''}${open === 'reflect' ? ' open' : ''}`}
+            aria-expanded={open === 'reflect'}
+            aria-haspopup="dialog"
+            onClick={() => setOpen(open === 'reflect' ? null : 'reflect')}
+            title={T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Reflect event sources')}
+          >
+            {watching ? <span className="gah-cd-dot running" /> : <ReflectIcon />}
+            <span>{reflections.length ? T(`\u4e8b\u4ef6\u6e90 ${watching}/${reflections.length}`, `Sources ${watching}/${reflections.length}`) : T('\u4e8b\u4ef6\u6e90', 'Sources')}</span>
+            <Caret />
+          </button>
+          {open === 'reflect' ? (
+            <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Reflect event sources')}>
+              <div className="gah-cd-bar">
+                <span className="gah-cd-badge"><ReflectIcon />{T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Event sources')}</span>
+                <span className="gah-cd-hint">
+                  {reflections.length
+                    ? T(`\u76d1\u542c\u4e2d ${watching} \u00b7 \u5171 ${reflections.length} \u4e2a`, `${watching} watching \u00b7 ${reflections.length} total`)
+                    : T('\u5faa\u73af\u76d1\u542c\u5916\u90e8\u6761\u4ef6\uff0c\u89e6\u53d1\u65f6\u5524\u9192\u6307\u6325\u5bb6', 'Watches conditions in a loop and wakes the conductor')}
+                </span>
               </div>
-              {reflections.map(r => (
-                <ReflectRow key={r.id} item={r} busy={busy} stop={item => run('reflect', { action: 'stop', reflect_id: item.id })} />
-              ))}
+              {reflections.length ? (
+                <div className="gah-cd-list">
+                  {reflections.map(r => (
+                    <ReflectRow key={r.id} item={r} busy={busy} stop={item => run('reflect', { action: 'stop', reflect_id: item.id })} />
+                  ))}
+                </div>
+              ) : (
+                <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u4e8b\u4ef6\u6e90', 'No event sources yet')}</div>
+              )}
             </div>
           ) : null}
-          {tasks.length ? (
-            <div className="gah-cd-list">
-              {reflections.length ? (
-                <div className="gah-cd-sec">
-                  <span>{T('\u5b50\u4efb\u52a1', 'Subtasks')}</span>
-                  <span>{done}/{tasks.length}</span>
+        </div>
+      ) : null}
+      {showTasks ? (
+        <div className="gah-cd-anchor">
+          <button
+            type="button"
+            className={`gah-cd-chip${on ? ' on' : ''}${open === 'tasks' ? ' open' : ''}`}
+            aria-expanded={open === 'tasks'}
+            aria-haspopup="dialog"
+            onClick={() => setOpen(open === 'tasks' ? null : 'tasks')}
+            title={T('\u6307\u6325\u5bb6\u5b50\u4efb\u52a1', 'Conductor subtasks')}
+          >
+            {running ? <span className="gah-cd-dot running" /> : <Icon />}
+            <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
+            <Caret />
+          </button>
+          {open === 'tasks' ? (
+            <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u6307\u6325\u5bb6', 'Conductor')}>
+              <div className="gah-cd-bar">
+                <span className="gah-cd-badge"><Icon />{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
+                <span className="gah-cd-hint">
+                  {tasks.length
+                    ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
+                    : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself')}
+                </span>
+                {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
+              </div>
+              {tasks.length ? (
+                <div className="gah-cd-list">
+                  {tasks.map(task => (
+                    <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
+                  ))}
                 </div>
-              ) : null}
-              {tasks.map(task => (
-                <TaskRow key={task.id} task={task} busy={busy} act={(path, t) => run(path, { task_id: t.id })} enter={enter} load={load} />
-              ))}
+              ) : (
+                <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>
+              )}
             </div>
-          ) : !reflections.length ? (
-            <div className="gah-cd-empty">{T('\u8fd8\u6ca1\u6709\u5b50\u4efb\u52a1', 'No tasks yet')}</div>
           ) : null}
         </div>
       ) : null}
     </div>
   );
 }
+
+const Caret = () => (
+  <svg className="gah-cd-caret" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true">
+    <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const ReflectIcon = () => (
+  <svg className="gah-cd-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <path d="M8 5v3.2l2.2 1.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </svg>
+);
 
 const Icon = () => (
   <svg className="gah-cd-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">

@@ -196,7 +196,7 @@
   function Panel({ api }) {
     var _a;
     const { data, sid, busy, run, load } = useConductor(api);
-    const [open, setOpen] = react.useState(false);
+    const [open, setOpen] = react.useState(null);
     const box = react.useRef(null);
     const pop = react.useRef(null);
     react.useLayoutEffect(() => {
@@ -221,10 +221,10 @@
       if (!open) return;
       const down = (event) => {
         var _a2;
-        if (!((_a2 = box.current) == null ? void 0 : _a2.contains(event.target))) setOpen(false);
+        if (!((_a2 = box.current) == null ? void 0 : _a2.contains(event.target))) setOpen(null);
       };
       const key = (event) => {
-        if (event.key === "Escape") setOpen(false);
+        if (event.key === "Escape") setOpen(null);
       };
       document.addEventListener("mousedown", down);
       document.addEventListener("touchstart", down, { passive: true });
@@ -236,7 +236,7 @@
       };
     }, [open]);
     react.useEffect(() => {
-      setOpen(false);
+      setOpen(null);
     }, [sid]);
     if (!data || !sid) return null;
     if ((_a = data.children) == null ? void 0 : _a[sid]) {
@@ -257,13 +257,10 @@
     if (!on && !tasks.length && !reflections.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
-    const chipLabel = tasks.length ? watching ? `${done}/${tasks.length} · ${watching}` : `${done}/${tasks.length}` : watching ? sdk.T(`监听 ${watching}`, `Watching ${watching}`) : sdk.T("指挥家", "Conductor");
-    const barHint = tasks.length && reflections.length ? sdk.T(
-      `任务 ${tasks.length} (${running}/${data.limits.running}) · 事件源 ${watching}/${reflections.length}`,
-      `${tasks.length} tasks (${running}/${data.limits.running}) · ${watching}/${reflections.length} sources`
-    ) : tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : reflections.length ? sdk.T(`事件源 ${reflections.length} · 监听中 ${watching}`, `${reflections.length} sources · ${watching} watching`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself");
+    const showReflect = on || reflections.length > 0;
+    const showTasks = on || tasks.length > 0;
     const enter = async (task) => {
-      setOpen(false);
+      setOpen(null);
       try {
         api.setState(await api.host.post("/api/sessions", { action: "select", id: task.child }), true);
         sdk.pages.home();
@@ -271,57 +268,71 @@
         api.notice(String((error == null ? void 0 : error.message) || error));
       }
     };
-    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", ref: box, children: [
-      /* @__PURE__ */ jsxRuntime.jsxs(
-        "button",
-        {
-          type: "button",
-          className: `gah-cd-chip${on ? " on" : ""}${open ? " open" : ""}`,
-          "aria-expanded": open,
-          "aria-haspopup": "dialog",
-          onClick: () => setOpen(!open),
-          title: sdk.T("指挥家任务", "Conductor tasks"),
-          children: [
-            running || watching ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: chipLabel }),
-            /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-cd-caret", viewBox: "0 0 10 10", width: "9", height: "9", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 3.5l3 3 3-3", stroke: "currentColor", strokeWidth: "1.4", fill: "none", strokeLinecap: "round" }) })
-          ]
-        }
-      ),
-      open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", ref: pop, role: "dialog", "aria-label": sdk.T("指挥家", "Conductor"), children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
-            /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-            sdk.T("指挥家模式", "Conductor mode")
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-group", ref: box, children: [
+      showReflect ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(
+          "button",
+          {
+            type: "button",
+            className: `gah-cd-chip${watching ? " on" : ""}${open === "reflect" ? " open" : ""}`,
+            "aria-expanded": open === "reflect",
+            "aria-haspopup": "dialog",
+            onClick: () => setOpen(open === "reflect" ? null : "reflect"),
+            title: sdk.T("反射事件源", "Reflect event sources"),
+            children: [
+              watching ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(ReflectIcon, {}),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: reflections.length ? sdk.T(`事件源 ${watching}/${reflections.length}`, `Sources ${watching}/${reflections.length}`) : sdk.T("事件源", "Sources") }),
+              /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
+            ]
+          }
+        ),
+        open === "reflect" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", ref: pop, role: "dialog", "aria-label": sdk.T("反射事件源", "Reflect event sources"), children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
+              /* @__PURE__ */ jsxRuntime.jsx(ReflectIcon, {}),
+              sdk.T("反射事件源", "Event sources")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: reflections.length ? sdk.T(`监听中 ${watching} · 共 ${reflections.length} 个`, `${watching} watching · ${reflections.length} total`) : sdk.T("循环监听外部条件，触发时唤醒指挥家", "Watches conditions in a loop and wakes the conductor") })
           ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: barHint }),
-          on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
-        ] }),
-        reflections.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-list", children: [
-          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-sec", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("事件源", "Event sources") }),
-            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-              watching,
-              "/",
-              reflections.length
-            ] })
+          reflections.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: reflections.map((r) => /* @__PURE__ */ jsxRuntime.jsx(ReflectRow, { item: r, busy, stop: (item) => run("reflect", { action: "stop", reflect_id: item.id }) }, r.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有事件源", "No event sources yet") })
+        ] }) : null
+      ] }) : null,
+      showTasks ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(
+          "button",
+          {
+            type: "button",
+            className: `gah-cd-chip${on ? " on" : ""}${open === "tasks" ? " open" : ""}`,
+            "aria-expanded": open === "tasks",
+            "aria-haspopup": "dialog",
+            onClick: () => setOpen(open === "tasks" ? null : "tasks"),
+            title: sdk.T("指挥家子任务", "Conductor subtasks"),
+            children: [
+              running ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: tasks.length ? `${done}/${tasks.length}` : sdk.T("指挥家", "Conductor") }),
+              /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
+            ]
+          }
+        ),
+        open === "tasks" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", ref: pop, role: "dialog", "aria-label": sdk.T("指挥家", "Conductor"), children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
+              /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+              sdk.T("指挥家模式", "Conductor mode")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
+            on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
           ] }),
-          reflections.map((r) => /* @__PURE__ */ jsxRuntime.jsx(ReflectRow, { item: r, busy, stop: (item) => run("reflect", { action: "stop", reflect_id: item.id }) }, r.id))
-        ] }) : null,
-        tasks.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-list", children: [
-          reflections.length ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-sec", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("子任务", "Subtasks") }),
-            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-              done,
-              "/",
-              tasks.length
-            ] })
-          ] }) : null,
-          tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id))
-        ] }) : !reflections.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") }) : null
+          tasks.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-list", children: tasks.map((task) => /* @__PURE__ */ jsxRuntime.jsx(TaskRow, { task, busy, act: (path, t) => run(path, { task_id: t.id }), enter, load }, task.id)) }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("还没有子任务", "No tasks yet") })
+        ] }) : null
       ] }) : null
     ] });
   }
+  const Caret = () => /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-cd-caret", viewBox: "0 0 10 10", width: "9", height: "9", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 3.5l3 3 3-3", stroke: "currentColor", strokeWidth: "1.4", fill: "none", strokeLinecap: "round" }) });
+  const ReflectIcon = () => /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-cd-icon", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "8", cy: "8", r: "5.5", stroke: "currentColor", strokeWidth: "1.5", fill: "none" }),
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M8 5v3.2l2.2 1.3", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" })
+  ] });
   const Icon = () => /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-cd-icon", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
     /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M3 3.5h4M3 8h10M3 12.5h6", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", fill: "none" }),
     /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "11", cy: "3.5", r: "1.6", fill: "currentColor" }),
