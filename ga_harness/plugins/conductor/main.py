@@ -452,6 +452,9 @@ def apply(ctx, config):
         if workspace is not None:
             workspace = _directory(workspace)
         reuse = body.get("reuse_task")
+        # Tool callers may represent an omitted optional string as "".
+        if reuse == "":
+            reuse = None
         if reuse is not None and (isolate or workspace is not None):
             raise ValueError("reuse_task cannot be combined with workspace or isolate; "
                              "the task keeps the reused session's workspace")

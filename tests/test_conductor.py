@@ -158,7 +158,8 @@ def harness(conductor, tmp_path, monkeypatch):
             "run": {"status": status, "source": source or conductor.SOURCE},
         })
 
-    yield SimpleNamespace(call=call, finish=finish, store=store, timers=timers)
+    yield SimpleNamespace(call=call, finish=finish, store=store, timers=timers,
+                          services=services)
     for close in reversed(cleanup):
         if callable(close):
             close()
@@ -172,6 +173,44 @@ def task_record(index=0, *, resolved=True, review="verified", stage=1):
         "resolved": resolved, "review": review, "acked": True, "notified": True,
         "result": "Final evidence", "result_complete": True, "result_source": "final_turn",
     }
+
+
+@pytest.mark.parametrize("reuse_body", [{}, {"reuse_task": None}, {"reuse_task": ""}])
+@pytest.mark.parametrize("isolate", [False, True])
+def test_dispatch_empty_reuse_creates_new_session(conductor, harness, tmp_path,
+                                                 monkeypatch, reuse_body, isolate):
+    created, started = [], []
+    workspace = str(tmp_path.resolve())
+
+    def create(**kwargs):
+        created.append(kwargs)
+        return {"id": "new-child", "workspace": kwargs["workspace"]}
+
+    def start(text, **kwargs):
+        started.append((text, kwargs))
+        return {"id": "new-run"}
+
+    monkeypatch.setattr(harness.services["sessions"], "create", create, raising=False)
+    monkeypatch.setattr(harness.services["runs"], "start", start, raising=False)
+    monkeypatch.setattr(conductor, "_add_worktree", lambda *args: (
+        workspace, "test-branch", workspace, "test-base", workspace))
+    result = harness.call("dispatch", objective="Return evidence", workspace=workspace,
+                          isolate=isolate, **reuse_body)
+    task = harness.store.data["tasks"][result["task"]["id"]]
+    assert len(created) == len(started) == 1
+    assert created[0]["workspace"] == workspace
+    assert started[0][1]["session_id"] == "new-child"
+    assert task["status"] == "running"
+    assert "reused_from" not in task
+    assert bool(task.get("worktree")) is isolate
+
+
+@pytest.mark.parametrize("conflict", ["workspace", "isolate"])
+def test_dispatch_real_reuse_still_rejects_workspace_override(harness, tmp_path, conflict):
+    body = {"workspace": str(tmp_path.resolve())} if conflict == "workspace" else {"isolate": True}
+    with pytest.raises(ValueError, match="reuse_task cannot be combined"):
+        harness.call("dispatch", objective="Continue task", reuse_task="task-0", **body)
+    assert not harness.store.data["tasks"]
 
 
 def test_stage_budget_rolls_over_without_deleting_history(conductor, harness):
