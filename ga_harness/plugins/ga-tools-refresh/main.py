@@ -9,6 +9,10 @@ paying that cost on every trim.
 
     /tools            refresh, then ask the model to continue with real tool calls
     /tools <message>  refresh, then send <message>
+
+Inside a run worker it also listens for the host push ``tools.refresh`` (sent by
+the web-tools-refresh menu item while a task is running): the next model call of
+the running task carries the full definition, and no message is sent.
 """
 
 COMMAND = "/tools"
@@ -54,3 +58,16 @@ def apply(ctx, config):
         return nxt({**req, "query": message})
 
     ctx.on("agent.request", request, priority=50)
+
+    host = ctx.get("run.host") if ctx.has("run.host") else None
+    if host is None:
+        return
+
+    def on_push(data=None):
+        count = refresh(agent)
+        try:
+            host.emit("tools.refreshed", {"clients": count})
+        except Exception:
+            pass
+
+    ctx.scope.add(host.on_push("tools.refresh", on_push))

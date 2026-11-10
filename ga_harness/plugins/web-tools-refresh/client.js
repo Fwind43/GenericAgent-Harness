@@ -24,12 +24,13 @@
     const [busy, setBusy] = react.useState(false);
     const sid = state.session_id;
     if (!sid) return null;
+    const running = !!state.running;
     const send = async () => {
-      if (busy || state.running) return;
+      if (busy || !running) return;
       setBusy(true);
       api.notice();
       try {
-        await api.host.post("/api/run", { task: "/tools", session_id: sid, attachments: [] });
+        await api.post("refresh", { session_id: sid });
       } catch (error) {
         api.notice(error instanceof Error ? error.message : String(error));
       } finally {
@@ -42,11 +43,14 @@
         type: "button",
         role: "menuitem",
         className: "gah-menu-item",
-        disabled: busy || state.running,
+        disabled: busy || !running,
         onClick: send,
-        title: sdk.T(
-          "重新完整注入工具定义并继续任务（模型把工具调用写进正文时使用）",
-          "Resend the full tool definitions and continue (use when the model writes tool calls as text)"
+        title: running ? sdk.T(
+          "让正在运行的任务下一次模型调用重新完整注入工具定义，不发送消息（模型把工具调用写进正文时使用）",
+          "The running task's next model call resends the full tool definitions; no message is sent (use when the model writes tool calls as text)"
+        ) : sdk.T(
+          "仅在任务运行中可用；每次新任务开始时本来就会完整注入",
+          "Only while a task is running; every new task already starts with the full definitions"
         ),
         children: [
           /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
