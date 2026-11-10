@@ -78,7 +78,7 @@
     return { data, sid, busy, run, load };
   }
   function TaskRow({ task, busy, act, enter, load }) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     const [open, setOpen] = react.useState(false);
     const [full, setFull] = react.useState(null);
     const stamp = [task.id, task.status, task.review || "", task.runs || 0, ((_a = task.result) == null ? void 0 : _a.length) || 0, ((_b = task.basis) == null ? void 0 : _b.length) || 0, task.result_complete, task.result_source].join("|");
@@ -127,6 +127,24 @@
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("目标", "Objective") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: text.objective })
         ] }),
+        task.metrics ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
+          sdk.T("本次运行 ", "Last run"),
+          task.metrics.seconds == null ? "" : `${task.metrics.seconds.toFixed(1)}s · `,
+          task.metrics.turns ?? 0,
+          " ",
+          sdk.T("轮", "turns"),
+          " ",
+          "·",
+          " ",
+          ((_c = task.metrics.usage) == null ? void 0 : _c.input) ?? 0,
+          " in / ",
+          ((_d = task.metrics.usage) == null ? void 0 : _d.output) ?? 0,
+          " out"
+        ] }) : null,
+        task.failure_kind ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-field error", children: /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+          task.failure_kind,
+          task.retryable ? sdk.T("（可重试的基础设施故障）", " (retryable infrastructure failure)") : ""
+        ] }) }) : null,
         text.result ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
           /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("结果", "Result") }),
           /* @__PURE__ */ jsxRuntime.jsx("p", { children: text.result })
@@ -343,6 +361,23 @@
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
             on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
           ] }),
+          data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态尚未保存", "State is not saved") }),
+            /* @__PURE__ */ jsxRuntime.jsx("p", { children: data.persistence_error })
+          ] }) : null,
+          (data.deliveries || []).filter((d) => (d.attempts || 0) >= 5).map((d) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("通知投递持续失败", "Notification delivery keeps failing") }),
+            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+              d.error,
+              " (",
+              d.attempts,
+              ")"
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsxs("p", { children: [
+              sdk.T("下次重试：", "Retry scheduled: "),
+              d.retry_at ? new Date(d.retry_at * 1e3).toLocaleString() : "-"
+            ] })
+          ] }, d.id)),
           progress ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
             /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
               sdk.T(`阶段 ${progress.stage} · 额度 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} · quota ${stageTotal}/${data.limits.total}`),
