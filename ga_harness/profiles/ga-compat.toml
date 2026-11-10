@@ -125,3 +125,7 @@ name = "conductor"
 # vision_ask tool: send local images to the current model or a mykey.py model
 [[plugins]]
 name = "vlm-tool"
+
+# /tools command: resend GA's full tool definitions on the next model call
+[[plugins]]
+name = "ga-tools-refresh"
