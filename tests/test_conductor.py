@@ -270,12 +270,16 @@ def test_repeated_reviews_and_checkpoints_do_not_defeat_idle_guard(conductor, ha
     for i in range(conductor.ACTIVE_IDLE_LIMIT):
         harness.call("review", task_id=task["id"], verdict="verified", basis=f"Same evidence {i}")
         harness.call("checkpoint", action="update", goal="Same goal", next_step=f"Plan {i}")
+        harness.timers.clear()
         harness.finish()
     plan = harness.call("role")["progress"]
-    assert plan["status"] == "paused"
+    assert plan["status"] == "idle_backoff"
     assert "no task progress" in plan["reason"]
+    assert plan["next_continue_at"] > 0
+    assert any(t.name == "conductor-continue" and t.delay == conductor.ACTIVE_IDLE_INTERVAL
+               for t in harness.timers)
     saved = json.loads(harness.store.path.read_text(encoding="utf-8"))
-    assert saved["progress"]["parent"]["status"] == "paused"
+    assert saved["progress"]["parent"]["status"] == "idle_backoff"
 
 
 def test_repeated_resolve_does_not_defeat_idle_guard(conductor, harness):
@@ -283,8 +287,11 @@ def test_repeated_resolve_does_not_defeat_idle_guard(conductor, harness):
     harness.store.data["tasks"][task["id"]] = task
     for _ in range(conductor.ACTIVE_IDLE_LIMIT):
         harness.call("resolve", task_id=task["id"])
+        harness.timers.clear()
         harness.finish()
-    assert harness.call("role")["progress"]["status"] == "paused"
+    assert harness.call("role")["progress"]["status"] == "idle_backoff"
+    assert any(t.name == "conductor-continue" and t.delay == conductor.ACTIVE_IDLE_INTERVAL
+               for t in harness.timers)
 
 
 def test_actual_review_progress_resets_idle_counter(conductor, harness):
@@ -292,12 +299,28 @@ def test_actual_review_progress_resets_idle_counter(conductor, harness):
     harness.store.data["tasks"][task["id"]] = task
     for _ in range(conductor.ACTIVE_IDLE_LIMIT - 1):
         harness.finish()
+    harness.timers.clear()
     harness.call("review", task_id=task["id"], verdict="verified", basis="Evidence inspected")
     harness.finish()
-    assert harness.call("role")["progress"]["status"] != "paused"
+    assert harness.call("role")["progress"]["status"] == "active"
+    assert any(t.name == "conductor-continue" and t.delay == conductor.CONTINUE_DELAY
+               for t in harness.timers)
     for _ in range(conductor.ACTIVE_IDLE_LIMIT):
+        harness.timers.clear()
         harness.finish()
-    assert harness.call("role")["progress"]["status"] == "paused"
+    assert harness.call("role")["progress"]["status"] == "idle_backoff"
+    assert any(t.name == "conductor-continue" and t.delay == conductor.ACTIVE_IDLE_INTERVAL
+               for t in harness.timers)
+    second = task_record(1, resolved=False, review="pending")
+    harness.store.data["tasks"][second["id"]] = second
+    harness.timers.clear()
+    harness.call("review", task_id=second["id"], verdict="verified", basis="Second inspected")
+    harness.finish()
+    resumed = harness.call("role")["progress"]
+    assert resumed["status"] == "active"
+    assert "next_continue_at" not in resumed
+    assert any(t.name == "conductor-continue" and t.delay == conductor.CONTINUE_DELAY
+               for t in harness.timers)
 
 
 def test_wait_states_require_real_work_and_external_wait_does_not_spin(conductor, harness):
@@ -429,6 +452,26 @@ def test_startup_schedules_persisted_delivery_without_user_input(harness, conduc
     assert type(restored)(restored.path).data["tasks"]["task-0"]["acked"]
 
 
+def test_startup_resumes_persisted_idle_backoff_timer(harness, conductor, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(conductor.time, "time", lambda: clock[0])
+    for _ in range(conductor.ACTIVE_IDLE_LIMIT):
+        harness.timers.clear()
+        harness.finish()
+    assert harness.store.data["progress"]["parent"]["status"] == "idle_backoff"
+    assert harness.store.data["progress"]["parent"]["next_continue_at"] == 1000.0 + conductor.ACTIVE_IDLE_INTERVAL
+    assert harness.store.save()
+    restored = type(harness.store)(harness.store.path)
+    for close in reversed(harness.cleanup):
+        close()
+    harness.cleanup.clear()
+    harness.timers.clear()
+    clock[0] = 1600.0
+    monkeypatch.setattr(conductor, "Store", lambda path: restored)
+    conductor.apply(harness.ctx, {})
+    assert any(t.name == "conductor-continue" and t.delay == 1200.0 for t in harness.timers)
+
+
 def test_archive_keeps_full_delivery_and_only_reduces_old_resolved_tasks(conductor, tmp_path):
     store = conductor.Store(tmp_path / "state.json")
     old = task_record()
@@ -546,27 +589,63 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
     assert not harness.timers
     assert harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]["status"] == "blocked"
 
-    # User answer unblocks; consecutive turns without real tool work trigger the idle pause guard.
+    # User answer unblocks; 3+ consecutive turns without real tool work back off to 30m indefinitely.
     reply_only = {"role": "assistant", "status": "done", "turns": [
         {"status": "done", "reply": "Just chatting", "tools": []},
     ]}
     harness.callbacks["run.finished"]({
         "session_id": sid, "run_id": "r-user", "run": {"status": "done", "source": "web"}, "message": reply_only,
     })
+    assert harness.timers[-1].delay == conductor.CONTINUE_DELAY
     harness.timers.clear()
-    for i in range(conductor.ACTIVE_IDLE_LIMIT):
+    for i in range(conductor.ACTIVE_IDLE_LIMIT + 2):
         harness.callbacks["run.finished"]({
             "session_id": sid, "run_id": f"idle-{i}",
             "run": {"status": "done", "source": conductor.SOURCE}, "message": reply_only,
         })
+        expected = (conductor.CONTINUE_DELAY if i + 1 < conductor.ACTIVE_IDLE_LIMIT
+                    else conductor.ACTIVE_IDLE_INTERVAL)
+        assert harness.timers[-1].delay == expected
+        if i + 1 >= conductor.ACTIVE_IDLE_LIMIT:
+            fire_next(harness)
+            text, _ = submitted.pop()
+            assert "30 minutes" in text
         harness.timers.clear()
-    paused = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
-    assert paused["status"] == "paused"
-    assert "no progress" in paused["reason"]
+    backoff = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert backoff["status"] == "idle_backoff"
+    assert "no progress" in backoff["reason"]
+    assert backoff["next_continue_at"] > 0
 
-    # Re-enabling autopilot resumes from paused state; finish(done) stops until user input.
+    # Real tool execution immediately exits 30m backoff back to normal 1s continuation.
+    with_tool = {"role": "assistant", "status": "done", "turns": [
+        {"status": "done", "reply": "Made progress", "tools": [{"name": "code_run", "ok": True}]},
+    ]}
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-progressed",
+        "run": {"status": "done", "source": conductor.SOURCE}, "message": with_tool,
+    })
+    recovered = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert recovered["status"] == "active"
+    assert "next_continue_at" not in recovered
+    assert harness.timers[-1].delay == conductor.CONTINUE_DELAY
+    harness.timers.clear()
+
+    # Manual "Continue now" (set_active True while in idle_backoff) immediately resumes and schedules.
+    for i in range(conductor.ACTIVE_IDLE_LIMIT):
+        harness.callbacks["run.finished"]({
+            "session_id": sid, "run_id": f"idle-again-{i}",
+            "run": {"status": "done", "source": conductor.SOURCE}, "message": reply_only,
+        })
+        harness.timers.clear()
+    assert harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]["status"] == "idle_backoff"
     assert mode.set_active(sid, True) is True
-    assert harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]["status"] == "active"
+    resumed = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert resumed["status"] == "active"
+    assert "next_continue_at" not in resumed
+    assert harness.timers[-1].delay == conductor.CONTINUE_DELAY
+    harness.timers.clear()
+
+    # finish(done) stops until user input.
     harness.services["conductor"]({"session_id": sid, "op": "finish", "status": "done", "summary": "Completed"})
     harness.callbacks["run.finished"]({
         "session_id": sid, "run_id": "r-done", "run": {"status": "done", "source": conductor.SOURCE},

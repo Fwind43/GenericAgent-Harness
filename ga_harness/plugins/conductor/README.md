@@ -157,8 +157,11 @@ Stop the old id before replacing a source.
 - When `enabled=False` and `active=True`, the session runs in `role="autopilot"`:
   all native execution tools remain available, and `autopilot_finish` (`done` or
   `blocked`) is added as the explicit completion/stop tool.
-- Automatic continuation (`source="autopilot"`) pauses immediately when the agent
-  calls `autopilot_finish`, invokes `ask_user`, hits an error/abort, has a queued
-  user message, or completes 3 consecutive turns with no tool calls (idle guard).
+- Automatic continuation (`source="autopilot"`) stops immediately when the agent
+  calls `autopilot_finish`, invokes `ask_user`, or hits an error/abort, and yields
+  whenever a user message is queued. After 3 consecutive idle turns (0 tool calls
+  in ordinary autopilot, or 0 task operations in conductor mode), continuation backs
+  off to every 30 minutes (`idle_backoff`, with no retry cap) and returns to 1s
+  cadence as soon as a turn makes progress.
 - When `enabled=True` and `active=True`, the session acts as an active conductor
   combining delegation tools, checkpoints, and automatic continuation.

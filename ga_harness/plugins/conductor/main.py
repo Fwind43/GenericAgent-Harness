@@ -56,7 +56,8 @@ WAKE_COALESCE = 0.3  # seconds to gather children finishing together into one wa
 WAKE_RETRIES = 5  # further attempts when a wake-up message could not be submitted
 WAKE_RETRY_DELAY = 5.0  # seconds between those attempts
 CONTINUE_DELAY = 1.0  # seconds after the conductor's turn ends before prompting it again
-ACTIVE_IDLE_LIMIT = 3  # active mode: consecutive prompted turns without a task operation
+ACTIVE_IDLE_LIMIT = 3  # consecutive prompted turns without progress before 30m idle backoff
+ACTIVE_IDLE_INTERVAL = 1800.0  # seconds between continuation prompts once in idle backoff
 
 
 def _reflect_requested(messages):
@@ -357,7 +358,7 @@ def apply(ctx, config):
     frontend = host.frontend
     lock = threading.RLock()
     changed = threading.Condition(lock)
-    scheduled, waking = {}, set()  # cancellable timers / in-flight parents
+    scheduled, continued, waking = {}, {}, set()  # cancellable timers / in-flight parents
     store = Store(_store_path(sessions))
     tasks, enabled, overrides = store.data["tasks"], store.data["enabled"], store.data["limits"]
     policies = store.data["policies"]  # parent -> model-selection policy text (system prompt)
@@ -448,6 +449,11 @@ def apply(ctx, config):
     def _progress(parent):
         return progress.setdefault(parent, {"stage": 1, "goal": "", "next_step": "",
                                             "status": "active", "reason": "", "history": []})
+
+    def _cancel_continue(parent):
+        entry = continued.pop(parent, None)
+        if entry:
+            entry[1].cancel()
 
     def _counts(parent):
         items = _children(parent)
@@ -884,6 +890,8 @@ def apply(ctx, config):
                 enabled.pop(sid, None)
                 reflections.stop_parent(sid)
                 auto.pop(sid, None)
+                if not active.get(sid):
+                    _cancel_continue(sid)
                 if _progress(sid).get("status") in ("waiting_children", "waiting_external"):
                     _progress(sid).update(status="active", reason="")
         _publish()
@@ -898,17 +906,27 @@ def apply(ctx, config):
         on = body.get("active")
         if not isinstance(on, bool):
             raise ValueError("active must be a boolean")
+        resume_now = False
         with lock:
             if on and _task_of_child(sid) is not None:
                 raise RuntimeError("a conductor task session cannot enable autopilot")
+            _cancel_continue(sid)
+            plan = _progress(sid)
+            plan.pop("next_continue_at", None)
             if on:
+                was_idle_backoff = plan.get("status") == "idle_backoff"
                 active[sid] = True
-                if _progress(sid).get("status") == "paused":
-                    _progress(sid).update(status="active", reason="")
+                if plan.get("status") in ("paused", "idle_backoff"):
+                    plan.update(status="active", reason="")
+                resume_now = was_idle_backoff and not runs.active_for(sid)
             else:
                 active.pop(sid, None)
+                if plan.get("status") == "idle_backoff":
+                    plan.update(status="active", reason="")
             auto.pop(sid, None)
         _publish()
+        if resume_now:
+            _schedule_continue(sid, CONTINUE_DELAY)
         return {"active": on}
 
     def checkpoint(body):
@@ -941,6 +959,7 @@ def apply(ctx, config):
                     raise ValueError("goal is required before advancing the stage")
                 history = [*state.get("history", []),
                            {"stage": state["stage"], "handoff": handoff, "finished": time.time()}]
+                state.pop("next_continue_at", None)
                 state.update(stage=state["stage"] + 1, history=history[-STAGE_HISTORY:],
                              goal=goal, next_step=next_step, status="active", reason="")
             elif action == "update":
@@ -973,8 +992,11 @@ def apply(ctx, config):
                     "cannot finish as done: %d task(s) still running, %d awaiting review; "
                     "collect and review them first, or finish as blocked with the reason"
                     % (counts["running"], len(counts["awaiting_review"])))
+            _cancel_continue(parent)
             auto.setdefault(parent, {})["finished"] = True
-            _progress(parent).update(status=status, reason=body.get("reason") or "")
+            plan = _progress(parent)
+            plan.pop("next_continue_at", None)
+            plan.update(status=status, reason=body.get("reason") or "")
         _publish()
         return {"finished": status, "active": bool(active.get(parent))}
 
@@ -1294,96 +1316,154 @@ def apply(ctx, config):
                 if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
 
     def _note_parent_run(parent, record, message=None):
-        """A conductor or autopilot session's own run ended (lock held): should it continue?"""
+        """A conductor or autopilot session's own run ended (lock held): return continuation delay or None."""
         state = auto.setdefault(parent, {})
         ops = state.pop("ops", 0)
         finished = state.pop("finished", False)  # conductor_finish / autopilot_finish called
         asked_user, tool_progress = _message_tool_flags(message)
         by_user = record.get("source") not in {SOURCE, REFLECT_SOURCE}
         if record.get("source") == REFLECT_SOURCE:
-            return False  # reflection cadence, not active-mode continuation, owns this turn
+            return None  # reflection cadence, not active-mode continuation, owns this turn
+        _cancel_continue(parent)
         if by_user:
             state["idle"] = 0
             state.pop("nudged", None)
-            if not finished and _progress(parent).get("status") in ("done", "blocked", "paused"):
-                _progress(parent).update(status="active", reason="")
+            plan = _progress(parent)
+            plan.pop("next_continue_at", None)
+            if not finished and plan.get("status") in ("done", "blocked", "paused", "idle_backoff"):
+                plan.update(status="active", reason="")
         if (record.get("status") or "done") != "done" or finished:
-            return False  # stopped, failed, or declared done/blocked: leave it to the user
+            return None  # stopped, failed, or declared done/blocked: leave it to the user
         if asked_user:
-            _progress(parent).update(status="blocked", reason="waiting for user answer")
-            return False
+            plan = _progress(parent)
+            plan.pop("next_continue_at", None)
+            plan.update(status="blocked", reason="waiting for user answer")
+            return None
         if not enabled.get(parent):
             if not active.get(parent):
-                return False
+                return None
             plan = _progress(parent)
             if not by_user and plan.get("status") in ("done", "blocked", "paused"):
-                return False
+                return None
             if ops or tool_progress:
                 state["idle"] = 0
+                plan.pop("next_continue_at", None)
+                if plan.get("status") == "idle_backoff":
+                    plan.update(status="active", reason="")
             elif not by_user:
                 state["idle"] = state.get("idle", 0) + 1
             if state.get("idle", 0) >= ACTIVE_IDLE_LIMIT:
-                plan.update(status="paused", reason="no progress; waiting for user input")
-                log.info("conductor: autopilot paused for %s after %d turns without tool progress",
+                due = time.time() + ACTIVE_IDLE_INTERVAL
+                plan.update(status="idle_backoff",
+                            reason="no progress; retrying every 30 minutes",
+                            next_continue_at=due)
+                log.info("conductor: autopilot entering 30m idle backoff for %s after %d turns without tool progress",
                          parent, state["idle"])
-                return False
-            return True
+                return ACTIVE_IDLE_INTERVAL
+            return CONTINUE_DELAY
         counts = _counts(parent)
         if counts["running"] or _unreported(parent):
-            _progress(parent).update(status="waiting_children", reason="")
-            return False  # a wake-up is already on its way
+            plan = _progress(parent)
+            plan.pop("next_continue_at", None)
+            if ops:
+                state["idle"] = 0
+            plan.update(status="waiting_children", reason="")
+            return None  # a wake-up is already on its way
         plan = _progress(parent)
         if not by_user and plan.get("status") in ("done", "blocked", "paused"):
-            return False
+            return None
         if plan.get("status") == "waiting_external":
             if any(r.get("status") not in TERMINAL + ("stopped",) for r in reflections.listing(parent)):
-                return False
+                return None
+            plan.pop("next_continue_at", None)
             plan.update(status="active", reason="external source ended; choose the next action")
         awaiting = set(counts["awaiting_review"])
         if not active.get(parent):
             # Not in active mode: only remind once about results left unreviewed.
             if not awaiting or awaiting <= state.get("nudged", set()):
-                return False
+                return None
             state["nudged"] = awaiting
-            return True
+            return CONTINUE_DELAY
         if ops:
             state["idle"] = 0
+            plan.pop("next_continue_at", None)
+            if plan.get("status") == "idle_backoff":
+                plan.update(status="active", reason="")
         elif not by_user:
             state["idle"] = state.get("idle", 0) + 1
         if state.get("idle", 0) >= ACTIVE_IDLE_LIMIT:
-            _progress(parent).update(status="paused", reason="no task progress; waiting for user input")
-            log.info("conductor: active mode paused for %s after %d turns without a task operation",
+            due = time.time() + ACTIVE_IDLE_INTERVAL
+            plan.update(status="idle_backoff",
+                        reason="no task progress; retrying every 30 minutes",
+                        next_continue_at=due)
+            log.info("conductor: active mode entering 30m idle backoff for %s after %d turns without a task operation",
                      parent, state["idle"])
-            return False
-        return True
+            return ACTIVE_IDLE_INTERVAL
+        return CONTINUE_DELAY
 
-    def _schedule_continue(parent):
-        timer = threading.Timer(CONTINUE_DELAY, _continue, args=(parent,))
-        timer.name, timer.daemon = "conductor-continue", True
-        timer.start()
+    def _schedule_continue(parent, delay=CONTINUE_DELAY):
+        due = time.time() + max(0.0, delay)
+        with lock:
+            if reflections.closed or (not enabled.get(parent) and not active.get(parent)):
+                return
+            old = continued.get(parent)
+            if old:
+                old[1].cancel()
+
+            def fire():
+                with lock:
+                    if continued.get(parent, (None, None))[1] is not timer:
+                        return
+                    continued.pop(parent, None)
+                _continue(parent)
+
+            timer = threading.Timer(max(0.0, delay), fire)
+            timer.name, timer.daemon = "conductor-continue", True
+            continued[parent] = (due, timer)
+            timer.start()
 
     def _continue(parent):
+        in_backoff = False
+        reschedule_busy = False
         with lock:
             is_conductor = bool(enabled.get(parent))
             is_active = bool(active.get(parent))
-            if (reflections.closed or (not is_conductor and not is_active) or parent in waking
-                    or runs.active_for(parent)):
+            if reflections.closed or (not is_conductor and not is_active):
                 return
-            peek = ctx.get("run_queue.peek")
-            if callable(peek) and peek(parent) is not None:
-                return  # the user's queued message goes first
             prog = dict(_progress(parent) or {})
-            if prog.get("status") in ("done", "blocked", "paused", "waiting_external"):
-                return  # a delayed continuation must respect a newer explicit state
-            awaiting = []
-            if is_conductor:
-                counts = _counts(parent)
-                if counts["running"] or _unreported(parent) or reflections.ready(parent):
+            in_backoff = is_active and prog.get("status") == "idle_backoff"
+            if parent in waking or runs.active_for(parent):
+                if in_backoff:
+                    due = time.time() + WAKE_RETRY_DELAY
+                    _progress(parent)["next_continue_at"] = due
+                    reschedule_busy = True
+                else:
                     return
-                awaiting = counts["awaiting_review"]
-                if not is_active and not awaiting:
-                    return
-            waking.add(parent)
+            if not reschedule_busy:
+                peek = ctx.get("run_queue.peek")
+                if callable(peek) and peek(parent) is not None:
+                    return  # the user's queued message goes first
+                if prog.get("status") in ("done", "blocked", "paused", "waiting_external"):
+                    return  # a delayed continuation must respect a newer explicit state
+                awaiting = []
+                if is_conductor:
+                    counts = _counts(parent)
+                    if counts["running"] or _unreported(parent) or reflections.ready(parent):
+                        return
+                    awaiting = counts["awaiting_review"]
+                    if not is_active and not awaiting:
+                        return
+                waking.add(parent)
+        if reschedule_busy:
+            _publish()
+            _schedule_continue(parent, WAKE_RETRY_DELAY)
+            return
+        backoff_note = (
+            " No concrete progress was made in the recent turns, so continuation has backed off "
+            "to every 30 minutes; make real progress now to resume normal pace, or call "
+            f"{'conductor_finish' if is_conductor else 'autopilot_finish'} immediately if the "
+            "work is already done or blocked on the user."
+        ) if in_backoff else ""
         if is_conductor:
             review = (f"Task(s) still awaiting your review: {', '.join(awaiting)}. Review them with "
                       "conductor_review (resolve=true to close verified ones).") if awaiting else ""
@@ -1395,8 +1475,9 @@ def apply(ctx, config):
                           "dispatch a task that waits for it and reports back instead of stopping. When the "
                           "whole request is done and verified call conductor_finish(status='done'); "
                           "if you cannot continue without the user call "
-                          "conductor_finish(status='blocked', reason=...).")
-                metadata = {"conductor": {"kind": "active", "mode": "conductor"}}
+                          f"conductor_finish(status='blocked', reason=...).{backoff_note}")
+                metadata = {"conductor": {"kind": "active", "mode": "conductor",
+                                          **({"idle_backoff": True} if in_backoff else {})}}
             else:
                 text = "[Conductor] " + review
                 metadata = {"conductor": {"kind": "review", "mode": "conductor"}}
@@ -1411,14 +1492,22 @@ def apply(ctx, config):
                     "directly with your tools. Do not repeat pure status updates without action. "
                     "When the whole request is done and verified call autopilot_finish(status='done'); "
                     "if you cannot continue without the user call ask_user or "
-                    "autopilot_finish(status='blocked', reason=...).")
-            metadata = {"conductor": {"kind": "active", "mode": "autopilot"}}
+                    f"autopilot_finish(status='blocked', reason=...).{backoff_note}")
+            metadata = {"conductor": {"kind": "active", "mode": "autopilot",
+                                      **({"idle_backoff": True} if in_backoff else {})}}
         try:
             code, reply = frontend.submit(text, session_id=parent, source=SOURCE, metadata=metadata)
             if code >= 400:
                 raise RuntimeError((reply or {}).get("error") or "run could not be started")
         except Exception as error:
             log.warning("conductor: could not continue %s: %s", parent, error)
+            if in_backoff and hasattr(frontend, "submit"):
+                with lock:
+                    if active.get(parent) and _progress(parent).get("status") == "idle_backoff":
+                        due = time.time() + ACTIVE_IDLE_INTERVAL
+                        _progress(parent)["next_continue_at"] = due
+                _publish()
+                _schedule_continue(parent, ACTIVE_IDLE_INTERVAL)
         finally:
             with lock:
                 waking.discard(parent)
@@ -1439,7 +1528,7 @@ def apply(ctx, config):
             sid, run_id = data.get("session_id"), data.get("run_id")
             record = data.get("run") or {}
             reflections.finished(sid, run_id, record, _message_text(data.get("message")))
-            parent, proceed, handled_parent = None, False, False
+            parent, continue_delay, handled_parent = None, None, False
             with lock:
                 task = _task_of_child(sid) if sid else None
                 if task is not None and task.get("run_id") == run_id and task["status"] == "running":
@@ -1465,15 +1554,15 @@ def apply(ctx, config):
                 elif sid and (enabled.get(sid) or active.get(sid)):
                     if enabled.get(sid):
                         parent = sid  # the parent went idle: deliver anything that finished meanwhile
-                    proceed = _note_parent_run(sid, record, data.get("message"))
+                    continue_delay = _note_parent_run(sid, record, data.get("message"))
                     handled_parent = True
-                    store.save()  # persist waiting/paused state even without a tool call
+                    store.save()  # persist waiting/idle_backoff state even without a tool call
             if handled_parent:
                 _publish()
             if parent:
                 _schedule_wake(parent)
-            if proceed:
-                _schedule_continue(sid)
+            if continue_delay is not None:
+                _schedule_continue(sid, continue_delay)
         except Exception as error:
             log.warning("conductor: run.finished handling failed: %s", error)
         return nxt(data) if nxt else None
@@ -1559,6 +1648,9 @@ def apply(ctx, config):
             for _, timer in scheduled.values():
                 timer.cancel()
             scheduled.clear()
+            for _, timer in continued.values():
+                timer.cancel()
+            continued.clear()
             store.save()
     ctx.scope.add(close)
     # Recover terminal tasks and persisted delivery intents without requiring a
@@ -1566,3 +1658,10 @@ def apply(ctx, config):
     for parent in list(enabled):
         if _unreported(parent) or any(d.get("parent") == parent for d in deliveries.values()):
             _schedule_wake(parent)
+    now = time.time()
+    for sid in list(active):
+        plan = progress.get(sid)
+        if sid not in scheduled and isinstance(plan, dict) and plan.get("status") == "idle_backoff":
+            due = plan.get("next_continue_at")
+            delay = max(CONTINUE_DELAY, (due - now) if isinstance(due, (int, float)) else ACTIVE_IDLE_INTERVAL)
+            _schedule_continue(sid, delay)

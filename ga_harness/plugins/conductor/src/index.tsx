@@ -27,11 +27,13 @@ const REFLECT_STATUS: Record<string, [string, string]> = {
 };
 type Progress = {
   stage: number; goal?: string; next_step?: string; status: string; reason?: string;
+  next_continue_at?: number | null;
 };
 const PROGRESS_STATUS: Record<string, [string, string]> = {
   active: ['\u63a8\u8fdb\u4e2d', 'Active'],
   waiting_children: ['\u7b49\u5f85\u5b50\u4efb\u52a1', 'Waiting for tasks'],
   waiting_external: ['\u7b49\u5f85\u5916\u90e8\u4e8b\u4ef6', 'Waiting for event'],
+  idle_backoff: ['\u7a7a\u8f6c\u9000\u907f', 'Idle backoff'],
   paused: ['\u5df2\u6682\u505c', 'Paused'],
   blocked: ['\u9700\u8981\u7528\u6237\u5904\u7406', 'Blocked'],
   done: ['\u5df2\u5b8c\u6210', 'Done'],
@@ -306,6 +308,8 @@ function Panel({ api }: { api: PluginAPI }) {
                 </span>
                 {progress?.status === 'paused' ? (
                   <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: true })}>{T('\u6062\u590d', 'Resume')}</button>
+                ) : progress?.status === 'idle_backoff' ? (
+                  <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: true })}>{T('\u7acb\u5373\u63a8\u8fdb', 'Continue now')}</button>
                 ) : null}
                 <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: false })}>{T('\u5173\u95ed', 'Turn off')}</button>
               </div>
@@ -314,6 +318,9 @@ function Panel({ api }: { api: PluginAPI }) {
                 <div className="gah-cd-body">
                   <div className="gah-cd-meta">
                     {T('\u5f53\u524d\u72b6\u6001\uff1a', 'Status: ')}{label(PROGRESS_STATUS, progress.status)}
+                    {progress.status === 'idle_backoff' && progress.next_continue_at
+                      ? ` \u00b7 ${T('\u4e0b\u6b21\u63a8\u8fdb ', 'Next ')}${new Date(progress.next_continue_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : ''}
                   </div>
                   {progress.goal ? <div className="gah-cd-field"><b>{T('\u603b\u76ee\u6807', 'Goal')}</b><p>{progress.goal}</p></div> : null}
                   {progress.next_step ? <div className="gah-cd-field"><b>{T('\u4e0b\u4e00\u6b65', 'Next step')}</b><p>{progress.next_step}</p></div> : null}
@@ -393,7 +400,12 @@ function Panel({ api }: { api: PluginAPI }) {
               {(data.deliveries || []).filter(d => (d.attempts || 0) >= 5).map(d => <div className="gah-cd-body gah-cd-field error" role="alert" key={d.id}><b>{T('\u901a\u77e5\u6295\u9012\u6301\u7eed\u5931\u8d25', 'Notification delivery keeps failing')}</b><p>{d.error} ({d.attempts})</p><p>{T('\u4e0b\u6b21\u91cd\u8bd5\uff1a', 'Retry scheduled: ')}{d.retry_at ? new Date(d.retry_at * 1000).toLocaleString() : '-'}</p></div>)}
               {progress ? (
                 <div className="gah-cd-body">
-                  <div className="gah-cd-meta">{T(`\u9636\u6bb5 ${progress.stage} \u00b7 \u989d\u5ea6 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} \u00b7 quota ${stageTotal}/${data.limits.total}`)} {'\u00b7'} {label(PROGRESS_STATUS, progress.status)}</div>
+                  <div className="gah-cd-meta">
+                    {T(`\u9636\u6bb5 ${progress.stage} \u00b7 \u989d\u5ea6 ${stageTotal}/${data.limits.total}`, `Stage ${progress.stage} \u00b7 quota ${stageTotal}/${data.limits.total}`)} {'\u00b7'} {label(PROGRESS_STATUS, progress.status)}
+                    {progress.status === 'idle_backoff' && progress.next_continue_at
+                      ? ` \u00b7 ${T('\u4e0b\u6b21\u63a8\u8fdb ', 'Next ')}${new Date(progress.next_continue_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : ''}
+                  </div>
                   {progress.goal ? <div className="gah-cd-field"><b>{T('\u603b\u76ee\u6807', 'Goal')}</b><p>{progress.goal}</p></div> : null}
                   {progress.next_step ? <div className="gah-cd-field"><b>{T('\u4e0b\u4e00\u6b65', 'Next step')}</b><p>{progress.next_step}</p></div> : null}
                   {progress.reason ? <div className="gah-cd-field"><b>{T('\u72b6\u6001\u539f\u56e0', 'Reason')}</b><p>{progress.reason}</p></div> : null}

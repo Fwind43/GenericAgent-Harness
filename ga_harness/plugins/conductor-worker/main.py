@@ -327,11 +327,12 @@ ACTIVE_PROMPT = (
     "\n### Autopilot / Active mode\n"
     "Active mode (autopilot) is on for this conductor session: you own the user's request until "
     "it is complete. Ending your turn does not end the work; if you stop without conductor_finish "
-    "and nothing is running, you are prompted to continue. So do not end a turn just to report "
-    "progress. While delegated tasks run you may end the turn (you are woken when they finish). "
-    "If you are waiting on work outside your tasks (an external job, a build, a remote service), "
-    "dispatch a task that waits for it and reports back, or register a monitor-only reflect "
-    "source and checkpoint(status=\"waiting_external\", reason=...). When everything "
+    "and nothing is running, you are prompted to continue (after 3 consecutive turns without task "
+    "progress, continuation backs off to every 30 minutes until you make progress). So do not end "
+    "a turn just to report progress. While delegated tasks run you may end the turn (you are woken "
+    "when they finish). If you are waiting on work outside your tasks (an external job, a build, a "
+    "remote service), dispatch a task that waits for it and reports back, or register a monitor-only "
+    "reflect source and checkpoint(status=\"waiting_external\", reason=...). When everything "
     "is delivered and verified call conductor_finish(status=\"done\"); if you need the user's "
     "decision or input call ask_user or conductor_finish(status=\"blocked\", reason=...) and then ask.\n")
 
@@ -340,12 +341,14 @@ AUTOPILOT_PROMPT = (
     "\n### Autopilot mode\n"
     "Autopilot mode is on for this session: you own the user's request until it is complete. "
     "Execute directly with your normal tools and verify results. Ending your turn does not end "
-    "the work; if you stop without autopilot_finish, you are prompted to continue. Do not end a "
-    "turn just to give an interim status update, and do not spin without real tool execution. "
-    "Optionally save goal/next_step with autopilot_checkpoint(action=\"update\", ...) for long "
-    "multi-turn work. When everything is delivered and verified call "
-    "autopilot_finish(status=\"done\") right before your final reply; if you need the user's "
-    "decision or input, call ask_user or autopilot_finish(status=\"blocked\", reason=...).\n")
+    "the work; if you stop without autopilot_finish, you are prompted to continue (after 3 "
+    "consecutive turns without real tool progress, continuation backs off to every 30 minutes "
+    "until you make progress). Do not end a turn just to give an interim status update, and do "
+    "not spin without real tool execution. Optionally save goal/next_step with "
+    "autopilot_checkpoint(action=\"update\", ...) for long multi-turn work. When everything is "
+    "delivered and verified call autopilot_finish(status=\"done\") right before your final reply; "
+    "if you need the user's decision or input, call ask_user or "
+    "autopilot_finish(status=\"blocked\", reason=...).\n")
 
 
 def apply(ctx, config):

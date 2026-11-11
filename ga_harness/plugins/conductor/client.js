@@ -17,6 +17,7 @@
     active: ["推进中", "Active"],
     waiting_children: ["等待子任务", "Waiting for tasks"],
     waiting_external: ["等待外部事件", "Waiting for event"],
+    idle_backoff: ["空转退避", "Idle backoff"],
     paused: ["已暂停", "Paused"],
     blocked: ["需要用户处理", "Blocked"],
     done: ["已完成", "Done"]
@@ -333,7 +334,7 @@
               sdk.T("自主推进", "Autopilot")
             ] }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: sdk.T("未完成时自动续跑，直到完成或需你处理", "Continues across turns until done or awaiting your input") }),
-            (progress == null ? void 0 : progress.status) === "paused" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("恢复", "Resume") }) : null,
+            (progress == null ? void 0 : progress.status) === "paused" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("恢复", "Resume") }) : (progress == null ? void 0 : progress.status) === "idle_backoff" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("立即推进", "Continue now") }) : null,
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: false }), children: sdk.T("关闭", "Turn off") })
           ] }),
           !showTasks && data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
@@ -343,7 +344,8 @@
           progress ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
             /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
               sdk.T("当前状态：", "Status: "),
-              label(PROGRESS_STATUS, progress.status)
+              label(PROGRESS_STATUS, progress.status),
+              progress.status === "idle_backoff" && progress.next_continue_at ? ` · ${sdk.T("下次推进 ", "Next ")}${new Date(progress.next_continue_at * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""
             ] }),
             progress.goal ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
               /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("总目标", "Goal") }),
@@ -438,7 +440,8 @@
               " ",
               "·",
               " ",
-              label(PROGRESS_STATUS, progress.status)
+              label(PROGRESS_STATUS, progress.status),
+              progress.status === "idle_backoff" && progress.next_continue_at ? ` · ${sdk.T("下次推进 ", "Next ")}${new Date(progress.next_continue_at * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""
             ] }),
             progress.goal ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
               /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("总目标", "Goal") }),
