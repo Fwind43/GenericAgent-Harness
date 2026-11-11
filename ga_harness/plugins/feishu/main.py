@@ -435,46 +435,76 @@ class FeishuAdapter(Adapter):
                              + (f" with {len(files)} file(s)" if files else ""))
             self.hub.receive(self.name, ev.get("chat_id"), text, user=user, files=files)
 
+    def _client(self):
+        client = self.client
+        if client is None:
+            raise RuntimeError("feishu adapter is stopped")
+        return client
+
     def download(self, message_id, key, kind, name):
-        data, fname = self.client.resource(message_id, key, kind)
+        data, fname = self._client().resource(message_id, key, kind)
         return {"name": fname or name, "data": data}
 
     def start(self, hub):
         super().start(hub)
         from ga_harness.packages import python_for
+        if self.proc is not None or (self.reader is not None and self.reader.is_alive()):
+            self.stop()
+        self.stopping = False
         self.client = FeishuApi(self.app_id, self.app_secret)
         env = dict(os.environ, GAH_FEISHU_APP_ID=self.app_id,
                    GAH_FEISHU_APP_SECRET=self.app_secret, PYTHONIOENCODING="utf-8")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self.proc = subprocess.Popen(
+        proc = subprocess.Popen(
             [python_for("feishu", PACKAGES), "-u", str(WORKER)], env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=flags)
-        self.reader = threading.Thread(target=self._read, name=f"gah-{self.name}",
-                                       daemon=True)
+        self.proc = proc
+        self.reader = threading.Thread(target=self._read, args=(proc,),
+                                       name=f"gah-{self.name}", daemon=True)
         self.reader.start()
 
-    def _read(self):
-        for raw in self.proc.stdout:
-            line = raw.decode("utf-8", "replace").strip()
-            if not line:
-                continue
-            try:
-                ev = json.loads(line)
-            except ValueError:
-                self.log("info", line[:500])  # lark's own log output
-                continue
-            kind = ev.get("type")
-            if kind == "message":
+    def _read(self, proc=None):
+        if proc is None:
+            proc = self.proc
+        if proc is None or proc.stdout is None:
+            return
+        try:
+            for raw in proc.stdout:
+                if self.stopping:
+                    return
+                line = raw.decode("utf-8", "replace").strip()
+                if not line:
+                    continue
                 try:
-                    self.handle(ev)
-                except Exception as e:
-                    self.log("error", f"handle failed: {e}")
-            elif kind == "fatal":
-                self.log("error", ev.get("text", "worker failed"))
-            else:
-                self.log(ev.get("level", "info"), ev.get("text", ""))
-        code = self.proc.wait()
-        if not self.stopping:
+                    ev = json.loads(line)
+                except ValueError:
+                    self.log("info", line[:500])  # lark's own log output
+                    continue
+                kind = ev.get("type")
+                if kind == "message":
+                    try:
+                        self.handle(ev)
+                    except Exception as e:
+                        self.log("error", f"handle failed: {e}")
+                elif kind == "fatal":
+                    self.log("error", ev.get("text", "worker failed"))
+                else:
+                    self.log(ev.get("level", "info"), ev.get("text", ""))
+            if self.stopping:
+                return
+            code = proc.wait()
+        except Exception as e:
+            if not self.stopping and self.proc in (None, proc):
+                self.log("error", f"receiver reader failed: {e}")
+                if self.on_dead:
+                    self.on_dead(f"receiver reader failed: {e}")
+            return
+        finally:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+        if not self.stopping and self.proc in (None, proc):
             self.log("error", f"receiver exited (code {code})")
             if self.on_dead:
                 self.on_dead(f"receiver exited (code {code})")
@@ -483,13 +513,14 @@ class FeishuAdapter(Adapter):
         self._create(chat_id, "text", {"text": text})
 
     def send_file(self, chat_id, path):
+        client = self._client()
         ext = os.path.splitext(path)[1].lower()
         if ext in IMAGE_EXTS and os.path.getsize(path) <= 10 << 20:
             with open(path, "rb") as f:
                 content = f.read()
             try:
-                data = self.client.upload("/im/v1/images", {"image_type": "message"}, "image",
-                                          os.path.basename(path), content)
+                data = client.upload("/im/v1/images", {"image_type": "message"}, "image",
+                                     os.path.basename(path), content)
             except RuntimeError as e:
                 raise RuntimeError(f"feishu image upload failed: {e}") from None
             return self._create(chat_id, "image", {"image_key": data.get("image_key")})
@@ -497,7 +528,7 @@ class FeishuAdapter(Adapter):
             content = f.read()
         name = os.path.basename(path)
         try:
-            data = self.client.upload("/im/v1/files", {
+            data = client.upload("/im/v1/files", {
                 "file_type": FILE_TYPES.get(ext, "stream"), "file_name": name}, "file", name, content)
         except RuntimeError as e:
             raise RuntimeError(f"feishu file upload failed: {e}") from None
@@ -505,7 +536,7 @@ class FeishuAdapter(Adapter):
 
     def _create(self, chat_id, msg_type, content):
         try:
-            return self.client.send(chat_id, msg_type, content)
+            return self._client().send(chat_id, msg_type, content)
         except RuntimeError as e:
             raise RuntimeError(f"feishu send failed: {e}") from None
 
@@ -538,7 +569,7 @@ class FeishuAdapter(Adapter):
         body = card.render()
         if card.mid:
             try:
-                self.client.patch(card.mid, body)
+                self._client().patch(card.mid, body)
             except RuntimeError as e:
                 raise RuntimeError(f"feishu card update failed: {e}") from None
         else:
@@ -547,12 +578,15 @@ class FeishuAdapter(Adapter):
     def stop(self):
         self.stopping = True
         proc, self.proc = self.proc, None
+        reader, self.reader = self.reader, None
         if proc and proc.poll() is None:
             proc.kill()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
+        if reader and reader.is_alive() and reader is not threading.current_thread():
+            reader.join(timeout=3)
         self.client = None
         self.log("info", "stopped")
 
