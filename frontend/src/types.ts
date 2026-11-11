@@ -22,6 +22,7 @@ export interface Message {
   /** Structured machine notices; historical messages may only have text. */
   metadata?: { conductor?: {
     kind: 'wake' | 'active' | 'review' | 'reflect' | 'reflect_error';
+    mode?: 'conductor' | 'autopilot';
     tasks?: { id: string; title: string; status: string; failure_kind?: string | null; retryable?: boolean }[];
     running?: number; title?: string;
   }; [key: string]: unknown };

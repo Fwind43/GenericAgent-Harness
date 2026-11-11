@@ -216,7 +216,7 @@ function ReflectRow({ item, busy, stop }: { item: Reflection; busy: boolean; sto
 
 function Panel({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run, load } = useConductor(api);
-  const [open, setOpen] = useState<'tasks' | 'reflect' | null>(null);
+  const [open, setOpen] = useState<'autopilot' | 'tasks' | 'reflect' | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -258,6 +258,7 @@ function Panel({ api }: { api: PluginAPI }) {
     );
   }
   const on = data.enabled.includes(sid);
+  const active = !!data.active?.includes(sid);
   // Newest task first, so the latest dispatch is at the top of the panel.
   const tasks = data.tasks.filter(t => data.children?.[t.child]?.parent === sid)
     .sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
@@ -265,11 +266,12 @@ function Panel({ api }: { api: PluginAPI }) {
     (a, b) => Number(REFLECT_TERMINAL.has(a.status)) - Number(REFLECT_TERMINAL.has(b.status)) || (b.created ?? 0) - (a.created ?? 0),
   );
   const watching = reflections.filter(r => !REFLECT_TERMINAL.has(r.status)).length;
-  if (!on && !tasks.length && !reflections.length) return null;
+  if (!on && !active && !tasks.length && !reflections.length) return null;
   const running = tasks.filter(t => t.status === 'running').length;
   const done = tasks.filter(t => t.status !== 'running').length;
   const progress = data.progress;
   const stageTotal = tasks.filter(t => (t.stage ?? 1) === (progress?.stage ?? 1)).length;
+  const showAutopilot = active;
   const showReflect = on || reflections.length > 0;
   const showTasks = on || tasks.length > 0;
   // Task chats are hidden from the sidebar; this is their entry point.
@@ -280,6 +282,50 @@ function Panel({ api }: { api: PluginAPI }) {
   };
   return (
     <div className="gah-cd-group" ref={box}>
+      {showAutopilot ? (
+        <div className="gah-cd-anchor">
+          <button
+            type="button"
+            className={`gah-cd-chip on${open === 'autopilot' ? ' open' : ''}`}
+            aria-expanded={open === 'autopilot'}
+            aria-haspopup="dialog"
+            onClick={() => setOpen(open === 'autopilot' ? null : 'autopilot')}
+            title={T('\u81ea\u4e3b\u63a8\u8fdb\u72b6\u6001', 'Autopilot status')}
+          >
+            <AutopilotIcon />
+            <span>{T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}</span>
+            {progress ? <span className="gah-cd-tag">{label(PROGRESS_STATUS, progress.status)}</span> : null}
+            <Caret />
+          </button>
+          {open === 'autopilot' ? (
+            <div className="gah-cd" ref={pop} role="dialog" aria-label={T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}>
+              <div className="gah-cd-bar">
+                <span className="gah-cd-badge"><AutopilotIcon />{T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}</span>
+                <span className="gah-cd-hint">
+                  {T('\u672a\u5b8c\u6210\u65f6\u81ea\u52a8\u7eed\u8dd1\uff0c\u76f4\u5230\u5b8c\u6210\u6216\u9700\u4f60\u5904\u7406', 'Continues across turns until done or awaiting your input')}
+                </span>
+                {progress?.status === 'paused' ? (
+                  <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: true })}>{T('\u6062\u590d', 'Resume')}</button>
+                ) : null}
+                <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: false })}>{T('\u5173\u95ed', 'Turn off')}</button>
+              </div>
+              {!showTasks && data.persistence_error ? <div className="gah-cd-body gah-cd-field error" role="alert"><b>{T('\u72b6\u6001\u5c1a\u672a\u4fdd\u5b58', 'State is not saved')}</b><p>{data.persistence_error}</p></div> : null}
+              {progress ? (
+                <div className="gah-cd-body">
+                  <div className="gah-cd-meta">
+                    {T('\u5f53\u524d\u72b6\u6001\uff1a', 'Status: ')}{label(PROGRESS_STATUS, progress.status)}
+                  </div>
+                  {progress.goal ? <div className="gah-cd-field"><b>{T('\u603b\u76ee\u6807', 'Goal')}</b><p>{progress.goal}</p></div> : null}
+                  {progress.next_step ? <div className="gah-cd-field"><b>{T('\u4e0b\u4e00\u6b65', 'Next step')}</b><p>{progress.next_step}</p></div> : null}
+                  {progress.reason ? <div className="gah-cd-field"><b>{T('\u72b6\u6001\u539f\u56e0', 'Reason')}</b><p>{progress.reason}</p></div> : null}
+                </div>
+              ) : (
+                <div className="gah-cd-empty">{T('\u53d1\u9001\u4efb\u52a1\u540e\u5c06\u81ea\u52a8\u6301\u7eed\u63a8\u8fdb', 'Send a message to start continuous execution')}</div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {showReflect ? (
         <div className="gah-cd-anchor">
           <button
@@ -329,7 +375,7 @@ function Panel({ api }: { api: PluginAPI }) {
           >
             {running ? <span className="gah-cd-dot running" /> : <Icon />}
             <span>{tasks.length ? `${done}/${tasks.length}` : T('\u6307\u6325\u5bb6', 'Conductor')}</span>
-            {on && progress ? <span className="gah-cd-tag">{label(PROGRESS_STATUS, progress.status)}</span> : null}
+            {on && !active && progress ? <span className="gah-cd-tag">{label(PROGRESS_STATUS, progress.status)}</span> : null}
             <Caret />
           </button>
           {open === 'tasks' ? (
@@ -383,6 +429,14 @@ const ReflectIcon = () => (
   </svg>
 );
 
+const AutopilotIcon = () => (
+  <svg className="gah-cd-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <path d="M12.8 6.2A5.3 5.3 0 1 0 13 9.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    <path d="M10.4 6.4h2.6V3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <path d="M6.8 6l3 2-3 2V6Z" fill="currentColor" />
+  </svg>
+);
+
 const Icon = () => (
   <svg className="gah-cd-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
     <path d="M3 3.5h4M3 8h10M3 12.5h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />
@@ -398,23 +452,21 @@ function Toggle({ api }: { api: PluginAPI }) {
   const { data, sid, busy, run } = useConductor(api);
   if (!data || !sid || data.children?.[sid]) return null;
   const on = data.enabled.includes(sid);
-  const active = on && !!data.active?.includes(sid);
+  const active = !!data.active?.includes(sid);
   return (
     <>
+      <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={active} disabled={busy}
+        onClick={() => run('active', { active: !active })}
+        title={T('\u81ea\u4e3b\u63a8\u8fdb\uff1a\u5f53\u524d\u8f6e\u7ed3\u675f\u540e\u82e5\u4efb\u52a1\u672a\u5b8c\u6210\u4f1a\u81ea\u52a8\u7eed\u8dd1\uff0c\u76f4\u5230\u58f0\u660e\u5b8c\u6210\u6216\u9700\u8981\u4f60\u5904\u7406', 'Autopilot: keep working across turns until the task is done or needs your input')}>
+        <AutopilotIcon /><span>{T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}</span>
+        {active ? <Check /> : null}
+      </button>
       <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={on} disabled={busy}
         onClick={() => run('toggle', { enabled: !on })}
         title={T('\u6307\u6325\u5bb6\u6a21\u5f0f\uff1a\u672c\u4f1a\u8bdd\u53ea\u62c6\u5206\u5e76\u5206\u6d3e\u5b50\u4efb\u52a1\uff0c\u6bcf\u4e2a\u5b50\u4efb\u52a1\u5728\u72ec\u7acb\u4f1a\u8bdd\u4e2d\u6267\u884c', 'Conductor mode: this session only splits and dispatches tasks; each task runs in its own session')}>
         <Icon /><span>{T('\u6307\u6325\u5bb6\u6a21\u5f0f', 'Conductor mode')}</span>
         {on ? <Check /> : null}
       </button>
-      {on ? (
-        <button type="button" role="menuitemcheckbox" className="gah-menu-item" aria-checked={active} disabled={busy}
-          onClick={() => run('active', { active: !active })}
-          title={T('\u4e3b\u52a8\u6a21\u5f0f\uff1a\u4efb\u52a1\u672a\u5b8c\u6210\u65f6\u81ea\u52a8\u7eed\u8dd1\uff0c\u76f4\u5230\u6307\u6325\u5bb6\u58f0\u660e\u5b8c\u6210\u6216\u53d7\u963b', 'Active mode: keep the conductor going until it declares the work done or blocked')}>
-          <Icon /><span>{T('\u6307\u6325\u5bb6\u4e3b\u52a8\u6a21\u5f0f', 'Conductor active mode')}</span>
-          {active ? <Check /> : null}
-        </button>
-      ) : null}
     </>
   );
 }

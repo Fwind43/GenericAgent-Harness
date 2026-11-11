@@ -208,6 +208,33 @@ def _message_text(message):
     return _message_result(message)["result"]
 
 
+AUTOPILOT_META_TOOLS = frozenset({
+    "no_tool", "conductor_checkpoint", "conductor_finish",
+    "autopilot_checkpoint", "autopilot_finish", "ask_user",
+})
+
+
+def _message_tool_flags(message):
+    """Return (asked_user, tool_progress) from structured turn tool records."""
+    turns = message.get("turns") or [] if isinstance(message, dict) else []
+    asked_user = False
+    tool_progress = False
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        for tool in turn.get("tools") or []:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get("name") or ""
+            if tool.get("ok") is False or tool.get("status") == "error":
+                continue
+            if name == "ask_user":
+                asked_user = True
+            elif name and name not in AUTOPILOT_META_TOOLS:
+                tool_progress = True
+    return asked_user, tool_progress
+
+
 def _clip(text, limit=RESULT_LIMIT):
     text = text or ""
     if len(text) <= limit:
@@ -561,6 +588,8 @@ def apply(ctx, config):
             task = _task_of_child(sid)
             if task is not None:
                 return {"role": "worker", "task_id": task["id"], "parent": task["parent"]}
+            if active.get(sid):
+                return {"role": "none", "active": True, "progress": _counts(sid)["progress"]}
         return {"role": "none"}
 
     def dispatch(body):
@@ -855,21 +884,27 @@ def apply(ctx, config):
                 enabled.pop(sid, None)
                 reflections.stop_parent(sid)
                 auto.pop(sid, None)
+                if _progress(sid).get("status") in ("waiting_children", "waiting_external"):
+                    _progress(sid).update(status="active", reason="")
         _publish()
         if on:
             _schedule_wake(sid)
         return {"enabled": on}
 
     def set_active(body):
-        """Switch active mode for a conductor session: when on, the conductor is prompted
+        """Switch autopilot mode for a non-worker session: when on, the session is prompted
         to continue whenever its turn ends with the work neither finished nor blocked."""
         sid = _sid(body)
         on = body.get("active")
         if not isinstance(on, bool):
             raise ValueError("active must be a boolean")
         with lock:
+            if on and _task_of_child(sid) is not None:
+                raise RuntimeError("a conductor task session cannot enable autopilot")
             if on:
                 active[sid] = True
+                if _progress(sid).get("status") == "paused":
+                    _progress(sid).update(status="active", reason="")
             else:
                 active.pop(sid, None)
             auto.pop(sid, None)
@@ -888,6 +923,12 @@ def apply(ctx, config):
         if status is not None and status not in ("active", "waiting_children", "waiting_external"):
             raise ValueError("use finish for done/blocked; status must be active or a waiting state")
         with lock:
+            is_conductor = bool(enabled.get(parent))
+            if not is_conductor:
+                if action == "advance":
+                    raise RuntimeError("stage advance requires conductor mode")
+                if status in ("waiting_children", "waiting_external"):
+                    raise RuntimeError("waiting states require conductor mode")
             state = _progress(parent)
             counts = _counts(parent)
             if action == "advance":
@@ -1051,10 +1092,18 @@ def apply(ctx, config):
     # Operations that count as progress for active mode (reads and settings do not).
     PROGRESS_OPS = {"dispatch", "instruct", "cancel", "review", "resolve"}
 
+    AUTOPILOT_OPS = {"checkpoint", "finish"}
+
     def _require_parent(body):
         with lock:
             if not enabled.get(body.get("session_id")):
                 raise RuntimeError("conductor mode is off for this session")
+
+    def _require_autopilot_or_parent(body):
+        with lock:
+            sid = body.get("session_id")
+            if not enabled.get(sid) and not active.get(sid):
+                raise RuntimeError("autopilot and conductor mode are off for this session")
 
     def rpc(body, call=None):
         body = body if isinstance(body, dict) else {}
@@ -1064,7 +1113,10 @@ def apply(ctx, config):
         op = OPS.get(name)
         if op is None:
             raise ValueError("unknown conductor operation")
-        _require_parent(body)
+        if name in AUTOPILOT_OPS:
+            _require_autopilot_or_parent(body)
+        else:
+            _require_parent(body)
         def fingerprint():
             # No-op reviews/resolves must not keep active mode alive forever.
             return tuple((t["id"], t.get("run_id"), t["status"], t.get("review"),
@@ -1241,11 +1293,12 @@ def apply(ctx, config):
         return [t for t in _children(parent)
                 if t["status"] in TERMINAL and not t.get("acked") and not t.get("notified")]
 
-    def _note_parent_run(parent, record):
-        """A conductor's own run ended (lock held): should it be prompted to continue?"""
+    def _note_parent_run(parent, record, message=None):
+        """A conductor or autopilot session's own run ended (lock held): should it continue?"""
         state = auto.setdefault(parent, {})
         ops = state.pop("ops", 0)
-        finished = state.pop("finished", False)  # conductor_finish was called in this run
+        finished = state.pop("finished", False)  # conductor_finish / autopilot_finish called
+        asked_user, tool_progress = _message_tool_flags(message)
         by_user = record.get("source") not in {SOURCE, REFLECT_SOURCE}
         if record.get("source") == REFLECT_SOURCE:
             return False  # reflection cadence, not active-mode continuation, owns this turn
@@ -1256,6 +1309,25 @@ def apply(ctx, config):
                 _progress(parent).update(status="active", reason="")
         if (record.get("status") or "done") != "done" or finished:
             return False  # stopped, failed, or declared done/blocked: leave it to the user
+        if asked_user:
+            _progress(parent).update(status="blocked", reason="waiting for user answer")
+            return False
+        if not enabled.get(parent):
+            if not active.get(parent):
+                return False
+            plan = _progress(parent)
+            if not by_user and plan.get("status") in ("done", "blocked", "paused"):
+                return False
+            if ops or tool_progress:
+                state["idle"] = 0
+            elif not by_user:
+                state["idle"] = state.get("idle", 0) + 1
+            if state.get("idle", 0) >= ACTIVE_IDLE_LIMIT:
+                plan.update(status="paused", reason="no progress; waiting for user input")
+                log.info("conductor: autopilot paused for %s after %d turns without tool progress",
+                         parent, state["idle"])
+                return False
+            return True
         counts = _counts(parent)
         if counts["running"] or _unreported(parent):
             _progress(parent).update(status="waiting_children", reason="")
@@ -1292,37 +1364,57 @@ def apply(ctx, config):
 
     def _continue(parent):
         with lock:
-            if (reflections.closed or not enabled.get(parent) or parent in waking
+            is_conductor = bool(enabled.get(parent))
+            is_active = bool(active.get(parent))
+            if (reflections.closed or (not is_conductor and not is_active) or parent in waking
                     or runs.active_for(parent)):
                 return
             peek = ctx.get("run_queue.peek")
             if callable(peek) and peek(parent) is not None:
                 return  # the user's queued message goes first
-            if _progress(parent).get("status") in ("done", "blocked", "paused", "waiting_external"):
+            prog = dict(_progress(parent) or {})
+            if prog.get("status") in ("done", "blocked", "paused", "waiting_external"):
                 return  # a delayed continuation must respect a newer explicit state
-            counts = _counts(parent)
-            if counts["running"] or _unreported(parent) or reflections.ready(parent):
-                return
-            awaiting = counts["awaiting_review"]
-            is_active = bool(active.get(parent))
-            if not is_active and not awaiting:
-                return
+            awaiting = []
+            if is_conductor:
+                counts = _counts(parent)
+                if counts["running"] or _unreported(parent) or reflections.ready(parent):
+                    return
+                awaiting = counts["awaiting_review"]
+                if not is_active and not awaiting:
+                    return
             waking.add(parent)
-        review = (f"Task(s) still awaiting your review: {', '.join(awaiting)}. Review them with "
-                  "conductor_review (resolve=true to close verified ones).") if awaiting else ""
-        if is_active:
-            text = ("[Conductor] Active mode: your turn ended without conductor_finish, and no "
-                    "delegated task is running. " + (review + " " if review else "")
-                    + "Check what the user's request still needs and keep going: dispatch or "
-                      "instruct tasks, verify results, and if you are waiting on external work, "
-                      "dispatch a task that waits for it and reports back instead of stopping. When the "
-                      "whole request is done and verified call conductor_finish(status='done'); "
-                      "if you cannot continue without the user call "
-                      "conductor_finish(status='blocked', reason=...).")
+        if is_conductor:
+            review = (f"Task(s) still awaiting your review: {', '.join(awaiting)}. Review them with "
+                      "conductor_review (resolve=true to close verified ones).") if awaiting else ""
+            if is_active:
+                text = ("[Conductor] Active mode: your turn ended without conductor_finish, and no "
+                        "delegated task is running. " + (review + " " if review else "")
+                        + "Check what the user's request still needs and keep going: dispatch or "
+                          "instruct tasks, verify results, and if you are waiting on external work, "
+                          "dispatch a task that waits for it and reports back instead of stopping. When the "
+                          "whole request is done and verified call conductor_finish(status='done'); "
+                          "if you cannot continue without the user call "
+                          "conductor_finish(status='blocked', reason=...).")
+                metadata = {"conductor": {"kind": "active", "mode": "conductor"}}
+            else:
+                text = "[Conductor] " + review
+                metadata = {"conductor": {"kind": "review", "mode": "conductor"}}
         else:
-            text = "[Conductor] " + review
+            hint = " ".join(p for p in (
+                f"Current goal: {prog['goal']}." if prog.get("goal") else "",
+                f"Planned next step: {prog['next_step']}." if prog.get("next_step") else "",
+            ) if p)
+            text = ("[Autopilot] Your turn ended without autopilot_finish. "
+                    + (hint + " " if hint else "")
+                    + "Check what the user's goal still needs and keep executing and verifying "
+                    "directly with your tools. Do not repeat pure status updates without action. "
+                    "When the whole request is done and verified call autopilot_finish(status='done'); "
+                    "if you cannot continue without the user call ask_user or "
+                    "autopilot_finish(status='blocked', reason=...).")
+            metadata = {"conductor": {"kind": "active", "mode": "autopilot"}}
         try:
-            code, reply = frontend.submit(text, session_id=parent, source=SOURCE)
+            code, reply = frontend.submit(text, session_id=parent, source=SOURCE, metadata=metadata)
             if code >= 400:
                 raise RuntimeError((reply or {}).get("error") or "run could not be started")
         except Exception as error:
@@ -1330,7 +1422,8 @@ def apply(ctx, config):
         finally:
             with lock:
                 waking.discard(parent)
-            _schedule_wake(parent)
+            if is_conductor:
+                _schedule_wake(parent)
 
     def pending_since(parent):
         """Finish time of the oldest unreported child, else None (read by run-queue)."""
@@ -1346,7 +1439,7 @@ def apply(ctx, config):
             sid, run_id = data.get("session_id"), data.get("run_id")
             record = data.get("run") or {}
             reflections.finished(sid, run_id, record, _message_text(data.get("message")))
-            parent, proceed = None, False
+            parent, proceed, handled_parent = None, False, False
             with lock:
                 task = _task_of_child(sid) if sid else None
                 if task is not None and task.get("run_id") == run_id and task["status"] == "running":
@@ -1369,14 +1462,18 @@ def apply(ctx, config):
                     parent = task["parent"]
                     store.save()
                     changed.notify_all()
-                elif sid and enabled.get(sid):
-                    parent = sid  # the parent went idle: deliver anything that finished meanwhile
-                    proceed = _note_parent_run(sid, record)
+                elif sid and (enabled.get(sid) or active.get(sid)):
+                    if enabled.get(sid):
+                        parent = sid  # the parent went idle: deliver anything that finished meanwhile
+                    proceed = _note_parent_run(sid, record, data.get("message"))
+                    handled_parent = True
                     store.save()  # persist waiting/paused state even without a tool call
+            if handled_parent:
+                _publish()
             if parent:
                 _schedule_wake(parent)
             if proceed:
-                _schedule_continue(parent)
+                _schedule_continue(sid)
         except Exception as error:
             log.warning("conductor: run.finished handling failed: %s", error)
         return nxt(data) if nxt else None
@@ -1436,14 +1533,22 @@ def apply(ctx, config):
 
     def set_enabled(sid, on):
         return toggle({"session_id": sid, "enabled": bool(on)})["enabled"]
+
+    def is_active(sid):
+        with lock:
+            return bool(active.get(sid))
+
+    def set_active_mode(sid, on):
+        return set_active({"session_id": sid, "active": bool(on)})["active"]
     # Per-session mode switch for other plugins (e.g. the channels /conductor command).
-    ctx.provide("conductor.mode", SimpleNamespace(enabled=is_enabled, toggle=set_enabled))
+    ctx.provide("conductor.mode", SimpleNamespace(
+        enabled=is_enabled, toggle=set_enabled, active=is_active, set_active=set_active_mode))
     ctx.on("run.finished", on_finished)
     script, style = HERE / "client.js", HERE / "client.css"
     ctx.scope.add(host.register("conductor", script=script if script.is_file() else None,
                                 style=style if style.is_file() else None, order=36,
                                 routes={("POST", "toggle"): _route(toggle, guard=False),
-                                        ("POST", "active"): _route(set_active),
+                                        ("POST", "active"): _route(set_active, guard=False),
                                         ("POST", "reflect"): _route(reflect, guard=False),
                                         ("POST", "task"): _route(detail, guard=False),
                                         ("POST", "cancel"): _route(cancel),

@@ -299,17 +299,53 @@ TOOLS = {
 }
 
 
+AUTOPILOT_TOOLS = {
+    "autopilot_checkpoint": (_tool(
+        "autopilot_checkpoint",
+        "Get or save a compact goal/next_step handoff for autopilot continuation across turns. "
+        "Reading or updating a checkpoint is not execution progress by itself.",
+        {"action": {"type": "string", "enum": ["get", "update"]},
+         "goal": {"type": "string", "description": "Current user goal (up to 4000 characters)."},
+         "next_step": {"type": "string", "description": "Concrete next action (up to 4000 characters)."},
+         "status": {"type": "string", "enum": ["active"]},
+         "reason": {"type": "string", "description": "Optional context note (up to 4000 characters)."}},
+        ("action",)), "checkpoint"),
+    "autopilot_finish": (_tool(
+        "autopilot_finish",
+        "Declare the user's whole request finished in autopilot mode. While autopilot is on, "
+        "you are prompted to keep going whenever your turn ends without this call. "
+        "status=done: everything is delivered and verified. status=blocked: you cannot continue "
+        "without the user; give the reason (or call ask_user directly). Call it once, right "
+        "before your final reply to the user.",
+        {"status": {"type": "string", "enum": ["done", "blocked"]},
+         "reason": {"type": "string", "description": "For blocked: what you need from the user."}},
+        ("status",)), "finish"),
+}
+
+
 ACTIVE_PROMPT = (
-    "\n### Active mode\n"
-    "Active mode is on for this session: you own the user's request until it is complete. "
-    "Ending your turn does not end the work; if you stop without conductor_finish and nothing "
-    "is running, you are prompted to continue. So do not end a turn just to report progress. "
-    "While delegated tasks run you may end the turn (you are woken when they finish). If you "
-    "are waiting on work outside your tasks (an external job, a build, a remote service), "
+    "\n### Autopilot / Active mode\n"
+    "Active mode (autopilot) is on for this conductor session: you own the user's request until "
+    "it is complete. Ending your turn does not end the work; if you stop without conductor_finish "
+    "and nothing is running, you are prompted to continue. So do not end a turn just to report "
+    "progress. While delegated tasks run you may end the turn (you are woken when they finish). "
+    "If you are waiting on work outside your tasks (an external job, a build, a remote service), "
     "dispatch a task that waits for it and reports back, or register a monitor-only reflect "
     "source and checkpoint(status=\"waiting_external\", reason=...). When everything "
     "is delivered and verified call conductor_finish(status=\"done\"); if you need the user's "
-    "decision or input call conductor_finish(status=\"blocked\", reason=...) and then ask.\n")
+    "decision or input call ask_user or conductor_finish(status=\"blocked\", reason=...) and then ask.\n")
+
+
+AUTOPILOT_PROMPT = (
+    "\n### Autopilot mode\n"
+    "Autopilot mode is on for this session: you own the user's request until it is complete. "
+    "Execute directly with your normal tools and verify results. Ending your turn does not end "
+    "the work; if you stop without autopilot_finish, you are prompted to continue. Do not end a "
+    "turn just to give an interim status update, and do not spin without real tool execution. "
+    "Optionally save goal/next_step with autopilot_checkpoint(action=\"update\", ...) for long "
+    "multi-turn work. When everything is delivered and verified call "
+    "autopilot_finish(status=\"done\") right before your final reply; if you need the user's "
+    "decision or input, call ask_user or autopilot_finish(status=\"blocked\", reason=...).\n")
 
 
 def apply(ctx, config):
@@ -341,10 +377,10 @@ def apply(ctx, config):
             return StepOutcome(msg, next_prompt=msg + "\n" + IDLE_NOTE)
         return StepOutcome(msg, next_prompt=msg + "\n")
 
-    def handler_for(op):
+    def handler_for(op, name=None):
         def run(handler, args, response):
             return call(op, args)
-        run.__name__ = "conductor_" + op
+        run.__name__ = name or ("conductor_" + op)
         return run
 
     def setup():
@@ -361,10 +397,15 @@ def apply(ctx, config):
         state["reflect_prompt"] = bool(info.get("reflect_active") or info.get("reflect_requested"))
         if state["role"] == "worker" and "ask_user" in tools.names():
             ctx.scope.add(tools.disable("ask_user"))
+        if state["role"] == "none" and state["active"]:
+            for name, (schema, op) in AUTOPILOT_TOOLS.items():
+                if name not in tools.names():
+                    ctx.scope.add(tools.register(schema, handler_for(op, name)))
+            return
         if state["role"] != "parent":
             return
-        for schema, op in TOOLS.values():
-            ctx.scope.add(tools.register(schema, handler_for(op)))
+        for name, (schema, op) in TOOLS.items():
+            ctx.scope.add(tools.register(schema, handler_for(op, name)))
         mine = set(TOOLS) | set(KEEP)
         for name in tools.names():
             if name and name not in mine:
@@ -400,6 +441,18 @@ def apply(ctx, config):
             return out
         if state["role"] == "worker":
             return text + "\n" + WORKER_PROMPT
+        if state["role"] == "none" and state.get("active"):
+            out = text
+            progress = state.get("progress")
+            if isinstance(progress, dict) and (progress.get("goal") or progress.get("next_step")
+                                               or progress.get("reason")
+                                               or progress.get("status") not in (None, "active")):
+                out += ("\n### Saved autopilot checkpoint\n"
+                        "Use this handoff alongside the conversation history. "
+                        "The latest user request takes precedence.\n"
+                        + json.dumps(progress, ensure_ascii=False) + "\n")
+            out += AUTOPILOT_PROMPT
+            return out
         return text
 
     ctx.on("ga.agent_before", before)

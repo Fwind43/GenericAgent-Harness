@@ -241,7 +241,7 @@ def test_commands_without_catalog_and_help(tmp_path):
         raise RuntimeError("model-store failed to start")
 
     assert [line.split()[0] for line in HELP.splitlines()] == [
-        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/conductor", "/update", "/help"]
+        "/new", "/sessions", "/use", "/projects", "/stop", "/status", "/model", "/effort", "/conductor", "/autopilot", "/update", "/help"]
     for n, models in enumerate((None, broken, lambda: FakeModels(rows=()))):
         (tmp_path / str(n)).mkdir()
         hub, _, _ = make_hub(tmp_path / str(n), models=models)
@@ -329,7 +329,7 @@ def test_project_commands_switch_and_keep_project(tmp_path):
 
 class FakeConductor:
     def __init__(self):
-        self.on, self.calls = set(), []
+        self.on, self.auto, self.calls, self.auto_calls = set(), set(), [], []
 
     def enabled(self, sid):
         return sid in self.on
@@ -337,6 +337,14 @@ class FakeConductor:
     def toggle(self, sid, on):
         self.calls.append((sid, on))
         (self.on.add if on else self.on.discard)(sid)
+        return on
+
+    def active(self, sid):
+        return sid in self.auto
+
+    def set_active(self, sid, on):
+        self.auto_calls.append((sid, on))
+        (self.auto.add if on else self.auto.discard)(sid)
         return on
 
 
@@ -370,6 +378,24 @@ def test_conductor_command_shows_and_toggles(tmp_path):
         hub.close()
 
 
+def test_autopilot_command_shows_and_toggles(tmp_path):
+    mode = FakeConductor()
+    runs, sessions = FakeRuns(), FakeSessions()
+    hub = Hub(runs, sessions, Bindings(tmp_path / "channels.db"), conductor=lambda: mode)
+    try:
+        assert hub.command("fake", "3", "/autopilot").startswith("自主推进：关闭。")
+        sid = hub.bindings.get("fake", "3")
+        assert hub.command("fake", "3", "/autopilot maybe") == "用法：/autopilot <on|off>"
+        assert hub.command("fake", "3", "/AUTOPILOT@bot on").startswith("已开启自主推进")
+        assert mode.auto_calls == [(sid, True)] and mode.active(sid)
+        assert "\n自主推进：开启\n" in hub.command("fake", "3", "/status")
+        assert hub.command("fake", "3", "/autopilot 关") == "已关闭自主推进。"
+        assert not mode.active(sid)
+        assert "/autopilot" in HELP
+    finally:
+        hub.close()
+
+
 def test_conductor_command_without_plugin(tmp_path):
     hub, _, _ = make_hub(tmp_path)
     try:
@@ -391,12 +417,15 @@ def test_conductor_wakeup_reply_reaches_bound_chats(tmp_path):
         hub.bindings.set("other", "2", "s1")
         hub.bindings.set("fake", "3", "s2")
         msg = {"turns": [{"reply": "子任务已审核"}]}
+        auto_msg = {"turns": [{"reply": "自主推进已完成下一阶段"}]}
         hub.on_run_finished({"run": {"id": "r1", "source": "conductor", "status": "done"},
                              "session_id": "s1", "message": msg})
+        hub.on_run_finished({"run": {"id": "r_auto", "source": "autopilot", "status": "done"},
+                             "session_id": "s1", "message": auto_msg})
         # Runs from other non-chat sources are still not forwarded.
         hub.on_run_finished({"run": {"id": "r2", "source": "user", "status": "done"},
                              "session_id": "s1", "message": msg})
-        assert _wait_sent(a, 1) == [("1", "子任务已审核")]
-        assert _wait_sent(b, 1) == [("2", "子任务已审核")]
+        assert _wait_sent(a, 2) == [("1", "子任务已审核"), ("1", "自主推进已完成下一阶段")]
+        assert _wait_sent(b, 2) == [("2", "子任务已审核"), ("2", "自主推进已完成下一阶段")]
     finally:
         hub.close()

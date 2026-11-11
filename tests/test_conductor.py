@@ -492,3 +492,142 @@ def test_failure_and_metrics_helpers(conductor):
     ]})
     assert metrics["seconds"] == 3 and metrics["turns"] == 2
     assert metrics["usage"]["input"] == 16 and metrics["usage"]["output"] == 5
+
+
+def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(conductor, harness):
+    sid = "normal-chat"
+    messages = []
+    submitted = []
+    harness.services["sessions"].get = lambda s: {"messages": messages if s == sid else []}
+    harness.services["web.host"].frontend.submit = (
+        lambda text, **kw: (submitted.append((text, kw)) or (202, {"run_id": f"auto-{len(submitted)}"}))
+    )
+
+    mode = harness.services["conductor.mode"]
+    assert mode.set_active(sid, True) is True
+    assert mode.active(sid) is True
+    role = harness.services["conductor"]({"session_id": sid, "op": "role"})
+    assert role["role"] == "none" and role["active"] is True
+
+    updated = harness.services["conductor"]({
+        "session_id": sid, "op": "checkpoint", "action": "update",
+        "goal": "Ship autopilot", "next_step": "Patch worker tools",
+    })
+    assert updated["progress"]["goal"] == "Ship autopilot"
+    for invalid in (
+        {"action": "advance", "goal": "G", "handoff": "H", "next_step": "N"},
+        {"action": "update", "status": "waiting_children"},
+        {"action": "update", "status": "waiting_external", "reason": "r"},
+    ):
+        with pytest.raises((ValueError, RuntimeError)):
+            harness.services["conductor"]({"session_id": sid, "op": "checkpoint", **invalid})
+
+    # Real tool usage resets idle counter and schedules [Autopilot] continuation.
+    msg1 = {"role": "assistant", "status": "done", "turns": [
+        {"status": "done", "reply": "Step 1 done", "tools": [{"name": "code_run"}]},
+    ]}
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r1", "run": {"status": "done", "source": "web"}, "message": msg1,
+    })
+    fire_next(harness)
+    harness.timers.clear()
+    assert len(submitted) == 1
+    text, kw = submitted.pop()
+    assert text.startswith("[Autopilot]") and "Ship autopilot" in text
+    assert kw["metadata"]["conductor"] == {"kind": "active", "mode": "autopilot"}
+
+    # ask_user yields back to the user without scheduling an automatic continuation.
+    msg2 = {"role": "assistant", "status": "done", "turns": [
+        {"status": "done", "reply": "Need confirmation", "tools": [{"name": "ask_user"}]},
+    ]}
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r2", "run": {"status": "done", "source": conductor.SOURCE}, "message": msg2,
+    })
+    assert not harness.timers
+    assert harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]["status"] == "blocked"
+
+    # User answer unblocks; consecutive turns without real tool work trigger the idle pause guard.
+    reply_only = {"role": "assistant", "status": "done", "turns": [
+        {"status": "done", "reply": "Just chatting", "tools": []},
+    ]}
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-user", "run": {"status": "done", "source": "web"}, "message": reply_only,
+    })
+    harness.timers.clear()
+    for i in range(conductor.ACTIVE_IDLE_LIMIT):
+        harness.callbacks["run.finished"]({
+            "session_id": sid, "run_id": f"idle-{i}",
+            "run": {"status": "done", "source": conductor.SOURCE}, "message": reply_only,
+        })
+        harness.timers.clear()
+    paused = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert paused["status"] == "paused"
+    assert "no progress" in paused["reason"]
+
+    # Re-enabling autopilot resumes from paused state; finish(done) stops until user input.
+    assert mode.set_active(sid, True) is True
+    assert harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]["status"] == "active"
+    harness.services["conductor"]({"session_id": sid, "op": "finish", "status": "done", "summary": "Completed"})
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-done", "run": {"status": "done", "source": conductor.SOURCE},
+    })
+    assert not harness.timers
+
+    # Worker child sessions cannot enable autopilot.
+    harness.store.data["tasks"]["t-child"] = task_record(0, resolved=False)
+    with pytest.raises((ValueError, RuntimeError)):
+        mode.set_active("child-0", True)
+
+
+def test_worker_exposes_autopilot_tools_without_conductor_mode(harness, monkeypatch):
+    import importlib.util
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    sid = "normal-autopilot"
+    harness.services["conductor.mode"].set_active(sid, True)
+    harness.services["conductor"]({
+        "session_id": sid, "op": "checkpoint", "action": "update",
+        "goal": "Continuous goal", "next_step": "Verify tools",
+    })
+
+    worker_path = Path(importlib.import_module("ga_harness.plugins.conductor.main").__file__).resolve().parent.parent / "conductor-worker" / "main.py"
+    spec = importlib.util.spec_from_file_location("test_conductor_worker_mod", worker_path)
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+
+    monkeypatch.setitem(sys.modules, "agent_loop", SimpleNamespace(
+        StepOutcome=lambda msg, next_prompt=None, should_exit=False: SimpleNamespace(
+            msg=msg, next_prompt=next_prompt, should_exit=should_exit),
+    ))
+    tools = {}
+    disabled = []
+    hooks = {}
+    host = SimpleNamespace(
+        session_id=sid,
+        call=lambda name, payload, timeout=None: harness.services[name](payload),
+    )
+    ga_tools = SimpleNamespace(
+        names=lambda: list(tools) + ["code_run", "ask_user"],
+        register=lambda schema, fn: tools.__setitem__(schema["function"]["name"], fn) or (lambda: None),
+        disable=lambda name: disabled.append(name) or (lambda: None),
+    )
+    services = {"run.host": host, "ga.tools": ga_tools}
+    wctx = SimpleNamespace(
+        has=services.__contains__,
+        get=services.get,
+        on=hooks.__setitem__,
+        scope=SimpleNamespace(add=lambda fn: None),
+    )
+    worker.apply(wctx, {})
+    rendered = hooks["ga.system_prompt"]("Base prompt", lambda t: t)
+
+    assert set(tools) == {"autopilot_checkpoint", "autopilot_finish"}
+    assert disabled == []
+    assert "### Autopilot mode" in rendered
+    assert "### Saved autopilot checkpoint" in rendered
+    assert "Continuous goal" in rendered
+    assert "### Conductor mode" not in rendered
+    outcome = tools["autopilot_finish"](None, {"status": "done", "summary": "All done"}, None)
+    assert json.loads(outcome.msg)["finished"] == "done"

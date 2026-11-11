@@ -149,5 +149,16 @@ Stop the old id before replacing a source.
   user request indicates monitoring. Task-result wake cards use structured message
   metadata, with text parsing retained for older messages.
 
-These changes include regression test definitions only. This source delivery has
-not run tests, built frontend bundles, restarted the host or exercised live models.
+## Session-level Autopilot (`自主推进`)
+
+- `active` (`自主推进`) is an independent session-level switch stored alongside `enabled`
+  in `conductor.json`. Turning conductor mode off preserves `active`; delegated task
+  child sessions cannot enable `active`.
+- When `enabled=False` and `active=True`, the session runs in `role="autopilot"`:
+  all native execution tools remain available, and `autopilot_finish` (`done` or
+  `blocked`) is added as the explicit completion/stop tool.
+- Automatic continuation (`source="autopilot"`) pauses immediately when the agent
+  calls `autopilot_finish`, invokes `ask_user`, hits an error/abort, has a queued
+  user message, or completes 3 consecutive turns with no tool calls (idle guard).
+- When `enabled=True` and `active=True`, the session acts as an active conductor
+  combining delegation tools, checkpoints, and automatic continuation.

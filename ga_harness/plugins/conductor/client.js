@@ -229,7 +229,7 @@
     ] });
   }
   function Panel({ api }) {
-    var _a;
+    var _a, _b;
     const { data, sid, busy, run, load } = useConductor(api);
     const [open, setOpen] = react.useState(null);
     const box = react.useRef(null);
@@ -281,19 +281,21 @@
       ] });
     }
     const on = data.enabled.includes(sid);
+    const active = !!((_b = data.active) == null ? void 0 : _b.includes(sid));
     const tasks = data.tasks.filter((t) => {
-      var _a2, _b;
-      return ((_b = (_a2 = data.children) == null ? void 0 : _a2[t.child]) == null ? void 0 : _b.parent) === sid;
+      var _a2, _b2;
+      return ((_b2 = (_a2 = data.children) == null ? void 0 : _a2[t.child]) == null ? void 0 : _b2.parent) === sid;
     }).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
     const reflections = (data.reflections || []).filter((r) => r.parent === sid).sort(
       (a, b) => Number(REFLECT_TERMINAL.has(a.status)) - Number(REFLECT_TERMINAL.has(b.status)) || (b.created ?? 0) - (a.created ?? 0)
     );
     const watching = reflections.filter((r) => !REFLECT_TERMINAL.has(r.status)).length;
-    if (!on && !tasks.length && !reflections.length) return null;
+    if (!on && !active && !tasks.length && !reflections.length) return null;
     const running = tasks.filter((t) => t.status === "running").length;
     const done = tasks.filter((t) => t.status !== "running").length;
     const progress = data.progress;
     const stageTotal = tasks.filter((t) => (t.stage ?? 1) === ((progress == null ? void 0 : progress.stage) ?? 1)).length;
+    const showAutopilot = active;
     const showReflect = on || reflections.length > 0;
     const showTasks = on || tasks.length > 0;
     const enter = async (task) => {
@@ -306,6 +308,58 @@
       }
     };
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-group", ref: box, children: [
+      showAutopilot ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs(
+          "button",
+          {
+            type: "button",
+            className: `gah-cd-chip on${open === "autopilot" ? " open" : ""}`,
+            "aria-expanded": open === "autopilot",
+            "aria-haspopup": "dialog",
+            onClick: () => setOpen(open === "autopilot" ? null : "autopilot"),
+            title: sdk.T("自主推进状态", "Autopilot status"),
+            children: [
+              /* @__PURE__ */ jsxRuntime.jsx(AutopilotIcon, {}),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("自主推进", "Autopilot") }),
+              progress ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(PROGRESS_STATUS, progress.status) }) : null,
+              /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
+            ]
+          }
+        ),
+        open === "autopilot" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd", ref: pop, role: "dialog", "aria-label": sdk.T("自主推进", "Autopilot"), children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-bar", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-cd-badge", children: [
+              /* @__PURE__ */ jsxRuntime.jsx(AutopilotIcon, {}),
+              sdk.T("自主推进", "Autopilot")
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: sdk.T("未完成时自动续跑，直到完成或需你处理", "Continues across turns until done or awaiting your input") }),
+            (progress == null ? void 0 : progress.status) === "paused" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("恢复", "Resume") }) : null,
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: false }), children: sdk.T("关闭", "Turn off") })
+          ] }),
+          !showTasks && data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态尚未保存", "State is not saved") }),
+            /* @__PURE__ */ jsxRuntime.jsx("p", { children: data.persistence_error })
+          ] }) : null,
+          progress ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-meta", children: [
+              sdk.T("当前状态：", "Status: "),
+              label(PROGRESS_STATUS, progress.status)
+            ] }),
+            progress.goal ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("总目标", "Goal") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.goal })
+            ] }) : null,
+            progress.next_step ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("下一步", "Next step") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.next_step })
+            ] }) : null,
+            progress.reason ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-field", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态原因", "Reason") }),
+              /* @__PURE__ */ jsxRuntime.jsx("p", { children: progress.reason })
+            ] }) : null
+          ] }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-cd-empty", children: sdk.T("发送任务后将自动持续推进", "Send a message to start continuous execution") })
+        ] }) : null
+      ] }) : null,
       showReflect ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-anchor", children: [
         /* @__PURE__ */ jsxRuntime.jsxs(
           "button",
@@ -347,7 +401,7 @@
             children: [
               running ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: tasks.length ? `${done}/${tasks.length}` : sdk.T("指挥家", "Conductor") }),
-              on && progress ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(PROGRESS_STATUS, progress.status) }) : null,
+              on && !active && progress ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(PROGRESS_STATUS, progress.status) }) : null,
               /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
             ]
           }
@@ -409,6 +463,11 @@
     /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "8", cy: "8", r: "5.5", stroke: "currentColor", strokeWidth: "1.5", fill: "none" }),
     /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M8 5v3.2l2.2 1.3", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" })
   ] });
+  const AutopilotIcon = () => /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-cd-icon", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M12.8 6.2A5.3 5.3 0 1 0 13 9.8", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", fill: "none" }),
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M10.4 6.4h2.6V3.8", stroke: "currentColor", strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none" }),
+    /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M6.8 6l3 2-3 2V6Z", fill: "currentColor" })
+  ] });
   const Icon = () => /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-cd-icon", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
     /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M3 3.5h4M3 8h10M3 12.5h6", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", fill: "none" }),
     /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "11", cy: "3.5", r: "1.6", fill: "currentColor" }),
@@ -420,8 +479,25 @@
     const { data, sid, busy, run } = useConductor(api);
     if (!data || !sid || ((_a = data.children) == null ? void 0 : _a[sid])) return null;
     const on = data.enabled.includes(sid);
-    const active = on && !!((_b = data.active) == null ? void 0 : _b.includes(sid));
+    const active = !!((_b = data.active) == null ? void 0 : _b.includes(sid));
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsxs(
+        "button",
+        {
+          type: "button",
+          role: "menuitemcheckbox",
+          className: "gah-menu-item",
+          "aria-checked": active,
+          disabled: busy,
+          onClick: () => run("active", { active: !active }),
+          title: sdk.T("自主推进：当前轮结束后若任务未完成会自动续跑，直到声明完成或需要你处理", "Autopilot: keep working across turns until the task is done or needs your input"),
+          children: [
+            /* @__PURE__ */ jsxRuntime.jsx(AutopilotIcon, {}),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("自主推进", "Autopilot") }),
+            active ? /* @__PURE__ */ jsxRuntime.jsx(Check, {}) : null
+          ]
+        }
+      ),
       /* @__PURE__ */ jsxRuntime.jsxs(
         "button",
         {
@@ -438,24 +514,7 @@
             on ? /* @__PURE__ */ jsxRuntime.jsx(Check, {}) : null
           ]
         }
-      ),
-      on ? /* @__PURE__ */ jsxRuntime.jsxs(
-        "button",
-        {
-          type: "button",
-          role: "menuitemcheckbox",
-          className: "gah-menu-item",
-          "aria-checked": active,
-          disabled: busy,
-          onClick: () => run("active", { active: !active }),
-          title: sdk.T("主动模式：任务未完成时自动续跑，直到指挥家声明完成或受阻", "Active mode: keep the conductor going until it declares the work done or blocked"),
-          children: [
-            /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("指挥家主动模式", "Conductor active mode") }),
-            active ? /* @__PURE__ */ jsxRuntime.jsx(Check, {}) : null
-          ]
-        }
-      ) : null
+      )
     ] });
   }
   function ConductorPlugin({ api }) {

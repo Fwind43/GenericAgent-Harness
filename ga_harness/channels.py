@@ -29,6 +29,7 @@ HELP = ("/new  新建会话（保留当前模型和推理强度）\n"
         "/model  列出模型；/model <编号|名称> 切换本聊天的模型（别名 /llm）\n"
         "/effort  查看推理强度；/effort <low|medium|high|xhigh|max|default> 设置\n"
         "/conductor  查看指挥家模式；/conductor <on|off> 开启或关闭（本聊天的当前会话）\n"
+        "/autopilot  查看自主推进模式；/autopilot <on|off> 开启或关闭（本聊天的当前会话）\n"
         "/update  /update [说明] 触发 GenericAgent 官方自更新流程（保留本地修改与记忆）\n"
         "/help  显示本帮助")
 BUSY = "上一个任务还在运行。发送 /stop 可以取消。"
@@ -37,8 +38,9 @@ SESSIONS_PAGE = 10  # rows per /sessions page; numbering is global so /use <n> w
 # high-frequency stream fragments (assistant.delta) are never forwarded.
 PROGRESS_EVENTS = frozenset({"turn.start", "assistant.text", "tool.call", "tool.result", "turn.end"})
 # Runs not started from a chat whose replies still belong to the chats bound to their
-# session: the conductor wakes its session when delegated tasks finish.
-FOLLOW_SOURCES = frozenset({"conductor"})
+# session: the conductor wakes its session when delegated tasks finish, and autopilot
+# continues an active session across turns.
+FOLLOW_SOURCES = frozenset({"conductor", "autopilot"})
 ALL_CHANNELS = "*"
 
 
@@ -283,6 +285,29 @@ class Hub:
         return ("已开启指挥家模式：本会话只负责规划与委派，子任务完成后结果会推送到这里。"
                 if on else "已关闭指挥家模式。")
 
+    def _cmd_autopilot(self, channel, chat, arg):
+        mode = self._conductor()
+        if mode is None or not (hasattr(mode, "active") and hasattr(mode, "set_active")):
+            return "未加载自主推进服务（conductor），无法使用自主推进。"
+        sid = self.session_for(channel, chat)
+        arg = arg.lower()
+        if not arg:
+            on = bool(mode.active(sid))
+            return (f"自主推进：{'开启' if on else '关闭'}。"
+                    "发送 /autopilot on 或 /autopilot off 切换。")
+        if arg in ("on", "1", "true", "开", "开启"):
+            on = True
+        elif arg in ("off", "0", "false", "关", "关闭"):
+            on = False
+        else:
+            return "用法：/autopilot <on|off>"
+        try:
+            mode.set_active(sid, on)
+        except Exception as e:
+            return f"切换失败：{e}"
+        return ("已开启自主推进：本会话将围绕目标连续执行，直至完成、受阻或向你提问。"
+                if on else "已关闭自主推进。")
+
     def _workspaces(self):
         """The workspace/project service, or None when workspace-store is not loaded."""
         ws = self.workspaces
@@ -373,6 +398,8 @@ class Hub:
             return self._cmd_effort(channel, chat, arg)
         if word == "/conductor":
             return self._cmd_conductor(channel, chat, arg)
+        if word == "/autopilot":
+            return self._cmd_autopilot(channel, chat, arg)
         if word == "/projects":
             return self._cmd_project(channel, chat, "")
         if word == "/project":
@@ -395,6 +422,8 @@ class Hub:
             if mode is not None:
                 try:
                     conductor = f"指挥家模式：{'开启' if mode.enabled(sid) else '关闭'}\n"
+                    if hasattr(mode, "active"):
+                        conductor += f"自主推进：{'开启' if mode.active(sid) else '关闭'}\n"
                 except Exception:
                     pass
             return (f"会话 {sid}（{busy}）\n标题：{session.get('title') or '-'}\n"
