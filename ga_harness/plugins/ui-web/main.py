@@ -61,6 +61,13 @@ PROMPT_KEYS = ("kind", "chars", "injected", "text")
 # SSE replay window for reconnecting pages; past it they get a full snapshot instead.
 BACKLOG_EVENTS = 5000
 BACKLOG_BYTES = 4 * 1024 * 1024
+# Per-client cap on events queued but not yet written to the socket. A stalled connection
+# (suspended tab, dead VPN link without a reset) blocks its writer thread while broadcasts
+# keep queueing, which used to grow without bound. Both limits exceed a full backlog replay,
+# so a resuming client always fits; a client over either limit is disconnected and
+# reconnects into a resume or a fresh snapshot.
+CLIENT_QUEUE_EVENTS = 2 * BACKLOG_EVENTS
+CLIENT_QUEUE_BYTES = 4 * BACKLOG_BYTES
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 ASSET_TYPES = {"script": "text/javascript; charset=utf-8", "head": "text/javascript; charset=utf-8",
                "style": "text/css; charset=utf-8"}
@@ -403,8 +410,29 @@ class WebFrontend:
                                      or self._backlog_bytes > BACKLOG_BYTES):
                 self._backlog_bytes -= len(self._backlog.popleft()[1])
             clients = list(self.clients)
+            stalled = [q for q in clients
+                       if q.qsize() >= CLIENT_QUEUE_EVENTS
+                       or getattr(q, "pending_bytes", 0) >= CLIENT_QUEUE_BYTES]
+            for q in stalled:
+                self.clients.discard(q)
         for q in clients:
-            q.put(msg)
+            if q not in stalled:
+                q.put(msg)
+        for q in stalled:
+            self._drop_client(q)
+
+    def _drop_client(self, q):
+        """Free a stalled client's queue and end its stream (``None`` closes the connection)."""
+        while True:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                break
+        q.put(None)
+        try:
+            self.log("[web] dropped a stalled /api/events client (send queue over limit)")
+        except Exception:
+            pass
 
     def subscribe(self, q, last_id=None):
         """Register an SSE queue. When ``last_id`` (``<epoch>-<seq>``) is still covered by the

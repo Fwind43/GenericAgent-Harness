@@ -148,3 +148,53 @@ def test_feishu_unexpected_worker_exit_triggers_on_dead_even_after_restart(monke
     assert ("error", "RuntimeError: invalid credential") in logs
     assert ("error", "receiver exited (code 1)") in logs
     adapter.stop()
+
+
+def _load_ws_worker():
+    path = Path(__file__).resolve().parents[1] / "ga_harness" / "plugins" / "feishu" / "ws_worker.py"
+    spec = importlib.util.spec_from_file_location("gah_feishu_ws_worker", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_feishu_worker_is_told_its_parent_pid(monkeypatch):
+    feishu = _load_feishu()
+    adapter = feishu.FeishuAdapter("feishu-pid", "cli_a", "sec_b", set(),
+                                   log=lambda level, text: None, on_dead=lambda reason: None)
+    seen = {}
+    proc = _PipeProc()
+
+    def fake_popen(*a, **kw):
+        seen.update(kw)
+        return proc
+
+    monkeypatch.setattr(feishu.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("ga_harness.packages.python_for", lambda *a, **kw: "python")
+    adapter.start(object())
+    try:
+        assert seen["env"]["GAH_PARENT_PID"] == str(os.getpid())
+    finally:
+        adapter.stop()
+
+
+def test_feishu_worker_exits_when_parent_is_gone():
+    """An orphaned receiver must not outlive the harness that spawned it."""
+    import subprocess
+    import sys
+    import time
+    worker = _load_ws_worker()
+
+    # a live parent: keeps watching, never fires
+    alive = []
+    thread = worker.watch_parent(os.getpid(), on_exit=alive.append)
+    time.sleep(0.3)
+    assert thread.is_alive() and alive == []
+
+    # a parent that exits: fires once
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.3)"])
+    gone = []
+    thread = worker.watch_parent(child.pid, on_exit=gone.append)
+    child.wait(timeout=10)
+    thread.join(timeout=10)
+    assert gone == [0]

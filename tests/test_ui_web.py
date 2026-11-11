@@ -480,3 +480,47 @@ def test_ui_web_set_token_persists_to_token_file(tmp_path, monkeypatch):
     finally:
         off()
         rt.dispose()
+
+
+def test_ui_web_sse_stalled_client_queue_is_bounded(tmp_path, monkeypatch):
+    """A client that stops reading must not buffer events forever: it is dropped at the limit."""
+    import sys
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        mod = __import__(type(fe).__module__, fromlist=["x"])
+        ClientQueue = next(vars(m)["ClientQueue"] for m in list(sys.modules.values())
+                           if "ClientQueue" in getattr(m, "__dict__", {}) and "_Handler" in vars(m))
+
+        def drain(q):
+            out = []
+            while not q.empty():
+                out.append(q.get_nowait())
+            return out
+
+        # event-count limit
+        monkeypatch.setattr(mod, "CLIENT_QUEUE_EVENTS", 3)
+        stalled, healthy = ClientQueue(), ClientQueue()
+        fe.subscribe(stalled)
+        fe.subscribe(healthy)
+        got = []
+        for n in range(6):
+            fe.web.emit("demo", "tick", {"n": n})
+            got += drain(healthy)  # a reader that keeps up is never affected
+        assert len(got) == 6 and None not in got
+        assert healthy in fe.clients and stalled not in fe.clients
+        assert drain(stalled) == [None]  # queue freed, stream told to close
+        assert stalled.pending_bytes == 0
+
+        # byte limit
+        monkeypatch.setattr(mod, "CLIENT_QUEUE_EVENTS", 10 ** 6)
+        monkeypatch.setattr(mod, "CLIENT_QUEUE_BYTES", 200)
+        big = ClientQueue()
+        fe.subscribe(big)
+        fe.web.emit("demo", "tick", {"blob": "x" * 300})
+        assert big in fe.clients and big.pending_bytes >= 300
+        fe.web.emit("demo", "tick", {"n": 1})
+        assert big not in fe.clients
+        assert drain(big) == [None] and big.pending_bytes == 0
+    finally:
+        off()
+        rt.dispose()

@@ -54,6 +54,30 @@ def _clip(data):
     return data
 
 
+class ClientQueue(queue.Queue):
+    """Per-connection event queue that also tracks the size of what is still unsent.
+
+    ``pending_bytes`` (characters queued, close enough to bytes for a limit) lets the
+    frontend spot a connection whose writer is blocked and drop it instead of buffering
+    for it forever. ``_put``/``_get`` run under the queue's own mutex.
+    """
+
+    def _init(self, maxsize):
+        super()._init(maxsize)
+        self.pending_bytes = 0
+
+    def _put(self, item):
+        super()._put(item)
+        if item:
+            self.pending_bytes += len(item)
+
+    def _get(self):
+        item = super()._get()
+        if item:
+            self.pending_bytes -= len(item)
+        return item
+
+
 class _Handler(BaseHTTPRequestHandler):
     frontend: "WebFrontend" = None
     protocol_version = "HTTP/1.1"
@@ -510,7 +534,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _sse(self):
         fe = self.frontend
-        q = queue.Queue()
+        q = ClientQueue()
         # A reconnecting page passes the id of the last event it applied; if the backlog still
         # covers it, replay only the gap. The browser's own Last-Event-ID is ignored on purpose:
         # the page may have reloaded state over HTTP since, and replaying onto that duplicates.

@@ -452,8 +452,10 @@ class FeishuAdapter(Adapter):
             self.stop()
         self.stopping = False
         self.client = FeishuApi(self.app_id, self.app_secret)
+        # GAH_PARENT_PID: the receiver exits by itself if this process dies without stop().
         env = dict(os.environ, GAH_FEISHU_APP_ID=self.app_id,
-                   GAH_FEISHU_APP_SECRET=self.app_secret, PYTHONIOENCODING="utf-8")
+                   GAH_FEISHU_APP_SECRET=self.app_secret, PYTHONIOENCODING="utf-8",
+                   GAH_PARENT_PID=str(os.getpid()))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.Popen(
             [python_for("feishu", PACKAGES), "-u", str(WORKER)], env=env, stdin=subprocess.DEVNULL,
