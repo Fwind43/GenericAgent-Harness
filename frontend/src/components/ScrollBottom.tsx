@@ -9,7 +9,8 @@ export function ScrollBottom({ scroll, stick, deps }: { scroll: RefObject<HTMLEl
   const measure = useCallback(() => {
     const node = scroll.current;
     if (!node) return;
-    setBox({ bottom: node.offsetTop + node.clientHeight });
+    const bottom = node.offsetTop + node.clientHeight;
+    setBox(prev => prev && prev.bottom === bottom ? prev : { bottom });
     setAway(node.scrollHeight - node.scrollTop - node.clientHeight > AWAY);
   }, [scroll]);
   useEffect(() => {

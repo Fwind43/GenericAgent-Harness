@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { T } from '../i18n';
 import type { Message } from '../types';
 
@@ -17,12 +17,27 @@ const replyOf = (m?: Message) => {
   return m.text || '';
 };
 
-export function MessageNav({ messages, scroll, offset = 0 }: { messages: Message[]; scroll: RefObject<HTMLElement | null>; offset?: number }) {
-  const nodes = messages.flatMap((m, index) => m.role === 'user' ? [{
+// Summaries are cached per message object: the store keeps the identity of unchanged messages,
+// so a streamed fragment re-summarises the one live reply instead of the whole session.
+const questions = new WeakMap<Message, string>(), answers = new WeakMap<Message, string>();
+const questionOf = (m: Message) => {
+  let q = questions.get(m);
+  if (q === undefined) questions.set(m, q = plain(m.text || (m.attachments?.length ? m.attachments.map(a => a.name).join(', ') : ''), 80));
+  return q;
+};
+const answerOf = (m?: Message) => {
+  if (!m) return '';
+  let a = answers.get(m);
+  if (a === undefined) answers.set(m, a = plain(replyOf(m), 120));
+  return a;
+};
+
+export const MessageNav = memo(function MessageNav({ messages, scroll, offset = 0 }: { messages: Message[]; scroll: RefObject<HTMLElement | null>; offset?: number }) {
+  const nodes = useMemo(() => messages.flatMap((m, index) => m.role === 'user' && index >= offset ? [{
     index,
-    question: plain(m.text || (m.attachments?.length ? m.attachments.map(a => a.name).join(', ') : ''), 80) || T('(空消息)', '(empty message)'),
-    answer: plain(replyOf(messages[index + 1]), 120),
-  }] : []).filter(n => n.index >= offset);
+    question: questionOf(m) || T('(空消息)', '(empty message)'),
+    answer: answerOf(messages[index + 1]),
+  }] : []), [messages, offset]);
   const [active, setActive] = useState(-1), [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement | null>(null), closer = useRef<number | undefined>(undefined);
   const show = () => { window.clearTimeout(closer.current); setOpen(true); };
@@ -36,7 +51,8 @@ export function MessageNav({ messages, scroll, offset = 0 }: { messages: Message
   const measure = useCallback(() => {
     const node = scroll.current;
     if (!node) return;
-    setBox({ top: node.offsetTop, height: node.clientHeight });
+    const top = node.offsetTop, height = node.clientHeight;
+    setBox(prev => prev && prev.top === top && prev.height === height ? prev : { top, height });
     const items = node.querySelector('#thread')?.children;
     if (!items) return;
     const line = node.scrollTop + node.clientHeight / 3;
@@ -53,8 +69,11 @@ export function MessageNav({ messages, scroll, offset = 0 }: { messages: Message
     if (!node) return;
     const ro = new ResizeObserver(measure);
     ro.observe(node);
-    node.addEventListener('scroll', measure, { passive: true });
-    return () => { ro.disconnect(); node.removeEventListener('scroll', measure); };
+    // Measuring reads layout for every node: at most once per frame while scrolling.
+    let frame = 0;
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); }); };
+    node.addEventListener('scroll', onScroll, { passive: true });
+    return () => { ro.disconnect(); node.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
   }, [measure]);
   if (nodes.length < 2 || !box) return null;
   const jump = (index: number) => {
@@ -82,4 +101,4 @@ export function MessageNav({ messages, scroll, offset = 0 }: { messages: Message
       </button>)}
     </div>}
   </nav>;
-}
+});

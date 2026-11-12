@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { sessionDrafts } from './session-drafts';
 import { request } from './api';
 import { PendingStrip } from './components/Attachments';
@@ -97,7 +97,8 @@ export function App() {
   // A plugin page route replaces the whole chat column; slots stay mounted (hidden) for plugins.
   const page = pages.current(usePages());
   const busy = state.running || changing || sending;
-  const stats = sessionStats(state.messages ?? []);
+  // Only gates hint vs. stats bar: recompute when the transcript changes, not on every keystroke.
+  const hasStats = useMemo(() => sessionStats(state.messages ?? []).length > 0, [state.messages]);
   // Render only the newest messages; switching to a long session otherwise mounts every turn at once.
   const [win, setWin] = useState({ sid: state.session_id, limit: WINDOW });
   const limit = win.sid === state.session_id ? win.limit : WINDOW;
@@ -283,7 +284,7 @@ export function App() {
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
           <button type="submit" id="send" disabled={changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>
         </div>
-      </form>{stats.length ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
+      </form>{hasStats ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />
   </>;
 }
