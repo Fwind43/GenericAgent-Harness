@@ -187,7 +187,9 @@ def variants(store, sid, messages):
 
 # Per-conversation choices made via sessions.remember(); they belong to the conversation, not to
 # a point in its history, so rewinding or switching branches must not bring back older ones.
-SETTINGS = ("model", "effort", "preset")
+# ``model_key`` travels with ``model``: lookups prefer the key, so a checkpoint's stale key would
+# otherwise override the model picked since and resend/regenerate would run on the old one.
+SETTINGS = ("model", "model_key", "effort", "preset")
 
 
 def _keep_settings(state, live):
