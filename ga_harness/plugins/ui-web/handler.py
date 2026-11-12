@@ -354,7 +354,25 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         return True
 
+    def _viewing(self, serve):
+        """Serve one request as the client that sent it: each page names the chat it shows."""
+        sessions = getattr(self.frontend, "sessions", None)
+        if sessions is None or not hasattr(sessions, "view"):
+            return serve()
+        sid = self.headers.get("X-GAH-Session") or parse_qs(urlsplit(self.path).query).get("gah_view", [""])[0]
+        sessions.view(sid.strip() or None)
+        try:
+            return serve()
+        finally:
+            sessions.view(None)  # handler threads may be reused
+
     def do_GET(self):
+        return self._viewing(self._serve_get)
+
+    def do_POST(self):
+        return self._viewing(self._serve_post)
+
+    def _serve_get(self):
         path = self.path.split("?", 1)[0]
         if self._enter_with_token(path):
             return
@@ -477,7 +495,7 @@ class _Handler(BaseHTTPRequestHandler):
         name = unquote(self.headers.get("X-File-Name") or "")
         self._json(*self.frontend.plugin_import(data, filename=name, replace=replace, subdir=subdir))
 
-    def do_POST(self):
+    def _serve_post(self):
         path = self.path.split("?", 1)[0]
         if not self._same_origin():
             return self._json(403, {"error": "cross-origin request rejected"})

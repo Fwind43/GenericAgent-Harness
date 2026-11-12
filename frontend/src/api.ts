@@ -8,10 +8,22 @@ export function markServerSnapshot<T>(value: T): T {
 }
 export const isServerSnapshot = (value: object) => serverSnapshots.has(value);
 
+// Each page tells the server which chat it shows, so several pages can show different chats.
+const VIEW_KEY = 'gah.view';
+let viewed = '';
+try { viewed = sessionStorage.getItem(VIEW_KEY) ?? ''; } catch { /* storage unavailable */ }
+export const viewing = () => viewed;
+export function setViewing(id: string | null | undefined) {
+  if (!id || id === viewed) return;
+  viewed = id;
+  try { sessionStorage.setItem(VIEW_KEY, id); } catch { /* storage unavailable */ }
+}
+export const viewHeaders = (): Record<string, string> => (viewed ? { 'X-GAH-Session': viewed } : {});
+
 export async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: body === undefined ? viewHeaders() : { 'Content-Type': 'application/json', ...viewHeaders() },
     body: body === undefined ? undefined : JSON.stringify(body), signal,
   });
   const data: unknown = await response.json().catch(() => null);

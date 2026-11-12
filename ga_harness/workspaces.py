@@ -171,8 +171,8 @@ class Workspaces:
     def _enter(self, db, workspace, project_id):
         """Bind the current conversation if it has no history, else open a new one."""
         store = self.sessions
-        row = db.execute("SELECT s.id, s.messages, s.workspace, s.project_id FROM sessions s "
-                         "JOIN meta m ON m.key='current' AND m.value=s.id WHERE s.deleted=0").fetchone()
+        row = db.execute("SELECT id, messages, workspace, project_id FROM sessions WHERE id=? AND deleted=0",
+                         (store._current_id(db),)).fetchone()
         if row is not None and json.loads(row["messages"]) == []:
             db.execute("UPDATE sessions SET workspace=?, project_id=?, updated=? WHERE id=?",
                        (workspace, project_id, time.time(), row["id"]))

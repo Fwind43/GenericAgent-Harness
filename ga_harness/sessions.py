@@ -102,6 +102,22 @@ class Sessions:
         # Optional scope resolver for root chats: (base, project_id) -> (workspace, project_id).
         # Without it a root chat copies the current chat's scope.
         self.root_scope = None
+        # Per-request "chat on screen" (parallel mode only). Each web client names the chat it
+        # shows; current() then answers for that client instead of the host-wide selection.
+        self._viewer = threading.local()
+
+    def view(self, sid=None):
+        """Bind this thread to the chat its client shows; None restores the host-wide selection."""
+        ok = self.parallel and isinstance(sid, str) and 0 < len(sid) <= 64
+        self._viewer.sid = sid if ok else None
+
+    def _current_id(self, db):
+        """Id of this thread's chat: its client's own when still alive, else the host-wide one."""
+        sid = getattr(self._viewer, "sid", None)
+        if sid and db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():
+            return sid
+        row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
+        return row[0] if row else None
 
     @contextmanager
     def _db(self):
@@ -127,8 +143,12 @@ class Sessions:
                    (sid, title, now, "[]", "{}", workspace, project_id, parent_id, now))
         return sid
 
-    def _select(self, db, sid):
+    def _select(self, db, sid, view=True):
+        # The host-wide selection stays "last chat opened anywhere": the default for a new tab
+        # and for callers without a client (CLI, run threads).
         db.execute("INSERT OR REPLACE INTO meta VALUES ('current', ?)", (sid,))
+        if view and getattr(self._viewer, "sid", None):
+            self._viewer.sid = sid
         # Opening a chat reads it.
         db.execute("UPDATE sessions SET read_at=MAX(read_at,updated,?) WHERE id=?", (time.time(), sid))
 
@@ -187,7 +207,8 @@ class Sessions:
             self._init()
             cols = self.LIGHT if light else "*"
             with self._db() as db:
-                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=(SELECT value FROM meta WHERE key='current') AND deleted=0").fetchone())
+                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=? AND deleted=0",
+                                               (self._current_id(db),)).fetchone())
 
     # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
     # client of this host -- local or remote -- sees the same state. Values are JSON.
@@ -399,14 +420,18 @@ class Sessions:
                                (time.time() if action == "read" else 0, sid))
                 elif action == "delete":
                     db.execute("UPDATE sessions SET deleted=1 WHERE id=?", (sid,))
-                    if sid == current["id"]:
+                    # Another client may delete the host-wide selection without showing it;
+                    # that must still be repointed, but without moving this client's own view.
+                    shown = sid == current["id"]
+                    host = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
+                    if shown or (host and host[0] == sid):
                         # Fall back to the next existing top-level chat (same project first, in sidebar
                         # order); only create a fresh one when nothing is left.
                         row = db.execute(
                             "SELECT id FROM sessions WHERE deleted=0 AND parent_id='' "
                             "ORDER BY project_id=? DESC,pinned DESC,updated DESC,id LIMIT 1",
                             (current["project_id"],)).fetchone()
-                        self._select(db, row[0] if row else self._new(db, *fallback))
+                        self._select(db, row[0] if row else self._new(db, *fallback), view=shown)
                 else:
                     self._select(db, sid)
             selected = self.current()

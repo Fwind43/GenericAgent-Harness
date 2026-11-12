@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { isServerSnapshot, markServerSnapshot, request } from './api';
+import { isServerSnapshot, markServerSnapshot, request, setViewing, viewHeaders, viewing } from './api';
 import { T, errorText } from './i18n';
 import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest, RunEvent } from './types';
 
@@ -81,6 +81,7 @@ export class HostStore {
       if (this.acceptedSnapshots.size > 64) this.acceptedSnapshots.delete(this.acceptedSnapshots.values().next().value!);
     }
     ++this.refreshVersion;
+    setViewing(state.session_id);
     this.runSeq = new Map((state.runs ?? []).map(run => [run.id, run.seq]));
     this.update({ state });
   };
@@ -169,7 +170,7 @@ export class HostStore {
     const fail = () => {
       this.source?.close(); this.update({ connected: false });
       const wait = delay; delay = Math.min(delay * 2, 30000);
-      fetch('/api/state', { cache: 'no-store' }).then(r => {
+      fetch('/api/state', { cache: 'no-store', headers: viewHeaders() }).then(r => {
         if (r.status !== 401) return reopen(wait);
         unauthorized = true; this.source = null;
         this.notice(T('登录已失效，请重新打开带 token 的入口链接。', 'Session expired. Reopen the access link with the token.'));
@@ -185,7 +186,10 @@ export class HostStore {
     }, 10000);
     const open = () => {
       if (stopped) return;
-      const es = this.source = new EventSource(this.lastId ? `/api/events?last=${encodeURIComponent(this.lastId)}` : '/api/events');
+      const query = new URLSearchParams();
+      if (this.lastId) query.set('last', this.lastId);
+      if (viewing()) query.set('gah_view', viewing());
+      const es = this.source = new EventSource(query.size ? `/api/events?${query}` : '/api/events');
       seen = Date.now();
       const alive = () => { if (this.source === es) seen = Date.now(); };
       const listen = <D,>(name: string, fn: (data: D) => void) => es.addEventListener(name, event => {
@@ -208,6 +212,9 @@ export class HostStore {
       listen<HostState>('snapshot', state => {
         delay = 1000;
         if (!this.snapshot.connected) this.update({ connected: true });
+        // Snapshots are broadcast as one message, built for whichever page caused them. If it
+        // shows another chat than this page does, fetch this page's own state instead.
+        if (viewing() && state.session_id && state.session_id !== viewing()) { this.refresh().catch(() => {}); return; }
         this.setState(markServerSnapshot(state));
         this.emit('snapshot', state);
       });

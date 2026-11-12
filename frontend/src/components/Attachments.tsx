@@ -1,4 +1,5 @@
 import type { Attachment } from '../types';
+import { viewHeaders } from '../api';
 import { T } from '../i18n';
 
 export const MAX_FILE = 50 << 20;
@@ -13,7 +14,7 @@ export function size(n: number) {
 export async function upload(file: File): Promise<Attachment> {
   const response = await fetch('/api/upload', {
     method: 'POST', body: file,
-    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'file') },
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name || 'file'), ...viewHeaders() },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.file) throw new Error(data.error || `HTTP ${response.status}`);
