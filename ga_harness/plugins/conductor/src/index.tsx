@@ -295,7 +295,7 @@ function Panel({ api }: { api: PluginAPI }) {
             title={T('\u81ea\u4e3b\u63a8\u8fdb\u72b6\u6001', 'Autopilot status')}
           >
             <AutopilotIcon />
-            <span>{T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}</span>
+            <span className="gah-cd-label">{T('\u81ea\u4e3b\u63a8\u8fdb', 'Autopilot')}</span>
             {progress ? <span className="gah-cd-tag">{label(PROGRESS_STATUS, progress.status)}</span> : null}
             <Caret />
           </button>
@@ -311,7 +311,6 @@ function Panel({ api }: { api: PluginAPI }) {
                 ) : progress?.status === 'idle_backoff' ? (
                   <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: true })}>{T('\u7acb\u5373\u63a8\u8fdb', 'Continue now')}</button>
                 ) : null}
-                <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('active', { active: false })}>{T('\u5173\u95ed', 'Turn off')}</button>
               </div>
               {!showTasks && data.persistence_error ? <div className="gah-cd-body gah-cd-field error" role="alert"><b>{T('\u72b6\u6001\u5c1a\u672a\u4fdd\u5b58', 'State is not saved')}</b><p>{data.persistence_error}</p></div> : null}
               {progress ? (
@@ -344,7 +343,8 @@ function Panel({ api }: { api: PluginAPI }) {
             title={T('\u53cd\u5c04\u4e8b\u4ef6\u6e90', 'Reflect event sources')}
           >
             {watching ? <span className="gah-cd-dot running" /> : <ReflectIcon />}
-            <span>{reflections.length ? T(`\u4e8b\u4ef6\u6e90 ${watching}/${reflections.length}`, `Sources ${watching}/${reflections.length}`) : T('\u4e8b\u4ef6\u6e90', 'Sources')}</span>
+            <span className="gah-cd-label">{T('\u4e8b\u4ef6\u6e90', 'Sources')}</span>
+            {reflections.length ? <span>{`${watching}/${reflections.length}`}</span> : null}
             <Caret />
           </button>
           {open === 'reflect' ? (
@@ -394,7 +394,6 @@ function Panel({ api }: { api: PluginAPI }) {
                     ? T(`\u4efb\u52a1 ${tasks.length} \u00b7 \u8fd0\u884c\u4e2d ${running}/${data.limits.running}`, `${tasks.length} tasks \u00b7 ${running}/${data.limits.running} running`)
                     : T('\u53ea\u62c6\u5206\u3001\u5206\u6d3e\u3001\u9a8c\u6536\uff0c\u4e0d\u4eb2\u81ea\u6267\u884c', 'Splits, dispatches and reviews; does not execute itself')}
                 </span>
-                {on ? <button type="button" className="gah-cd-off" disabled={busy} onClick={() => run('toggle', { enabled: false })}>{T('\u5173\u95ed', 'Turn off')}</button> : null}
               </div>
               {data.persistence_error ? <div className="gah-cd-body gah-cd-field error" role="alert"><b>{T('\u72b6\u6001\u5c1a\u672a\u4fdd\u5b58', 'State is not saved')}</b><p>{data.persistence_error}</p></div> : null}
               {(data.deliveries || []).filter(d => (d.attempts || 0) >= 5).map(d => <div className="gah-cd-body gah-cd-field error" role="alert" key={d.id}><b>{T('\u901a\u77e5\u6295\u9012\u6301\u7eed\u5931\u8d25', 'Notification delivery keeps failing')}</b><p>{d.error} ({d.attempts})</p><p>{T('\u4e0b\u6b21\u91cd\u8bd5\uff1a', 'Retry scheduled: ')}{d.retry_at ? new Date(d.retry_at * 1000).toLocaleString() : '-'}</p></div>)}

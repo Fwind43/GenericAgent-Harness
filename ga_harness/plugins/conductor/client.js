@@ -321,7 +321,7 @@
             title: sdk.T("自主推进状态", "Autopilot status"),
             children: [
               /* @__PURE__ */ jsxRuntime.jsx(AutopilotIcon, {}),
-              /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("自主推进", "Autopilot") }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-label", children: sdk.T("自主推进", "Autopilot") }),
               progress ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-tag", children: label(PROGRESS_STATUS, progress.status) }) : null,
               /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
             ]
@@ -334,8 +334,7 @@
               sdk.T("自主推进", "Autopilot")
             ] }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: sdk.T("未完成时自动续跑，直到完成或需你处理", "Continues across turns until done or awaiting your input") }),
-            (progress == null ? void 0 : progress.status) === "paused" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("恢复", "Resume") }) : (progress == null ? void 0 : progress.status) === "idle_backoff" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("立即推进", "Continue now") }) : null,
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: false }), children: sdk.T("关闭", "Turn off") })
+            (progress == null ? void 0 : progress.status) === "paused" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("恢复", "Resume") }) : (progress == null ? void 0 : progress.status) === "idle_backoff" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("active", { active: true }), children: sdk.T("立即推进", "Continue now") }) : null
           ] }),
           !showTasks && data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
             /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态尚未保存", "State is not saved") }),
@@ -374,7 +373,8 @@
             title: sdk.T("反射事件源", "Reflect event sources"),
             children: [
               watching ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-dot running" }) : /* @__PURE__ */ jsxRuntime.jsx(ReflectIcon, {}),
-              /* @__PURE__ */ jsxRuntime.jsx("span", { children: reflections.length ? sdk.T(`事件源 ${watching}/${reflections.length}`, `Sources ${watching}/${reflections.length}`) : sdk.T("事件源", "Sources") }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-label", children: sdk.T("事件源", "Sources") }),
+              reflections.length ? /* @__PURE__ */ jsxRuntime.jsx("span", { children: `${watching}/${reflections.length}` }) : null,
               /* @__PURE__ */ jsxRuntime.jsx(Caret, {})
             ]
           }
@@ -414,8 +414,7 @@
               /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
               sdk.T("指挥家模式", "Conductor mode")
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") }),
-            on ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-cd-off", disabled: busy, onClick: () => run("toggle", { enabled: false }), children: sdk.T("关闭", "Turn off") }) : null
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-cd-hint", children: tasks.length ? sdk.T(`任务 ${tasks.length} · 运行中 ${running}/${data.limits.running}`, `${tasks.length} tasks · ${running}/${data.limits.running} running`) : sdk.T("只拆分、分派、验收，不亲自执行", "Splits, dispatches and reviews; does not execute itself") })
           ] }),
           data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-cd-body gah-cd-field error", role: "alert", children: [
             /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("状态尚未保存", "State is not saved") }),

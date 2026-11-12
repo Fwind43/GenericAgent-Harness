@@ -72,6 +72,9 @@ export function App() {
   const setDraft = (value: string) => sessionDrafts.set(host.getSnapshot().state.session_id, value);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false), [sidebar, setSidebar] = useState(false);
+  // Narrow screens fold the header controls (mode + plugin `header` slot) into one "more" menu; the slot stays mounted while closed.
+  const [headMenu, setHeadMenu] = useState(false);
+  const headMore = useRef<HTMLButtonElement>(null), headSlot = useRef<HTMLSpanElement>(null);
   const [collapsed, setCollapsed] = useState(() => saved('gah-side-collapsed') === '1');
   const [sideWidth, setSideWidth] = useState(savedSide), [resizing, setResizing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), scroll = useRef<HTMLElement>(null);
@@ -126,6 +129,14 @@ export function App() {
     return () => document.removeEventListener('paste', onPaste);
   }, []);
   useEffect(() => host.on('reset', () => { stick.current = true; setSidebar(false); }), []);
+  useEffect(() => { setHeadMenu(false); }, [state.session_id]);
+  useEffect(() => {
+    if (!headMenu) return;
+    const away = (event: PointerEvent) => { const target = event.target as Node; if (!headSlot.current?.contains(target) && !headMore.current?.contains(target)) setHeadMenu(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setHeadMenu(false); };
+    document.addEventListener('pointerdown', away); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); };
+  }, [headMenu]);
   useEffect(() => {
     // Legacy plugins dispatch a non-bubbling input event after setting .value.
     const node = input.current;
@@ -241,7 +252,7 @@ export function App() {
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         {page ? <h2 className="session-title gah-page-title" title={page.label}>{page.label}</h2> : null}
         <span className="gah-chat-head" hidden={!!page}>{sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModePicker disabled={busy} head /> : null}</span><span className="spacer" />
-        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<span className="gah-chat-head gah-head-slot" hidden={!!page}><Slot name="header" /></span>
+        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<button type="button" ref={headMore} className="icon-btn gah-head-more" hidden={!!page} aria-haspopup="true" aria-expanded={headMenu} aria-label={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} title={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} onClick={() => setHeadMenu(value => !value)}>{'\u22ef'}</button><span ref={headSlot} className={headMenu ? 'gah-chat-head gah-head-slot open' : 'gah-chat-head gah-head-slot'} hidden={!!page}>{sessionTitle ? <span className="gah-head-mode"><ModePicker disabled={busy} head /></span> : null}<Slot name="header" /></span>
       </header>
       <div className="gah-chat-only" hidden={!!page}><ViewTabs /></div>
       <nav className="toolbar gah-bar" hidden={!!page} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>

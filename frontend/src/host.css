@@ -12,6 +12,7 @@ header h1{font-size:15px;font-weight:600;margin:0}
 .gah-chat-head:not([hidden]):not(.gah-head-slot){display:flex;align-items:center;flex:0 1 auto;min-width:0}
 .session-title{font-size:15px;font-weight:600;margin:0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gah-mode.head{flex:none;margin-left:6px}
+.gah-head-more,.gah-head-mode{display:none}
 .gah-mode.head .gah-mode-trigger{gap:4px;padding:2px 8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .gah-mode.head .gah-mode-menu{bottom:auto;top:calc(100% + 6px)}
 .gah-mode-trigger.missing,.gah-mode.head .gah-mode-trigger.missing{color:var(--danger,#c0392b)}
@@ -369,6 +370,9 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
   html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   body{-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
   html,body,.app{height:100dvh}
+  /* never let chrome widen the layout viewport: Android browsers zoom the whole page out to fit it */
+  html,body{max-width:100%;overflow-x:hidden}
+  .main-col,header{min-width:0;max-width:100%}
   button,select,summary,[role=button]{touch-action:manipulation}
   /* header */
   header{min-height:52px;gap:6px;padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(6px,env(safe-area-inset-left))}
@@ -377,7 +381,18 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
   header .session-title{font-size:15.5px;letter-spacing:.005em}
   .gah-mode.head{margin-left:2px}
   .gah-mode.head .gah-mode-trigger{height:30px;padding:0 8px;border-radius:999px;background:var(--surface-muted);border-color:transparent}
-  .gah-head-slot:not([hidden]){gap:6px;min-width:0}
+  header .session-title{flex:1 1 auto}
+  /* header controls fold into one "more" menu: the mode pill beside the title hides, its twin and the plugin slot live in the panel */
+  header .gah-chat-head>.gah-mode.head{display:none}
+  .gah-head-more:not([hidden]){display:inline-flex;width:40px;height:40px;padding:0;align-items:center;justify-content:center;border-radius:12px;font-size:20px;color:var(--text);flex:none}
+  .gah-head-more[aria-expanded=true]{background:var(--surface-muted)}
+  header:not(:has(.gah-head-slot :is(button,select))) .gah-head-more{display:none}
+  header:has(.gah-head-slot .gah-cd-dot.running) .gah-head-more{color:var(--accent)}
+  .gah-head-slot:not([hidden]){display:none}
+  .gah-head-slot.open:not([hidden]){display:flex;position:fixed;top:calc(env(safe-area-inset-top) + 54px);right:max(8px,env(safe-area-inset-right));z-index:28;flex-direction:column;align-items:flex-start;gap:8px;width:min(288px,calc(100vw - 16px));padding:10px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 10px 32px rgba(0,0,0,.16)}
+  .gah-head-mode{display:block;position:relative;max-width:100%}
+  .gah-head-slot .gah-mode.head{margin-left:0}
+  .gah-head-slot .gah-mode.head .gah-mode-menu{min-width:0;width:min(266px,calc(100vw - 38px));max-height:min(50dvh,360px)}
   header select{height:32px;max-width:92px;border-radius:999px;padding:0 24px 0 10px;font-size:12.5px;text-overflow:ellipsis}
   /* view tabs */
   .gah-view-tabs{padding:0 max(10px,env(safe-area-inset-left));gap:4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
@@ -451,7 +466,6 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
   .icon-btn:active:not(:disabled),.gah-icon-btn:active:not(:disabled),.sidebar .gah-sess-open:active{background:var(--active,var(--surface-muted))}
 }
 @media (max-width:380px){
-  .gah-mode.head .gah-mode-trigger>span{display:none}
   header select{max-width:76px}
   footer .gah-model-trigger{max-width:44vw}
 }

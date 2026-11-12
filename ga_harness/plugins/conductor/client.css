@@ -59,3 +59,4 @@
 .gah-cd-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .gah-cd-actions button.primary:hover:not(:disabled){filter:brightness(1.08)}
 @media (max-width:560px){.gah-cd-head{flex-wrap:wrap;row-gap:2px}.gah-cd-title{flex:1 1 calc(100% - 15px)}.gah-cd-dot+.gah-cd-title+.gah-cd-tag{margin-left:15px}.gah-cd-tag{white-space:nowrap}.gah-cd-body{padding-left:10px}}
+@media (max-width:760px){.gah-cd-group{flex-wrap:wrap;gap:6px}.gah-cd-chip{height:30px}.gah-cd{position:fixed;top:calc(env(safe-area-inset-top) + 56px);left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));width:auto;max-height:calc(100dvh - env(safe-area-inset-top) - 72px)}.gah-cd-list{max-height:min(56dvh,480px)}}
