@@ -288,6 +288,9 @@ def test_markdown_safety_copy_and_themes(output_app, browser):
     for width in (1280, 390):
         page.set_viewport_size({"width": width, "height": 900 if width == 1280 else 844})
         for theme in ("light", "dark", "warm"):
+            # Narrow screens fold the header controls into the "more" menu.
+            if not page.locator("#theme").is_visible():
+                page.locator(".gah-head-more").click()
             page.select_option("#theme", theme)
             assert page.locator("html").get_attribute("data-theme") == theme
             palette.add(page.evaluate("getComputedStyle(document.body).backgroundColor"))
