@@ -61,6 +61,7 @@ export class SlotRegistry {
   private entries = new Map<string, readonly SlotEntry[]>();
   private listeners = new Set<() => void>();
   private reported = new Set<number>();
+  private settled = new Set<string>();
   private seq = 0;
   /** Whether a plugin is enabled in this page; set by the plugin runtime. */
   known: (plugin: string) => boolean = () => false;
@@ -94,8 +95,11 @@ export class SlotRegistry {
     this.emit();
     return () => { if (this.defs.get(name)?.owner === owner) { this.defs.delete(name); this.emit(); } };
   }
+  /** A plugin's setup is about to run: its slots may be defined (again). */
+  open(owner: string) { this.settled.delete(owner); }
   /** A plugin's setup has finished: entries still waiting for a slot it never defined are errors. */
   settle(owner: string) {
+    this.settled.add(owner);
     for (const [name, list] of [...this.entries]) {
       if (!name.startsWith(owner + '/') || this.defs.has(name)) continue;
       for (const entry of list) this.report(entry.plugin, new Error(`Unknown slot: ${name} (plugin "${owner}" does not define it)`));
@@ -108,9 +112,9 @@ export class SlotRegistry {
     if (def) {
       if (def.kind !== kind) throw new Error(mismatch(name, def.kind, kind));
     } else {
-      // A slot owned by another enabled plugin may not be defined yet; it is checked in define()/settle().
+      // A slot owned by another enabled plugin that has not run yet is checked in define()/settle().
       const owner = typeof name === 'string' && name.includes('/') ? name.slice(0, name.indexOf('/')) : '';
-      if (!owner || owner === plugin || !this.known(owner))
+      if (!owner || owner === plugin || !this.known(owner) || this.settled.has(owner))
         throw new Error(`Unknown slot: ${String(name)}. Defined slots: ${[...this.defs.keys()].join(', ')}`);
     }
     if (!isComponent(component)) throw new Error(`${method}: component must be a React component`);
@@ -133,7 +137,9 @@ export class SlotRegistry {
     this.reported.add(entry.id); this.report(entry.plugin, error);
   }
 }
-export const slots = new SlotRegistry();// One boundary per entry: a failing plugin component falls back to the content it replaced or
+export const slots = new SlotRegistry();
+
+// One boundary per entry: a failing plugin component falls back to the content it replaced or
 // wrapped (nothing for a list entry) and is reported once against its plugin.
 class Boundary extends Component<{ entry: SlotEntry; fallback?: ReactNode; children?: ReactNode }, { failed: boolean }> {
   state = { failed: false };

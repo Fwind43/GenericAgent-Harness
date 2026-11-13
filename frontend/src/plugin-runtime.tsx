@@ -108,6 +108,7 @@ export class PluginRuntime {
       slots: bindSlots(m.name, own),
     };
     own(() => { unlock?.(); unlock = undefined; });
+    slots.open(m.name);
     try { const result = setup(api); if (typeof result === 'function') own(result); }
     catch (error) { this.report(m.name, error); this.stop(m.name); }
     // Entries other plugins registered for a slot this plugin never defined are errors from here on.
