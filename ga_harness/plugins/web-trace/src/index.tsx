@@ -3,11 +3,13 @@ import { type PluginAPI, useHost, T, ViewPanel, defineReact } from '@gah/sdk';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Usage = { input?: number; output?: number; cache_read?: number; calls?: number };
-type Tool = { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number };
+type Tool = { id?: string; name: string; args?: Json; data?: Json; data_lazy?: boolean; data_chars?: number; status: string; ok?: boolean; seconds?: number };
 type Turn = { turn: number; summary?: string; thinking?: string; reply?: string; status?: string; tools?: Tool[]; usage?: Usage; llm?: { seconds?: number; ttft?: number | null }; prompt?: Prompt };
 // The page gets prompts without their text (has_text says one is stored); it is fetched when a row is opened.
 type Prompt = { kind?: string; chars?: number; injected?: string[]; text?: string; has_text?: boolean };
 type Lazy = { index: number; turn: number; chars?: number };
+// Long tool results arrive as a preview (data_lazy); the whole one is fetched when the row is opened.
+type LazyTool = { index: number; turn: number; tool: number; args: string };
 type Note = { kind: string; text: string; turn: number };
 type Message = { role: 'user' | 'assistant'; text?: string; status?: string; error?: string; turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; notes?: Note[] };
 
@@ -18,7 +20,7 @@ export type TraceEvent = {
   key: string; run: number; lane: Lane; kind: Kind;
   name?: string; args?: string; result?: string; text: string;
   seconds?: number; failed?: boolean; detail: string; haystack: string;
-  lazy?: Lazy;
+  lazy?: Lazy; lazyTool?: LazyTool;
 };
 export type TraceRun = { run: number; input: string; status?: string; model?: string; seconds: number; tools: number; usage?: Usage; events: TraceEvent[] };
 type Mode = 'duration' | 'calls';
@@ -75,7 +77,8 @@ export function buildTrace(messages: Message[]): TraceRun[] {
         const result = compact(tool.data);
         push({ key: index + ':t' + turn.turn + ':' + n, lane: 'tool', kind: 'tool', name: tool.name,
           args: line(compact(tool.args), 160), result: line(result), text: '', seconds: tool.seconds, failed,
-          detail: join(section(T('参数：', 'Arguments:'), text(tool.args)), section(T('结果：', 'Result:'), text(tool.data)) || (tool.status === 'running' ? T('运行中…', 'Running…') : '')) });
+          detail: join(section(T('参数：', 'Arguments:'), text(tool.args)), section(T('结果：', 'Result:'), text(tool.data) + (tool.data_lazy ? '…' : '')) || (tool.status === 'running' ? T('运行中…', 'Running…') : '')),
+          ...(tool.data_lazy ? { lazyTool: { index, turn: turn.turn, tool: n, args: text(tool.args) } } : {}) });
       }
       pushNotes(turn.turn);
     }
@@ -146,6 +149,26 @@ function PromptText({ api, sid, lazy }: { api: PluginAPI; sid: string; lazy: Laz
   return <pre className="gah-tr-detail">{(body || T('（无内容）', '(empty)')) + (cut ? '\n\n' + T('…（已截断，原长 ', '… (truncated, original ') + lazy.chars + T(' 字符）', ' chars)') : '')}</pre>;
 }
 
+function ToolText({ sid, lazy, preview }: { sid: string; lazy: LazyTool; preview: string }) {
+  const [body, setBody] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    setBody(null); setError('');
+    // A host route, not one of this plugin's: api.get only reaches /api/p/web-trace/.
+    fetch('/api/tool-data?session_id=' + encodeURIComponent(sid) + '&index=' + lazy.index + '&turn=' + lazy.turn + '&tool=' + lazy.tool)
+      .then(async response => {
+        const got = await response.json().catch(() => null) as { data?: Json; error?: string } | null;
+        if (!response.ok || !got) throw new Error(got?.error || 'HTTP ' + response.status);
+        if (alive) setBody(text(got.data));
+      })
+      .catch((reason: unknown) => { if (alive) setError(String((reason as Error)?.message || reason)); });
+    return () => { alive = false; };
+  }, [sid, lazy.index, lazy.turn, lazy.tool]);
+  if (body != null) return <pre className="gah-tr-detail">{join(section(T('参数：', 'Arguments:'), lazy.args), section(T('结果：', 'Result:'), body)) || T('（无内容）', '(empty)')}</pre>;
+  return <pre className="gah-tr-detail">{preview + '\n\n' + (error ? T('完整结果加载失败：', 'Could not load the full result: ') + error : T('加载完整结果…', 'Loading the full result…'))}</pre>;
+}
+
 function Row({ event, open, focus, onToggle, api, sid }: { event: TraceEvent; open: boolean; focus: boolean; onToggle: () => void; api: PluginAPI; sid: string }) {
   return <li id={domId(event.key)} className={'gah-tr k-' + event.kind + (event.failed ? ' failed' : '') + (focus ? ' on' : '')}>
     <button type="button" className="gah-tr-head" aria-expanded={open} onClick={onToggle}>
@@ -158,7 +181,7 @@ function Row({ event, open, focus, onToggle, api, sid }: { event: TraceEvent; op
       </span>
       {event.seconds != null ? <span className={'gah-tr-secs' + (event.seconds >= SLOW ? ' slow' : '')}>{secs(event.seconds)}</span> : null}
     </button>
-    {open && event.lazy ? <PromptText api={api} sid={sid} lazy={event.lazy} /> : open ? <pre className="gah-tr-detail">{event.detail || T('（无内容）', '(empty)')}</pre> : null}
+    {open && event.lazy ? <PromptText api={api} sid={sid} lazy={event.lazy} /> : open && event.lazyTool ? <ToolText sid={sid} lazy={event.lazyTool} preview={event.detail} /> : open ? <pre className="gah-tr-detail">{event.detail || T('（无内容）', '(empty)')}</pre> : null}
   </li>;
 }
 

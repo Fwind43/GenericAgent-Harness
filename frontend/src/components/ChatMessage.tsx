@@ -1,7 +1,8 @@
-import { Fragment, memo } from 'react';
+import { Fragment, createContext, memo, useContext, useEffect, useState } from 'react';
+import { request } from '../api';
 import { T } from '../i18n';
 import { host } from '../store';
-import type { Message, MessageNote, ToolCall, Turn, Usage } from '../types';
+import type { Json, Message, MessageNote, ToolCall, Turn, Usage } from '../types';
 import { CopyButton, Disclosure, Markdown, format } from './Output';
 import { MessageStats } from './MessageStats';
 import { MessageAttachments } from './Attachments';
@@ -57,10 +58,35 @@ function Summary({ text }: { text?: string }) {
   </svg><div className="turn-summary-text">{text}</div></div>;
 }
 // Slot "tool": a plugin may take over the rendering of the tool calls it selects.
-function Tool(props: { tool: ToolCall; awaiting: boolean }) {
+// ``turn``/``position`` locate the call inside its message; with MessageIndex they address /api/tool-data.
+type ToolProps = { tool: ToolCall; awaiting: boolean; turn?: number; position?: number };
+const MessageIndex = createContext<number | null>(null);
+function Tool(props: ToolProps) {
   return <Slot name="tool" props={props}><ToolView {...props} /></Slot>;
 }
-const ToolView = memo(function ToolView({ tool, awaiting }: { tool: ToolCall; awaiting: boolean }) {
+/** The result of a finished call. A long one arrives as a preview and is fetched here, i.e. when the row is first opened. */
+function ToolResult({ tool, turn, position }: Omit<ToolProps, 'awaiting'>) {
+  const index = useContext(MessageIndex);
+  const lazy = !!tool.data_lazy && index != null && turn != null && position != null;
+  const [full, setFull] = useState<{ data: Json } | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!lazy) return;
+    let alive = true;
+    setFull(null); setError('');
+    const sid = host.getSnapshot().state.session_id || '';
+    request<{ data: Json }>(`/api/tool-data?session_id=${encodeURIComponent(sid)}&index=${index}&turn=${turn}&tool=${position}`)
+      .then(got => { if (alive) setFull({ data: got.data }); },
+        (reason: unknown) => { if (alive) setError(String((reason as Error)?.message || reason)); });
+    return () => { alive = false; };
+  }, [lazy, index, turn, position]);
+  if (!tool.data_lazy || full) return <pre>{format(full ? full.data : tool.data) || T('(空)', '(empty)')}</pre>;
+  const note = error ? T('完整结果加载失败：', 'Could not load the full result: ') + error
+    : lazy ? T('加载完整结果…', 'Loading the full result…')
+    : T('已截断，原长 ', 'Truncated, original ') + (tool.data_chars ?? '?') + T(' 字符', ' chars');
+  return <pre>{format(tool.data) + '…\n\n' + note}</pre>;
+}
+const ToolView = memo(function ToolView({ tool, awaiting, turn, position }: ToolProps) {
   const ask = window.GAHOutput.askUserPayload(tool.name, tool.args, tool.data);
   const receipt = { ...window.GAHOutput.toolSummary(tool.name, tool.args) };
   if (ask) receipt.target = receipt.detail = ask.question || T('等待回复', 'Awaiting reply');
@@ -69,7 +95,7 @@ const ToolView = memo(function ToolView({ tool, awaiting }: { tool: ToolCall; aw
   const seconds = tool.seconds == null ? null : Number(tool.seconds);
   const elapsed = state !== 'run' && state !== 'wait' && seconds != null && Number.isFinite(seconds) && seconds >= 0 ? ` · ${seconds.toFixed(1)}s` : '';
   const raw = <>{tool.args != null && <><div className="lbl">{T('参数', 'Arguments')}</div><pre>{format(tool.args)}</pre></>}
-    {tool.status === 'done' && <><div className="lbl">{T('结果', 'Result')}</div><pre>{format(tool.data) || T('(空)', '(empty)')}</pre></>}</>;
+    {tool.status === 'done' && <><div className="lbl">{T('结果', 'Result')}</div><ToolResult tool={tool} turn={turn} position={position} /></>}</>;
   return <Disclosure className={'tool' + (ask ? ' ask-user' : '')} chevron="start" initial={!!ask} state={state}
     label={[receipt.kind, tool.name || receipt.tool, receipt.detail, status + elapsed].filter(Boolean).join(' · ')} title={<>
       <span className="tkind">{receipt.kind}</span><span className="tname" title={tool.name || receipt.tool}>{receipt.tool}</span>
@@ -94,7 +120,7 @@ const ToolView = memo(function ToolView({ tool, awaiting }: { tool: ToolCall; aw
 const TurnBody = memo(function TurnBody({ turn, awaiting = false, stream = false }: { turn: Turn; awaiting?: boolean; stream?: boolean }) {
   return <><Thinking text={turn.thinking} stream={stream} /><Summary text={summaryOf(turn)} />
     {turn.reply && <Markdown text={turn.reply} className="reply" stream={stream} />}
-    {turn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
+    {turn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} turn={turn.turn} position={index} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
   </>;
 });
 const Step = memo(function Step({ turn, live }: { turn: Turn; live: boolean }) {
@@ -182,8 +208,8 @@ function ConductorWake({ m }: { m: Message }) {
   </div>;
 }
 // Slot "message": plugins may wrap a whole message.
-export const ChatMessage = memo(function ChatMessage(props: { message: Message; last: boolean }) {
-  return <Slot name="message" props={props}><MessageView {...props} /></Slot>;
+export const ChatMessage = memo(function ChatMessage({ index, ...props }: { message: Message; last: boolean; index?: number }) {
+  return <MessageIndex.Provider value={index ?? null}><Slot name="message" props={props}><MessageView {...props} /></Slot></MessageIndex.Provider>;
 });
 const MessageView = memo(function MessageView({ message: m, last }: { message: Message; last: boolean }) {
   if (isConductorWake(m)) return <ConductorWake m={m} />;
@@ -237,7 +263,7 @@ const MessageView = memo(function MessageView({ message: m, last }: { message: M
         {titleOf(finalTurn) && <span className="ttl" title={titleOf(finalTurn)}>{titleOf(finalTurn)}</span>}<Tokens usage={finalTurn.usage} /></div>
         <Thinking text={finalTurn.thinking} stream={running} /><Summary text={summaryOf(finalTurn)} />
         {finalTurn.reply && <Markdown text={finalTurn.reply} stream={running} className={'body' + (running && !finalTurn.tools.length ? ' cursor' : '')} />}
-        {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
+        {finalTurn.tools.map((tool, index) => <Tool key={tool.id || index} tool={tool} turn={finalTurn.turn} position={index} awaiting={awaiting && window.GAHOutput.isAskUser(tool.name)} />)}
       </> : running ? <div className="body working cursor" /> : fin?.reply ? <><Summary text={summaryOf(fin)} /><Markdown text={fin.reply} /></> : null}
       {after.map(n => <Note key={n.i} note={n.note} />)}
     </> : <Markdown text={m.text || ''} stream={running} className={'body' + (running ? ' cursor' : '')} />}

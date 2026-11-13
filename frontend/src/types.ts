@@ -1,7 +1,8 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Status = 'running' | 'done' | 'error' | 'aborted' | 'interrupted';
 export interface Usage { calls?: number; input?: number; output?: number; cache_read?: number; cache_write?: number }
-export interface ToolCall { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number }
+/** A long result arrives as a preview string: ``data_lazy`` is set, ``data_chars`` is the full length and /api/tool-data serves the rest. */
+export interface ToolCall { id?: string; name: string; args?: Json; data?: Json; data_lazy?: boolean; data_chars?: number; status: string; ok?: boolean; seconds?: number }
 export interface Turn {
   turn: number; summary?: string; thinking?: string; reply?: string;
   status?: Status; tools: ToolCall[]; usage?: Usage; llm?: LlmTiming;

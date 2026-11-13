@@ -86,7 +86,8 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
             text: "",
             seconds: tool.seconds,
             failed,
-            detail: join(section(sdk.T("参数：", "Arguments:"), text(tool.args)), section(sdk.T("结果：", "Result:"), text(tool.data)) || (tool.status === "running" ? sdk.T("运行中…", "Running…") : ""))
+            detail: join(section(sdk.T("参数：", "Arguments:"), text(tool.args)), section(sdk.T("结果：", "Result:"), text(tool.data) + (tool.data_lazy ? "…" : "")) || (tool.status === "running" ? sdk.T("运行中…", "Running…") : "")),
+            ...tool.data_lazy ? { lazyTool: { index, turn: turn.turn, tool: n, args: text(tool.args) } } : {}
           });
         }
         pushNotes(turn.turn);
@@ -175,6 +176,27 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
     const cut = lazy.chars != null && body.length < lazy.chars;
     return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: (body || sdk.T("（无内容）", "(empty)")) + (cut ? "\n\n" + sdk.T("…（已截断，原长 ", "… (truncated, original ") + lazy.chars + sdk.T(" 字符）", " chars)") : "") });
   }
+  function ToolText({ sid, lazy, preview }) {
+    const [body, setBody] = react.useState(null);
+    const [error, setError] = react.useState("");
+    react.useEffect(() => {
+      let alive = true;
+      setBody(null);
+      setError("");
+      fetch("/api/tool-data?session_id=" + encodeURIComponent(sid) + "&index=" + lazy.index + "&turn=" + lazy.turn + "&tool=" + lazy.tool).then(async (response) => {
+        const got = await response.json().catch(() => null);
+        if (!response.ok || !got) throw new Error((got == null ? void 0 : got.error) || "HTTP " + response.status);
+        if (alive) setBody(text(got.data));
+      }).catch((reason) => {
+        if (alive) setError(String((reason == null ? void 0 : reason.message) || reason));
+      });
+      return () => {
+        alive = false;
+      };
+    }, [sid, lazy.index, lazy.turn, lazy.tool]);
+    if (body != null) return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: join(section(sdk.T("参数：", "Arguments:"), lazy.args), section(sdk.T("结果：", "Result:"), body)) || sdk.T("（无内容）", "(empty)") });
+    return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: preview + "\n\n" + (error ? sdk.T("完整结果加载失败：", "Could not load the full result: ") + error : sdk.T("加载完整结果…", "Loading the full result…")) });
+  }
   function Row({ event, open, focus, onToggle, api, sid }) {
     return /* @__PURE__ */ jsxRuntime.jsxs("li", { id: domId(event.key), className: "gah-tr k-" + event.kind + (event.failed ? " failed" : "") + (focus ? " on" : ""), children: [
       /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-tr-head", "aria-expanded": open, onClick: onToggle, children: [
@@ -190,7 +212,7 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
         ] }),
         event.seconds != null ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-tr-secs" + (event.seconds >= SLOW ? " slow" : ""), children: secs(event.seconds) }) : null
       ] }),
-      open && event.lazy ? /* @__PURE__ */ jsxRuntime.jsx(PromptText, { api, sid, lazy: event.lazy }) : open ? /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: event.detail || sdk.T("（无内容）", "(empty)") }) : null
+      open && event.lazy ? /* @__PURE__ */ jsxRuntime.jsx(PromptText, { api, sid, lazy: event.lazy }) : open && event.lazyTool ? /* @__PURE__ */ jsxRuntime.jsx(ToolText, { sid, lazy: event.lazyTool, preview: event.detail }) : open ? /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: event.detail || sdk.T("（无内容）", "(empty)") }) : null
     ] });
   }
   function Trace({ api }) {

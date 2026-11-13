@@ -64,14 +64,51 @@ PROMPT_KEYS = ("kind", "chars", "injected", "text")
 # demand. Pages get turns without it (``has_text`` says one is stored); the stored transcript
 # keeps it, and web-trace serves it per turn. These return copies: the inputs are shared with
 # storage and with other subscribers.
+#
+# Tool results get the same treatment: a long session carries thousands of them and a page
+# only shows one when its row is opened. A result longer than TOOL_DATA_INLINE is sent as
+# its first TOOL_DATA_PREVIEW characters with ``data_lazy`` and ``data_chars`` (full length);
+# ``/api/tool-data`` serves the rest. ask_user results stay whole, the page parses them.
+TOOL_DATA_INLINE = 400
+TOOL_DATA_PREVIEW = 300
+
+
+def _tool_text(data):
+    if isinstance(data, str):
+        return data
+    try:
+        return json.dumps(data, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(data)
+
+
+def _slim_tool(tool):
+    if not isinstance(tool, dict) or tool.get("data") is None or tool.get("data_lazy"):
+        return tool
+    if str(tool.get("name") or "").split(".")[-1] == "ask_user":
+        return tool
+    text = _tool_text(tool["data"])
+    if len(text) <= TOOL_DATA_INLINE:
+        return tool
+    return dict(tool, data=text[:TOOL_DATA_PREVIEW], data_lazy=True, data_chars=len(text))
+
+
 def _slim_turn(turn):
-    prompt = turn.get("prompt") if isinstance(turn, dict) else None
-    if not isinstance(prompt, dict) or "text" not in prompt:
+    if not isinstance(turn, dict):
         return turn
-    slim = {k: v for k, v in prompt.items() if k != "text"}
-    if prompt["text"] is not None:
-        slim["has_text"] = True
-    return dict(turn, prompt=slim)
+    out = turn
+    prompt = turn.get("prompt")
+    if isinstance(prompt, dict) and "text" in prompt:
+        slim = {k: v for k, v in prompt.items() if k != "text"}
+        if prompt["text"] is not None:
+            slim["has_text"] = True
+        out = dict(out, prompt=slim)
+    tools = turn.get("tools")
+    if isinstance(tools, list):
+        slim_tools = [_slim_tool(t) for t in tools]
+        if any(a is not b for a, b in zip(slim_tools, tools)):
+            out = dict(out, tools=slim_tools)
+    return out
 
 
 def _slim_message(message):
@@ -948,6 +985,42 @@ class WebFrontend:
             result["files"].append({"name": f.name, "size": size, "scanned_from": start,
                                     "clipped": clipped, "lines": hits})
         return result
+
+    def tool_data(self, query):
+        """GET /api/tool-data?session_id=SID&index=I&turn=N&tool=K: one full tool result.
+
+        Pages get long results as a preview (see ``_slim_tool``) and ask for the whole one
+        when its row is opened. ``index`` is the message's position in the transcript,
+        ``turn`` the turn number and ``tool`` the call's position in that turn. Without
+        ``session_id`` the transcript this host holds is read.
+        """
+        try:
+            index, number, position = (int(query.get(k, [None])[0]) for k in ("index", "turn", "tool"))
+        except (TypeError, ValueError):
+            return 400, {"error": "index, turn and tool must be integers"}
+        sid = query.get("session_id", [None])[0]
+        if not sid or not self.sessions:
+            with self.lock:
+                messages = list(self.messages)
+        else:
+            try:
+                # A running session's newest turns exist only in the live transcript.
+                live = self.runs.live_snapshot(sid) if self.runs else None
+                messages = live["messages"] if live else (self.sessions.get(sid) or {}).get("messages")
+            except ValueError as e:
+                return 404, {"error": str(e)}
+            except Exception as e:  # noqa: BLE001
+                return 503, {"error": f"session storage could not be read: {e}"}
+        if not isinstance(messages, list) or not 0 <= index < len(messages):
+            return 404, {"error": "message not found"}
+        message = messages[index]
+        for turn in (message.get("turns") if isinstance(message, dict) else None) or []:
+            if isinstance(turn, dict) and turn.get("turn") == number:
+                tools = turn.get("tools")
+                if isinstance(tools, list) and 0 <= position < len(tools) and isinstance(tools[position], dict):
+                    return 200, {"data": tools[position].get("data")}
+                break
+        return 404, {"error": "tool call not found"}
 
     def session_export(self, query):
         """GET /api/session-export?session_id=SID: one JSON bundle for debugging a conversation.

@@ -232,6 +232,45 @@ def test_ui_web_clips_large_tool_data():
     assert m._clip(None) == "" and m._clip("ok") == "ok"
 
 
+def test_ui_web_state_carries_previews_and_tool_data_serves_the_rest(tmp_path):
+    rt, fe, off, base = _start(tmp_path)
+    try:
+        assert _req(base + "api/run", {"task": "tool"})[0] == 202
+        _wait_idle(base)
+        big = "y" * 5000
+        with fe.lock:
+            index = len(fe.messages) - 1
+            turn = fe.messages[index]["turns"][0]
+            turn["prompt"] = {"kind": "full", "chars": 3, "text": "abc"}
+            turn["tools"][0]["data"] = big
+            turn["tools"].append({"id": "1.1", "name": "ask_user", "args": {}, "data": big, "status": "done", "ok": True})
+        sent = _req(base + "api/state")[1]["messages"][index]["turns"][0]
+        # the prompt text and long results stay on the server; the page gets markers
+        assert sent["prompt"] == {"kind": "full", "chars": 3, "has_text": True}
+        tool, ask = sent["tools"]
+        assert tool["data_lazy"] is True and tool["data_chars"] == 5000
+        assert 0 < len(tool["data"]) < 400 and big.startswith(tool["data"])
+        # ask_user payloads are parsed by the page, so they are sent whole
+        assert ask["data"] == big and "data_lazy" not in ask
+        # short results are sent as they are
+        short = _req(base + "api/state")[1]["messages"][index]["turns"][1]
+        assert short["tools"] == []
+        # the stored transcript is untouched
+        with fe.lock:
+            kept = fe.messages[index]["turns"][0]
+            assert kept["prompt"]["text"] == "abc" and kept["tools"][0]["data"] == big
+            assert "data_lazy" not in kept["tools"][0]
+        url = base + "api/tool-data?index=%d&turn=1&tool=" % index
+        assert _req(url + "0") == (200, {"data": big})
+        assert _req(url + "9")[0] == 404
+        assert _req(base + "api/tool-data?index=%d&turn=7&tool=0" % index)[0] == 404
+        assert _req(base + "api/tool-data?index=99&turn=1&tool=0")[0] == 404
+        assert _req(base + "api/tool-data?index=x&turn=1&tool=0")[0] == 400
+    finally:
+        off()
+        rt.dispose()
+
+
 def _get(url):
     with urllib.request.urlopen(url, timeout=5) as r:
         return r.status, r.headers["Content-Type"], r.read().decode("utf-8")

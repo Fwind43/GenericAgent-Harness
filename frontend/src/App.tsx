@@ -261,7 +261,7 @@ export function App() {
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
       <main id="scroll" ref={scroll} hidden={!!page || view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         {first > 0 && <button type="button" className="gah-load-earlier" onClick={() => setWin({ sid: state.session_id, limit: limit + WINDOW })}>{T(`显示更早的 ${Math.min(first, WINDOW)} 条消息（还有 ${first} 条）`, `Show ${Math.min(first, WINDOW)} earlier messages (${first} hidden)`)}</button>}
-        <div id="thread">{state.messages.length ? state.messages.slice(first).map((message, i) => { const index = first + i; return <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} last={index === state.messages.length - 1} />; }) : <EmptyState />}</div>
+        <div id="thread">{state.messages.length ? state.messages.slice(first).map((message, i) => { const index = first + i; return <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} index={index} last={index === state.messages.length - 1} />; }) : <EmptyState />}</div>
       </main>
       {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
       {!page && view === CHAT_VIEW && <ScrollBottom scroll={scroll} stick={stick} deps={[state.messages, state.session_id]} />}
