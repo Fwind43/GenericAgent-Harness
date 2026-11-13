@@ -7,9 +7,11 @@ import { categories, categoryOf, descriptionOf, filters, inFilter, inSource, Plu
 
 export function PluginManager({ api }: { api: PluginAPI }) {
   const { state, changing } = useHost();
-  // Running tasks only lock plugins that are not run_safe; the server enforces the same rule.
+  // Without parallel runs a running task locks plugins that are not run_safe (the server enforces
+  // the same rule). With parallel runs the server does not lock, so neither does this panel.
   const { busy, working, run } = useOperation(api, true);
-  const lockedByRun = (plugin: PluginInfo) => state.running && !plugin.run_safe;
+  const runLock = !!state.running && !state.parallel_runs;
+  const lockedByRun = (plugin: PluginInfo) => runLock && !plugin.run_safe;
   const [config, setConfig] = useState<PluginCatalog | null>(null);
   const [marketApi] = useState<PluginAPI>(() => ({ ...api, name: 'web-plugins-market' }));
   const [editing, setEditing] = useState<string | null>(null), [error, setError] = useState('');
@@ -104,7 +106,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
         {config?.restart_required && <p className="plugin-note" role="status">{T('\u5df2\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Saved; applies on next start')}</p>}
         <section className="plugin-catalog" hidden={!!selected}>
           <p className="plugin-note plugin-profile" hidden={!config}>{config ? T('\u914d\u7f6e\u65b9\u6848\uff1a', 'Profile: ') + config.profile + T('\u3002\u66f4\u6539\u4fdd\u5b58\u5230\u672c\u5730\uff1b\u652f\u6301\u70ed\u63d2\u62d4\u7684\u63d2\u4ef6\u7acb\u5373\u751f\u6548\uff0c\u5176\u4f59\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', '. Changes are saved locally; hot-pluggable plugins apply immediately, others on next start.') : ''}</p>
-          <div className="plugin-toolbar"><input className="plugin-search" type="search" value={query} placeholder={T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'Search plugin names or descriptions')} aria-label={T('\u641c\u7d22\u63d2\u4ef6', 'Search plugins')} disabled={working} onChange={event => setQuery(event.target.value)} /><button type="button" className="secondary" disabled={working || changing} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button><ImportPlugin disabled={working || changing || state.running} run={run} onError={setError} onDone={imported} /></div>
+          <div className="plugin-toolbar"><input className="plugin-search" type="search" value={query} placeholder={T('\u641c\u7d22\u63d2\u4ef6\u540d\u79f0\u6216\u8bf4\u660e', 'Search plugin names or descriptions')} aria-label={T('\u641c\u7d22\u63d2\u4ef6', 'Search plugins')} disabled={working} onChange={event => setQuery(event.target.value)} /><button type="button" className="secondary" disabled={working || changing} onClick={() => void load()}>{T('\u5237\u65b0', 'Refresh')}</button><ImportPlugin disabled={working || changing || runLock} run={run} onError={setError} onDone={imported} /></div>
           <div className="plugin-categories" role="tablist" aria-label={T('\u6309\u5206\u7c7b\u7b5b\u9009', 'Filter by category')}>{[['all', T('\u5168\u90e8\u5206\u7c7b', 'All categories')] as const, ...present].map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-category" data-category={key} aria-selected={category === key} onClick={() => setCategory(key)}>{label}<span className="plugin-count">{base.filter(plugin => inCategory(plugin, key)).length}</span></button>)}</div>
           <div className="plugin-filter-bar"><div className="plugin-filters" role="tablist" aria-label={T('\u6309\u72b6\u6001\u7b5b\u9009', 'Filter by status')}>{filters.map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-filter" data-filter={key} aria-selected={filter === key} onClick={() => setFilter(key)}>{label}<span className="plugin-count">{visible.filter(plugin => inFilter(plugin, key)).length}</span></button>)}</div>
           <div className="plugin-filters plugin-sources" role="tablist" aria-label={T('\u6309\u6765\u6e90\u7b5b\u9009', 'Filter by source')}>{sources.map(([key, label]) => <button key={key} type="button" role="tab" className="plugin-filter" data-source={key} aria-selected={source === key} onClick={() => setSource(key)}>{label}<span className="plugin-count">{visible.filter(plugin => inSource(plugin, key)).length}</span></button>)}</div></div>
@@ -122,7 +124,7 @@ export function PluginManager({ api }: { api: PluginAPI }) {
         {selected && <section className="plugin-detail"><button ref={back} type="button" className="secondary plugin-back" disabled={working} onClick={toGrid}>{T('\u2190 \u5168\u90e8\u63d2\u4ef6', '\u2190 All plugins')}</button><PluginDetails key={selected.name + ':' + config?.revision} plugin={selected} busy={working || changing} running={lockedByRun(selected)} error={error} onChange={change} onToggle={next => toggle(selected, next)} job={job?.name === selected.name ? job : null} installing={installing} packageIndex={config?.package_index || ''} onInstall={install} /></section>}
       </div>
     </SettingsPanel>}
-    {state.plugins_enabled && <Market api={marketApi} disabled={working || changing || state.running} catalog={config?.items || []} ensureCatalog={() => { if (!config) void load(); }} run={run} onDone={result => imported(result, false)} />}
+    {state.plugins_enabled && <Market api={marketApi} disabled={working || changing || runLock} catalog={config?.items || []} ensureCatalog={() => { if (!config) void load(); }} run={run} onDone={result => imported(result, false)} />}
   </>;
 }
 

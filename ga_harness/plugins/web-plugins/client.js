@@ -407,7 +407,8 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
   function PluginManager({ api }) {
     const { state, changing } = sdk.useHost();
     const { busy, working, run } = sdk.useOperation(api, true);
-    const lockedByRun = (plugin) => state.running && !plugin.run_safe;
+    const runLock = !!state.running && !state.parallel_runs;
+    const lockedByRun = (plugin) => runLock && !plugin.run_safe;
     const [config, setConfig] = react.useState(null);
     const [marketApi] = react.useState(() => ({ ...api, name: "web-plugins-market" }));
     const [editing, setEditing] = react.useState(null), [error, setError] = react.useState("");
@@ -517,7 +518,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-toolbar", children: [
               /* @__PURE__ */ jsxRuntime.jsx("input", { className: "plugin-search", type: "search", value: query, placeholder: sdk.T("搜索插件名称或说明", "Search plugin names or descriptions"), "aria-label": sdk.T("搜索插件", "Search plugins"), disabled: working, onChange: (event) => setQuery(event.target.value) }),
               /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary", disabled: working || changing, onClick: () => void load(), children: sdk.T("刷新", "Refresh") }),
-              /* @__PURE__ */ jsxRuntime.jsx(ImportPlugin, { disabled: working || changing || state.running, run, onError: setError, onDone: imported })
+              /* @__PURE__ */ jsxRuntime.jsx(ImportPlugin, { disabled: working || changing || runLock, run, onError: setError, onDone: imported })
             ] }),
             /* @__PURE__ */ jsxRuntime.jsx("div", { className: "plugin-categories", role: "tablist", "aria-label": sdk.T("按分类筛选", "Filter by category"), children: [["all", sdk.T("全部分类", "All categories")], ...present].map(([key, label]) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", className: "plugin-category", "data-category": key, "aria-selected": category === key, onClick: () => setCategory(key), children: [
               label,
@@ -572,7 +573,7 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
           ] })
         ] })
       ] }),
-      state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsx(Market, { api: marketApi, disabled: working || changing || state.running, catalog: (config == null ? void 0 : config.items) || [], ensureCatalog: () => {
+      state.plugins_enabled && /* @__PURE__ */ jsxRuntime.jsx(Market, { api: marketApi, disabled: working || changing || runLock, catalog: (config == null ? void 0 : config.items) || [], ensureCatalog: () => {
         if (!config) void load();
       }, run, onDone: (result) => imported(result, false) })
     ] });
