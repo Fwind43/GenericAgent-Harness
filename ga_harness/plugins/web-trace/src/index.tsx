@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type PluginAPI, useHost, T, ViewPanel, defineReact } from '@gah/sdk';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Usage = { input?: number; output?: number; cache_read?: number; calls?: number };
 type Tool = { id?: string; name: string; args?: Json; data?: Json; status: string; ok?: boolean; seconds?: number };
 type Turn = { turn: number; summary?: string; thinking?: string; reply?: string; status?: string; tools?: Tool[]; usage?: Usage; llm?: { seconds?: number; ttft?: number | null }; prompt?: Prompt };
-type Prompt = { kind?: string; chars?: number; injected?: string[]; text?: string };
+// The page gets prompts without their text (has_text says one is stored); it is fetched when a row is opened.
+type Prompt = { kind?: string; chars?: number; injected?: string[]; text?: string; has_text?: boolean };
+type Lazy = { index: number; turn: number; chars?: number };
 type Note = { kind: string; text: string; turn: number };
 type Message = { role: 'user' | 'assistant'; text?: string; status?: string; error?: string; turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; notes?: Note[] };
 
@@ -16,6 +18,7 @@ export type TraceEvent = {
   key: string; run: number; lane: Lane; kind: Kind;
   name?: string; args?: string; result?: string; text: string;
   seconds?: number; failed?: boolean; detail: string; haystack: string;
+  lazy?: Lazy;
 };
 export type TraceRun = { run: number; input: string; status?: string; model?: string; seconds: number; tools: number; usage?: Usage; events: TraceEvent[] };
 type Mode = 'duration' | 'calls';
@@ -52,13 +55,14 @@ export function buildTrace(messages: Message[]): TraceRun[] {
       if (turn.reply) lastReply = turn.reply;
       seconds += turn.llm?.seconds || 0;
       const prompt = turn.prompt;
-      if (prompt?.text != null) {
+      if (prompt && (prompt.text != null || prompt.has_text)) {
         const injected = prompt.injected || [];
-        const cut = prompt.chars != null && prompt.text.length < prompt.chars;
+        const cut = prompt.text != null && prompt.chars != null && prompt.text.length < prompt.chars;
         push({ key: index + ':p' + turn.turn, lane: 'input', kind: 'prompt',
           name: injected.length ? injected.join(' + ') : undefined,
           text: [T('第 ', 'Turn ') + turn.turn + T(' 轮', ''), num(prompt.chars) + T(' 字符', ' chars'), cut ? T('已截断', 'truncated') : ''].filter(Boolean).join(' · '),
-          detail: prompt.text + (cut ? '\n\n' + T('…（已截断，原长 ', '… (truncated, original ') + prompt.chars + T(' 字符）', ' chars)') : '') });
+          lazy: prompt.text == null ? { index, turn: turn.turn, chars: prompt.chars } : undefined,
+          detail: (prompt.text ?? '') + (cut ? '\n\n' + T('…（已截断，原长 ', '… (truncated, original ') + prompt.chars + T(' 字符）', ' chars)') : '') });
       }
       push({ key: index + ':m' + turn.turn, lane: 'model', kind: 'model',
         text: line(said) || T('第 ', 'Turn ') + turn.turn + T(' 轮', ''), seconds: turn.llm?.seconds,
@@ -125,7 +129,24 @@ function Timeline({ events, mode, query, focus, onPick }: { events: TraceEvent[]
   </div>;
 }
 
-function Row({ event, open, focus, onToggle }: { event: TraceEvent; open: boolean; focus: boolean; onToggle: () => void }) {
+function PromptText({ api, sid, lazy }: { api: PluginAPI; sid: string; lazy: Lazy }) {
+  const [body, setBody] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    setBody(null); setError('');
+    api.get<{ text: string }>('prompt?session_id=' + encodeURIComponent(sid) + '&index=' + lazy.index + '&turn=' + lazy.turn)
+      .then(data => { if (alive) setBody(data.text || ''); },
+        (reason: unknown) => { if (alive) setError(String((reason as Error)?.message || reason)); });
+    return () => { alive = false; };
+  }, [api, sid, lazy.index, lazy.turn]);
+  if (error) return <pre className="gah-tr-detail">{T('提示词加载失败：', 'Could not load the prompt: ') + error}</pre>;
+  if (body == null) return <pre className="gah-tr-detail">{T('加载中…', 'Loading…')}</pre>;
+  const cut = lazy.chars != null && body.length < lazy.chars;
+  return <pre className="gah-tr-detail">{(body || T('（无内容）', '(empty)')) + (cut ? '\n\n' + T('…（已截断，原长 ', '… (truncated, original ') + lazy.chars + T(' 字符）', ' chars)') : '')}</pre>;
+}
+
+function Row({ event, open, focus, onToggle, api, sid }: { event: TraceEvent; open: boolean; focus: boolean; onToggle: () => void; api: PluginAPI; sid: string }) {
   return <li id={domId(event.key)} className={'gah-tr k-' + event.kind + (event.failed ? ' failed' : '') + (focus ? ' on' : '')}>
     <button type="button" className="gah-tr-head" aria-expanded={open} onClick={onToggle}>
       <span className="gah-tr-chip">{CHIP[event.kind]()}</span>
@@ -137,12 +158,13 @@ function Row({ event, open, focus, onToggle }: { event: TraceEvent; open: boolea
       </span>
       {event.seconds != null ? <span className={'gah-tr-secs' + (event.seconds >= SLOW ? ' slow' : '')}>{secs(event.seconds)}</span> : null}
     </button>
-    {open ? <pre className="gah-tr-detail">{event.detail || T('（无内容）', '(empty)')}</pre> : null}
+    {open && event.lazy ? <PromptText api={api} sid={sid} lazy={event.lazy} /> : open ? <pre className="gah-tr-detail">{event.detail || T('（无内容）', '(empty)')}</pre> : null}
   </li>;
 }
 
-function Trace() {
+function Trace({ api }: { api: PluginAPI }) {
   const { state } = useHost();
+  const sid = String((state as { session_id?: string }).session_id || '');
   const runs = useMemo(() => buildTrace((state.messages || []) as Message[]), [state.messages]);
   const events = useMemo(() => runs.flatMap(run => run.events), [runs]);
   const [mode, setMode] = useState<Mode>(() => localStorage.getItem('gah-trace-mode') === 'calls' ? 'calls' : 'duration');
@@ -185,14 +207,14 @@ function Trace() {
         <span className="gah-trace-sep-meta">{[statusLabel(run.status), run.model, secs(run.seconds)].filter(Boolean).join(' · ')}</span>
       </header>
       <ol className="gah-trace-list">
-        {shown.filter(event => event.run === run.run).map(event => <Row key={event.key} event={event} open={open.has(event.key)} focus={focus === event.key} onToggle={() => { setFocus(event.key); toggle(event.key); }} />)}
+        {shown.filter(event => event.run === run.run).map(event => <Row key={event.key} event={event} open={open.has(event.key)} focus={focus === event.key} onToggle={() => { setFocus(event.key); toggle(event.key); }} api={api} sid={sid} />)}
       </ol>
     </section>)}
   </div>;
 }
 
 function TraceView({ api }: { api: PluginAPI }) {
-  return <ViewPanel api={api} label={T('轨迹', 'Trace')} order={10} className="gah-trace-view"><Trace /></ViewPanel>;
+  return <ViewPanel api={api} label={T('轨迹', 'Trace')} order={10} className="gah-trace-view"><Trace api={api} /></ViewPanel>;
 }
 
 defineReact('web-trace', TraceView);

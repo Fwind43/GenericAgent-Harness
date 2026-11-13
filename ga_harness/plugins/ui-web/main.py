@@ -58,6 +58,47 @@ from .handler import _Handler, _clip
 EVENTS = ("turn.start", "assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.end", "usage", "usage.total", "llm.start", "llm.timed", "llm.prompt")
 USAGE_KEYS = ("input", "cache_read", "cache_write", "output")
 PROMPT_KEYS = ("kind", "chars", "injected", "text")
+
+
+# The recorded prompt of a turn runs to tens of KiB and only the Trace view shows it, on
+# demand. Pages get turns without it (``has_text`` says one is stored); the stored transcript
+# keeps it, and web-trace serves it per turn. These return copies: the inputs are shared with
+# storage and with other subscribers.
+def _slim_turn(turn):
+    prompt = turn.get("prompt") if isinstance(turn, dict) else None
+    if not isinstance(prompt, dict) or "text" not in prompt:
+        return turn
+    slim = {k: v for k, v in prompt.items() if k != "text"}
+    if prompt["text"] is not None:
+        slim["has_text"] = True
+    return dict(turn, prompt=slim)
+
+
+def _slim_message(message):
+    turns = message.get("turns") if isinstance(message, dict) else None
+    if not isinstance(turns, list):
+        return message
+    slim = [_slim_turn(t) for t in turns]
+    return message if all(a is b for a, b in zip(slim, turns)) else dict(message, turns=slim)
+
+
+def _slim_messages(messages):
+    return [_slim_message(m) for m in messages] if isinstance(messages, list) else messages
+
+
+def _slim_event(data):
+    """A run event as sent to pages: same envelope, prompt text left out."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    if "messages" in out:
+        out["messages"] = _slim_messages(out["messages"])
+    if "message" in out:
+        out["message"] = _slim_message(out["message"])
+    patch = out.get("patch")
+    if isinstance(patch, dict) and "turn" in patch:
+        out["patch"] = dict(patch, turn=_slim_turn(patch["turn"]))
+    return out
 # SSE replay window for reconnecting pages; past it they get a full snapshot instead.
 BACKLOG_EVENTS = 5000
 BACKLOG_BYTES = 4 * 1024 * 1024
@@ -388,7 +429,7 @@ class WebFrontend:
         self.web = WebHost(self)
         if self.runs:
             for kind in ("run.started", "run.event", "run.cancelling", "run.finished"):
-                ctx.on(kind, lambda data, kind=kind: self.broadcast(kind, data))
+                ctx.on(kind, lambda data, kind=kind: self.broadcast(kind, _slim_event(data)))
 
     def broadcast(self, kind, data):
         self._broadcast(kind, data)
@@ -492,6 +533,7 @@ class WebFrontend:
             data["messages"] = fresh
         data["web_plugins"] = self.web.manifest()
         data = self.ctx.waterfall("web.snapshot", data)
+        data["messages"] = _slim_messages(data.get("messages"))
         # HTTP replies and their SSE broadcast share this identity. A new snapshot
         # always gets a new id, including after reconnect or a backend restart.
         data["_snapshot_id"] = os.urandom(16).hex()
@@ -783,7 +825,7 @@ class WebFrontend:
         return None
 
     def _push(self, turns, i):
-        self._broadcast("turn", {"index": i, "turn": turns[i]})
+        self._broadcast("turn", {"index": i, "turn": _slim_turn(turns[i])})
 
     def _find(self, turns, n):
         for i in range(len(turns) - 1, -1, -1):

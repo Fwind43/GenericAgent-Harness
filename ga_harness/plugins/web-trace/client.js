@@ -45,16 +45,17 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
         if (turn.reply) lastReply = turn.reply;
         seconds += ((_a = turn.llm) == null ? void 0 : _a.seconds) || 0;
         const prompt = turn.prompt;
-        if ((prompt == null ? void 0 : prompt.text) != null) {
+        if (prompt && (prompt.text != null || prompt.has_text)) {
           const injected = prompt.injected || [];
-          const cut = prompt.chars != null && prompt.text.length < prompt.chars;
+          const cut = prompt.text != null && prompt.chars != null && prompt.text.length < prompt.chars;
           push({
             key: index + ":p" + turn.turn,
             lane: "input",
             kind: "prompt",
             name: injected.length ? injected.join(" + ") : void 0,
             text: [sdk.T("第 ", "Turn ") + turn.turn + sdk.T(" 轮", ""), num(prompt.chars) + sdk.T(" 字符", " chars"), cut ? sdk.T("已截断", "truncated") : ""].filter(Boolean).join(" · "),
-            detail: prompt.text + (cut ? "\n\n" + sdk.T("…（已截断，原长 ", "… (truncated, original ") + prompt.chars + sdk.T(" 字符）", " chars)") : "")
+            lazy: prompt.text == null ? { index, turn: turn.turn, chars: prompt.chars } : void 0,
+            detail: (prompt.text ?? "") + (cut ? "\n\n" + sdk.T("…（已截断，原长 ", "… (truncated, original ") + prompt.chars + sdk.T(" 字符）", " chars)") : "")
           });
         }
         push({
@@ -150,7 +151,31 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
       ] })
     ] }, lane)) });
   }
-  function Row({ event, open, focus, onToggle }) {
+  function PromptText({ api, sid, lazy }) {
+    const [body, setBody] = react.useState(null);
+    const [error, setError] = react.useState("");
+    react.useEffect(() => {
+      let alive = true;
+      setBody(null);
+      setError("");
+      api.get("prompt?session_id=" + encodeURIComponent(sid) + "&index=" + lazy.index + "&turn=" + lazy.turn).then(
+        (data) => {
+          if (alive) setBody(data.text || "");
+        },
+        (reason) => {
+          if (alive) setError(String((reason == null ? void 0 : reason.message) || reason));
+        }
+      );
+      return () => {
+        alive = false;
+      };
+    }, [api, sid, lazy.index, lazy.turn]);
+    if (error) return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: sdk.T("提示词加载失败：", "Could not load the prompt: ") + error });
+    if (body == null) return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: sdk.T("加载中…", "Loading…") });
+    const cut = lazy.chars != null && body.length < lazy.chars;
+    return /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: (body || sdk.T("（无内容）", "(empty)")) + (cut ? "\n\n" + sdk.T("…（已截断，原长 ", "… (truncated, original ") + lazy.chars + sdk.T(" 字符）", " chars)") : "") });
+  }
+  function Row({ event, open, focus, onToggle, api, sid }) {
     return /* @__PURE__ */ jsxRuntime.jsxs("li", { id: domId(event.key), className: "gah-tr k-" + event.kind + (event.failed ? " failed" : "") + (focus ? " on" : ""), children: [
       /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-tr-head", "aria-expanded": open, onClick: onToggle, children: [
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-tr-chip", children: CHIP[event.kind]() }),
@@ -165,11 +190,12 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
         ] }),
         event.seconds != null ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-tr-secs" + (event.seconds >= SLOW ? " slow" : ""), children: secs(event.seconds) }) : null
       ] }),
-      open ? /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: event.detail || sdk.T("（无内容）", "(empty)") }) : null
+      open && event.lazy ? /* @__PURE__ */ jsxRuntime.jsx(PromptText, { api, sid, lazy: event.lazy }) : open ? /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-tr-detail", children: event.detail || sdk.T("（无内容）", "(empty)") }) : null
     ] });
   }
-  function Trace() {
+  function Trace({ api }) {
     const { state } = sdk.useHost();
+    const sid = String(state.session_id || "");
     const runs = react.useMemo(() => buildTrace(state.messages || []), [state.messages]);
     const events = react.useMemo(() => runs.flatMap((run) => run.events), [runs]);
     const [mode, setMode] = react.useState(() => localStorage.getItem("gah-trace-mode") === "calls" ? "calls" : "duration");
@@ -237,12 +263,12 @@ var GAHPlugin_web_trace = (function(exports, jsxRuntime, react, sdk) {
         /* @__PURE__ */ jsxRuntime.jsx("ol", { className: "gah-trace-list", children: shown.filter((event) => event.run === run.run).map((event) => /* @__PURE__ */ jsxRuntime.jsx(Row, { event, open: open.has(event.key), focus: focus === event.key, onToggle: () => {
           setFocus(event.key);
           toggle(event.key);
-        } }, event.key)) })
+        }, api, sid }, event.key)) })
       ] }, run.run))
     ] });
   }
   function TraceView({ api }) {
-    return /* @__PURE__ */ jsxRuntime.jsx(sdk.ViewPanel, { api, label: sdk.T("轨迹", "Trace"), order: 10, className: "gah-trace-view", children: /* @__PURE__ */ jsxRuntime.jsx(Trace, {}) });
+    return /* @__PURE__ */ jsxRuntime.jsx(sdk.ViewPanel, { api, label: sdk.T("轨迹", "Trace"), order: 10, className: "gah-trace-view", children: /* @__PURE__ */ jsxRuntime.jsx(Trace, { api }) });
   }
   sdk.defineReact("web-trace", TraceView);
   exports.buildTrace = buildTrace;
