@@ -6,6 +6,7 @@ import { CopyButton, Disclosure, Markdown, format } from './Output';
 import { MessageStats } from './MessageStats';
 import { MessageAttachments } from './Attachments';
 import { FileChanges, filesData } from './FileChanges';
+import { Slot } from '../slots';
 
 // DOM and class names intentionally mirror the legacy ui-web renderer so output.css applies unchanged.
 const compact = (n = 0) => n < 1000 ? String(n) : n < 1e6 ? `${Number((n / 1000).toFixed(n < 10000 ? 1 : 0))}k` : `${Number((n / 1e6).toFixed(1))}M`;
@@ -55,7 +56,11 @@ function Summary({ text }: { text?: string }) {
     <path d="M6 4h7M6 8h7M6 12h4M3 4h.01M3 8h.01M3 12h.01" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
   </svg><div className="turn-summary-text">{text}</div></div>;
 }
-const Tool = memo(function Tool({ tool, awaiting }: { tool: ToolCall; awaiting: boolean }) {
+// Slot "tool": a plugin may take over the rendering of the tool calls it selects.
+function Tool(props: { tool: ToolCall; awaiting: boolean }) {
+  return <Slot name="tool" props={props}><ToolView {...props} /></Slot>;
+}
+const ToolView = memo(function ToolView({ tool, awaiting }: { tool: ToolCall; awaiting: boolean }) {
   const ask = window.GAHOutput.askUserPayload(tool.name, tool.args, tool.data);
   const receipt = { ...window.GAHOutput.toolSummary(tool.name, tool.args) };
   if (ask) receipt.target = receipt.detail = ask.question || T('等待回复', 'Awaiting reply');
@@ -176,7 +181,11 @@ function ConductorWake({ m }: { m: Message }) {
     </Disclosure>}
   </div>;
 }
-export const ChatMessage = memo(function ChatMessage({ message: m, last }: { message: Message; last: boolean }) {
+// Slot "message": plugins may wrap a whole message.
+export const ChatMessage = memo(function ChatMessage(props: { message: Message; last: boolean }) {
+  return <Slot name="message" props={props}><MessageView {...props} /></Slot>;
+});
+const MessageView = memo(function MessageView({ message: m, last }: { message: Message; last: boolean }) {
   if (isConductorWake(m)) return <ConductorWake m={m} />;
   const turns = (m.turns ?? []).filter(Boolean), running = m.status === 'running', fin = turns.at(-1);
   // A terminal question is user-facing output, not a hidden execution step.
@@ -235,7 +244,9 @@ export const ChatMessage = memo(function ChatMessage({ message: m, last }: { mes
     {m.role === 'assistant' && <div className="message-actions">
       <MessageStats m={m} turns={turns} />
       {reply && !running && <CopyButton text={reply} label={T('复制回复', 'Copy reply')} />}
+      <Slot name="message.actions" props={{ message: m }} />
     </div>}
     {(m.status === 'aborted' || m.status === 'error') && <div className={'status ' + m.status}>{STATUS[m.status]()}{m.error ? T('：', ': ') + m.error : ''}</div>}
+    <Slot name="message.footer" props={{ message: m }} />
   </div>;
 });

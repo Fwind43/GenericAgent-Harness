@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { HostState } from './types';
+import type { Slot, SlotsAPI } from './slots';
 
 export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'composer-menu' | 'overlay' | 'settings' | 'view' | 'page';
 export type Cleanup = () => void;
@@ -32,14 +33,19 @@ export interface PluginAPI {
   el(tag: string, className?: string, text?: string): HTMLElement;
   h(tag: string, props?: Record<string, unknown> | null, ...children: DomChild[]): HTMLElement;
   host: { get<T = unknown>(path: string): Promise<T>; post<T = unknown>(path: string, body?: unknown): Promise<T> };
+  /** Typed slots rendered inside the host's React tree: replace, wrap or take over host UI, or define slots for other plugins. */
+  readonly slots: SlotsAPI;
 }
 export type PluginSetup = (api: PluginAPI) => void | Cleanup;
-export type ReactPlugin = ComponentType<{ api: PluginAPI }>;
+/** `setup` runs synchronously before the component mounts: define slots and register slot entries there. */
+export type ReactPlugin = ComponentType<{ api: PluginAPI }> & { setup?: PluginSetup };
 export interface BrowserSDK {
   readonly React: typeof import('react');
   readonly useHost: typeof import('./store').useHost;
   define(name: string, setup: PluginSetup): void;
   defineReact(name: string, component: ReactPlugin): void;
+  /** Outlet for a typed slot; plugins render it where their own slots should appear. */
+  readonly Slot: typeof Slot;
 }
 
 export function el(tag: string, className?: string, text?: string) {

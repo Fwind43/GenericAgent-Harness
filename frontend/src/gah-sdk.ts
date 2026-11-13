@@ -15,6 +15,8 @@ export { Icon, Modal, PluginSlot, SettingsPanel, ViewPanel, PagePanel, PageNav, 
 export type { AskOptions } from './plugin-kit';
 export type * from './types';
 export type { PluginAPI, SlotName, Cleanup, Interceptor, PluginSetup, ReactPlugin, DomChild } from './sdk';
+export { Slot } from './slots';
+export type { SlotMap, SlotKind, SlotProps, SlotComponent, SlotsAPI } from './slots';
 export const define = (name: string, setup: PluginSetup) => plugins.sdk.define(name, setup);
 export const defineReact = (name: string, component: ReactPlugin) => plugins.sdk.defineReact(name, component);
 

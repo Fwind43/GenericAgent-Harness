@@ -147,10 +147,31 @@ User plugins need no bundler: write plain JS (`window.GAH.define(name, setup)`) 
 Always clean up DOM/timers via `api.cleanup(fn)` or by returning a cleanup function from `setup(api)`. CSS passed to `web.register(..., style=HERE / "style.css")` is automatically tagged with `data-gah-plugin="<name>"` and removed on disable.
 
 ### 4.1 Available UI Slots
-- **Shell & Layout**: `sidebar.header`, `sidebar.list`, `sidebar.footer`, `topbar.left`, `topbar.right`, `main.before`, `main.after`, `modal`, `status`
-- **Composer**: `composer.above`, `composer.left`, `composer.toolbar`, `composer.right`, `composer.placeholder`
-- **Messages & Turns**: `messages.before`, `message.above`, `message.meta`, `message.actions`, `message.below`, `turn.below`
-- **Settings**: `settings.nav`, `settings.section` (or `api.registerSettingsSection({ id, label, icon, order, Component })`)
+Two slot systems coexist.
+
+**DOM slots** (`api.slot(name)` / `api.mount(name, node)`): append-only containers. Names: `sidebar`, `sidebar-foot`, `header`, `toolbar`, `composer-top`, `composer`, `composer-menu`, `overlay`, `settings`, `view`, `page`.
+
+**Typed slots** (`api.slots`): React components rendered inside the host tree. They can change existing host UI, not only add to it. Each slot has one kind, and each kind has exactly one registration method:
+
+| Kind | Method | Effect |
+|---|---|---|
+| `list` | `api.slots.add(name, Component, { order? })` | Appends an entry. |
+| `single` | `api.slots.replace(name, Component)` | Replaces the default content; a second replacement of the same slot is an error. |
+| `chain` | `api.slots.claim(name, select, Component, { order? })` | Takes over rendering when `select(props)` is truthy; first match by `order` wins, otherwise the default renders. |
+| `hoc` | `api.slots.wrap(name, Component, { order? })` | Wraps the default content, received as `children`. |
+
+Host typed slots:
+- `message` (`hoc`, props `{ message, last }`): one chat message.
+- `message.actions` (`list`, props `{ message }`): action row under an assistant message.
+- `message.footer` (`list`, props `{ message }`): end of a message.
+- `tool` (`chain`, props `{ tool, awaiting }`): one tool call.
+- `empty` (`single`, no props): the empty-chat landing.
+
+Components receive the slot props plus `children` (default content for `single`/`chain`, wrapped content for `hoc`). Every entry has its own error boundary: a failing entry is reported and falls back to the content it replaced or wrapped.
+
+**Plugin-defined slots**: a plugin declares its own slots with `api.slots.define("<plugin>/<slot>", kind)` and renders `window.GAH.Slot` (`{ name, props, children }`) where they appear; other plugins extend them with the same four methods. TypeScript plugins add the props type by declaration merging on `SlotMap`.
+
+**Validation**: registering on an unknown slot, using the method of another kind, defining a slot outside the plugin's own `<plugin>/` prefix, or targeting a slot its owner never defined raises a notice naming the plugin as soon as it is activated. Call `define` and the registration methods synchronously in setup; all registrations are removed on disable/reload.
 
 ### 4.2 Vanilla JS Example (`client.js`)
 ```javascript
@@ -161,7 +182,7 @@ window.GAH.define("my-plugin", function (api) {
       btn.textContent = window.GAH.T("条目", "Items") + " (" + (res.items || []).length + ")";
     });
   };
-  api.mount("topbar.right", btn);
+  api.mount("header", btn);
 
   api.on("updated", function (data) {
     console.log("Server pushed update:", data);
@@ -171,26 +192,33 @@ window.GAH.define("my-plugin", function (api) {
 
 ### 4.3 React Example (`client.js` without build step)
 ```javascript
-window.GAH.defineReact("my-plugin", function (api) {
-  var h = window.GAH.React.createElement;
-  api.registerSlot("status", function MyStatus() {
-    var host = window.GAH.useHost();
-    return h("span", { className: "my-plugin-status" }, window.GAH.T("就绪", "Ready") + (host.busy ? " *" : ""));
-  }, 50);
-});
+var h = window.GAH.React.createElement;
+// The component is mounted in the overlay with `{ api }`; return null when it has nothing to show.
+function MyPlugin() { return null; }
+// `setup` runs before the component mounts: register typed slot entries here.
+MyPlugin.setup = function (api) {
+  // Take over the rendering of one kind of tool call; every other tool keeps the host view.
+  api.slots.claim("tool", function (p) { return p.tool.name === "web_scan"; }, function (p) {
+    return h("div", { className: "my-plugin-tool" }, window.GAH.T("网页扫描", "Web scan") + (p.awaiting ? " *" : ""));
+  });
+  // Wrap every message; `children` is the host rendering.
+  api.slots.wrap("message", function (p) { return h("div", { className: "my-plugin-msg" }, p.children); });
+};
+window.GAH.defineReact("my-plugin", MyPlugin);
 ```
+`api.slots` is also available in `window.GAH.define(name, setup)`.
 
 ### 4.4 Key Frontend `api` & `window.GAH` Methods
 - **Plugin HTTP & SSE (`api`)**:
-  - `api.get(subPath)` -> `GET /api/plugins/<name>/<subPath>` (returns parsed JSON Promise).
-  - `api.post(subPath, body)` -> `POST /api/plugins/<name>/<subPath>` (returns parsed JSON Promise).
+  - `api.get(subPath)` -> `GET /api/p/<name>/<subPath>` (returns parsed JSON Promise).
+  - `api.post(subPath, body)` -> `POST /api/p/<name>/<subPath>` (returns parsed JSON Promise).
   - `api.on(kind, fn)` -> subscribes to `web.emit("<name>", kind, data)` from backend; `api.on("*", fn)` receives all host SSE events.
 - **DOM & Slots (`api`)**:
   - `api.slot(slotName)` -> returns the slot DOM container (`HTMLElement | null`).
   - `api.mount(slotName, node)` -> appends `node` to the slot and automatically removes it on plugin disable/reload.
   - `api.el(tag, className?, text?)` / `api.h(tag, props?, ...children)` -> DOM element helpers.
   - `api.cleanup(fn)` / `api.listen(target, type, fn)` / `api.every(ms, fn)` -> auto-cleaned on disable/reload.
-  - `api.registerSlot(slotName, Component, order?)` / `api.registerSettingsSection({ id, label, icon, order, Component })` -> React slot & settings registration.
+  - `api.slots.add / replace / claim / wrap / define` and `window.GAH.Slot` -> typed React slots (see 4.1).
 - **Host State & i18n (`window.GAH`)**:
   - `window.GAH.useHost()` -> React hook returning host state snapshot (`locale`, `busy`, `session`, `workspace`, `model`, `presets`, etc.).
   - `window.GAH.T(zh, en)` -> returns Chinese when `locale === "zh"`, otherwise English (**note parameter order: `zh` first, `en` second**).

@@ -5,6 +5,13 @@ import { host, useHost } from './store';
 import { T, errorText } from './i18n';
 import { el, h, type BrowserSDK, type Cleanup, type Interceptor, type PluginAPI, type PluginSetup, type ReactPlugin, type SlotName } from './sdk';
 import type { WebManifest } from './types';
+import { Slot, bindSlots, slots } from './slots';
+
+const mountReact = (component: ReactPlugin): PluginSetup => api => {
+  const result = component.setup?.(api);
+  if (typeof result === 'function') api.cleanup(result);
+  api.mount('overlay', React.createElement(component, { api }));
+};
 
 class Boundary extends React.Component<{ name: string; children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -29,9 +36,13 @@ export class PluginRuntime {
       if (!instance || this.native.has(name)) return;
       this.definitions.set(name, setup); this.start(instance);
     },
-    defineReact: (name, component) => this.sdk.define(name, api => api.mount('overlay', React.createElement(component, { api }))),
-    React, useHost,
+    defineReact: (name, component) => this.sdk.define(name, mountReact(component)),
+    React, useHost, Slot,
   };
+  constructor() {
+    slots.known = name => this.instances.has(name);
+    slots.report = (name, error) => this.report(name, error);
+  }
   register(name: string, component: ReactPlugin) { this.native.set(name, component); }
   private report(name: string, error: unknown) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) host.notice(`${name}: ${errorText(error)}`);
@@ -39,7 +50,7 @@ export class PluginRuntime {
   private start(instance: Instance) {
     const { manifest: m, controller, cleanup } = instance;
     const component = this.native.get(m.name);
-    const setup: PluginSetup | undefined = component ? api => api.mount('overlay', React.createElement(component, { api })) : this.definitions.get(m.name);
+    const setup: PluginSetup | undefined = component ? mountReact(component) : this.definitions.get(m.name);
     if (!setup || instance.started || controller.signal.aborted) return;
     instance.started = true;
     let unlock: Cleanup | undefined;
@@ -94,10 +105,13 @@ export class PluginRuntime {
       },
       every: (ms, fn) => { const id = window.setInterval(() => guard(fn)(undefined), ms); return own(() => clearInterval(id)); },
       el, h,
+      slots: bindSlots(m.name, own),
     };
     own(() => { unlock?.(); unlock = undefined; });
     try { const result = setup(api); if (typeof result === 'function') own(result); }
     catch (error) { this.report(m.name, error); this.stop(m.name); }
+    // Entries other plugins registered for a slot this plugin never defined are errors from here on.
+    slots.settle(m.name);
   }
   private stop(name: string) {
     const instance = this.instances.get(name);
@@ -153,11 +167,14 @@ export class PluginRuntime {
           const next = desired.find(m => m.name === name);
           if (!next || JSON.stringify(next) !== JSON.stringify(instance.manifest)) this.stop(name);
         }
+        // Create every instance before loading any, so a plugin that starts first can see the others (slot owners).
+        const fresh: Instance[] = [];
         for (const manifest of desired) {
           if (this.instances.has(manifest.name)) continue;
           const instance: Instance = { manifest, controller: new AbortController(), cleanup: [], started: false };
-          this.instances.set(manifest.name, instance); void this.load(instance);
+          this.instances.set(manifest.name, instance); fresh.push(instance);
         }
+        for (const instance of fresh) void this.load(instance);
       }
     } finally { this.syncing = false; }
   }

@@ -22,6 +22,7 @@ import { ViewTabs } from './components/ViewTabs';
 import { CHAT_VIEW, showsComposer, useViews, views } from './views';
 import { pages, usePages } from './pages';
 import { PageNav } from './plugin-kit';
+import { Slot as TypedSlot } from './slots';
 // Desktop shell bridge (preload); absent in a normal browser.
 const desktopShell = (window as unknown as { gahDesktop?: { setPluginWindows?: (list: Pick<WebManifest, 'name' | 'desktop'>[]) => void } }).gahDesktop;
 
@@ -297,7 +298,9 @@ const STARTERS = (): [string, string][] => [
   [T('查资料', 'Research'), T('帮我搜索并总结关于这个主题的最新资料：', 'Search and summarise the latest information on: ')],
   [T('写脚本', 'Write a script'), T('帮我写一个脚本，实现：', 'Write a script that: ')],
 ];
-function EmptyState() {
+// Slot "empty": one plugin may replace the empty-chat landing.
+function EmptyState() { return <TypedSlot name="empty" props={{}}><EmptyView /></TypedSlot>; }
+function EmptyView() {
   return <div className="empty"><b>{T('今天想让 GenericAgent 做什么？', 'What should GenericAgent do today?')}</b>
     <span>{T('描述目标即可，它会自己规划步骤、调用工具并汇报结果。', 'Describe the goal; it plans the steps, uses tools and reports back.')}</span>
     <div className="gah-starters">{STARTERS().map(([label, prompt]) => <button key={label} type="button" className="gah-starter"
