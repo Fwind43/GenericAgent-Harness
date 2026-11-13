@@ -5,6 +5,7 @@ GET /api/p/web-usage/?days=N  -> {totals, models, days, sessions, ...}   (N=0: a
 Counting matches the per-chat stats bar: per-step usage when present, otherwise the
 run total. Runs without a creation time are dated by their chat's last update.
 """
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,45 @@ def run_usage(message):
     return None
 
 
+def chat_runs(messages):
+    """Compact [(created_at or 0, model, usage, calls)] for a transcript: all a report needs."""
+    runs = []
+    for message in messages or []:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        found = run_usage(message)
+        if found is not None:
+            runs.append((_num(message.get("created_at")), message.get("model") or "", found[0], found[1]))
+    return runs
+
+
+class Summaries:
+    """Per-chat usage summaries, re-read only when a chat's `updated` stamp changes.
+
+    Transcripts can total hundreds of MB; decoding all of them on every request stalled the
+    whole server. Chats are read one at a time so the session store lock is never held long.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()   # one refresh at a time; later callers reuse its result
+        self.cache = {}                # chat id -> (updated, runs)
+
+    def chats(self, sessions):
+        with self.lock:
+            listing = sessions.listing()
+            fresh = {}
+            for row in listing:
+                sid, hit = row["id"], self.cache.get(row["id"])
+                if hit is None or hit[0] != row["updated"]:
+                    chat = sessions.transcript(sid)
+                    if chat is None:      # deleted since the listing
+                        continue
+                    hit = (chat["updated"], chat_runs(chat["messages"]))
+                fresh[sid] = hit
+            self.cache = fresh
+            return [{"id": row["id"], "title": row["title"], "updated": fresh[row["id"]][0], "runs": fresh[row["id"]][1]}
+                    for row in listing if row["id"] in fresh]
+
+
 def aggregate(chats, days=30, now=None, top=10):
     now = time.time() if now is None else now
     since = now - days * 86400 if days else None
@@ -46,20 +86,13 @@ def aggregate(chats, days=30, now=None, top=10):
     undated = 0
     for chat in chats:
         per = _empty()
-        for message in chat.get("messages") or []:
-            if not isinstance(message, dict) or message.get("role") != "assistant":
-                continue
-            found = run_usage(message)
-            if found is None:
-                continue
-            at = _num(message.get("created_at"))
+        runs = chat["runs"] if "runs" in chat else chat_runs(chat.get("messages"))
+        for at, model, usage, calls in runs:
             if not at:
                 at, undated = _num(chat.get("updated")), undated + 1
             if since is not None and at < since:
                 continue
-            usage, calls = found
             day = datetime.fromtimestamp(at).strftime("%Y-%m-%d")
-            model = message.get("model") or ""
             for bucket in (totals, per, models.setdefault(model, _empty()), by_day.setdefault(day, _empty())):
                 _add(bucket, usage, calls)
                 bucket["runs"] += 1
@@ -78,6 +111,7 @@ def aggregate(chats, days=30, now=None, top=10):
 
 def apply(ctx, config):
     host = ctx.get("web.host")
+    summaries = Summaries()
 
     def read(req):
         sessions = ctx.get("sessions")
@@ -87,7 +121,7 @@ def apply(ctx, config):
             days = max(0, int((req.get("query") or {}).get("days", 30)))
         except (TypeError, ValueError):
             return 400, {"error": "days must be an integer"}
-        return aggregate(sessions.transcripts(), days)
+        return aggregate(summaries.chats(sessions), days)
 
     ctx.scope.add(host.register("web-usage", script=HERE / "client.js", style=HERE / "client.css", order=48,
                                 routes={("GET", ""): read}))

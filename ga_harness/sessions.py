@@ -268,6 +268,24 @@ class Sessions:
             result.append({"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages})
         return result
 
+    def transcript(self, sid):
+        """Read-only (id, title, updated, messages) of one live chat, or None.
+
+        Reports over many chats should walk listing() and call this per chat: the store lock
+        is held only for one row, and the JSON is decoded outside it.
+        """
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                row = db.execute("SELECT id,title,updated,messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+        if row is None:
+            return None
+        try:
+            messages = json.loads(row["messages"])
+        except ValueError:
+            messages = []
+        return {"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages}
+
     def _write(self, db, current, messages, state):
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":
