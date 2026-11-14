@@ -651,11 +651,36 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
         "run": {"status": "error", "source": conductor.SOURCE,
                 "error": "The model call failed; the run stopped. !!!Error: HTTP 503"},
     })
-    assert harness.timers[-1].delay == conductor.ACTIVE_IDLE_INTERVAL
+    assert harness.timers[-1].delay == 60
     down = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
     assert down["status"] == "idle_backoff"
     assert "model unavailable" in down["reason"]
     harness.timers.clear()
+
+    def llm_down(run_id):
+        harness.callbacks["run.finished"]({
+            "session_id": sid, "run_id": run_id, "message": reply_only,
+            "run": {"status": "error", "source": conductor.SOURCE,
+                    "error": "The model call failed; the run stopped. !!!Error: HTTP 503"},
+        })
+        delay = harness.timers[-1].delay
+        harness.timers.clear()
+        return delay
+
+    # Repeated failures wait 1 min twice, then 5, 15 and finally 30 minutes each time.
+    assert [llm_down(f"r-llm-down-{i}") for i in range(5)] == [
+        60, 300, 900, conductor.ACTIVE_IDLE_INTERVAL, conductor.ACTIVE_IDLE_INTERVAL]
+
+    # A run that works again starts the ladder over.
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-llm-back", "run": {"status": "done", "source": conductor.SOURCE},
+        "message": msg1,
+    })
+    assert harness.timers[-1].delay == conductor.CONTINUE_DELAY
+    back = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert back["status"] == "active" and "next_continue_at" not in back
+    harness.timers.clear()
+    assert llm_down("r-llm-down-again") == 60
 
     # Any other failure is still left to the user.
     harness.callbacks["run.finished"]({

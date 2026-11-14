@@ -58,6 +58,8 @@ WAKE_RETRY_DELAY = 5.0  # seconds between those attempts
 CONTINUE_DELAY = 1.0  # seconds after the conductor's turn ends before prompting it again
 ACTIVE_IDLE_LIMIT = 3  # consecutive prompted turns without progress before 30m idle backoff
 ACTIVE_IDLE_INTERVAL = 1800.0  # seconds between continuation prompts once in idle backoff
+# Waits after consecutive failed model calls; later failures wait ACTIVE_IDLE_INTERVAL.
+MODEL_RETRY_DELAYS = (60.0, 60.0, 300.0, 900.0)
 
 
 def _reflect_requested(messages):
@@ -1333,6 +1335,12 @@ def apply(ctx, config):
             if not finished and plan.get("status") in ("done", "blocked", "paused", "idle_backoff"):
                 plan.update(status="active", reason="")
         status = record.get("status") or "done"
+        if by_user or status == "done":
+            if state.pop("llm_down", None) and status == "done" and not finished:
+                plan = _progress(parent)  # the model answers again: leave the retry backoff
+                if plan.get("status") == "idle_backoff":
+                    plan.pop("next_continue_at", None)
+                    plan.update(status="active", reason="")
         if (status == "error" and not finished and active.get(parent)
                 and _failure(record, message)["retryable"]):
             # The model was unreachable. Prompting again right away only repeats the
@@ -1342,12 +1350,16 @@ def apply(ctx, config):
                 return None
             if enabled.get(parent) and (_counts(parent)["running"] or _unreported(parent)):
                 return None  # a wake-up is already on its way
-            due = time.time() + ACTIVE_IDLE_INTERVAL
+            failures = state["llm_down"] = state.get("llm_down", 0) + 1
+            delay = (MODEL_RETRY_DELAYS[failures - 1] if failures <= len(MODEL_RETRY_DELAYS)
+                     else ACTIVE_IDLE_INTERVAL)
+            due = time.time() + delay
             plan.update(status="idle_backoff",
-                        reason="model unavailable; retrying every 30 minutes",
+                        reason=f"model unavailable; retrying in {int(delay // 60)} min",
                         next_continue_at=due)
-            log.info("conductor: model call failed for %s; retrying in 30m", parent)
-            return ACTIVE_IDLE_INTERVAL
+            log.info("conductor: model call failed for %s (%d in a row); retrying in %ds",
+                     parent, failures, delay)
+            return delay
         if status != "done" or finished:
             return None  # stopped, failed, or declared done/blocked: leave it to the user
         if asked_user:
@@ -1475,6 +1487,9 @@ def apply(ctx, config):
             _schedule_continue(parent, WAKE_RETRY_DELAY)
             return
         backoff_note = (
+            " The previous model call failed, so this is a delayed retry; carry on from where "
+            "the work stopped."
+        ) if in_backoff and str(prog.get("reason") or "").startswith("model unavailable") else (
             " No concrete progress was made in the recent turns, so continuation has backed off "
             "to every 30 minutes; make real progress now to resume normal pace, or call "
             f"{'conductor_finish' if is_conductor else 'autopilot_finish'} immediately if the "
