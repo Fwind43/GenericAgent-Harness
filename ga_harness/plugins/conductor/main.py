@@ -182,7 +182,7 @@ def _failure(record, message=None):
     if kind:
         return {"failure_kind": kind, "retryable": bool(record.get("retryable"))}
     text = str(record.get("error") or "").lower()
-    if any(word in text for word in ("rate limit", "429", "503", "502", "model unavailable",
+    if any(word in text for word in ("rate limit", "429", "503", "502", "model unavailable", "model call failed",
                                      "connection error", "connectionerror", "timed out", "timeout")):
         return {"failure_kind": "model_unavailable", "retryable": True}
     turns = (message or {}).get("turns") or []
@@ -1332,7 +1332,23 @@ def apply(ctx, config):
             plan.pop("next_continue_at", None)
             if not finished and plan.get("status") in ("done", "blocked", "paused", "idle_backoff"):
                 plan.update(status="active", reason="")
-        if (record.get("status") or "done") != "done" or finished:
+        status = record.get("status") or "done"
+        if (status == "error" and not finished and active.get(parent)
+                and _failure(record, message)["retryable"]):
+            # The model was unreachable. Prompting again right away only repeats the
+            # failure, and stopping for good would strand an unattended session.
+            plan = _progress(parent)
+            if plan.get("status") in ("done", "blocked", "paused"):
+                return None
+            if enabled.get(parent) and (_counts(parent)["running"] or _unreported(parent)):
+                return None  # a wake-up is already on its way
+            due = time.time() + ACTIVE_IDLE_INTERVAL
+            plan.update(status="idle_backoff",
+                        reason="model unavailable; retrying every 30 minutes",
+                        next_continue_at=due)
+            log.info("conductor: model call failed for %s; retrying in 30m", parent)
+            return ACTIVE_IDLE_INTERVAL
+        if status != "done" or finished:
             return None  # stopped, failed, or declared done/blocked: leave it to the user
         if asked_user:
             plan = _progress(parent)

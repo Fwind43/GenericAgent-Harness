@@ -60,3 +60,14 @@ def test_push_dispatch_and_dispose():
     assert done.wait(2)
     assert got == [("inbox", 1), ("*", "inbox", 1), ("*", "inbox", 2)]
     host._close()
+
+
+def test_llm_failed_recognises_ga_error_markers_only():
+    from ga_harness.worker import _llm_failed
+
+    assert _llm_failed("!!!Error: HTTP 503 Service Unavailable")
+    assert _llm_failed("partial answer\n[!!! \u6d41\u5f02\u5e38\u4e2d\u65ad: ReadTimeout]")
+    assert not _llm_failed("")
+    assert not _llm_failed("All done, nothing failed.")
+    # A long normal reply that merely quotes the marker early on is not a failure.
+    assert not _llm_failed("The log said [!!! \u6d41\u5f02\u5e38\u4e2d\u65ad once. " + "x" * 500)

@@ -645,6 +645,25 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
     assert harness.timers[-1].delay == conductor.CONTINUE_DELAY
     harness.timers.clear()
 
+    # A failed model call backs off at once instead of prompting again a second later.
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-llm-down", "message": reply_only,
+        "run": {"status": "error", "source": conductor.SOURCE,
+                "error": "The model call failed; the run stopped. !!!Error: HTTP 503"},
+    })
+    assert harness.timers[-1].delay == conductor.ACTIVE_IDLE_INTERVAL
+    down = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert down["status"] == "idle_backoff"
+    assert "model unavailable" in down["reason"]
+    harness.timers.clear()
+
+    # Any other failure is still left to the user.
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-broken", "message": reply_only,
+        "run": {"status": "error", "source": conductor.SOURCE, "error": "Worker failed (ValueError)"},
+    })
+    assert not harness.timers
+
     # finish(done) stops until user input.
     harness.services["conductor"]({"session_id": sid, "op": "finish", "status": "done", "summary": "Completed"})
     harness.callbacks["run.finished"]({

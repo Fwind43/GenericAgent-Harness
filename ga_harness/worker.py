@@ -12,6 +12,17 @@ from types import SimpleNamespace
 from . import model_keys
 
 EMPTY_REPLY = "The model returned an empty response; the run stopped. Send a message to continue."
+LLM_FAILED = "The model call failed; the run stopped. "
+# GA's own markers for a failed model call, written into the reply text.
+LLM_ERROR_MARKS = ("!!!Error:", "[!!! \u6d41\u5f02\u5e38\u4e2d\u65ad")
+# Run sources that are automatic wake-ups rather than something a person typed.
+WAKE_SOURCES = frozenset({"conductor"})
+
+
+def _llm_failed(text):
+    """True when a tool-less reply is (or ends in) GA's model-error marker."""
+    text = (text or "").strip()
+    return text.startswith(LLM_ERROR_MARKS[0]) or any(mark in text[-400:] for mark in LLM_ERROR_MARKS)
 EVENTS = ("assistant.delta", "assistant.text", "tool.call", "tool.result", "turn.start", "turn.end",
           "usage", "usage.total", "llm.start", "llm.timed", "llm.prompt")
 # Host/UI/storage plugins must never be mounted in a worker. DEFAULT_PLUGINS are
@@ -270,12 +281,18 @@ def run_worker(connection, recipe, payload):
 
         # GA ends a run "normally" after an empty model reply in some setups;
         # remember whether the final LLM call produced neither text nor tools.
-        last = {"empty": False}
+        # GA also reports a failed model call (timeout, 503, broken stream) as
+        # ordinary reply text, so such a run would otherwise count as done.
+        last = {"empty": False, "failed": "", "tools": 0}
 
         def track_reply(g, nxt):
             r = g.get("response")
-            last["empty"] = r is not None and not str(getattr(r, "content", "") or "").strip() \
-                and not getattr(r, "tool_calls", None)
+            text = str(getattr(r, "content", "") or "").strip()
+            calls = getattr(r, "tool_calls", None)
+            last["empty"] = r is not None and not text and not calls
+            last["failed"] = text if r is not None and not calls and _llm_failed(text) else ""
+            if calls:
+                last["tools"] += 1
             return nxt(g)
         runtime.ctx.on("ga.llm_after", track_reply)
         for name in EVENTS:
@@ -311,9 +328,17 @@ def run_worker(connection, recipe, payload):
         started = True
         result = agent.run(payload["task"], source=payload.get("source", "user"),
                            images=payload.get("images") or None, timeout=payload.get("timeout"))
-        if last["empty"]:
-            logging.getLogger("gah.worker").warning("run %s ended after an empty model reply", payload.get("run_id"))
-            send("error", error=EMPTY_REPLY, state=capture(raw))
+        if last["empty"] or last["failed"]:
+            logging.getLogger("gah.worker").warning(
+                "run %s ended after %s", payload.get("run_id"),
+                "an empty model reply" if last["empty"] else "a failed model call")
+            # A plugin-written wake-up that got no usable model output and ran no
+            # tool added nothing but its own prompt. Returning no state keeps the
+            # session as it was before the run, so repeated failed wake-ups cannot
+            # push the real conversation out of the model's context.
+            wasted = payload.get("source") in WAKE_SOURCES and not last["tools"]
+            send("error", error=EMPTY_REPLY if last["empty"] else LLM_FAILED + last["failed"][:300],
+                 state=None if wasted else capture(raw))
         else:
             send("done", text=str(result or ""), state=capture(raw))
     except Exception as error:
