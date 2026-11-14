@@ -201,3 +201,53 @@ def test_request_id_is_durable_scoped_and_preserves_message_metadata(stores):
         assert len({first["id"], other_source["id"], other_session["id"]}) == 3
     finally:
         recovered.close()
+
+
+def test_failed_stream_checkpoint_keeps_the_run_alive(stores, monkeypatch):
+    import sqlite3
+    import time
+
+    sessions, scope = stores
+    runs = Runs(sessions, scope, lambda *mode: [])
+    sid = sessions.current()["id"]
+    reserve(sessions, sid, "stream-run")
+    live = runs.live["stream-run"] = {
+        "messages": [{"role": "user", "text": "hi"},
+                     {"role": "assistant", "text": "", "status": "running", "turns": []}],
+        "state": dict(sessions.get(sid)["state"]),
+        "session_id": sid,
+        "seq": 0,
+        "dirty": False,
+        "flushed": time.monotonic() - 60,
+        "calls": {},
+        "finished": SimpleNamespace(set=lambda: None),
+        "process": None,
+        "thread": None,
+        "cancelled": False,
+    }
+    checkpoint = runs._checkpoint
+    attempts = []
+
+    def locked(db, live):
+        attempts.append(1)
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(runs, "_checkpoint", locked)
+    try:
+        # A periodic stream checkpoint that cannot be written must not end the run.
+        runs._event("stream-run", {"name": "assistant.delta", "data": {"text": "partial"}})
+        assert attempts == [1]
+        assert "stream-run" in runs.live and live["dirty"] is True
+        assert sessions.get(sid)["messages"] != live["messages"]
+        # The next fragment waits for a full interval instead of retrying at once.
+        runs._event("stream-run", {"name": "assistant.delta", "data": {"text": " more"}})
+        assert attempts == [1]
+
+        # Once the store works again the whole transcript is saved.
+        monkeypatch.setattr(runs, "_checkpoint", checkpoint)
+        live["flushed"] = time.monotonic() - 60
+        runs._event("stream-run", {"name": "assistant.delta", "data": {"text": " answer"}})
+        assert live["dirty"] is False
+        assert sessions.get(sid)["messages"] == live["messages"]
+    finally:
+        runs.close()

@@ -432,8 +432,15 @@ class Runs:
             # ``self.lock`` (shared by every session, run and API request) so a
             # slow commit cannot stall them. Only this run's monitor thread
             # mutates ``live``, and it also performs the final save afterwards.
-            with self.sessions._db() as db:
-                self._checkpoint(db, live)
+            try:
+                with self.sessions._db() as db:
+                    self._checkpoint(db, live)
+            except Exception:
+                # Skipping one checkpoint loses nothing: the transcript stays in memory
+                # and the next checkpoint, durable event or completion saves it in
+                # full. Ending the run here would throw away work that is still going.
+                live["flushed"] = time.monotonic()  # wait a full interval before retrying
+                log.warning("run %s: stream checkpoint failed; will retry", rid, exc_info=True)
 
     @staticmethod
     def _patch(messages, name, data):

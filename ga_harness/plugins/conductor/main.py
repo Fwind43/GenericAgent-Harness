@@ -187,6 +187,10 @@ def _failure(record, message=None):
     if any(word in text for word in ("rate limit", "429", "503", "502", "model unavailable", "model call failed",
                                      "connection error", "connectionerror", "timed out", "timeout")):
         return {"failure_kind": "model_unavailable", "retryable": True}
+    if "could not be saved" in text:
+        # The host failed to store the run's output (locked database, out of memory).
+        # The work itself did not fail, so a later attempt can succeed.
+        return {"failure_kind": "save_failed", "retryable": True}
     turns = (message or {}).get("turns") or []
     if any(tool.get("ok") is False or tool.get("status") == "error"
            for turn in turns[-1:] for tool in (turn.get("tools") or []) if isinstance(tool, dict)):
@@ -1341,10 +1345,11 @@ def apply(ctx, config):
                 if plan.get("status") == "idle_backoff":
                     plan.pop("next_continue_at", None)
                     plan.update(status="active", reason="")
-        if (status == "error" and not finished and active.get(parent)
-                and _failure(record, message)["retryable"]):
-            # The model was unreachable. Prompting again right away only repeats the
-            # failure, and stopping for good would strand an unattended session.
+        failure = _failure(record, message) if status == "error" else None
+        if failure and failure["retryable"] and not finished and active.get(parent):
+            # The model was unreachable or the host could not save the output. Prompting
+            # again right away only repeats the failure, and stopping for good would
+            # strand an unattended session.
             plan = _progress(parent)
             if plan.get("status") in ("done", "blocked", "paused"):
                 return None
@@ -1354,11 +1359,13 @@ def apply(ctx, config):
             delay = (MODEL_RETRY_DELAYS[failures - 1] if failures <= len(MODEL_RETRY_DELAYS)
                      else ACTIVE_IDLE_INTERVAL)
             due = time.time() + delay
+            what = ("run output not saved" if failure["failure_kind"] == "save_failed"
+                    else "model unavailable")
             plan.update(status="idle_backoff",
-                        reason=f"model unavailable; retrying in {int(delay // 60)} min",
+                        reason=f"{what}; retrying in {int(delay // 60)} min",
                         next_continue_at=due)
-            log.info("conductor: model call failed for %s (%d in a row); retrying in %ds",
-                     parent, failures, delay)
+            log.info("conductor: %s for %s (%d in a row); retrying in %ds",
+                     what, parent, failures, delay)
             return delay
         if status != "done" or finished:
             return None  # stopped, failed, or declared done/blocked: leave it to the user
@@ -1486,10 +1493,15 @@ def apply(ctx, config):
             _publish()
             _schedule_continue(parent, WAKE_RETRY_DELAY)
             return
+        backoff_reason = str(prog.get("reason") or "") if in_backoff else ""
         backoff_note = (
             " The previous model call failed, so this is a delayed retry; carry on from where "
             "the work stopped."
-        ) if in_backoff and str(prog.get("reason") or "").startswith("model unavailable") else (
+        ) if backoff_reason.startswith("model unavailable") else (
+            " The previous run stopped because its output could not be saved, so part of it may "
+            "be missing from the conversation; this is a delayed retry. Check what was actually "
+            "done and carry on from there."
+        ) if backoff_reason.startswith("run output not saved") else (
             " No concrete progress was made in the recent turns, so continuation has backed off "
             "to every 30 minutes; make real progress now to resume normal pace, or call "
             f"{'conductor_finish' if is_conductor else 'autopilot_finish'} immediately if the "

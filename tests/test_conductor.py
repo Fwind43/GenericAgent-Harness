@@ -530,6 +530,8 @@ def test_failure_and_metrics_helpers(conductor):
     assert conductor._failure({"status": "aborted"}) == {"failure_kind": "user_aborted", "retryable": False}
     assert conductor._failure({"status": "interrupted"}) == {"failure_kind": "host_restart", "retryable": True}
     assert conductor._failure({"status": "error", "error": "unknown"})["failure_kind"] == "execution_error"
+    assert conductor._failure({"status": "error", "error": "Run output could not be saved"}) == {
+        "failure_kind": "save_failed", "retryable": True}
     metrics = conductor._task_metrics({"created": 10, "ended": 13}, {"turns": [
         {"usage": {"input": 12, "output": 3}}, {"usage": {"input": 4, "output": 2}},
     ]})
@@ -681,6 +683,17 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
     assert back["status"] == "active" and "next_continue_at" not in back
     harness.timers.clear()
     assert llm_down("r-llm-down-again") == 60
+
+    # A run whose output could not be saved is retried on the same ladder.
+    harness.callbacks["run.finished"]({
+        "session_id": sid, "run_id": "r-unsaved", "message": reply_only,
+        "run": {"status": "error", "source": conductor.SOURCE, "error": "Run output could not be saved"},
+    })
+    assert harness.timers[-1].delay == 60
+    unsaved = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert unsaved["status"] == "idle_backoff"
+    assert unsaved["reason"].startswith("run output not saved")
+    harness.timers.clear()
 
     # Any other failure is still left to the user.
     harness.callbacks["run.finished"]({
