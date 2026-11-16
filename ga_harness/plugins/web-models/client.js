@@ -5,8 +5,10 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
     const { state } = sdk.useHost(), { busy, run } = sdk.useOperation(api);
     const [open, setOpen] = react.useState(false), [query, setQuery] = react.useState(""), [provider, setProvider] = react.useState("");
     const trigger = react.useRef(null), popup = react.useRef(null), search = react.useRef(null);
+    const [pending, setPending] = react.useState(null);
     const catalog = state.models, effort = state.effort;
-    const current = catalog == null ? void 0 : catalog.items.find((item) => item.id === catalog.current);
+    const shown = (pending == null ? void 0 : pending.model) ?? (catalog == null ? void 0 : catalog.current), shownEffort = (pending == null ? void 0 : pending.effort) ?? ((effort == null ? void 0 : effort.current) || "");
+    const current = catalog == null ? void 0 : catalog.items.find((item) => item.id === shown);
     const groups = /* @__PURE__ */ new Map();
     for (const item of (catalog == null ? void 0 : catalog.items) || []) {
       const id = providerId$1(item), group = groups.get(id) || { name: item.provider || sdk.T("独立配置", "Standalone"), count: 0 };
@@ -44,19 +46,21 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
         if (node.matches(":popover-open")) node.hidePopover();
       };
     }, [open]);
-    const select = (path, body) => {
+    const select = (path, body, choice) => {
       close(true);
-      void run(async () => api.setState(await api.host.post(path, body)));
+      setPending(choice);
+      void run(async () => api.setState(await api.host.post(path, body))).finally(() => setPending(null));
     };
     if (!catalog) return null;
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-      /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "composer", children: /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-models", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { ref: trigger, type: "button", className: "gah-model-trigger", disabled: busy, "aria-haspopup": "dialog", "aria-controls": "gah-model-picker", "aria-expanded": open, onClick: () => {
+      /* @__PURE__ */ jsxRuntime.jsx(sdk.PluginSlot, { api, name: "composer", children: /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-models", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { ref: trigger, type: "button", className: "gah-model-trigger", disabled: busy && !pending, "aria-busy": !!pending || void 0, "aria-haspopup": "dialog", "aria-controls": "gah-model-picker", "aria-expanded": open, onClick: () => {
+        if (pending) return;
         setQuery("");
         setProvider("");
         setOpen((value) => !value);
       }, children: [
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-name", children: (current == null ? void 0 : current.name) || (current == null ? void 0 : current.model) || sdk.T("选择模型", "Choose model") }),
-        effort && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-effort", children: effort.current || "default" }),
+        effort && /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-model-effort", children: shownEffort || "default" }),
         /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-model-caret", viewBox: "0 0 10 10", width: "10", height: "10", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M2 3.5l3 3 3-3", fill: "none", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }) })
       ] }) }) }),
       open && reactDom.createPortal(/* @__PURE__ */ jsxRuntime.jsxs("div", { ref: popup, popover: "auto", role: "dialog", "aria-label": sdk.T("模型与思考强度", "Model and reasoning effort"), id: "gah-model-picker", className: "gah-model-popover", onToggle: (event) => {
@@ -84,12 +88,12 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-picker-models", children: [
-          items.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-picker-option", "data-model-id": item.id, "aria-pressed": item.id === catalog.current, disabled: busy, onClick: () => select("/api/models/select", { id: item.id }), children: [
+          items.map((item) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-picker-option", "data-model-id": item.id, "aria-pressed": item.id === shown, disabled: busy, onClick: () => select("/api/models/select", { id: item.id }, { model: item.id }), children: [
             /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-picker-option-copy", children: [
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: item.name || item.model }),
               /* @__PURE__ */ jsxRuntime.jsx("small", { children: [item.provider || sdk.T("独立配置", "Standalone"), item.name && item.model !== item.name ? item.model : ""].filter(Boolean).join(" · ") })
             ] }),
-            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-picker-check", "aria-hidden": "true", children: item.id === catalog.current ? "✓" : "" })
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-picker-check", "aria-hidden": "true", children: item.id === shown ? "✓" : "" })
           ] }, item.id)),
           !items.length && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-picker-empty", children: sdk.T("没有匹配的模型", "No matching models") })
         ] }),
@@ -98,7 +102,7 @@ var GAHPlugin_web_models = (function(exports, jsxRuntime, react, sdk, reactDom) 
             sdk.T("推理强度", "Reasoning effort"),
             /* @__PURE__ */ jsxRuntime.jsx("small", { children: sdk.T("仅当前对话", "This chat only") })
           ] }),
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-effort-options", role: "group", "aria-label": sdk.T("推理强度", "Reasoning effort"), children: ["", ...effort.options].map((option) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", "aria-pressed": option === (effort.current || ""), disabled: busy, onClick: () => select("/api/effort", { value: option }), children: option || "default" }, option)) })
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-effort-options", role: "group", "aria-label": sdk.T("推理强度", "Reasoning effort"), children: ["", ...effort.options].map((option) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", "aria-pressed": option === shownEffort, disabled: busy, onClick: () => select("/api/effort", { value: option }, { effort: option }), children: option || "default" }, option)) })
         ] })
       ] }), document.body)
     ] });

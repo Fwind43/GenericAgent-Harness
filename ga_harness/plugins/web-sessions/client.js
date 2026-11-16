@@ -147,10 +147,10 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       [ids[from], ids[to]] = [ids[to], ids[from]];
       return { ...old, projectOrder: ids };
     });
-    const dropProject = (id, target, after) => updateLayout((old) => {
+    const dropProject = (id, target2, after) => updateLayout((old) => {
       var _a, _b;
-      if (id === target || !!((_a = projects.find((p) => p.id === id)) == null ? void 0 : _a.pinned) !== !!((_b = projects.find((p) => p.id === target)) == null ? void 0 : _b.pinned)) return old;
-      const ids = projects.map((p) => p.id).filter((x) => x !== id), at = ids.indexOf(target);
+      if (id === target2 || !!((_a = projects.find((p) => p.id === id)) == null ? void 0 : _a.pinned) !== !!((_b = projects.find((p) => p.id === target2)) == null ? void 0 : _b.pinned)) return old;
+      const ids = projects.map((p) => p.id).filter((x) => x !== id), at = ids.indexOf(target2);
       if (at < 0) return old;
       ids.splice(at + (after ? 1 : 0), 0, id);
       return { ...old, projectOrder: ids };
@@ -176,11 +176,24 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
         return next;
       });
     }, [current]);
-    const openChat = (session, recent) => {
+    const [target, setTarget] = react.useState(""), wanted = react.useRef("");
+    const openChat = async (session, recent) => {
       const key = recent && session.project_id ? `p:${session.project_id}` : "";
       quiet.current = key && key !== current ? key : "";
       if (quiet.current) setToggled((old) => old[key] === void 0 ? { ...old, [key]: false } : old);
-      return act("select", { id: session.id });
+      const inFlight = !!wanted.current;
+      wanted.current = session.id;
+      setTarget(session.id);
+      if (inFlight) return;
+      try {
+        for (let id = ""; id !== wanted.current; ) {
+          id = wanted.current;
+          if (!await act("select", { id })) break;
+        }
+      } finally {
+        wanted.current = "";
+        setTarget("");
+      }
     };
     const change = (path, body, reset) => run(async () => {
       const next = await api.host.post(path, body);
@@ -266,8 +279,8 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       const subLabel = sub && (sub.status === "cancelling" ? sdk.T(`子任务正在停止 (${sub.n})`, `Sub-chats stopping (${sub.n})`) : sdk.T(`子任务运行中 (${sub.n})`, `Sub-chats running (${sub.n})`));
       const unread = !status && !!session.unread && !session.parent_id && session.id !== state.session_id;
       const draft = session.id !== state.session_id && drafts.has(session.id);
-      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === state.session_id ? " current" : ""}${status ? " running" : ""}${sub ? " sub-running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy, "data-gah-close": "", onClick: () => void openChat(session, recent), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
+      return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sess-row${session.id === (target || state.session_id) ? " current" : ""}${status ? " running" : ""}${sub ? " sub-running" : ""}${unread ? " unread" : ""}${depth ? " child" : ""}${kids ? " parent" : ""}${menuOpen ? " menu-open" : ""}`, style: depth ? { "--gah-depth": depth } : void 0, role: "listitem", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sess-open", disabled: busy && !target, "aria-busy": session.id === target || void 0, "data-gah-close": "", onClick: () => void openChat(session, recent), title: [label(session), project && `${sdk.T("项目", "Project")}: ${project}`, session.workspace && `${sdk.T("工作区", "Workspace")}: ${session.workspace}`, stamp(session.updated)].filter(Boolean).join("\n"), children: [
           session.pinned ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-pin", "aria-label": sdk.T("已置顶", "Pinned"), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }) : null,
           conductorOn.has(session.id) ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sess-conductor", title: sdk.T("指挥家会话", "Conductor chat"), "aria-label": sdk.T("指挥家会话", "Conductor chat"), children: /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 16 16", width: "12", height: "12", "aria-hidden": "true", children: [
             /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M3 3.5h4M3 8h10M3 12.5h6", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", fill: "none" }),
@@ -341,9 +354,9 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             },
             onBlur: () => setMoving(""),
             onChange: (event) => {
-              const target = event.target.value;
+              const target2 = event.target.value;
               setMoving("");
-              void scoped({ action: "move", session_id: session.id, project_id: target }, false);
+              void scoped({ action: "move", session_id: session.id, project_id: target2 }, false);
             },
             children: [
               /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("无项目", "No project") }),
