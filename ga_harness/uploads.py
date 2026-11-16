@@ -12,6 +12,7 @@ import re
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote, unquote
 from . import paths
 
 ROOT = paths.home() / "uploads"
@@ -43,7 +44,7 @@ def describe(path: Path, mime: str | None = None) -> dict:
     mime = mime or guess_mime(name)
     return {"id": fid, "name": name, "path": str(path), "mime": mime,
             "size": path.stat().st_size, "image": mime in VISION_MIMES,
-            "url": "/api/upload/" + path.parent.name + "/" + path.name}
+            "url": "/api/upload/" + path.parent.name + "/" + quote(path.name)}
 
 
 def save(stream, length: int, name, declared_mime=None, root: Path | None = None) -> dict:
@@ -74,11 +75,17 @@ def save(stream, length: int, name, declared_mime=None, root: Path | None = None
 def locate(rel: str, root: Path | None = None) -> Path | None:
     """Map ``<day>/<file>`` from a URL to a stored upload, or None."""
     base = (root or ROOT).resolve()
-    parts = rel.split("/")
-    if len(parts) != 2 or not parts[0].isdigit() or not _ID.match(parts[1][:32]) or parts[1][32:33] != "_":
-        return None
-    path = (base / parts[0] / parts[1]).resolve()
-    return path if path.is_relative_to(base) and path.is_file() else None
+    # Browsers percent-encode non-ASCII names (e.g. 男生.png) in the request path;
+    # older messages stored the raw name, which may itself contain "%".
+    # Try the name as given first, then decoded.
+    for cand in dict.fromkeys((rel, unquote(rel))):
+        parts = cand.split("/")
+        if len(parts) != 2 or not parts[0].isdigit() or not _ID.match(parts[1][:32]) or parts[1][32:33] != "_":
+            continue
+        path = (base / parts[0] / parts[1]).resolve()
+        if path.is_relative_to(base) and path.is_file():
+            return path
+    return None
 
 
 def resolve(items, root: Path | None = None) -> list[dict]:
