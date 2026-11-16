@@ -653,10 +653,10 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
         "run": {"status": "error", "source": conductor.SOURCE,
                 "error": "The model call failed; the run stopped. !!!Error: HTTP 503"},
     })
-    assert harness.timers[-1].delay == 60
-    down = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
-    assert down["status"] == "idle_backoff"
-    assert "model unavailable" in down["reason"]
+    assert harness.timers[-1].delay == conductor.MODEL_QUICK_RETRY_DELAY
+    quick = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert quick["status"] == "active"
+    assert "model unavailable" in quick["reason"] and "quick retry 1/3" in quick["reason"]
     harness.timers.clear()
 
     def llm_down(run_id):
@@ -669,9 +669,13 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
         harness.timers.clear()
         return delay
 
-    # Repeated failures wait 1 min twice, then 5, 15 and finally 30 minutes each time.
-    assert [llm_down(f"r-llm-down-{i}") for i in range(5)] == [
-        60, 300, 900, conductor.ACTIVE_IDLE_INTERVAL, conductor.ACTIVE_IDLE_INTERVAL]
+    # Two more quick retries, then backoff: 1 min twice, 5, 15 and finally 30 minutes each time.
+    q = conductor.MODEL_QUICK_RETRY_DELAY
+    assert [llm_down(f"r-llm-down-{i}") for i in range(7)] == [
+        q, q, 60, 60, 300, 900, conductor.ACTIVE_IDLE_INTERVAL]
+    down = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert down["status"] == "idle_backoff"
+    assert "model unavailable" in down["reason"]
 
     # A run that works again starts the ladder over.
     harness.callbacks["run.finished"]({
@@ -682,18 +686,22 @@ def test_autopilot_on_normal_session_continues_pauses_and_yields_on_ask_user(con
     back = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
     assert back["status"] == "active" and "next_continue_at" not in back
     harness.timers.clear()
-    assert llm_down("r-llm-down-again") == 60
+    assert llm_down("r-llm-down-again") == conductor.MODEL_QUICK_RETRY_DELAY
 
     # A run whose output could not be saved is retried on the same ladder.
     harness.callbacks["run.finished"]({
         "session_id": sid, "run_id": "r-unsaved", "message": reply_only,
         "run": {"status": "error", "source": conductor.SOURCE, "error": "Run output could not be saved"},
     })
-    assert harness.timers[-1].delay == 60
+    assert harness.timers[-1].delay == conductor.MODEL_QUICK_RETRY_DELAY
+    unsaved = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
+    assert unsaved["status"] == "active"
+    assert unsaved["reason"].startswith("run output not saved; quick retry 2/3")
+    harness.timers.clear()
+    assert llm_down("r-llm-down-third") == conductor.MODEL_QUICK_RETRY_DELAY
+    assert llm_down("r-llm-down-fourth") == 60
     unsaved = harness.services["conductor"]({"session_id": sid, "op": "role"})["progress"]
     assert unsaved["status"] == "idle_backoff"
-    assert unsaved["reason"].startswith("run output not saved")
-    harness.timers.clear()
 
     # Any other failure is still left to the user.
     harness.callbacks["run.finished"]({

@@ -58,8 +58,13 @@ WAKE_RETRY_DELAY = 5.0  # seconds between those attempts
 CONTINUE_DELAY = 1.0  # seconds after the conductor's turn ends before prompting it again
 ACTIVE_IDLE_LIMIT = 3  # consecutive prompted turns without progress before 30m idle backoff
 ACTIVE_IDLE_INTERVAL = 1800.0  # seconds between continuation prompts once in idle backoff
-# Waits after consecutive failed model calls; later failures wait ACTIVE_IDLE_INTERVAL.
+# A failed model call is first retried quickly MODEL_QUICK_RETRIES times without
+# entering idle backoff; after that the waits step up through MODEL_RETRY_DELAYS,
+# and later failures wait ACTIVE_IDLE_INTERVAL.
+MODEL_QUICK_RETRIES = 3
+MODEL_QUICK_RETRY_DELAY = 10.0
 MODEL_RETRY_DELAYS = (60.0, 60.0, 300.0, 900.0)
+_RETRY_REASONS = ("model unavailable", "run output not saved")
 
 
 def _reflect_requested(messages):
@@ -1345,6 +1350,8 @@ def apply(ctx, config):
                 if plan.get("status") == "idle_backoff":
                     plan.pop("next_continue_at", None)
                     plan.update(status="active", reason="")
+                elif str(plan.get("reason") or "").startswith(_RETRY_REASONS):
+                    plan.update(reason="")
         failure = _failure(record, message) if status == "error" else None
         if failure and failure["retryable"] and not finished and active.get(parent):
             # The model was unreachable or the host could not save the output. Prompting
@@ -1356,11 +1363,21 @@ def apply(ctx, config):
             if enabled.get(parent) and (_counts(parent)["running"] or _unreported(parent)):
                 return None  # a wake-up is already on its way
             failures = state["llm_down"] = state.get("llm_down", 0) + 1
-            delay = (MODEL_RETRY_DELAYS[failures - 1] if failures <= len(MODEL_RETRY_DELAYS)
-                     else ACTIVE_IDLE_INTERVAL)
-            due = time.time() + delay
             what = ("run output not saved" if failure["failure_kind"] == "save_failed"
                     else "model unavailable")
+            if failures <= MODEL_QUICK_RETRIES:
+                # Transient errors usually clear quickly: retry a few times before backing off.
+                delay = MODEL_QUICK_RETRY_DELAY
+                plan.pop("next_continue_at", None)
+                plan.update(status="active",
+                            reason=f"{what}; quick retry {failures}/{MODEL_QUICK_RETRIES}")
+                log.info("conductor: %s for %s; quick retry %d/%d in %ds",
+                         what, parent, failures, MODEL_QUICK_RETRIES, delay)
+                return delay
+            step = failures - MODEL_QUICK_RETRIES
+            delay = (MODEL_RETRY_DELAYS[step - 1] if step <= len(MODEL_RETRY_DELAYS)
+                     else ACTIVE_IDLE_INTERVAL)
+            due = time.time() + delay
             plan.update(status="idle_backoff",
                         reason=f"{what}; retrying in {int(delay // 60)} min",
                         next_continue_at=due)
@@ -1493,13 +1510,15 @@ def apply(ctx, config):
             _publish()
             _schedule_continue(parent, WAKE_RETRY_DELAY)
             return
-        backoff_reason = str(prog.get("reason") or "") if in_backoff else ""
+        backoff_reason = str(prog.get("reason") or "")
+        if not in_backoff and not backoff_reason.startswith(_RETRY_REASONS):
+            backoff_reason = ""
         backoff_note = (
-            " The previous model call failed, so this is a delayed retry; carry on from where "
+            " The previous model call failed, so this is a retry; carry on from where "
             "the work stopped."
         ) if backoff_reason.startswith("model unavailable") else (
             " The previous run stopped because its output could not be saved, so part of it may "
-            "be missing from the conversation; this is a delayed retry. Check what was actually "
+            "be missing from the conversation; this is a retry. Check what was actually "
             "done and carry on from there."
         ) if backoff_reason.startswith("run output not saved") else (
             " No concrete progress was made in the recent turns, so continuation has backed off "

@@ -163,5 +163,8 @@ Stop the old id before replacing a source.
   in ordinary autopilot, or 0 task operations in conductor mode), continuation backs
   off to every 30 minutes (`idle_backoff`, with no retry cap) and returns to 1s
   cadence as soon as a turn makes progress.
+  A failed model call (or unsaved run output) is first retried 3 times, 10s
+  apart, without entering `idle_backoff`; further failures back off 1, 1, 5 and
+  15 minutes, then every 30 minutes. A completed run or user turn resets the count.
 - When `enabled=True` and `active=True`, the session acts as an active conductor
   combining delegation tools, checkpoints, and automatic continuation.
