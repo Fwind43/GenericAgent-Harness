@@ -529,7 +529,9 @@ class WebFrontend:
                     return None
             return f"{self._epoch}-{self._seq}"
 
-    def snapshot(self):
+    def snapshot(self, selected_row=None):
+        # selected_row: the fully decoded current session a caller just got from the store
+        # (session switch). Reused only while it is still the stored row, to skip a second parse.
         data = {"running": self.running, "messages": self.messages}
         private_messages = False
         selected_state = None
@@ -547,7 +549,12 @@ class WebFrontend:
                     # The live copy replaces the stored transcript, so do not parse that one.
                     messages, selected_state = live["messages"], self.sessions.state_of(selected["id"])
                 else:
-                    selected = self.sessions.current()
+                    row = selected_row if isinstance(selected_row, dict) else {}
+                    if (row.get("id") == selected["id"] and row.get("updated") == selected.get("updated")
+                            and "messages" in row and "state" in row):
+                        selected = row
+                    else:
+                        selected = self.sessions.current()
                     messages, selected_state = selected["messages"], selected["state"]
                 private_messages = True
                 data.update(session_id=selected["id"], messages=messages,
@@ -654,7 +661,7 @@ class WebFrontend:
                     parent_id=body.get("parent_id"))
                 self.messages = selected["messages"]
                 self.persistence_error = None
-                snap = self.snapshot()
+                snap = self.snapshot(selected)
             except ValueError as e:
                 return 400, {"error": str(e)}
             except RuntimeError as e:
