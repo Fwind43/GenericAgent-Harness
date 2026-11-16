@@ -406,18 +406,19 @@ class Runs:
             apply_event(messages, name, data)
             if name in STREAM_EVENTS:
                 # Stream fragments are broadcast with a live sequence number but are
-                # not stored as event rows. The transcript is checkpointed at most
-                # once per interval; durable events and completion save it in full.
+                # not stored as event rows.
                 live["seq"] = seq = live["seq"] + 1
-                live["dirty"] = True
-                flush = now - live["flushed"] >= STREAM_FLUSH_SECONDS
                 patch = None
             else:
-                flush = False
+                # Only the small event row is committed under ``self.lock``.
+                # Rewriting the whole transcript here, once per event, held the
+                # lock shared by every session, run and API request and made
+                # session and model switches wait behind busy runs.
                 with self.sessions._db() as db:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
-                    self._checkpoint(db, live)
                 patch = self._patch(messages, name, data)
+            live["dirty"] = True
+            flush = now - live["flushed"] >= STREAM_FLUSH_SECONDS
             record = {"id": rid, "session_id": live["session_id"], "seq": seq}
         # Never ship the whole (often hundreds of KB) message per event: stream
         # fragments carry only their delta and durable events carry the one turn
@@ -427,20 +428,26 @@ class Runs:
         else:
             self._notify("run.event", record, name=name, data=data, patch=patch)
         if flush:
-            # The periodic stream checkpoint serializes the whole transcript and
-            # commits it. Run it after the delta is broadcast and outside
-            # ``self.lock`` (shared by every session, run and API request) so a
-            # slow commit cannot stall them. Only this run's monitor thread
-            # mutates ``live``, and it also performs the final save afterwards.
-            try:
-                with self.sessions._db() as db:
-                    self._checkpoint(db, live)
-            except Exception:
-                # Skipping one checkpoint loses nothing: the transcript stays in memory
-                # and the next checkpoint, durable event or completion saves it in
-                # full. Ending the run here would throw away work that is still going.
-                live["flushed"] = time.monotonic()  # wait a full interval before retrying
-                log.warning("run %s: stream checkpoint failed; will retry", rid, exc_info=True)
+            self._flush(rid, live)
+
+    def _flush(self, rid, live):
+        """Checkpoint the live transcript; called only from the run's monitor thread.
+
+        The checkpoint serializes the whole transcript and commits it. It runs
+        after the event is broadcast and outside ``self.lock`` (shared by every
+        session, run and API request) so a slow commit cannot stall them. Only
+        this run's monitor thread mutates ``live``, and it also performs the
+        final save afterwards.
+        """
+        try:
+            with self.sessions._db() as db:
+                self._checkpoint(db, live)
+        except Exception:
+            # Skipping one checkpoint loses nothing: the transcript stays in memory
+            # and the next checkpoint or completion saves it in full. Ending the
+            # run here would throw away work that is still going.
+            live["flushed"] = time.monotonic()  # wait a full interval before retrying
+            log.warning("run %s: transcript checkpoint failed; will retry", rid, exc_info=True)
 
     @staticmethod
     def _patch(messages, name, data):
@@ -574,6 +581,10 @@ class Runs:
                     elif packet.get("kind") == "error":
                         self._finish(rid, "error", packet.get("error") or "Worker failed", state=packet.get("state"))
                         break
+                elif live.get("dirty") and time.monotonic() - live["flushed"] >= STREAM_FLUSH_SECONDS:
+                    # The worker went quiet (a long tool call, say) with events
+                    # newer than the last checkpoint: save them now, not at the next event.
+                    self._flush(rid, live)
                 with self.lock:
                     cancel_at = live["cancel_at"]
                     closing = self.closed
