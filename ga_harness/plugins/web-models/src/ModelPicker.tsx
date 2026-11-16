@@ -7,8 +7,12 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
   const { state } = useHost(), { busy, run } = useOperation(api);
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [provider, setProvider] = useState('');
   const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), search = useRef<HTMLInputElement>(null);
+  // Optimistic choice: the trigger and check mark show the picked model or effort at once,
+  // while the request is still in flight, instead of greying out until the server answers.
+  const [pending, setPending] = useState<{ model?: string; effort?: string } | null>(null);
   const catalog = state.models, effort = state.effort;
-  const current = catalog?.items.find(item => item.id === catalog.current);
+  const shown = pending?.model ?? catalog?.current, shownEffort = pending?.effort ?? (effort?.current || '');
+  const current = catalog?.items.find(item => item.id === shown);
   const groups = new Map<string, { name: string; count: number }>();
   for (const item of catalog?.items || []) {
     const id = providerId(item), group = groups.get(id) || { name: item.provider || T('\u72ec\u7acb\u914d\u7f6e', 'Standalone'), count: 0 };
@@ -31,23 +35,24 @@ export function ModelPicker({ api }: { api: PluginAPI }) {
     window.addEventListener('resize', position);
     return () => { window.removeEventListener('resize', position); if (node.matches(':popover-open')) node.hidePopover(); };
   }, [open]);
-  const select = (path: string, body: unknown) => {
-    close(true); void run(async () => api.setState(await api.host.post<HostState>(path, body)));
+  const select = (path: string, body: unknown, choice: { model?: string; effort?: string }) => {
+    close(true); setPending(choice);
+    void run(async () => api.setState(await api.host.post<HostState>(path, body))).finally(() => setPending(null));
   };
   if (!catalog) return null;
   return <>
     <PluginSlot api={api} name="composer"><div className="gah-models">
-      <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy} aria-haspopup="dialog" aria-controls="gah-model-picker" aria-expanded={open} onClick={() => { setQuery(''); setProvider(''); setOpen(value => !value); }}>
+      <button ref={trigger} type="button" className="gah-model-trigger" disabled={busy && !pending} aria-busy={!!pending || undefined} aria-haspopup="dialog" aria-controls="gah-model-picker" aria-expanded={open} onClick={() => { if (pending) return; setQuery(''); setProvider(''); setOpen(value => !value); }}>
         <span className="gah-model-name">{current?.name || current?.model || T('\u9009\u62e9\u6a21\u578b', 'Choose model')}</span>
-        {effort && <span className="gah-model-effort">{effort.current || 'default'}</span>}<svg className="gah-model-caret" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        {effort && <span className="gah-model-effort">{shownEffort || 'default'}</span>}<svg className="gah-model-caret" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
     </div></PluginSlot>
     {open && createPortal(<div ref={popup} popover="auto" role="dialog" aria-label={T('\u6a21\u578b\u4e0e\u601d\u8003\u5f3a\u5ea6', 'Model and reasoning effort')} id="gah-model-picker" className="gah-model-popover" onToggle={event => { if (event.newState === 'closed') setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') close(true); }}>
       <div className="gah-picker-toolbar"><input ref={search} type="search" className="gah-picker-search" value={query} placeholder={T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546', 'Search models or providers')} aria-label={T('\u641c\u7d22\u6a21\u578b\u6216\u670d\u52a1\u5546', 'Search models or providers')} onChange={event => setQuery(event.target.value)} />
         <div className="gah-picker-filters"><select className="gah-picker-filter" value={filter} aria-label={T('\u7b5b\u9009\u670d\u52a1\u5546', 'Filter providers')} onChange={event => setProvider(event.target.value)}><option value="">{T('\u5168\u90e8\u670d\u52a1\u5546', 'All providers')}</option>{[...groups].map(([id, group]) => <option key={id} value={id}>{group.name} ({group.count})</option>)}</select><span className="gah-picker-count">{items.length} / {catalog.items.length}</span></div>
       </div>
-      <div className="gah-picker-models">{items.map(item => <button type="button" className="gah-picker-option" key={item.id} data-model-id={item.id} aria-pressed={item.id === catalog.current} disabled={busy} onClick={() => select('/api/models/select', { id: item.id })}><span className="gah-picker-option-copy"><span>{item.name || item.model}</span><small>{[item.provider || T('\u72ec\u7acb\u914d\u7f6e', 'Standalone'), item.name && item.model !== item.name ? item.model : ''].filter(Boolean).join(' \u00b7 ')}</small></span><span className="gah-picker-check" aria-hidden="true">{item.id === catalog.current ? '\u2713' : ''}</span></button>)}{!items.length && <p className="gah-picker-empty">{T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b', 'No matching models')}</p>}</div>
-      {effort && <div className="gah-picker-effort"><div className="gah-picker-label">{T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}<small>{T('\u4ec5\u5f53\u524d\u5bf9\u8bdd', 'This chat only')}</small></div><div className="gah-effort-options" role="group" aria-label={T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}>{['', ...effort.options].map(option => <button key={option} type="button" aria-pressed={option === (effort.current || '')} disabled={busy} onClick={() => select('/api/effort', { value: option })}>{option || 'default'}</button>)}</div></div>}
+      <div className="gah-picker-models">{items.map(item => <button type="button" className="gah-picker-option" key={item.id} data-model-id={item.id} aria-pressed={item.id === shown} disabled={busy} onClick={() => select('/api/models/select', { id: item.id }, { model: item.id })}><span className="gah-picker-option-copy"><span>{item.name || item.model}</span><small>{[item.provider || T('\u72ec\u7acb\u914d\u7f6e', 'Standalone'), item.name && item.model !== item.name ? item.model : ''].filter(Boolean).join(' \u00b7 ')}</small></span><span className="gah-picker-check" aria-hidden="true">{item.id === shown ? '\u2713' : ''}</span></button>)}{!items.length && <p className="gah-picker-empty">{T('\u6ca1\u6709\u5339\u914d\u7684\u6a21\u578b', 'No matching models')}</p>}</div>
+      {effort && <div className="gah-picker-effort"><div className="gah-picker-label">{T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}<small>{T('\u4ec5\u5f53\u524d\u5bf9\u8bdd', 'This chat only')}</small></div><div className="gah-effort-options" role="group" aria-label={T('\u63a8\u7406\u5f3a\u5ea6', 'Reasoning effort')}>{['', ...effort.options].map(option => <button key={option} type="button" aria-pressed={option === shownEffort} disabled={busy} onClick={() => select('/api/effort', { value: option }, { effort: option })}>{option || 'default'}</button>)}</div></div>}
     </div>, document.body)}
   </>;
 }
