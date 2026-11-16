@@ -531,26 +531,29 @@ class WebFrontend:
 
     def snapshot(self):
         data = {"running": self.running, "messages": self.messages}
-        db_messages = False
+        private_messages = False
         selected_state = None
         if self.sessions:
             data.update(session_id=self.sessions.current(light=True)["id"], sessions=self.sessions.listing(),
                         persistence_error=self.persistence_error)
         if self.runs:
             with self.sessions.lock:
-                selected = self.sessions.current()
+                selected = self.sessions.current(light=True)
                 active = self.runs.active_for(selected["id"])
-                selected_state = selected["state"]
-                db_messages = True
-                data.update(session_id=selected["id"], messages=selected["messages"],
-                            running=active is not None, run_id=active["id"] if active else None,
-                            runs=self.runs.listing(), parallel_runs=True)
                 # Incremental run events resume from the live transcript; pair it
                 # with its own stream position so no fragment is lost or doubled.
                 live = self.runs.live_snapshot(selected["id"]) if active else None
                 if live:
-                    db_messages = False
-                    data["messages"] = live["messages"]
+                    # The live copy replaces the stored transcript, so do not parse that one.
+                    messages, selected_state = live["messages"], self.sessions.state_of(selected["id"])
+                else:
+                    selected = self.sessions.current()
+                    messages, selected_state = selected["messages"], selected["state"]
+                private_messages = True
+                data.update(session_id=selected["id"], messages=messages,
+                            running=active is not None, run_id=active["id"] if active else None,
+                            runs=self.runs.listing(), parallel_runs=True)
+                if live:
                     data["runs"] = [dict(run, seq=live["seq"]) if run["id"] == live["run_id"] else run
                                     for run in data["runs"]]
         if self.models:
@@ -563,8 +566,9 @@ class WebFrontend:
             data["effort"] = {"current": getattr(agent, "gah_reasoning_effort", None), "options": list(EFFORTS)}
         if self.sessions and self.runs:
             data["presets"] = presets.catalog(((selected_state if self.runs else None) or {}).get("preset"))
-        # Messages read from the DB are already private to this snapshot; only share-prone data needs copying.
-        fresh = data.pop("messages") if db_messages else None
+        # Messages decoded from the DB or copied from the live run are already private to this
+        # snapshot; only share-prone data needs copying.
+        fresh = data.pop("messages") if private_messages else None
         data = copy.deepcopy(data)
         if fresh is not None:
             data["messages"] = fresh

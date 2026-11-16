@@ -243,6 +243,16 @@ class Sessions:
             with self._db() as db:
                 return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone())
 
+    def state_of(self, sid):
+        """Agent state of one chat, without reading or parsing its transcript."""
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                row = db.execute("SELECT state FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+        if row is None:
+            raise ValueError("session not found")
+        return json.loads(row["state"])
+
     def listing(self):
         with self.lock:
             self._init()
