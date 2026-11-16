@@ -41,6 +41,8 @@ export class HostStore {
   private runSeq = new Map<string, number>();
   private acceptedSnapshots = new Set<string>();
   private refreshVersion = 0;
+  private refreshFlight?: { view: string; promise: Promise<void>; again: boolean };
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private resyncing = false;
   // Id of the last SSE event applied. A reopened stream sends it so the server replays just the
   // missed events ("resume") instead of a full snapshot, while its backlog still covers it.
@@ -140,12 +142,16 @@ export class HostStore {
   }
   /** Replace state with the server snapshot, then replay events received meanwhile. */
   private resync(kind: string, event: RunEvent) {
+    const version = this.refreshVersion, view = viewing();
     this.resyncing = true; this.pending.push([kind, event]);
     const done = (state?: HostState) => {
       this.resyncing = false;
       const pending = this.pending; this.pending = [];
-      if (!state) return;
-      this.lastId = ''; this.setState(state);
+      const current = version === this.refreshVersion && view === viewing();
+      // A switch or a newer snapshot can finish while this request is in flight.
+      // Replay against that newer state, never restore the previously viewed chat.
+      if (state && current) { this.lastId = ''; this.setState(state); }
+      if (!state && current) return;
       for (const [k, e] of pending) this.acceptRun(k, e);
     };
     request<HostState>('/api/state').then(done, error => { done(); this.report(error); });
@@ -214,7 +220,7 @@ export class HostStore {
         if (!this.snapshot.connected) this.update({ connected: true });
         // Snapshots are broadcast as one message, built for whichever page caused them. If it
         // shows another chat than this page does, fetch this page's own state instead.
-        if (viewing() && state.session_id && state.session_id !== viewing()) { this.refresh().catch(() => {}); return; }
+        if (viewing() && state.session_id && state.session_id !== viewing()) { this.queueRefresh(); return; }
         this.setState(markServerSnapshot(state));
         this.emit('snapshot', state);
       });
@@ -256,12 +262,36 @@ export class HostStore {
       document.removeEventListener('visibilitychange', wake);
       this.source?.close(); this.source = null;
       clearTimeout(this.flushTimer); this.flushTimer = undefined;
+      clearTimeout(this.refreshTimer); this.refreshTimer = undefined;
+      if (this.refreshFlight) this.refreshFlight.again = false;
     };
   }
-  async refresh() {
+  /** Foreign-chat broadcasts can arrive in bursts from parallel runs/pages. */
+  private queueRefresh() {
+    if (this.refreshFlight?.view === viewing()) { this.refreshFlight.again = true; return; }
+    if (this.refreshTimer !== undefined) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      this.refresh().catch(() => {});
+    }, 250);
+  }
+  refresh(): Promise<void> {
+    const view = viewing();
+    if (this.refreshFlight?.view === view) return this.refreshFlight.promise;
+    clearTimeout(this.refreshTimer); this.refreshTimer = undefined;
     const version = this.refreshVersion;
-    const state = await request<HostState>('/api/state');
-    if (version === this.refreshVersion) { this.lastId = ''; this.setState(state); }
+    const flight = { view, again: false, promise: Promise.resolve() };
+    this.refreshFlight = flight;
+    flight.promise = request<HostState>('/api/state').then(state => {
+      if (version === this.refreshVersion && view === viewing()) { this.lastId = ''; this.setState(state); }
+    }).finally(() => {
+      // A newly selected chat must not wait behind a slow request for the old one.
+      if (this.refreshFlight !== flight) return;
+      this.refreshFlight = undefined;
+      // At most one trailing refresh captures changes broadcast during the request.
+      if (flight.again && view === viewing()) this.queueRefresh();
+    });
+    return flight.promise;
   }
   report(error: unknown) { this.notice(errorText(error)); }
 }

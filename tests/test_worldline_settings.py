@@ -47,3 +47,24 @@ def test_keep_settings_drops_stale_key_when_live_has_none():
     wl = _load()
     state = wl._keep_settings({"model": "old", "model_key": "old_api"}, {"model": "new"})
     assert state == {"model": "new"}
+
+
+def test_branch_listing_uses_covering_index(tmp_path):
+    wl = _load()
+    store = wl.Store(tmp_path / "worldline.db")
+    for text in ("first", "second"):
+        store.archive("s1", 0, [{"role": "user", "text": text}], {})
+    with store._db() as db:
+        # Existing databases migrate on open, not only newly created archives.
+        db.execute("DROP INDEX branch_listing")
+    store = wl.Store(store.path)
+    rows = store.rows("s1")
+    assert len(rows) == 2
+    assert all("messages" not in row and "state" not in row for row in rows)
+    assert rows == sorted(rows, key=lambda r: (r["created"], r["id"]))
+    with store._db() as db:
+        plan = [r[3] for r in db.execute(
+            "EXPLAIN QUERY PLAN SELECT id,idx,prefix,full,created FROM branches "
+            "WHERE session_id=? ORDER BY created,id", ("s1",))]
+    assert any("COVERING INDEX branch_listing" in detail for detail in plan)
+    assert not any("TEMP B-TREE" in detail for detail in plan)

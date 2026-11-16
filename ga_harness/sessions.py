@@ -114,7 +114,8 @@ class Sessions:
     def _current_id(self, db):
         """Id of this thread's chat: its client's own when still alive, else the host-wide one."""
         sid = getattr(self._viewer, "sid", None)
-        if sid and db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():
+        if sid and db.execute("SELECT 1 FROM sessions INDEXED BY session_lookup "
+                              "WHERE id=? AND deleted=0", (sid,)).fetchone():
             return sid
         row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
         return row[0] if row else None
@@ -175,6 +176,10 @@ class Sessions:
             # overflow pages from the wide sessions table. Also migrates existing databases.
             db.execute("CREATE INDEX IF NOT EXISTS session_listing ON sessions "
                        "(deleted,pinned DESC,updated DESC,id,title,workspace,project_id,parent_id,read_at)")
+            # A primary-key lookup still visits the wide table row. Keep light per-chat
+            # reads off transcript/state overflow pages, including on existing databases.
+            db.execute("CREATE INDEX IF NOT EXISTS session_lookup ON sessions "
+                       "(id,deleted,title,updated,workspace,project_id,parent_id,pinned,read_at)")
             row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
             sid = row[0] if row else None
             if not db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():
@@ -206,8 +211,9 @@ class Sessions:
         with self.lock:
             self._init()
             cols = self.LIGHT if light else "*"
+            table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
-                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=? AND deleted=0",
+                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0",
                                                (self._current_id(db),)).fetchone())
 
     # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
@@ -240,8 +246,9 @@ class Sessions:
         with self.lock:
             self._init()
             cols = self.LIGHT if light else "*"
+            table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
-                return self._decode(db.execute(f"SELECT {cols} FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone())
+                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0", (sid,)).fetchone())
 
     def state_of(self, sid):
         """Agent state of one chat, without reading or parsing its transcript."""

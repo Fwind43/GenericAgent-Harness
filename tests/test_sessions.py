@@ -133,7 +133,37 @@ def test_sessions_unread_tracking(tmp_path):
     with sqlite3.connect(path) as db:
         # The old schema had neither read_at nor an index that references it.
         db.execute("DROP INDEX session_listing")
+        db.execute("DROP INDEX session_lookup")
         db.execute("ALTER TABLE sessions DROP COLUMN read_at")
     assert not any(r["unread"] for r in Sessions(agent(), path).listing())
     with sqlite3.connect(path) as db:
-        assert "session_listing" in {r[1] for r in db.execute("PRAGMA index_list(sessions)")}
+        assert {"session_listing", "session_lookup"} <= {r[1] for r in db.execute("PRAGMA index_list(sessions)")}
+
+
+def test_light_reads_use_covering_index(tmp_path, monkeypatch):
+    store = Sessions(agent(), tmp_path / "sessions.db")
+    sid = store.current()["id"]
+    store.parallel = True
+    store.view(sid)
+    plans = []
+    connect = store._db
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def traced_db():
+        with connect() as db:
+            def trace(sql):
+                if sql.startswith("SELECT") and "FROM sessions" in sql:
+                    plans.extend(r[3] for r in db.execute("EXPLAIN QUERY PLAN " + sql))
+
+            db.set_trace_callback(trace)
+            yield db
+
+    monkeypatch.setattr(store, "_db", traced_db)
+    for row in (store.current(light=True), store.get(sid, light=True)):
+        assert row["id"] == sid
+        assert "messages" not in row and "state" not in row
+    assert len(plans) == 3  # viewer validation, current projection, explicit lookup
+    assert all("COVERING INDEX session_lookup" in plan for plan in plans)
+    assert "messages" in store.get(sid)  # full reads keep the transcript

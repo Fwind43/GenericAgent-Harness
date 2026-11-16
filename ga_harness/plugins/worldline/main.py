@@ -68,6 +68,10 @@ CREATE TABLE branches(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
 INSERT INTO branches SELECT id,session_id,idx,prefix,full,messages,state,created FROM branches_old;
 DROP TABLE branches_old;
 """)
+            # Branch metadata is used on every snapshot; do not scan archived
+            # messages/state (or sort them) just to populate the branch controls.
+            db.execute("CREATE INDEX IF NOT EXISTS branch_listing ON branches "
+                       "(session_id,created,id,idx,prefix,full)")
 
     def _db(self):
         db = sqlite3.connect(self.path, timeout=10)
