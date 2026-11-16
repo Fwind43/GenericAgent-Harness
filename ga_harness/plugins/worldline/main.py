@@ -161,15 +161,26 @@ def variants(store, sid, messages):
     by_index = {}
     for row in rows:
         by_index.setdefault(row["idx"], []).append(row)
-    out, full = {}, _full(messages)
+    # One running digest serves every fork point: the prefix hash at ``idx`` is the state
+    # after ``idx`` messages (same bytes as ``_hash(messages[:idx])``), so a conversation
+    # with many fork points is hashed once instead of once per fork point.
+    out, full, running, done = {}, None, hashlib.sha1(), 0
     for idx in sorted(by_index):
         if not 0 <= idx < len(messages) or messages[idx].get("role") != "user":
             continue
-        prefix = _hash(messages[:idx])
+        for m in messages[done:idx]:
+            running.update(json.dumps([m.get("role"), m.get("text", "")], ensure_ascii=False).encode("utf-8"))
+            running.update(b"\0")
+        done = idx
+        prefix = running.copy().hexdigest()
         live_key, live_born = _origin(messages[idx])
         slots = {live_key: (live_born, None)}
         for r in by_index[idx]:  # oldest first, so the latest snapshot of a variant wins
-            if r["prefix"] != prefix or r["full"] == full:
+            if r["prefix"] != prefix:
+                continue
+            if full is None:
+                full = _full(messages)
+            if r["full"] == full:
                 continue
             key, born = store.origin(r)
             if key == live_key:
