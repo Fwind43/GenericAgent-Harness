@@ -28,7 +28,7 @@ def apply(ctx, config):
                 selected = store.change(request["body"])
                 frontend.messages = selected["messages"]
                 frontend.persistence_error = None
-                data = frontend.snapshot()
+                data = frontend.snapshot(selected)
             except ValueError as error:
                 return 400, {"error": str(error)}
             except RuntimeError as error:
