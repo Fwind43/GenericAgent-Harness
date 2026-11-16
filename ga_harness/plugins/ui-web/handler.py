@@ -562,10 +562,13 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             with fe.lock:  # snapshot + subscribe atomically: no chunk lost or duplicated
                 base = fe.subscribe(q, last)
-                if base is None:
-                    first = "event: resume\ndata: {}\n\n"
-                else:
-                    first = f"id: {base}\nevent: snapshot\ndata: {json.dumps(fe.snapshot(), ensure_ascii=False)}\n\n"
+                snap = None if base is None else fe.snapshot()
+            # Serialize outside the lock, like /api/state: the snapshot is a private copy, and
+            # encoding a long transcript would otherwise stall every other request and run event.
+            if base is None:
+                first = "event: resume\ndata: {}\n\n"
+            else:
+                first = f"id: {base}\nevent: snapshot\ndata: {json.dumps(snap, ensure_ascii=False)}\n\n"
         except Exception as e:
             with fe._clients_lock:
                 fe.clients.discard(q)
