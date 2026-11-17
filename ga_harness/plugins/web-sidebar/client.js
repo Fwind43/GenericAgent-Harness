@@ -38,40 +38,41 @@
   function Badge({ code }) {
     return code ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sb-badge" + statusClass(code), title: statusTitle(code), children: code === "?" ? "U" : code }) : null;
   }
-  function Files({ api, sid, tick, active, onOpen }) {
+  function Files({ api, root, tick, active, onOpen }) {
     const [dirs, setDirs] = react.useState({});
     const [expanded, setExpanded] = react.useState(() => /* @__PURE__ */ new Set());
     const [error, setError] = react.useState("");
     const [query, setQuery] = react.useState("");
     const [found, setFound] = react.useState(null);
-    const live = react.useRef(sid), opened = react.useRef(expanded);
-    live.current = sid;
+    const live = react.useRef(root), opened = react.useRef(expanded);
     opened.current = expanded;
-    const fetchDir = react.useCallback((path) => api.get("tree?" + qs({ sid, path })).then((tree) => {
-      if (live.current === sid) setDirs((prev) => ({ ...prev, [path]: tree }));
-    }), [api, sid]);
     react.useEffect(() => {
-      setDirs({});
-      setExpanded(/* @__PURE__ */ new Set());
-      setQuery("");
-      setFound(null);
-    }, [sid]);
+      live.current = root;
+      return () => {
+        live.current = null;
+      };
+    }, [root]);
+    const fetchDir = react.useCallback((path) => api.get("tree?" + qs({ ...root, path })).then((tree2) => {
+      if (live.current === root) setDirs((prev) => ({ ...prev, [path]: tree2 }));
+    }), [api, root]);
     react.useEffect(() => {
       setError("");
       fetchDir("").catch((e) => {
-        if (live.current === sid) {
+        if (live.current === root) {
           setDirs({});
           setError(sdk.errorText(e));
         }
       });
       opened.current.forEach((path) => {
-        fetchDir(path).catch(() => setExpanded((prev) => {
-          const next = new Set(prev);
-          next.delete(path);
-          return next;
-        }));
+        fetchDir(path).catch(() => {
+          if (live.current === root) setExpanded((prev) => {
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        });
       });
-    }, [fetchDir, sid, tick]);
+    }, [fetchDir, root, tick]);
     react.useEffect(() => {
       const text = query.trim();
       if (!text) {
@@ -80,7 +81,7 @@
       }
       let stale = false;
       const timer = window.setTimeout(() => {
-        api.get("search?" + qs({ sid, q: text })).then((result) => {
+        api.get("search?" + qs({ ...root, q: text })).then((result) => {
           if (!stale) setFound(result);
         }).catch((e) => {
           if (!stale) {
@@ -93,7 +94,7 @@
         stale = true;
         window.clearTimeout(timer);
       };
-    }, [api, sid, query, tick]);
+    }, [api, root, query, tick]);
     const toggle = (path) => {
       const next = new Set(expanded);
       if (next.has(path)) next.delete(path);
@@ -104,10 +105,10 @@
       setExpanded(next);
     };
     const rows = (path, depth) => {
-      const tree = dirs[path];
-      if (!tree) return [/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("加载中…", "Loading…") }, path + "/…")];
+      const tree2 = dirs[path];
+      if (!tree2) return [/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("加载中…", "Loading…") }, path + "/…")];
       const out = [];
-      for (const entry of tree.entries) {
+      for (const entry of tree2.entries) {
         const full = path ? `${path}/${entry.name}` : entry.name;
         const isDir = entry.type === "dir", isOpen = isDir && expanded.has(full);
         out.push(/* @__PURE__ */ jsxRuntime.jsxs(
@@ -130,11 +131,11 @@
         ));
         if (isOpen) out.push(...rows(full, depth + 1));
       }
-      if (tree.truncated) out.push(/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("目录过大，仅显示前 2000 项", "Large directory: first 2000 entries shown") }, path + "/+"));
-      if (!tree.entries.length) out.push(/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("空目录", "Empty") }, path + "/0"));
+      if (tree2.truncated) out.push(/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("目录过大，仅显示前 2000 项", "Large directory: first 2000 entries shown") }, path + "/+"));
+      if (!tree2.entries.length) out.push(/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", style: { paddingLeft: 12 + depth * 14 }, children: sdk.T("空目录", "Empty") }, path + "/0"));
       return out;
     };
-    const root = dirs[""];
+    const tree = dirs[""];
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-pane", children: [
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-search", children: /* @__PURE__ */ jsxRuntime.jsx(
         "input",
@@ -146,7 +147,7 @@
           onChange: (event) => setQuery(event.target.value)
         }
       ) }),
-      root ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-root", title: root.root, children: root.root }) : null,
+      tree ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-root", title: tree.root, children: tree.root }) : null,
       error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-error", children: error }) : null,
       /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-list", children: found ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
         found.files.map((path) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", title: path, className: "gah-sb-row hit" + (path === active ? " on" : ""), onClick: () => onOpen(path), children: [
@@ -155,16 +156,16 @@
         ] }, path)),
         !found.files.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", children: sdk.T("没有匹配的文件", "No matching files") }) : null,
         found.truncated ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", children: sdk.T("结果已截断，请缩小范围", "Results truncated; refine the search") }) : null
-      ] }) : error && !root ? null : rows("", 0) })
+      ] }) : error && !tree ? null : rows("", 0) })
     ] });
   }
-  function Changes({ api, sid, tick, active, onOpen }) {
+  function Changes({ api, root, tick, active, onOpen }) {
     const [data, setData] = react.useState(null);
     const [error, setError] = react.useState("");
     react.useEffect(() => {
       let stale = false;
       setError("");
-      api.get("git?" + qs({ sid })).then((result) => {
+      api.get("git?" + qs(root)).then((result) => {
         if (!stale) setData(result);
       }).catch((e) => {
         if (!stale) {
@@ -175,7 +176,7 @@
       return () => {
         stale = true;
       };
-    }, [api, sid, tick]);
+    }, [api, root, tick]);
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-pane", children: [
       (data == null ? void 0 : data.git) ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-root", children: [
         /* @__PURE__ */ jsxRuntime.jsx("b", { children: data.branch || "HEAD" }),
@@ -219,7 +220,7 @@
     }, [text]);
     return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: "gah-sb-md md" });
   }
-  function FileView({ api, sid, path, tick, onClose }) {
+  function FileView({ api, root, path, tick, leaveGuard, onClose }) {
     const [data, setData] = react.useState(null);
     const [error, setError] = react.useState("");
     const [draft, setDraft] = react.useState(null);
@@ -229,6 +230,13 @@
     const editing = react.useRef(false);
     editing.current = draft !== null;
     const dirty = draft !== null && data !== null && draft !== data.text;
+    const canLeave = react.useCallback(() => !saving && (!dirty || window.confirm(sdk.T("放弃未保存的修改？", "Discard unsaved changes?"))), [dirty, saving]);
+    react.useEffect(() => {
+      leaveGuard.current = canLeave;
+      return () => {
+        if (leaveGuard.current === canLeave) leaveGuard.current = null;
+      };
+    }, [leaveGuard, canLeave]);
     react.useEffect(() => {
       store(K_WRAP, wrap ? "1" : "0");
     }, [wrap]);
@@ -236,12 +244,12 @@
       setData(null);
       setDraft(null);
       setRaw(false);
-    }, [sid, path]);
+    }, [root, path]);
     react.useEffect(() => {
       if (editing.current) return;
       let stale = false;
       setError("");
-      api.get("file?" + qs({ sid, path })).then((result) => {
+      api.get("file?" + qs({ ...root, path })).then((result) => {
         if (!stale && !editing.current) setData(result);
       }).catch((e) => {
         if (!stale) setError(sdk.errorText(e));
@@ -249,18 +257,18 @@
       return () => {
         stale = true;
       };
-    }, [api, sid, path, tick]);
+    }, [api, root, path, tick]);
     const save = () => {
       if (!data || draft === null || saving) return;
       setSaving(true);
       setError("");
-      api.post("file", { sid, path, text: draft, mtime: data.mtime, eol: data.eol, bom: data.bom }).then((result) => {
+      api.post("file", { ...root, path, text: draft, mtime: data.mtime, eol: data.eol, bom: data.bom }).then((result) => {
         setData({ ...data, text: draft, mtime: result.mtime, size: result.size });
         setDraft(null);
       }).catch((e) => setError(sdk.errorText(e))).finally(() => setSaving(false));
     };
     const leave = (then) => {
-      if (!dirty || window.confirm(sdk.T("放弃未保存的修改？", "Discard unsaved changes?"))) then();
+      if (canLeave()) then();
     };
     const markdown = isMarkdown(path) && !raw;
     const editable = (data == null ? void 0 : data.kind) === "text" && !data.truncated;
@@ -322,13 +330,13 @@
       ] })
     ] });
   }
-  function DiffView({ api, sid, path, tick, onClose }) {
+  function DiffView({ api, root, path, tick, onClose }) {
     const [data, setData] = react.useState(null);
     const [error, setError] = react.useState("");
     react.useEffect(() => {
       let stale = false;
       setError("");
-      api.get("diff?" + qs({ sid, path })).then((result) => {
+      api.get("diff?" + qs({ ...root, path })).then((result) => {
         if (!stale) setData(result);
       }).catch((e) => {
         if (!stale) {
@@ -339,7 +347,7 @@
       return () => {
         stale = true;
       };
-    }, [api, sid, path, tick]);
+    }, [api, root, path, tick]);
     const kind = (line) => line.startsWith("@@") ? " hunk" : /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(line) ? " meta" : line.startsWith("+") ? " add" : line.startsWith("-") ? " del" : "";
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-view", children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-vhead", children: [
@@ -361,19 +369,64 @@
   function Sidebar({ api }) {
     const { state } = sdk.useHost();
     const sid = state.session_id || "";
+    const scope = state.scope;
     const running = !!state.running;
     const [open, setOpen] = react.useState(() => load(K_OPEN) === "1");
     const [tab, setTab] = react.useState("files");
     const [width, setWidth] = react.useState(() => clampW(Number(load(K_WIDTH)) || 400));
     const [view, setView] = react.useState(null);
+    const [selection, setSelection] = react.useState(null);
     const [tick, setTick] = react.useState(0);
     const wasRunning = react.useRef(running);
+    const leaveGuard = react.useRef(null);
+    const root = react.useMemo(() => (selection == null ? void 0 : selection.sid) === sid ? selection : { sid, root: "auto", project_id: "" }, [selection, sid]);
+    const project = root.project_id ? scope == null ? void 0 : scope.projects.find((p) => p.id === root.project_id) : scope == null ? void 0 : scope.project;
+    const projectId = root.project_id || (project == null ? void 0 : project.id) || "";
+    const rootKey = JSON.stringify([root, scope == null ? void 0 : scope.workspace, scope == null ? void 0 : scope.default_workspace, project == null ? void 0 : project.id, project == null ? void 0 : project.name, project == null ? void 0 : project.workspace]);
+    const activeView = (view == null ? void 0 : view.rootKey) === rootKey ? view : null;
+    const canLeave = react.useCallback(() => {
+      var _a;
+      return ((_a = leaveGuard.current) == null ? void 0 : _a.call(leaveGuard)) ?? true;
+    }, []);
+    const selectRoot = react.useCallback((mode, projectId2 = "") => {
+      if (!canLeave()) return;
+      setSelection({ sid, root: mode, project_id: mode === "project" ? projectId2 : "" });
+      setView(null);
+      setTab("files");
+      setOpen(true);
+    }, [sid, canLeave]);
+    const selectTab = (next) => {
+      if (next === tab || !canLeave()) return;
+      setView(null);
+      setTab(next);
+    };
+    const openView = (kind, path) => {
+      if ((activeView == null ? void 0 : activeView.kind) === kind && activeView.path === path) return;
+      if (canLeave()) setView({ kind, path, rootKey });
+    };
+    const toggleOpen = () => {
+      if (open && !canLeave()) return;
+      if (open) setView(null);
+      setOpen(!open);
+    };
     react.useEffect(() => {
       store(K_OPEN, open ? "1" : "0");
     }, [open]);
     react.useEffect(() => {
-      setView(null);
+      setSelection(null);
     }, [sid]);
+    react.useEffect(() => {
+      setView(null);
+    }, [rootKey]);
+    react.useEffect(() => {
+      const openProject = (event) => {
+        var _a;
+        const pid = (_a = event.detail) == null ? void 0 : _a.project_id;
+        if (typeof pid === "string" && pid) selectRoot("project", pid);
+      };
+      window.addEventListener("gah:sidebar-open-project", openProject);
+      return () => window.removeEventListener("gah:sidebar-open-project", openProject);
+    }, [selectRoot]);
     react.useEffect(() => {
       if (wasRunning.current && !running) setTick((t) => t + 1);
       wasRunning.current = running;
@@ -413,7 +466,7 @@
           "aria-pressed": open,
           "aria-label": label,
           title: sdk.T("文件与 Git 工作台", "Files & Git workbench"),
-          onClick: () => setOpen(!open),
+          onClick: toggleOpen,
           children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: open ? "folder-open" : "folder" })
         }
       ) }),
@@ -421,23 +474,41 @@
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-resize", role: "separator", "aria-orientation": "vertical", onPointerDown: drag }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-head", children: [
           /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-tabs", role: "tablist", children: [
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": tab === "files", className: tab === "files" ? "on" : "", onClick: () => {
-              setTab("files");
-              if ((view == null ? void 0 : view.kind) === "diff") setView(null);
-            }, children: sdk.T("文件", "Files") }),
-            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": tab === "git", className: tab === "git" ? "on" : "", onClick: () => {
-              setTab("git");
-              if ((view == null ? void 0 : view.kind) === "file") setView(null);
-            }, children: sdk.T("变更", "Changes") })
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": tab === "files", className: tab === "files" ? "on" : "", onClick: () => selectTab("files"), children: sdk.T("文件", "Files") }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": tab === "git", className: tab === "git" ? "on" : "", onClick: () => selectTab("git"), children: sdk.T("变更", "Changes") })
           ] }),
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: "spacer" }),
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-icon-btn", "aria-label": sdk.T("刷新", "Refresh"), title: sdk.T("刷新", "Refresh"), onClick: () => setTick((t) => t + 1), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "refresh" }) }),
-          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-icon-btn", "aria-label": sdk.T("关闭工作台", "Close workbench"), title: sdk.T("关闭工作台", "Close workbench"), onClick: () => setOpen(false), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "x" }) })
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-icon-btn", "aria-label": sdk.T("关闭工作台", "Close workbench"), title: sdk.T("关闭工作台", "Close workbench"), onClick: toggleOpen, children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "x" }) })
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-body" + (view ? " viewing" : ""), children: [
-          tab === "files" ? /* @__PURE__ */ jsxRuntime.jsx(Files, { api, sid, tick, active: (view == null ? void 0 : view.kind) === "file" ? view.path : "", onOpen: (path) => setView({ kind: "file", path }) }) : /* @__PURE__ */ jsxRuntime.jsx(Changes, { api, sid, tick, active: (view == null ? void 0 : view.kind) === "diff" ? view.path : "", onOpen: (path) => setView({ kind: "diff", path }) }),
-          (view == null ? void 0 : view.kind) === "file" ? /* @__PURE__ */ jsxRuntime.jsx(FileView, { api, sid, path: view.path, tick, onClose: () => setView(null) }, sid + "\n" + view.path) : null,
-          (view == null ? void 0 : view.kind) === "diff" ? /* @__PURE__ */ jsxRuntime.jsx(DiffView, { api, sid, path: view.path, tick, onClose: () => setView(null) }, sid + "\n" + view.path) : null
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-roots", role: "group", "aria-label": sdk.T("浏览目录", "Browsing directory"), children: [
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "button",
+            {
+              type: "button",
+              "aria-pressed": root.root === "auto",
+              onClick: () => selectRoot("auto"),
+              title: sdk.T("未设置工作目录时使用项目目录", "Use the project directory when no workspace is set"),
+              children: sdk.T("自动", "Auto")
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", "aria-pressed": root.root === "workspace", onClick: () => selectRoot("workspace"), children: sdk.T("工作目录", "Workspace") }),
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "button",
+            {
+              type: "button",
+              "aria-pressed": root.root === "project",
+              disabled: !projectId,
+              title: project == null ? void 0 : project.name,
+              onClick: () => selectRoot("project", projectId),
+              children: sdk.T("项目目录", "Project directory")
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sb-body" + (activeView ? " viewing" : ""), children: [
+          tab === "files" ? /* @__PURE__ */ jsxRuntime.jsx(Files, { api, root, tick, active: (activeView == null ? void 0 : activeView.kind) === "file" ? activeView.path : "", onOpen: (path) => openView("file", path) }, rootKey) : /* @__PURE__ */ jsxRuntime.jsx(Changes, { api, root, tick, active: (activeView == null ? void 0 : activeView.kind) === "diff" ? activeView.path : "", onOpen: (path) => openView("diff", path) }, rootKey),
+          (activeView == null ? void 0 : activeView.kind) === "file" ? /* @__PURE__ */ jsxRuntime.jsx(FileView, { api, root, path: activeView.path, tick, leaveGuard, onClose: () => setView(null) }, rootKey + "\n" + activeView.path) : null,
+          (activeView == null ? void 0 : activeView.kind) === "diff" ? /* @__PURE__ */ jsxRuntime.jsx(DiffView, { api, root, path: activeView.path, tick, onClose: () => setView(null) }, rootKey + "\n" + activeView.path) : null
         ] })
       ] }) }) : null
     ] });

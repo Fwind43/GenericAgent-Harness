@@ -395,7 +395,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
     const pinnedCount = matchedProjects.filter((p) => p.pinned).length;
     const cappedProjects = allProjects ? matchedProjects : matchedProjects.filter((p, i) => p.pinned || i - pinnedCount < projectCap || `p:${p.id}` === current);
     const projectGroups = cappedProjects.map((p) => {
-      var _a, _b;
+      var _a, _b, _c;
       const key = `p:${p.id}`, items = byProject.get(p.id) ?? [];
       const peers = projects.filter((item) => !!item.pinned === !!p.pinned);
       const isCurrent = key === current, open = q ? true : toggled[key] ?? isCurrent;
@@ -433,6 +433,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_a = peers[0]) == null ? void 0 : _a.id) === p.id, "aria-label": `${sdk.T("上移", "Move up")}: ${p.name}`, title: sdk.T("上移", "Move up"), onClick: () => moveProject(p.id, -1), children: "▲" }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add gah-group-move", disabled: ((_b = peers[peers.length - 1]) == null ? void 0 : _b.id) === p.id, "aria-label": `${sdk.T("下移", "Move down")}: ${p.name}`, title: sdk.T("下移", "Move down"), onClick: () => moveProject(p.id, 1), children: "▼" })
           ] }) : /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+            ((_c = state.web_plugins) == null ? void 0 : _c.some((plugin) => plugin.name === "web-sidebar")) ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", title: sdk.T("打开项目目录", "Open project directory"), "aria-label": `${sdk.T("打开项目目录", "Open project directory")}: ${p.name}`, onClick: () => window.dispatchEvent(new CustomEvent("gah:sidebar-open-project", { detail: { project_id: p.id } })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder-open" }) }) : null,
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-group-add gah-project-pin${p.pinned ? " on" : ""}`, disabled: busy, "aria-pressed": !!p.pinned, "aria-label": `${p.pinned ? sdk.T("取消项目置顶", "Unpin project") : sdk.T("置顶项目", "Pin project")}: ${p.name}`, title: p.pinned ? sdk.T("取消置顶", "Unpin") : sdk.T("置顶", "Pin"), onClick: () => void scoped({ action: p.pinned ? "unpin" : "pin", id: p.id }, false), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pin" }) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "data-gah-close": "", "aria-label": `${sdk.T("新建对话", "New chat")}: ${p.name}`, onClick: () => void (isCurrent ? act("new", { project_id: p.id }) : scoped({ action: "enter", id: p.id })), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "plus" }) }),
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-group-add", disabled: busy, "aria-label": `${sdk.T("项目设置", "Project settings")}: ${p.name}`, onClick: () => dialog("update", p.id), children: /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }) }),
