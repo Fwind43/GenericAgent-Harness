@@ -499,6 +499,20 @@ class Runs:
                 added = True
         return added
 
+    def _snapshot(self, rid, live, state):
+        """Fold a worker's per-turn model-context snapshot in and save it now.
+
+        Without it the context only reached the host at run end, so a host crash
+        mid-run left the visible transcript intact but the session's model
+        context without any of this run's turns. Only the monitor thread mutates
+        ``live``; ``_finish`` still merges the final state over this one.
+        """
+        if not isinstance(state, dict):
+            return
+        live["state"] = {**live["state"], **state}
+        live["dirty"] = True
+        self._flush(rid, live)
+
     def _checkpoint(self, db, live):
         # A None title keeps the stored one, so a checkpoint no longer re-reads and
         # decodes the whole session just to write it back.
@@ -575,6 +589,8 @@ class Runs:
                         self._event(rid, packet)
                     elif packet.get("kind") in ("rpc", "plugin"):
                         self._rpc_request(rid, live, packet)
+                    elif packet.get("kind") == "state":
+                        self._snapshot(rid, live, packet.get("state"))
                     elif packet.get("kind") == "done":
                         self._finish(rid, "done", state=packet.get("state"), text=packet.get("text"))
                         break

@@ -298,6 +298,23 @@ def run_worker(connection, recipe, payload):
         for name in EVENTS:
             runtime.ctx.on(name, lambda data, event=name: send("event", name=event, data=data))
 
+        def snapshot(_data):
+            # The model context otherwise reaches the host only when the run ends,
+            # so a host crash mid-run kept the transcript but lost every turn from
+            # the context. Ship it after each turn; the host checkpoints it at once.
+            # A wake-up that has not run a tool yet sends none, matching the
+            # "wasted" rule below that keeps the session's prior state.
+            if payload.get("source") in WAKE_SOURCES and not last["tools"]:
+                return
+            try:
+                state = capture(raw)
+            except Exception:
+                logging.getLogger("gah.worker").warning("run %s: state snapshot failed",
+                                                        payload.get("run_id"), exc_info=True)
+                return
+            send("state", state=state)
+        runtime.ctx.on("turn.end", snapshot)
+
         def control():
             try:
                 while True:
