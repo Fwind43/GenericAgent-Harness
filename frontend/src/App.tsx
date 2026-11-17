@@ -296,7 +296,7 @@ export function App() {
           <button type="submit" id="send" disabled={switching || changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>
         </div>
       </form>{hasStats ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
-    </div><Slot name="overlay" />
+    </div><Slot name="right" /><Slot name="overlay" />
   </>;
 }
 

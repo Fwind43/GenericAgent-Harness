@@ -93,6 +93,10 @@ name = "web-trace"
 [[plugins]]
 name = "web-context"
 
+# right-hand workbench: workspace file tree, file viewer/editor and Git changes; add-on for ui-web
+[[plugins]]
+name = "web-sidebar"
+
 # "Usage" page under New chat: token totals by day, model and chat
 [[plugins]]
 name = "web-usage"

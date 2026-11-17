@@ -1,0 +1,68 @@
+/* web-sidebar: right-hand workbench (files, viewer/editor, Git changes) */
+.gah-slot:has(> .gah-slot-wrap > .gah-sb),.gah-slot-wrap:has(> .gah-sb){display:flex;flex:none;min-height:0}
+.gah-sb{position:relative;flex:none;display:flex;flex-direction:column;min-height:0;min-width:0;box-sizing:border-box;background:var(--surface-muted);border-left:1px solid var(--border);font-size:13px;color:var(--text);
+  --sb-hover:color-mix(in srgb,var(--text) 6%,transparent);--sb-on:color-mix(in srgb,var(--text) 10%,transparent);
+  --sb-m:#b7791f;--sb-a:#2f855a;--sb-d:#c53030;--sb-r:#2b6cb0;--sb-c:#c05621;--sb-u:#38a169}
+.gah-sb .spacer{flex:1}
+.gah-sb-toggle.on{color:var(--text);background:color-mix(in srgb,var(--text) 8%,transparent)}
+.gah-sb-resize{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:3;touch-action:none}
+.gah-sb-resize:hover,.gah-sb-resize:active{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+.gah-sb-head{display:flex;align-items:center;gap:4px;padding:8px 8px 8px 12px;min-height:48px;box-sizing:border-box;border-bottom:1px solid var(--border);flex:none}
+.gah-sb-tabs{display:flex;gap:2px}
+.gah-sb-tabs button{border:0;background:none;color:var(--muted);font:inherit;padding:5px 10px;border-radius:8px;cursor:pointer}
+.gah-sb-tabs button:hover{background:var(--sb-hover)}
+.gah-sb-tabs button.on{color:var(--text);background:var(--sb-on);font-weight:600}
+.gah-sb-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.gah-sb-pane{flex:1;min-height:0;display:flex;flex-direction:column}
+.gah-sb-body.viewing .gah-sb-pane{flex:0 0 34%;border-bottom:1px solid var(--border)}
+.gah-sb-search{padding:8px 10px 4px;flex:none}
+.gah-sb-search input{width:100%;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:inherit;font:inherit;border-radius:8px;padding:5px 9px;outline:none}
+.gah-sb-search input:focus{border-color:var(--accent)}
+.gah-sb-root{padding:4px 12px 6px;color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left;flex:none}
+.gah-sb-root b{color:var(--text);font-weight:600}
+.gah-sb-pane .gah-sb-root:first-child{padding-top:10px;direction:ltr}
+.gah-sb-list{flex:1;min-height:0;overflow-y:auto;padding:0 4px 8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-sb-row{display:flex;align-items:center;gap:5px;width:100%;box-sizing:border-box;border:0;background:none;color:inherit;font:inherit;text-align:left;padding:3px 8px;border-radius:6px;cursor:pointer;min-height:26px}
+.gah-sb-row:hover:not(:disabled){background:var(--sb-hover)}
+.gah-sb-row.on{background:var(--sb-on)}
+.gah-sb-row:disabled{cursor:default}
+.gah-sb-row .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+.gah-sb-row .dir{color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 0}
+.gah-sb-row .gah-ico{flex:none;color:var(--muted)}
+.gah-sb-twist{flex:none;width:10px;text-align:center;color:var(--muted);transition:transform .12s ease}
+.gah-sb-twist.open{transform:rotate(90deg)}
+.gah-sb-badge{margin-left:auto;flex:none;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;padding-left:6px}
+.gah-sb-row.st-m .name,.gah-sb-badge.st-m{color:var(--sb-m)}
+.gah-sb-row.st-a .name,.gah-sb-badge.st-a{color:var(--sb-a)}
+.gah-sb-row.st-d .name,.gah-sb-badge.st-d{color:var(--sb-d)}
+.gah-sb-row.st-d .name{text-decoration:line-through}
+.gah-sb-row.st-r .name,.gah-sb-badge.st-r{color:var(--sb-r)}
+.gah-sb-row.st-c .name,.gah-sb-badge.st-c{color:var(--sb-c)}
+.gah-sb-row.st-u .name,.gah-sb-badge.st-u{color:var(--sb-u)}
+.gah-sb-note{color:var(--muted);padding:6px 12px;font-size:12.5px}
+.gah-sb-error{color:var(--danger);padding:6px 12px;font-size:12.5px;overflow-wrap:anywhere;flex:none}
+.gah-sb-view{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg)}
+.gah-sb-vhead{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 12px;border-bottom:1px solid var(--border);flex:none;min-height:40px;box-sizing:border-box}
+.gah-sb-vhead .name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gah-sb-vhead .meta{color:var(--muted);font-size:11.5px;white-space:nowrap;flex:none}
+.gah-sb-btn{border:1px solid var(--border);background:none;color:inherit;font:inherit;font-size:12.5px;border-radius:8px;padding:3px 10px;cursor:pointer;flex:none}
+.gah-sb-btn:hover:not(:disabled){background:var(--sb-hover)}
+.gah-sb-btn:disabled{opacity:.55;cursor:default}
+.gah-sb-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.gah-sb-btn.primary:hover:not(:disabled){background:var(--accent);filter:brightness(1.08)}
+.gah-sb-code,.gah-sb-diff,.gah-sb-edit{flex:1;min-height:0;margin:0;padding:10px 12px;overflow:auto;box-sizing:border-box;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:4;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-sb-code{white-space:pre}
+.gah-sb-edit{width:100%;border:0;outline:none;resize:none;background:var(--bg);color:inherit;white-space:pre}
+.gah-sb-diff{padding:8px 0}
+.gah-sb-diff .l{display:block;padding:0 12px;white-space:pre;min-width:max-content}
+.gah-sb-diff .l.add{background:color-mix(in srgb,var(--sb-a) 16%,transparent)}
+.gah-sb-diff .l.del{background:color-mix(in srgb,var(--sb-d) 16%,transparent)}
+.gah-sb-diff .l.hunk{color:var(--sb-r)}
+.gah-sb-diff .l.meta{color:var(--muted)}
+.gah-sb-md{flex:1;min-height:0;overflow:auto;padding:12px 16px;overflow-wrap:anywhere;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.gah-sb-image{flex:1;min-height:0;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:12px}
+.gah-sb-image img{max-width:100%;height:auto;border:1px solid var(--border);border-radius:6px;background:repeating-conic-gradient(color-mix(in srgb,var(--text) 8%,transparent) 0 25%,transparent 0 50%) 0 0/16px 16px}
+@media (max-width:760px){
+  .gah-sb{position:fixed;inset:0;width:auto !important;z-index:40;border-left:0}
+  .gah-sb-resize{display:none}
+}

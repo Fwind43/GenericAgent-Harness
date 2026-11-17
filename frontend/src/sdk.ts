@@ -2,7 +2,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { HostState, Session } from './types';
 import type { Slot, SlotsAPI } from './slots';
 
-export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'composer-menu' | 'overlay' | 'settings' | 'view' | 'page';
+export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'composer-menu' | 'overlay' | 'right' | 'settings' | 'view' | 'page';
 export type Cleanup = () => void;
 export type Interceptor = (text: string) => boolean | Promise<boolean>;
 export type DomChild = Node | string | number | boolean | null | undefined | DomChild[];
