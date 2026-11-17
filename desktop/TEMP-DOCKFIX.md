@@ -1,8 +1,9 @@
 # macOS Dock 修复临时验证包
 
-- 版本：`0.0.46-dockfix.1`
+- 版本：`0.0.46-dockfix.2`（取代 `.1`；`.1` 在云端 Mac 实测中未通过，请勿继续转发）
 - 架构：macOS arm64（Apple Silicon / M 系列；不是 Intel 版本）
-- 基线：正式版 `v0.0.46`；运行时代码只修改 `desktop/src/main.js` 和 `desktop/src/autostart.js`。
+- 基线：正式版 `v0.0.46`；运行时代码修改 `desktop/src/main.js`、`desktop/src/autostart.js`、`desktop/src/plugin-windows.js`。
+- `.2` 修正灵动岛跨桌面调用：在 Electron 38.8.6 中，`visibleOnFullScreen` 默认会调用全局 `DockHide()`；改用 `skipTransformProcessType: true` 保持应用的 Dock 身份。
 - 用途：验证登录启动或其他启动路径导致应用缺少 Dock 图标 / Cmd-Tab 入口时的应用侧恢复措施。
 - 这是未经过 Developer ID 签名、公证的临时测试包，不是正式 Release，也不会发布到自动更新通道。
 
@@ -37,4 +38,5 @@ lsappinfo info -only ApplicationType -app io.github.fwind43.ga-harness
 ## 验证边界
 
 构建流程检查 JavaScript 语法、打包内容、包版本、Info.plist、DMG 完整性，并提供 SHA-256。
-不代表已经在真实用户登录环境中复现并修复；报告中的登录期反复起停驱动源仍未确定。
+`.2` 构建流程额外将新 DMG 安装到 macOS arm64 runner，测试正常/隐藏启动、关闭到托盘后的身份保持、激活与窗口显示恢复，并对比跨桌面 API 修复前后的原生行为；只有测试通过才上传安装包。
+不代表已经在真实用户登录环境中复现并修复；未验证注销/重启自动登录、物理托盘点击、Cmd-Tab 按键和全屏 Spaces 覆盖效果。保留 Dock 身份可能影响灵动岛在其他应用全屏空间的覆盖能力，需用户确认。报告中的登录期反复起停驱动源仍未确定。

@@ -9,7 +9,8 @@ const out = path.resolve(process.argv[3] || 'runtime-evidence');
 fs.mkdirSync(out, { recursive: true });
 const report = { appPath, environment: {}, cases: [], limitations: [
   'No real logout/login or reboot: --hidden exercises the hidden-start path only.',
-  'Accessory mode is deliberately injected; this does not identify the original downgrade or restart-loop cause.',
+  'Native all-workspaces calls test the Dock downgrade; the reported login restart-loop cause is not established.',
+  'Fullscreen/Spaces visual placement is not verified; preserving Dock identity may affect fullscreen overlay behavior.',
   'Activation events exercise the Dock/tray common handler, not a physical tray-menu click or Cmd-Tab keystroke.',
 ] };
 function cmd(exe, args = []) {
@@ -60,6 +61,9 @@ const stateExpr = `(() => { const {app,BrowserWindow}=globalThis.__docktest; ret
   windows:BrowserWindow.getAllWindows().map(w=>({id:w.id,visible:w.isVisible(),title:w.getTitle(),
     url:w.webContents.getURL().split('?')[0],loading:w.webContents.isLoading(),destroyed:w.isDestroyed()}))
 }; })()`;
+const expectedVersion = process.argv[4] || '0.0.46-dockfix.2';
+const mainState = s => s.windows.find(w => /^http:\/\/127\.0\.0\.1:\d+\/$/.test(w.url));
+const islandState = s => s.windows.find(w => w.url.includes('/web/desktop-island/island.html'));
 let failed = false;
 for (const hidden of [false, true]) {
   const result = { name: hidden ? 'hidden-argument-launch' : 'normal-launch', checks: [] };
@@ -77,15 +81,18 @@ for (const hidden of [false, true]) {
     await c.eval(`globalThis.__docktest=process.mainModule.require('electron'); true`);
     appPid = await c.eval('process.pid');
     assert.equal(await c.eval('process.arch'), 'arm64');
-    const initial = await wait(async () => {
+    await wait(async () => {
       const s = await c.eval(stateExpr);
-      return s.ready && s.windows.some(w => w.url.startsWith('http://127.0.0.1:') && !w.loading) && s;
+      return s.ready && mainState(s) && !mainState(s).loading && islandState(s) && !islandState(s).loading;
     }, 120000);
+    await sleep(2000);
+    const initial = await c.eval(stateExpr);
+    await c.eval(`globalThis.__main=globalThis.__docktest.BrowserWindow.fromId(${mainState(initial).id}); globalThis.__island=globalThis.__docktest.BrowserWindow.fromId(${islandState(initial).id}); true`);
     result.initial = initial;
     assert.equal(initial.packaged, true);
-    assert.equal(initial.version, '0.0.46-dockfix.1');
+    assert.equal(initial.version, expectedVersion);
     assert.equal(initial.dockVisible, true);
-    assert.equal(initial.windows[0].visible, !hidden);
+    assert.equal(mainState(initial).visible, !hidden);
     async function osType(label, expected) {
       const found = cmd('/usr/bin/lsappinfo', ['find', `pid=${appPid}`]);
       assert.equal(found.status, 0, JSON.stringify(found));
@@ -97,7 +104,7 @@ for (const hidden of [false, true]) {
       assert.ok(info.stdout.includes(expected), `${label}: expected ${expected}, got ${info.stdout}`);
     }
     await osType('initial-system-identity', 'Foreground');
-    const content = await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].webContents.executeJavaScript('({title:document.title,bodyLength:document.body.innerText.length})')`);
+    const content = await c.eval(`globalThis.__main.webContents.executeJavaScript('({title:document.title,bodyLength:document.body.innerText.length})')`);
     result.page = content;
     assert.ok(content.bodyLength > 30, JSON.stringify(content));
     if (!hidden) {
@@ -110,9 +117,27 @@ for (const hidden of [false, true]) {
       assert.equal(result.autostart.enabled, true);
       assert.equal(await c.eval('globalThis.__docktest.app.getLoginItemSettings().openAtLogin'), false);
     }
-    await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].close(); true`);
-    await wait(async () => !(await c.eval(stateExpr)).windows[0].visible);
+    await c.eval(`globalThis.__main.close(); true`);
+    await wait(async () => !mainState(await c.eval(stateExpr)).visible);
     await osType('close-to-tray-retains-identity', 'Foreground');
+    // Compare the exact Electron native API on the same real island window.
+    await sleep(1500); // DockHide is ignored for 1s after DockShow in Electron 38.
+    await c.eval(`globalThis.__island.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true}); true`);
+    await sleep(2000);
+    await osType('unpatched-workspaces-call-hides-app', 'UIElement');
+    assert.equal((await c.eval(stateExpr)).dockVisible, false);
+    await c.eval(`globalThis.__docktest.app.emit('activate'); true`);
+    await wait(async () => (await c.eval(stateExpr)).dockVisible);
+    await sleep(1500);
+    await osType('recovered-after-unpatched-call', 'Foreground');
+    for (let repeat = 1; repeat <= 2; repeat++) {
+      await c.eval(`globalThis.__island.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true,skipTransformProcessType:true}); true`);
+      await sleep(2000);
+      await osType(`patched-workspaces-retains-identity-${repeat}`, 'Foreground');
+      assert.equal((await c.eval(stateExpr)).dockVisible, true);
+      assert.equal(await c.eval('globalThis.__island.isVisibleOnAllWorkspaces()'), true);
+    }
+    await c.eval(`globalThis.__main.close(); true`);
     // Create the exact bad app identity, not a JavaScript stub.
     await c.eval(`globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
     await sleep(1500);
@@ -121,26 +146,26 @@ for (const hidden of [false, true]) {
     // A second OS-launched instance must route through the existing single-instance showWindow handler.
     const second = cmd('/usr/bin/open', ['-n', appPath]);
     assert.equal(second.status, 0, JSON.stringify(second));
-    await wait(async () => { const s=await c.eval(stateExpr); return s.dockVisible && s.windows[0].visible; });
+    await wait(async () => { const s=await c.eval(stateExpr); return s.dockVisible && mainState(s).visible; });
     await sleep(1000);
     await osType('second-instance-recovers-accessory', 'Foreground');
     // Exercise the activate event used by a Dock click and the shared showWindow path.
-    await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
+    await c.eval(`globalThis.__main.hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
     await sleep(800);
     await osType('second-accessory-negative-control', 'UIElement');
     await c.eval(`globalThis.__docktest.app.emit('activate'); true`);
-    await wait(async () => { const s=await c.eval(stateExpr); return s.dockVisible && s.windows[0].visible; });
+    await wait(async () => { const s=await c.eval(stateExpr); return s.dockVisible && mainState(s).visible; });
     await sleep(1000);
     await osType('activate-handler-recovers-accessory', 'Foreground');
     // Direct BrowserWindow.show must trigger the new 'show' event guard too.
-    await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
+    await c.eval(`globalThis.__main.hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
     await sleep(800);
-    await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].show(); true`);
+    await c.eval(`globalThis.__main.show(); true`);
     await wait(async () => (await c.eval(stateExpr)).dockVisible);
     await sleep(1000);
     await osType('window-show-event-recovers-accessory', 'Foreground');
     const image = path.join(out, `${result.name}-window.png`);
-    await c.eval(`globalThis.__docktest.BrowserWindow.getAllWindows()[0].webContents.capturePage().then(i=>{process.mainModule.require('node:fs').writeFileSync(${JSON.stringify(image)},i.toPNG());return true;})`);
+    await c.eval(`globalThis.__main.webContents.capturePage().then(i=>{process.mainModule.require('node:fs').writeFileSync(${JSON.stringify(image)},i.toPNG());return true;})`);
     result.status = 'passed';
   } catch (e) {
     failed = true; result.status = 'failed'; result.error = e.stack || String(e); console.error(result.error);

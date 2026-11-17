@@ -380,6 +380,8 @@ function createWindow(url) {
     if (input.type === 'keyDown' && !input.isAutoRepeat) win.webContents.reload();
   });
   // Login launch with a tray: keep the window hidden (the tray icon brings it back).
+  // Also repair direct show paths (ready-to-show / restored windows), not only showWindow().
+  win.on('show', ensureDockIcon);
   win.once('ready-to-show', () => { if (!(startHidden && tray)) win.show(); });
   // Stay on the backend origin; everything else opens in the system browser.
   // Same-origin popups (e.g. referenced files via api/file) need the session cookie, which the

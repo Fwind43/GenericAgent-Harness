@@ -41,10 +41,13 @@ jobs:
         working-directory: desktop
         run: npm ci
       - name: Stamp temporary version
-        run: node desktop/scripts/set-version.mjs 0.0.46-dockfix.1
+        run: node desktop/scripts/set-version.mjs 0.0.46-dockfix.2
       - name: Check shell sources
         working-directory: desktop
-        run: npm run check
+        run: |
+          npm run check
+          node --check src/plugin-windows.js
+          node --check scripts/verify-dock-runtime.mjs
       - name: Stage Python runtime and backend
         working-directory: desktop
         run: node scripts/prepare.mjs
@@ -59,7 +62,7 @@ jobs:
           app = pathlib.Path('desktop/dist/mac-arm64/ga-harness-desktop.app')
           info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
           assert info['CFBundleIdentifier'] == 'io.github.fwind43.ga-harness', info
-          assert info['CFBundleShortVersionString'] == '0.0.46-dockfix.1', info
+          assert info['CFBundleShortVersionString'] == '0.0.46-dockfix.2', info
           assert not info.get('LSUIElement') and not info.get('LSBackgroundOnly'), info
           data = (app / 'Contents/Resources/app.asar').read_bytes()
           header_size, json_size = struct.unpack_from('<I', data, 4)[0], struct.unpack_from('<I', data, 12)[0]
@@ -72,19 +75,45 @@ jobs:
               return data[start:start + entry['size']].decode('utf-8')
           main = read_asar('src/main.js')
           auto = read_asar('src/autostart.js')
+          overlays = read_asar('src/plugin-windows.js')
+          assert 'skipTransformProcessType: true' in overlays
+          assert "win.on('show', ensureDockIcon)" in main
           assert "app.setActivationPolicy('regular')" in main
           assert 'app.dock.show()' in main and main.count('ensureDockIcon();') == 2
           assert 'openAsHidden: true' not in auto
-          assert json.loads(read_asar('package.json'))['version'] == '0.0.46-dockfix.1'
+          assert json.loads(read_asar('package.json'))['version'] == '0.0.46-dockfix.2'
           print('Verified packaged version, foreground plist, Dock fix and login settings.')
           PY
           hdiutil verify desktop/dist/*.dmg
           cp desktop/TEMP-DOCKFIX.md desktop/dist/README-临时包.md
           cd desktop/dist
           shasum -a 256 *.dmg > SHA256SUMS.txt
+      - name: Install the newly built DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          MOUNT="$RUNNER_TEMP/dockfix-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach desktop/dist/*.dmg -readonly -nobrowse -mountpoint "$MOUNT"
+          APP=("$MOUNT"/*.app)
+          DEST="/Applications/$(basename "${APP[0]}")"
+          sudo ditto "${APP[0]}" "$DEST"
+          hdiutil detach "$MOUNT"
+          echo "DOCKFIX_APP=$DEST" >> "$GITHUB_ENV"
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST"
+      - name: Verify installed DMG on real macOS
+        run: node desktop/scripts/verify-dock-runtime.mjs "$DOCKFIX_APP" runtime-evidence
+      - name: Preserve runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dockfix-2-runtime-evidence
+          path: runtime-evidence
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: ga-harness-0.0.46-dockfix.1-macos-arm64
+          name: ga-harness-0.0.46-dockfix.2-macos-arm64
           retention-days: 14
           if-no-files-found: error
           path: |
@@ -125,7 +154,7 @@ jobs:
           echo "DOCKFIX_APP=$DEST" >> "$GITHUB_ENV"
           /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST"
       - name: Launch real application and verify Dock recovery
-        run: node desktop/scripts/verify-dock-runtime.mjs "$DOCKFIX_APP" runtime-evidence
+        run: node desktop/scripts/verify-dock-runtime.mjs "$DOCKFIX_APP" runtime-evidence 0.0.46-dockfix.1
       - name: Preserve runtime evidence
         if: always()
         uses: actions/upload-artifact@v4

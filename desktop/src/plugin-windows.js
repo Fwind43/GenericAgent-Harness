@@ -162,7 +162,11 @@ class PluginWindows {
     });
     if (overlay) {
       win.setAlwaysOnTop(true, 'floating');
-      if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      // Electron 38 otherwise calls DockHide() for visibleOnFullScreen, changing the
+      // entire app to UIElement. Keep the shell's regular/Dock identity untouched.
+      if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true, skipTransformProcessType: true,
+      });
     } else {
       win.setMenu(null);
     }
