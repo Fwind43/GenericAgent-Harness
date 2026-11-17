@@ -177,22 +177,37 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       });
     }, [current]);
     const [target, setTarget] = react.useState(""), wanted = react.useRef("");
+    const endSwitch = react.useRef(void 0);
+    react.useEffect(() => () => {
+      var _a;
+      wanted.current = "";
+      (_a = endSwitch.current) == null ? void 0 : _a.call(endSwitch);
+      endSwitch.current = void 0;
+    }, []);
     const openChat = async (session, recent) => {
+      var _a, _b;
+      if (api.signal.aborted) return;
       const key = recent && session.project_id ? `p:${session.project_id}` : "";
       quiet.current = key && key !== current ? key : "";
       if (quiet.current) setToggled((old) => old[key] === void 0 ? { ...old, [key]: false } : old);
       const inFlight = !!wanted.current;
       wanted.current = session.id;
       setTarget(session.id);
+      const finish = api.beginSessionSwitch(session);
+      (_a = endSwitch.current) == null ? void 0 : _a.call(endSwitch);
+      endSwitch.current = finish;
+      sdk.pages.home();
       if (inFlight) return;
       try {
-        for (let id = ""; id !== wanted.current; ) {
+        for (let id = ""; wanted.current && !api.signal.aborted && id !== wanted.current; ) {
           id = wanted.current;
-          if (!await act("select", { id })) break;
+          if (!await act("select", { id }) && id === wanted.current) break;
         }
       } finally {
         wanted.current = "";
-        setTarget("");
+        if (!api.signal.aborted) setTarget("");
+        (_b = endSwitch.current) == null ? void 0 : _b.call(endSwitch);
+        endSwitch.current = void 0;
       }
     };
     const change = (path, body, reset) => run(async () => {

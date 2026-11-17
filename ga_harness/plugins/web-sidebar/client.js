@@ -1,6 +1,6 @@
 (function(jsxRuntime, react, sdk) {
   "use strict";
-  const K_OPEN = "gah.web-sidebar.open", K_WIDTH = "gah.web-sidebar.width";
+  const K_OPEN = "gah.web-sidebar.open", K_WIDTH = "gah.web-sidebar.width", K_WRAP = "gah.web-sidebar.wrap";
   const MIN_W = 260, MAX_W = 960;
   const load = (key) => {
     try {
@@ -225,9 +225,13 @@
     const [draft, setDraft] = react.useState(null);
     const [saving, setSaving] = react.useState(false);
     const [raw, setRaw] = react.useState(false);
+    const [wrap, setWrap] = react.useState(() => load(K_WRAP) !== "0");
     const editing = react.useRef(false);
     editing.current = draft !== null;
     const dirty = draft !== null && data !== null && draft !== data.text;
+    react.useEffect(() => {
+      store(K_WRAP, wrap ? "1" : "0");
+    }, [wrap]);
     react.useEffect(() => {
       setData(null);
       setDraft(null);
@@ -268,6 +272,17 @@
         ] }),
         data ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "meta", children: fmtSize(data.size) }) : null,
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "spacer" }),
+        (data == null ? void 0 : data.kind) === "text" && (draft !== null || !markdown) ? /* @__PURE__ */ jsxRuntime.jsx(
+          "button",
+          {
+            type: "button",
+            className: "gah-sb-btn" + (wrap ? " on" : ""),
+            "aria-pressed": wrap,
+            title: sdk.T("自动换行", "Word wrap"),
+            onClick: () => setWrap((value) => !value),
+            children: sdk.T("自动换行", "Word wrap")
+          }
+        ) : null,
         draft === null && (data == null ? void 0 : data.kind) === "text" && isMarkdown(path) ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sb-btn", onClick: () => setRaw(!raw), children: raw ? sdk.T("预览", "Preview") : sdk.T("源码", "Source") }) : null,
         draft === null && editable ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sb-btn", onClick: () => setDraft(data.text), children: sdk.T("编辑", "Edit") }) : null,
         draft !== null ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
@@ -280,7 +295,8 @@
       !data ? error ? null : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", children: sdk.T("加载中…", "Loading…") }) : data.kind === "image" ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-image", children: /* @__PURE__ */ jsxRuntime.jsx("img", { src: api.fileURL(data.abs), alt: baseName(path) }) }) : data.kind === "binary" ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", children: sdk.T("二进制或非 UTF-8 文件，无法预览", "Binary or non-UTF-8 file; no preview") }) : draft !== null ? /* @__PURE__ */ jsxRuntime.jsx(
         "textarea",
         {
-          className: "gah-sb-edit",
+          className: "gah-sb-edit" + (wrap ? " gah-sb-wrap" : ""),
+          wrap: wrap ? "soft" : "off",
           value: draft,
           spellCheck: false,
           autoFocus: true,
@@ -302,7 +318,7 @@
         }
       ) : /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
         data.truncated ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sb-note", children: sdk.T("文件超过 1 MB，仅显示开头且不可编辑", "File exceeds 1 MB: showing the beginning, read-only") }) : null,
-        markdown ? /* @__PURE__ */ jsxRuntime.jsx(Markdown, { text: data.text }) : /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-sb-code", children: data.text })
+        markdown ? /* @__PURE__ */ jsxRuntime.jsx(Markdown, { text: data.text }) : /* @__PURE__ */ jsxRuntime.jsx("pre", { className: "gah-sb-code" + (wrap ? " gah-sb-wrap" : ""), children: data.text })
       ] })
     ] });
   }
