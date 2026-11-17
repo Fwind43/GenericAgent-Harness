@@ -78,8 +78,11 @@ for (const hidden of [false, true]) {
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
     c = new Inspector(ws);
-    await c.eval(`globalThis.__docktest=process.mainModule.require('electron'); true`);
     appPid = await c.eval('process.pid');
+    // The inspector can accept connections before Electron loads the app's main module.
+    await wait(() => c.eval(`typeof process.mainModule?.require === 'function'`));
+    await c.eval(`globalThis.__docktest=process.mainModule.require('electron'); true`);
+    await wait(() => c.eval('globalThis.__docktest.app.isReady()'));
     assert.equal(await c.eval('process.arch'), 'arm64');
     await wait(async () => {
       const s = await c.eval(stateExpr);
@@ -137,12 +140,20 @@ for (const hidden of [false, true]) {
       assert.equal((await c.eval(stateExpr)).dockVisible, true);
       assert.equal(await c.eval('globalThis.__island.isVisibleOnAllWorkspaces()'), true);
     }
-    await c.eval(`globalThis.__main.close(); true`);
-    // Create the exact bad app identity, not a JavaScript stub.
-    await c.eval(`globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
-    await sleep(1500);
-    await osType('injected-accessory-negative-control', 'UIElement');
-    assert.equal((await c.eval(stateExpr)).dockVisible, false);
+    async function downgrade(label) {
+      // Reuse the actual failing native API, not setActivationPolicy(): the latter can
+      // generate activation events and let the app repair itself before observation.
+      await c.eval(`globalThis.__main.close(); true`);
+      await wait(async () => !mainState(await c.eval(stateExpr)).visible);
+      await sleep(2000); // Settle close and Electron's 1s DockShow suppression interval.
+      await c.eval(`globalThis.__island.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true}); true`);
+      await sleep(2000);
+      await osType(label, 'UIElement');
+      const s = await c.eval(stateExpr);
+      assert.equal(s.dockVisible, false);
+      assert.equal(mainState(s).visible, false);
+    }
+    await downgrade('second-instance-negative-control');
     // A second OS-launched instance must route through the existing single-instance showWindow handler.
     const second = cmd('/usr/bin/open', ['-n', appPath]);
     assert.equal(second.status, 0, JSON.stringify(second));
@@ -150,16 +161,13 @@ for (const hidden of [false, true]) {
     await sleep(1000);
     await osType('second-instance-recovers-accessory', 'Foreground');
     // Exercise the activate event used by a Dock click and the shared showWindow path.
-    await c.eval(`globalThis.__main.hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
-    await sleep(800);
-    await osType('second-accessory-negative-control', 'UIElement');
+    await downgrade('activate-handler-negative-control');
     await c.eval(`globalThis.__docktest.app.emit('activate'); true`);
     await wait(async () => { const s=await c.eval(stateExpr); return s.dockVisible && mainState(s).visible; });
     await sleep(1000);
     await osType('activate-handler-recovers-accessory', 'Foreground');
     // Direct BrowserWindow.show must trigger the new 'show' event guard too.
-    await c.eval(`globalThis.__main.hide(); globalThis.__docktest.app.setActivationPolicy('accessory'); globalThis.__docktest.app.dock.hide(); true`);
-    await sleep(800);
+    await downgrade('window-show-negative-control');
     await c.eval(`globalThis.__main.show(); true`);
     await wait(async () => (await c.eval(stateExpr)).dockVisible);
     await sleep(1000);
