@@ -12,6 +12,11 @@
 .gah-sb-tabs button{border:0;background:none;color:var(--muted);font:inherit;padding:5px 10px;border-radius:8px;cursor:pointer}
 .gah-sb-tabs button:hover{background:var(--sb-hover)}
 .gah-sb-tabs button.on{color:var(--text);background:var(--sb-on);font-weight:600}
+.gah-sb-roots{display:flex;flex-wrap:wrap;gap:4px;padding:6px 10px;border-bottom:1px solid var(--border);flex:none}
+.gah-sb-roots button{border:0;background:none;color:var(--muted);font:inherit;font-size:12px;padding:4px 8px;border-radius:6px;cursor:pointer}
+.gah-sb-roots button:hover:not(:disabled){background:var(--sb-hover)}
+.gah-sb-roots button[aria-pressed=true]{color:var(--text);background:var(--sb-on)}
+.gah-sb-roots button:disabled{opacity:.45;cursor:default}
 .gah-sb-body{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-sb-pane{flex:1;min-height:0;display:flex;flex-direction:column}
 .gah-sb-body.viewing .gah-sb-pane{flex:0 0 34%;border-bottom:1px solid var(--border)}

@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type PluginAPI, PluginSlot, Icon, T, errorText, defineReact, useHost } from '@gah/sdk';
 
 // Right-hand workbench: file tree, file viewer/editor and Git changes for the current chat's
@@ -10,7 +10,9 @@ type FileData = { path: string; abs: string; kind: 'text' | 'image' | 'binary'; 
 type Saved = { path: string; size: number; mtime: string };
 type GitData = { git: boolean; branch: string; files: { path: string; status: string }[] };
 type DiffData = { path: string; diff: string; truncated: boolean };
-type View = { kind: 'file' | 'diff'; path: string };
+type BrowsingRoot = { sid: string; root: 'auto' | 'workspace' | 'project'; project_id: string };
+type View = { kind: 'file' | 'diff'; path: string; rootKey: string };
+type LeaveGuard = { current: (() => boolean) | null };
 
 const K_OPEN = 'gah.web-sidebar.open', K_WIDTH = 'gah.web-sidebar.width', K_WRAP = 'gah.web-sidebar.wrap';
 const MIN_W = 260, MAX_W = 960;
@@ -33,40 +35,42 @@ function Badge({ code }: { code: string }) {
   return code ? <span className={'gah-sb-badge' + statusClass(code)} title={statusTitle(code)}>{code === '?' ? 'U' : code}</span> : null;
 }
 
-function Files({ api, sid, tick, active, onOpen }: { api: PluginAPI; sid: string; tick: number; active: string; onOpen: (path: string) => void }) {
+function Files({ api, root, tick, active, onOpen }: { api: PluginAPI; root: BrowsingRoot; tick: number; active: string; onOpen: (path: string) => void }) {
   const [dirs, setDirs] = useState<Record<string, Tree>>({});
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<{ files: string[]; truncated: boolean } | null>(null);
-  const live = useRef(sid), opened = useRef(expanded);
-  live.current = sid; opened.current = expanded;
+  const live = useRef<BrowsingRoot | null>(root), opened = useRef(expanded);
+  opened.current = expanded;
+  useEffect(() => { live.current = root; return () => { live.current = null; }; }, [root]);
 
-  const fetchDir = useCallback((path: string) => api.get<Tree>('tree?' + qs({ sid, path })).then(tree => {
-    if (live.current === sid) setDirs(prev => ({ ...prev, [path]: tree }));
-  }), [api, sid]);
+  const fetchDir = useCallback((path: string) => api.get<Tree>('tree?' + qs({ ...root, path })).then(tree => {
+    if (live.current === root) setDirs(prev => ({ ...prev, [path]: tree }));
+  }), [api, root]);
 
-  // A new chat starts from a collapsed tree; a refresh reloads every directory that is open.
-  useEffect(() => { setDirs({}); setExpanded(new Set()); setQuery(''); setFound(null); }, [sid]);
+  // The parent keys the tree by browsing root; refresh only reloads expanded directories.
   useEffect(() => {
     setError('');
-    fetchDir('').catch(e => { if (live.current === sid) { setDirs({}); setError(errorText(e)); } });
+    fetchDir('').catch(e => { if (live.current === root) { setDirs({}); setError(errorText(e)); } });
     opened.current.forEach(path => {
-      fetchDir(path).catch(() => setExpanded(prev => { const next = new Set(prev); next.delete(path); return next; }));
+      fetchDir(path).catch(() => {
+        if (live.current === root) setExpanded(prev => { const next = new Set(prev); next.delete(path); return next; });
+      });
     });
-  }, [fetchDir, sid, tick]);
+  }, [fetchDir, root, tick]);
 
   useEffect(() => {
     const text = query.trim();
     if (!text) { setFound(null); return; }
     let stale = false;
     const timer = window.setTimeout(() => {
-      api.get<{ files: string[]; truncated: boolean }>('search?' + qs({ sid, q: text }))
+      api.get<{ files: string[]; truncated: boolean }>('search?' + qs({ ...root, q: text }))
         .then(result => { if (!stale) setFound(result); })
         .catch(e => { if (!stale) { setFound({ files: [], truncated: false }); setError(errorText(e)); } });
     }, 250);
     return () => { stale = true; window.clearTimeout(timer); };
-  }, [api, sid, query, tick]);
+  }, [api, root, query, tick]);
 
   const toggle = (path: string) => {
     const next = new Set(expanded);
@@ -97,11 +101,11 @@ function Files({ api, sid, tick, active, onOpen }: { api: PluginAPI; sid: string
     return out;
   };
 
-  const root = dirs[''];
+  const tree = dirs[''];
   return <div className="gah-sb-pane">
     <div className="gah-sb-search"><input type="search" value={query} placeholder={T('\u641c\u7d22\u6587\u4ef6\u540d\u2026', 'Search files…')}
       aria-label={T('\u641c\u7d22\u6587\u4ef6', 'Search files')} onChange={event => setQuery(event.target.value)} /></div>
-    {root ? <div className="gah-sb-root" title={root.root}>{root.root}</div> : null}
+    {tree ? <div className="gah-sb-root" title={tree.root}>{tree.root}</div> : null}
     {error ? <div className="gah-sb-error">{error}</div> : null}
     <div className="gah-sb-list">
       {found ? <>
@@ -110,21 +114,21 @@ function Files({ api, sid, tick, active, onOpen }: { api: PluginAPI; sid: string
         </button>)}
         {!found.files.length ? <div className="gah-sb-note">{T('\u6ca1\u6709\u5339\u914d\u7684\u6587\u4ef6', 'No matching files')}</div> : null}
         {found.truncated ? <div className="gah-sb-note">{T('\u7ed3\u679c\u5df2\u622a\u65ad\uff0c\u8bf7\u7f29\u5c0f\u8303\u56f4', 'Results truncated; refine the search')}</div> : null}
-      </> : error && !root ? null : rows('', 0)}
+      </> : error && !tree ? null : rows('', 0)}
     </div>
   </div>;
 }
 
-function Changes({ api, sid, tick, active, onOpen }: { api: PluginAPI; sid: string; tick: number; active: string; onOpen: (path: string) => void }) {
+function Changes({ api, root, tick, active, onOpen }: { api: PluginAPI; root: BrowsingRoot; tick: number; active: string; onOpen: (path: string) => void }) {
   const [data, setData] = useState<GitData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     let stale = false;
     setError('');
-    api.get<GitData>('git?' + qs({ sid })).then(result => { if (!stale) setData(result); })
+    api.get<GitData>('git?' + qs(root)).then(result => { if (!stale) setData(result); })
       .catch(e => { if (!stale) { setData(null); setError(errorText(e)); } });
     return () => { stale = true; };
-  }, [api, sid, tick]);
+  }, [api, root, tick]);
   return <div className="gah-sb-pane">
     {data?.git ? <div className="gah-sb-root"><b>{data.branch || 'HEAD'}</b> · {T(`${data.files.length} \u5904\u53d8\u66f4`, `${data.files.length} changed`)}</div> : null}
     {error ? <div className="gah-sb-error">{error}</div> : null}
@@ -153,7 +157,7 @@ function Markdown({ text }: { text: string }) {
   return <div ref={ref} className="gah-sb-md md" />;
 }
 
-function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: string; path: string; tick: number; onClose: () => void }) {
+function FileView({ api, root, path, tick, leaveGuard, onClose }: { api: PluginAPI; root: BrowsingRoot; path: string; tick: number; leaveGuard: LeaveGuard; onClose: () => void }) {
   const [data, setData] = useState<FileData | null>(null);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<string | null>(null);   // non-null while editing
@@ -163,29 +167,32 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
   const editing = useRef(false);
   editing.current = draft !== null;
   const dirty = draft !== null && data !== null && draft !== data.text;
+  const canLeave = useCallback(() => !saving && (!dirty || window.confirm(T('\u653e\u5f03\u672a\u4fdd\u5b58\u7684\u4fee\u6539\uff1f', 'Discard unsaved changes?'))), [dirty, saving]);
 
+  useEffect(() => {
+    leaveGuard.current = canLeave;
+    return () => { if (leaveGuard.current === canLeave) leaveGuard.current = null; };
+  }, [leaveGuard, canLeave]);
   useEffect(() => { store(K_WRAP, wrap ? '1' : '0'); }, [wrap]);
-  useEffect(() => { setData(null); setDraft(null); setRaw(false); }, [sid, path]);
+  useEffect(() => { setData(null); setDraft(null); setRaw(false); }, [root, path]);
   useEffect(() => {
     if (editing.current) return;   // never replace text under the user's cursor
     let stale = false;
     setError('');
-    api.get<FileData>('file?' + qs({ sid, path })).then(result => { if (!stale && !editing.current) setData(result); })
+    api.get<FileData>('file?' + qs({ ...root, path })).then(result => { if (!stale && !editing.current) setData(result); })
       .catch(e => { if (!stale) setError(errorText(e)); });
     return () => { stale = true; };
-  }, [api, sid, path, tick]);
+  }, [api, root, path, tick]);
 
   const save = () => {
     if (!data || draft === null || saving) return;
     setSaving(true); setError('');
-    api.post<Saved>('file', { sid, path, text: draft, mtime: data.mtime, eol: data.eol, bom: data.bom })
+    api.post<Saved>('file', { ...root, path, text: draft, mtime: data.mtime, eol: data.eol, bom: data.bom })
       .then(result => { setData({ ...data, text: draft, mtime: result.mtime, size: result.size }); setDraft(null); })
       .catch(e => setError(errorText(e)))
       .finally(() => setSaving(false));
   };
-  const leave = (then: () => void) => {
-    if (!dirty || window.confirm(T('\u653e\u5f03\u672a\u4fdd\u5b58\u7684\u4fee\u6539\uff1f', 'Discard unsaved changes?'))) then();
-  };
+  const leave = (then: () => void) => { if (canLeave()) then(); };
   const markdown = isMarkdown(path) && !raw;
   const editable = data?.kind === 'text' && !data.truncated;
 
@@ -226,16 +233,16 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
   </div>;
 }
 
-function DiffView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: string; path: string; tick: number; onClose: () => void }) {
+function DiffView({ api, root, path, tick, onClose }: { api: PluginAPI; root: BrowsingRoot; path: string; tick: number; onClose: () => void }) {
   const [data, setData] = useState<DiffData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     let stale = false;
     setError('');
-    api.get<DiffData>('diff?' + qs({ sid, path })).then(result => { if (!stale) setData(result); })
+    api.get<DiffData>('diff?' + qs({ ...root, path })).then(result => { if (!stale) setData(result); })
       .catch(e => { if (!stale) { setData(null); setError(errorText(e)); } });
     return () => { stale = true; };
-  }, [api, sid, path, tick]);
+  }, [api, root, path, tick]);
   const kind = (line: string) => line.startsWith('@@') ? ' hunk' : /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(line) ? ' meta'
     : line.startsWith('+') ? ' add' : line.startsWith('-') ? ' del' : '';
   return <div className="gah-sb-view">
@@ -254,16 +261,53 @@ function DiffView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
 function Sidebar({ api }: { api: PluginAPI }) {
   const { state } = useHost();
   const sid = state.session_id || '';
+  const scope = state.scope;
   const running = !!state.running;
   const [open, setOpen] = useState(() => load(K_OPEN) === '1');
   const [tab, setTab] = useState<'files' | 'git'>('files');
   const [width, setWidth] = useState(() => clampW(Number(load(K_WIDTH)) || 400));
   const [view, setView] = useState<View | null>(null);
+  const [selection, setSelection] = useState<BrowsingRoot | null>(null);
   const [tick, setTick] = useState(0);
   const wasRunning = useRef(running);
+  const leaveGuard = useRef<(() => boolean) | null>(null);
+  // Never render the previous chat's browser state while waiting for effects.
+  const root = useMemo<BrowsingRoot>(() => selection?.sid === sid ? selection : { sid, root: 'auto', project_id: '' }, [selection, sid]);
+  const project = root.project_id ? scope?.projects.find(p => p.id === root.project_id) : scope?.project;
+  const projectId = root.project_id || project?.id || '';
+  const rootKey = JSON.stringify([root, scope?.workspace, scope?.default_workspace, project?.id, project?.name, project?.workspace]);
+  const activeView = view?.rootKey === rootKey ? view : null;
+  const canLeave = useCallback(() => leaveGuard.current?.() ?? true, []);
+  const selectRoot = useCallback((mode: BrowsingRoot['root'], projectId = '') => {
+    if (!canLeave()) return;
+    setSelection({ sid, root: mode, project_id: mode === 'project' ? projectId : '' });
+    setView(null); setTab('files'); setOpen(true);
+  }, [sid, canLeave]);
+  const selectTab = (next: 'files' | 'git') => {
+    if (next === tab || !canLeave()) return;
+    setView(null); setTab(next);
+  };
+  const openView = (kind: View['kind'], path: string) => {
+    if (activeView?.kind === kind && activeView.path === path) return;
+    if (canLeave()) setView({ kind, path, rootKey });
+  };
+  const toggleOpen = () => {
+    if (open && !canLeave()) return;
+    if (open) setView(null);
+    setOpen(!open);
+  };
 
   useEffect(() => { store(K_OPEN, open ? '1' : '0'); }, [open]);
-  useEffect(() => { setView(null); }, [sid]);
+  useEffect(() => { setSelection(null); }, [sid]);
+  useEffect(() => { setView(null); }, [rootKey]);
+  useEffect(() => {
+    const openProject = (event: Event) => {
+      const pid = (event as CustomEvent<{ project_id?: unknown }>).detail?.project_id;
+      if (typeof pid === 'string' && pid) selectRoot('project', pid);
+    };
+    window.addEventListener('gah:sidebar-open-project', openProject);
+    return () => window.removeEventListener('gah:sidebar-open-project', openProject);
+  }, [selectRoot]);
   // The agent edits files while it runs: refresh once each run ends.
   useEffect(() => { if (wasRunning.current && !running) setTick(t => t + 1); wasRunning.current = running; }, [running]);
   useEffect(() => {
@@ -290,26 +334,33 @@ function Sidebar({ api }: { api: PluginAPI }) {
   return <>
     <PluginSlot api={api} name="header">
       <button type="button" className={'gah-icon-btn gah-sb-toggle' + (open ? ' on' : '')} aria-pressed={open} aria-label={label}
-        title={T('\u6587\u4ef6\u4e0e Git \u5de5\u4f5c\u53f0', 'Files & Git workbench')} onClick={() => setOpen(!open)}><Icon name={open ? 'folder-open' : 'folder'} /></button>
+        title={T('\u6587\u4ef6\u4e0e Git \u5de5\u4f5c\u53f0', 'Files & Git workbench')} onClick={toggleOpen}><Icon name={open ? 'folder-open' : 'folder'} /></button>
     </PluginSlot>
     {open ? <PluginSlot api={api} name="right">
       <aside className="gah-sb" style={{ width }} aria-label={label}>
         <div className="gah-sb-resize" role="separator" aria-orientation="vertical" onPointerDown={drag} />
         <div className="gah-sb-head">
           <div className="gah-sb-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => { setTab('files'); if (view?.kind === 'diff') setView(null); }}>{T('\u6587\u4ef6', 'Files')}</button>
-            <button type="button" role="tab" aria-selected={tab === 'git'} className={tab === 'git' ? 'on' : ''} onClick={() => { setTab('git'); if (view?.kind === 'file') setView(null); }}>{T('\u53d8\u66f4', 'Changes')}</button>
+            <button type="button" role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => selectTab('files')}>{T('\u6587\u4ef6', 'Files')}</button>
+            <button type="button" role="tab" aria-selected={tab === 'git'} className={tab === 'git' ? 'on' : ''} onClick={() => selectTab('git')}>{T('\u53d8\u66f4', 'Changes')}</button>
           </div>
           <span className="spacer" />
           <button type="button" className="gah-icon-btn" aria-label={T('\u5237\u65b0', 'Refresh')} title={T('\u5237\u65b0', 'Refresh')} onClick={() => setTick(t => t + 1)}><Icon name="refresh" /></button>
-          <button type="button" className="gah-icon-btn" aria-label={T('\u5173\u95ed\u5de5\u4f5c\u53f0', 'Close workbench')} title={T('\u5173\u95ed\u5de5\u4f5c\u53f0', 'Close workbench')} onClick={() => setOpen(false)}><Icon name="x" /></button>
+          <button type="button" className="gah-icon-btn" aria-label={T('\u5173\u95ed\u5de5\u4f5c\u53f0', 'Close workbench')} title={T('\u5173\u95ed\u5de5\u4f5c\u53f0', 'Close workbench')} onClick={toggleOpen}><Icon name="x" /></button>
         </div>
-        <div className={'gah-sb-body' + (view ? ' viewing' : '')}>
+        <div className="gah-sb-roots" role="group" aria-label={T('\u6d4f\u89c8\u76ee\u5f55', 'Browsing directory')}>
+          <button type="button" aria-pressed={root.root === 'auto'} onClick={() => selectRoot('auto')}
+            title={T('\u672a\u8bbe\u7f6e\u5de5\u4f5c\u76ee\u5f55\u65f6\u4f7f\u7528\u9879\u76ee\u76ee\u5f55', 'Use the project directory when no workspace is set')}>{T('\u81ea\u52a8', 'Auto')}</button>
+          <button type="button" aria-pressed={root.root === 'workspace'} onClick={() => selectRoot('workspace')}>{T('\u5de5\u4f5c\u76ee\u5f55', 'Workspace')}</button>
+          <button type="button" aria-pressed={root.root === 'project'} disabled={!projectId} title={project?.name}
+            onClick={() => selectRoot('project', projectId)}>{T('\u9879\u76ee\u76ee\u5f55', 'Project directory')}</button>
+        </div>
+        <div className={'gah-sb-body' + (activeView ? ' viewing' : '')}>
           {tab === 'files'
-            ? <Files api={api} sid={sid} tick={tick} active={view?.kind === 'file' ? view.path : ''} onOpen={path => setView({ kind: 'file', path })} />
-            : <Changes api={api} sid={sid} tick={tick} active={view?.kind === 'diff' ? view.path : ''} onOpen={path => setView({ kind: 'diff', path })} />}
-          {view?.kind === 'file' ? <FileView key={sid + '\n' + view.path} api={api} sid={sid} path={view.path} tick={tick} onClose={() => setView(null)} /> : null}
-          {view?.kind === 'diff' ? <DiffView key={sid + '\n' + view.path} api={api} sid={sid} path={view.path} tick={tick} onClose={() => setView(null)} /> : null}
+            ? <Files key={rootKey} api={api} root={root} tick={tick} active={activeView?.kind === 'file' ? activeView.path : ''} onOpen={path => openView('file', path)} />
+            : <Changes key={rootKey} api={api} root={root} tick={tick} active={activeView?.kind === 'diff' ? activeView.path : ''} onOpen={path => openView('diff', path)} />}
+          {activeView?.kind === 'file' ? <FileView key={rootKey + '\n' + activeView.path} api={api} root={root} path={activeView.path} tick={tick} leaveGuard={leaveGuard} onClose={() => setView(null)} /> : null}
+          {activeView?.kind === 'diff' ? <DiffView key={rootKey + '\n' + activeView.path} api={api} root={root} path={activeView.path} tick={tick} onClose={() => setView(null)} /> : null}
         </div>
       </aside>
     </PluginSlot> : null}

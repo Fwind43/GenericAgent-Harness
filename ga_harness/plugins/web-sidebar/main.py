@@ -1,6 +1,9 @@
 """web-sidebar: a right-hand workbench for ui-web -- file tree, file viewer/editor and Git changes.
 
-Everything is fenced to the workspace of the chat named by ``sid`` (the current chat when absent).
+Everything is fenced to a selected browsing root, independently of the chat's execution cwd.
+All endpoints accept ``root=auto|workspace|project`` and an optional ``project_id`` (project mode only).
+Auto uses the project's memory directory when its default workspace is blank and the chat has no
+workspace override; otherwise it uses the workspace of ``sid`` (the current chat when absent).
 
 GET  /api/p/web-sidebar/tree?sid=&path=DIR   -> {root, path, git, entries: [{name, type, size, status}], truncated}
 GET  /api/p/web-sidebar/file?sid=&path=FILE  -> {path, abs, kind: text|image|binary, size, mtime, text, eol, bom, truncated}
@@ -241,14 +244,37 @@ def apply(ctx, config):
         workspaces, sessions = ctx.get("workspaces"), ctx.get("sessions")
         if workspaces is None or sessions is None:
             raise Fence(503, "workspaces are not enabled")
-        sid = str((req.get(source) or {}).get("sid") or "")
+        params = req.get(source) or {}
+        sid = str(params.get("sid") or "")
+        mode = params.get("root") or "auto"
+        pid = str(params.get("project_id") or "")
+        if mode not in ("auto", "workspace", "project") or (pid and mode != "project"):
+            raise Fence(400, "invalid browsing root")
         try:
-            root = workspaces.context(sid or sessions.current()["id"])["workspace"]
+            context = workspaces.context(sid or sessions.current()["id"])
         except (ValueError, KeyError, TypeError) as e:
             raise Fence(404, f"session not found: {e}")
-        if not root or not Path(root).is_dir():
-            raise Fence(404, "workspace directory does not exist")
-        return root
+        project = context.get("project")
+        if pid:
+            project = next((p for p in workspaces.projects() if p["id"] == pid), None)
+        if mode == "auto":
+            # Keep an explicitly chosen chat workspace, even for a project with no default.
+            use_project = (project and not project.get("workspace") and workspaces.projects_root is not None
+                           and Path(context["workspace"]).resolve() == Path(workspaces.default_workspace).resolve())
+            mode = "project" if use_project else "workspace"
+        if mode == "project":
+            if project is None:
+                raise Fence(404, "project not found")
+            if workspaces.projects_root is None:
+                raise Fence(404, "project directory is not configured")
+            root = (workspaces.projects_root / project["name"]).resolve()
+            if not root.is_relative_to(workspaces.projects_root.resolve()):
+                raise Fence(403, "project directory is outside the projects root")
+        else:
+            root = Path(context["workspace"]).resolve()
+        if not root.is_dir():
+            raise Fence(404, f"{mode} directory does not exist")
+        return str(root)
 
     def guarded(fn):
         def run(req):

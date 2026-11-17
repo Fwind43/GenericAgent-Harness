@@ -1,6 +1,6 @@
 name = "web-sidebar"
 category = "ui"
 entry = "main:apply"
-description = "Right-hand workbench for ui-web: lazy file tree with Git status colours and file search, a viewer/editor for code, Markdown and images, and a Git changes list with read-only diffs. Fenced to the chat's workspace."
-description_zh = "ui-web 的右侧工作台：懒加载文件树（Git 状态着色、文件搜索）、代码/Markdown/图片的查看与编辑，以及 Git 变更列表与只读 diff。读写范围限定在会话工作区内。"
+description = "Right-hand workbench for ui-web: lazy file tree with Git status colours and file search, a viewer/editor for code, Markdown and images, and a Git changes list with read-only diffs. Switch between the chat's workspace and project directory without changing its execution cwd."
+description_zh = "ui-web 的右侧工作台：懒加载文件树（Git 状态着色、文件搜索）、代码/Markdown/图片的查看与编辑，以及 Git 变更列表与只读 diff。支持切换会话工作目录与项目目录，不改变会话执行目录。"
 inject = ["web.host"]
