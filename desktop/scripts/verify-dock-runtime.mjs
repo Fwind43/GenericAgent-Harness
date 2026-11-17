@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 const appPath = process.argv[2];
 const out = path.resolve(process.argv[3] || 'runtime-evidence');
 const expectedVersion = process.argv[4] || '0.0.46-dockfix.2';
+const smokeOnly = process.argv[5] === 'smoke';
+const nodeReadyExpr = "typeof process !== 'undefined' && Number.isInteger(process.pid) && process.pid > 0";
 fs.mkdirSync(out, { recursive: true });
 const report = { appPath, environment: {}, cases: [], limitations: [
   'No real logout/login or reboot: --hidden exercises the hidden-start path only.',
@@ -124,7 +126,7 @@ const stateExpr = `(() => { const {app,BrowserWindow}=globalThis.__docktest; ret
 }; })()`;
 const mainState = s => s.windows.find(w => /^http:\/\/127\.0\.0\.1:\d+\/$/.test(w.url));
 const islandState = s => s.windows.find(w => w.url.includes('/web/desktop-island/island.html'));
-const scenarios = [false, true].flatMap(hidden => ['identity', 'activate', 'second-instance', 'window-show'].map(action => ({ hidden, action })));
+const scenarios = smokeOnly ? [{ hidden: false, action: 'smoke' }] : [false, true].flatMap(hidden => ['identity', 'activate', 'second-instance', 'window-show'].map(action => ({ hidden, action })));
 const seenPids = new Set();
 let failed = false;
 for (const [index, { hidden, action }] of scenarios.entries()) {
@@ -143,11 +145,15 @@ for (const [index, { hidden, action }] of scenarios.entries()) {
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
     c = new Inspector(ws);
-    appPid = await c.eval('process.pid');
+    const bootstrapStarted = Date.now();
+    await c.call('Runtime.enable', {});
+    await c.call('Runtime.runIfWaitingForDebugger', {});
+    appPid = await wait(() => c.eval(`(${nodeReadyExpr}) && process.pid`));
+    result.bootstrapWaitMs = Date.now() - bootstrapStarted;
     result.pid = appPid;
     assert.ok(!seenPids.has(appPid), 'A scenario reused a previous main process');
     seenPids.add(appPid);
-    await wait(() => c.eval(`typeof process.mainModule?.require === 'function'`));
+    await wait(() => c.eval(`typeof process !== 'undefined' && typeof process.mainModule?.require === 'function'`));
     await c.eval(`globalThis.__docktest=process.mainModule.require('electron'); true`);
     await c.eval(`(${installTrace.toString()})(${JSON.stringify(traceFile)})`);
     async function mark(label) { await c.eval(`globalThis.__docktrace.record('test:marker',{label:${JSON.stringify(label)}}); true`); }
@@ -183,6 +189,10 @@ for (const [index, { hidden, action }] of scenarios.entries()) {
     await osType('initial-system-identity', 'Foreground', !hidden);
     result.page = await c.eval(`globalThis.__main.webContents.executeJavaScript('({title:document.title,bodyLength:document.body.innerText.length})')`);
     assert.ok(result.page.bodyLength > 30, JSON.stringify(result.page));
+    if (action === 'smoke') {
+      result.status = 'passed';
+      continue; // The finally block must prove clean exit before CI starts the matrix.
+    }
     if (action === 'identity' && !hidden) {
       await mark('toggle-login-registration');
       result.autostart = await c.eval(`(() => {
