@@ -22,8 +22,8 @@
         // only that delimiter-detection mask, never the source or copied text.
         const mask = maskedSrc.slice(-src.length);
         const relaxed = mask.replace(
-          /[、。，．；：！？…—）］｝〉》」』】〕〗〙〛’”](?=\*\*(?!\*)[^\s\p{P}\p{S}])/gu,
-          'a'
+          /([、。，．；：！？…—）］｝〉》」』】〕〗〙〛’”]\*\*(?!\*))([^\s\p{P}\p{S}])/gu,
+          (_, closing, next) => closing + ' '.repeat(next.length)
         );
         if (relaxed === mask) return false;
         // Keep Marked's delimiter balancing, nesting and original source slices.
