@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { HostState } from './types';
+import type { HostState, Session } from './types';
 import type { Slot, SlotsAPI } from './slots';
 
 export type SlotName = 'sidebar' | 'sidebar-foot' | 'header' | 'toolbar' | 'composer-top' | 'composer' | 'composer-menu' | 'overlay' | 'settings' | 'view' | 'page';
@@ -21,6 +21,8 @@ export interface PluginAPI {
   intercept(fn: Interceptor): Cleanup;
   state(): HostState;
   setState(state: HostState, reset?: boolean): void;
+  /** Show chat-navigation feedback until the returned cleanup runs; newest target wins. */
+  beginSessionSwitch(target: Pick<Session, 'id' | 'title'>): Cleanup;
   notice(text?: string): void;
   lock(on: boolean): void;
   /** Handle clicks on local file references in rendered Markdown. Newest registration runs first. */

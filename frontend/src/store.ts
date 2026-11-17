@@ -87,6 +87,17 @@ export class HostStore {
     this.runSeq = new Map((state.runs ?? []).map(run => [run.id, run.seq]));
     this.update({ state });
   };
+  // The latest navigation owns the indicator; an older request's cleanup cannot dismiss it.
+  private sessionSwitchToken?: symbol;
+  beginSessionSwitch = (target: NonNullable<HostSnapshot['switchingSession']>) => {
+    const token = this.sessionSwitchToken = Symbol();
+    this.update({ switchingSession: { id: target.id, title: target.title } });
+    return () => {
+      if (this.sessionSwitchToken !== token) return;
+      this.sessionSwitchToken = undefined;
+      this.update({ switchingSession: undefined });
+    };
+  };
   notice = (notice = '') => this.update({ notice });
   lock() {
     const token = Symbol(); this.locks.add(token); this.update({ changing: true });

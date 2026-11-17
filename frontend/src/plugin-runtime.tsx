@@ -53,7 +53,7 @@ export class PluginRuntime {
     const setup: PluginSetup | undefined = component ? mountReact(component) : this.definitions.get(m.name);
     if (!setup || instance.started || controller.signal.aborted) return;
     instance.started = true;
-    let unlock: Cleanup | undefined;
+    let unlock: Cleanup | undefined, endSessionSwitch: Cleanup | undefined;
     const own = (fn: Cleanup): Cleanup => {
       let done = false;
       const once = () => { if (!done) { done = true; fn(); } };
@@ -89,6 +89,14 @@ export class PluginRuntime {
       intercept: fn => { this.interceptors.add(fn); return own(() => { this.interceptors.delete(fn); }); },
       state: () => host.getSnapshot().state,
       setState: (state, reset) => { if (!controller.signal.aborted) { host.setState(state); if (reset) host.emit('reset', null); } },
+      beginSessionSwitch: target => {
+        if (controller.signal.aborted) return () => {};
+        const finish = host.beginSessionSwitch(target);
+        endSessionSwitch?.();
+        const release = () => { finish(); if (endSessionSwitch === release) endSessionSwitch = undefined; };
+        endSessionSwitch = release;
+        return release;
+      },
       notice: text => { if (!controller.signal.aborted) host.notice(text); },
       lock: on => {
         if (controller.signal.aborted) return;
@@ -107,7 +115,7 @@ export class PluginRuntime {
       el, h,
       slots: bindSlots(m.name, own),
     };
-    own(() => { unlock?.(); unlock = undefined; });
+    own(() => { unlock?.(); unlock = undefined; endSessionSwitch?.(); endSessionSwitch = undefined; });
     slots.open(m.name);
     try { const result = setup(api); if (typeof result === 'function') own(result); }
     catch (error) { this.report(m.name, error); this.stop(m.name); }

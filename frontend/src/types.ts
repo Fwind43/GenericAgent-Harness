@@ -61,7 +61,7 @@ export interface HostState {
   models?: RuntimeCatalog; effort?: Effort; presets?: PresetCatalog; parallel_runs?: boolean; run_id?: string | null; runs?: Run[];
   local?: { url: string; host: string; port: number }; [key: string]: unknown;
 }
-export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string }
+export interface HostSnapshot { state: HostState; connected: boolean; changing: boolean; notice: string; switchingSession?: Pick<Session, 'id' | 'title'> }
 export interface ModelValues { name?: string; model?: string; protocol?: string; apibase?: string; apikey?: string; context_win?: number }
 export interface ModelEntry { key: string; protocol: string; provider?: string; values: ModelValues; has_key?: boolean; url_hidden?: boolean;
   options?: Record<string, string | number | boolean>; options_hidden?: string[] }

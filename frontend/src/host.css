@@ -23,6 +23,21 @@ header h1{font-size:15px;font-weight:600;margin:0}
 select{font:inherit;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:3px 8px}
 main{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 #thread{max-width:820px;margin:0 auto;padding:24px 20px 12px}
+.gah-session-loading{flex:1;min-height:0;overflow:hidden;padding:32px 20px}
+.gah-session-loading[hidden]{display:none}
+.gah-session-loading-label{max-width:780px;margin:0 auto;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.gah-session-spinner{width:14px;height:14px;flex:none;border:2px solid var(--border);border-top-color:var(--muted);border-radius:50%;animation:gah-session-spin .8s linear infinite}
+.gah-session-skeleton{max-width:780px;margin:32px auto;display:flex;flex-direction:column;gap:12px;animation:gah-session-pulse 1.4s ease-in-out infinite alternate}
+.gah-session-skeleton i{display:block;height:12px;border-radius:6px;background:var(--border);width:88%}
+.gah-session-skeleton i:first-child{align-self:flex-end;width:38%;height:36px;margin-bottom:20px;border-radius:12px}
+.gah-session-skeleton i:nth-child(3){width:72%}
+.gah-session-skeleton i:last-child{width:52%}
+.gah-session-ready{animation:gah-session-enter .16s ease-out}
+.gah-session-wait{opacity:.45}
+@keyframes gah-session-spin{to{transform:rotate(360deg)}}
+@keyframes gah-session-pulse{from{opacity:.35}to{opacity:.7}}
+@keyframes gah-session-enter{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.gah-session-spinner,.gah-session-skeleton,.gah-session-ready{animation:none}}
 .empty{color:var(--muted);text-align:center;margin-top:22vh;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:14px}
 .empty b{display:block;color:var(--text);font-size:20px;font-weight:600;margin-bottom:6px}
 @keyframes blink{50%{opacity:0}}

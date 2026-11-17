@@ -67,10 +67,14 @@ function ComposerMenu({ onAttach }: { onAttach: () => void }) {
 }
 
 export function App() {
-  const { state, connected, changing, notice } = useHost();
+  const { state, connected, changing, notice, switchingSession } = useHost();
+  const switching = !!switchingSession;
   const draft = useSyncExternalStore(sessionDrafts.subscribe, () => sessionDrafts.get(state.session_id));
   // Event subscriptions are long-lived: resolve the session at the time of input.
-  const setDraft = (value: string) => sessionDrafts.set(host.getSnapshot().state.session_id, value);
+  const setDraft = (value: string) => {
+    const snapshot = host.getSnapshot();
+    if (!snapshot.switchingSession) sessionDrafts.set(snapshot.state.session_id, value);
+  };
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false), [sidebar, setSidebar] = useState(false);
   // Narrow screens fold the header controls (mode + plugin `header` slot) into one "more" menu; the slot stays mounted while closed.
@@ -88,6 +92,7 @@ export function App() {
   const uploading = attachmentSnapshot.loading || files.some(p => !p.file && !p.error);
   const ready = files.filter(p => p.file);
   function addFiles(list: FileList | File[] | null | undefined) {
+    if (host.getSnapshot().switchingSession) return;
     const picked = Array.from(list ?? []);
     if (picked.length) attachmentDrafts.add(host.getSnapshot().state.session_id, picked);
   }
@@ -97,14 +102,14 @@ export function App() {
   const viewState = useViews(), view = viewState.active, composer = showsComposer(viewState);
   // A plugin page route replaces the whole chat column; slots stay mounted (hidden) for plugins.
   const page = pages.current(usePages());
-  const busy = state.running || changing || sending;
+  const busy = state.running || changing || sending || switching;
   // Only gates hint vs. stats bar: recompute when the transcript changes, not on every keystroke.
   const hasStats = useMemo(() => sessionStats(state.messages ?? []).length > 0, [state.messages]);
   // Render only the newest messages; switching to a long session otherwise mounts every turn at once.
   const [win, setWin] = useState({ sid: state.session_id, limit: WINDOW });
   const limit = win.sid === state.session_id ? win.limit : WINDOW;
   const first = Math.max(0, (state.messages?.length ?? 0) - limit);
-  const currentSession = state.sessions?.find((session) => session.id === state.session_id);
+  const currentSession = switchingSession ?? state.sessions?.find((session) => session.id === state.session_id);
   const sessionTitle = !currentSession ? '' : !currentSession.title || currentSession.title === NEW_TITLE ? T(NEW_TITLE, 'New chat') : currentSession.title;
   useEffect(() => host.connect(), []);
   useEffect(() => {
@@ -131,7 +136,7 @@ export function App() {
     return () => document.removeEventListener('paste', onPaste);
   }, []);
   useEffect(() => host.on('reset', () => { stick.current = true; setSidebar(false); }), []);
-  useEffect(() => { setHeadMenu(false); }, [state.session_id]);
+  useEffect(() => { setHeadMenu(false); }, [state.session_id, switching]);
   useEffect(() => {
     if (!headMenu) return;
     const away = (event: PointerEvent) => { const target = event.target as Node; if (!headSlot.current?.contains(target) && !headMore.current?.contains(target)) setHeadMenu(false); };
@@ -193,8 +198,8 @@ export function App() {
   }, [fitInput]);
   useLayoutEffect(() => {
     const node = scroll.current;
-    if (node && stick.current) node.scrollTop = node.scrollHeight;
-  }, [state.messages, state.session_id]);
+    if (node && !switching && stick.current) node.scrollTop = node.scrollHeight;
+  }, [state.messages, state.session_id, switching]);
   function toggleSide(open: boolean) { if (narrow()) setSidebar(open); else setCollapsed(!open); }
   function startResize(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
@@ -223,7 +228,7 @@ export function App() {
     event.preventDefault();
     const task = draft.trim(), attachments = ready.map(p => p.file!);
     // While a task runs, plugins (e.g. run-queue) may claim the message; otherwise it is refused.
-    if ((!task && !attachments.length) || uploading || changing || sending || submitting.current) return;
+    if ((!task && !attachments.length) || host.getSnapshot().switchingSession || uploading || changing || sending || submitting.current) return;
     submitting.current = true; setSending(true); host.notice();
     try {
       // Plugins only carry text, so a message with attachments always goes to /api/run.
@@ -238,6 +243,7 @@ export function App() {
     finally { submitting.current = false; setSending(false); input.current?.focus(); }
   }
   async function abort() {
+    if (host.getSnapshot().switchingSession) return;
     setStopping(true);
     try { await request('/api/abort', { run_id: state.run_id, session_id: state.session_id }); } catch (error) { host.report(error); }
     finally { setStopping(false); }
@@ -254,20 +260,24 @@ export function App() {
       <header><button type="button" className="icon-btn" id="sideOpen" aria-controls="sidebar" aria-expanded={sidebar} aria-label={T('打开侧边栏', 'Open sidebar')} title={T('展开侧边栏', 'Expand sidebar')} onClick={() => toggleSide(true)}>☰</button>
         {page ? <h2 className="session-title gah-page-title" title={page.label}>{page.label}</h2> : null}
         <span className="gah-chat-head" hidden={!!page}>{sessionTitle ? <h2 className="session-title" title={sessionTitle}>{sessionTitle}</h2> : null}{sessionTitle ? <ModePicker disabled={busy} head /> : null}</span><span className="spacer" />
-        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<button type="button" ref={headMore} className="icon-btn gah-head-more" hidden={!!page} aria-haspopup="true" aria-expanded={headMenu} aria-label={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} title={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} onClick={() => setHeadMenu(value => !value)}>{'\u22ef'}</button><span ref={headSlot} className={headMenu ? 'gah-chat-head gah-head-slot open' : 'gah-chat-head gah-head-slot'} hidden={!!page}>{sessionTitle ? <span className="gah-head-mode"><ModePicker disabled={busy} head /></span> : null}<Slot name="header" /></span>
+        {page ? <button type="button" className="icon-btn gah-page-close" title={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} aria-label={T('\u8fd4\u56de\u5bf9\u8bdd', 'Back to chat')} onClick={pages.home}>×</button> : null}<button type="button" ref={headMore} className="icon-btn gah-head-more" hidden={!!page} disabled={switching} aria-haspopup="true" aria-expanded={headMenu} aria-label={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} title={T('\u66f4\u591a\u64cd\u4f5c', 'More actions')} onClick={() => setHeadMenu(value => !value)}>{'\u22ef'}</button><span ref={headSlot} className={headMenu ? 'gah-chat-head gah-head-slot open' : 'gah-chat-head gah-head-slot'} hidden={!!page} inert={switching}>{sessionTitle ? <span className="gah-head-mode"><ModePicker disabled={busy} head /></span> : null}<Slot name="header" /></span>
       </header>
-      <div className="gah-chat-only" hidden={!!page}><ViewTabs /></div>
-      <nav className="toolbar gah-bar" hidden={!!page} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
+      <div className="gah-chat-only" hidden={!!page} inert={switching}><ViewTabs /></div>
+      <nav className="toolbar gah-bar" hidden={!!page} inert={switching} aria-label={T('工具栏', 'Toolbar')}><Slot name="toolbar" /></nav>
       <div id="notice" role="status" hidden={!notice}>{notice}</div>
-      <main id="scroll" ref={scroll} hidden={!!page || view !== CHAT_VIEW} onScroll={() => { const node = scroll.current; if (node) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
+      <div className="gah-session-loading" hidden={!!page || !switching}>
+        <div className="gah-session-loading-label" role="status"><span className="gah-session-spinner" aria-hidden="true" />{T('正在打开会话…', 'Opening chat…')}</div>
+        <div className="gah-session-skeleton" aria-hidden="true"><i /><i /><i /><i /><i /></div>
+      </div>
+      <main id="scroll" ref={scroll} className={switching ? undefined : 'gah-session-ready'} hidden={!!page || view !== CHAT_VIEW || switching} inert={switching} aria-busy={switching} onScroll={() => { const node = scroll.current; if (node && !host.getSnapshot().switchingSession) stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
         {first > 0 && <button type="button" className="gah-load-earlier" onClick={() => setWin({ sid: state.session_id, limit: limit + WINDOW })}>{T(`显示更早的 ${Math.min(first, WINDOW)} 条消息（还有 ${first} 条）`, `Show ${Math.min(first, WINDOW)} earlier messages (${first} hidden)`)}</button>}
         <div id="thread">{state.messages.length ? state.messages.slice(first).map((message, i) => { const index = first + i; return <ChatMessage key={`${state.session_id ?? ''}:${index}`} message={message} index={index} last={index === state.messages.length - 1} />; }) : <EmptyState />}</div>
       </main>
-      {!page && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
-      {!page && view === CHAT_VIEW && <ScrollBottom scroll={scroll} stick={stick} deps={[state.messages, state.session_id]} />}
-      <div className="gah-view-area" hidden={!!page || view === CHAT_VIEW}><Slot name="view" /></div>
+      {!page && !switching && view === CHAT_VIEW && <MessageNav messages={state.messages} scroll={scroll} offset={first} />}
+      {!page && !switching && view === CHAT_VIEW && <ScrollBottom scroll={scroll} stick={stick} deps={[state.messages, state.session_id]} />}
+      <div className={'gah-view-area' + (switching ? '' : ' gah-session-ready')} hidden={!!page || view === CHAT_VIEW || switching} inert={switching}><Slot name="view" /></div>
       <div className="gah-page-area" hidden={!page}><Slot name="page" /></div>
-      <footer hidden={!!page || !composer}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
+      <footer hidden={!!page || !composer} inert={switching} className={switching ? 'gah-session-wait' : undefined}>{state.messages.length ? null : <div className="new-chat-bar"><ModePicker disabled={busy} /></div>}<form id="form" className={dragging ? 'dragging' : undefined} onSubmit={send}
         onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={event => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); addFiles(event.dataTransfer.files); input.current?.focus(); }}>
@@ -283,7 +293,7 @@ export function App() {
           <ComposerMenu onAttach={() => picker.current?.click()} />
           <Slot name="composer" /><span className="spacer" />
           <button type="button" id="stop" className="stop" hidden={!state.running} disabled={stopping} onClick={abort}>{T('停止', 'Stop')}</button>
-          <button type="submit" id="send" disabled={changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>
+          <button type="submit" id="send" disabled={switching || changing || sending || uploading || (!draft.trim() && !ready.length)}>{T('发送', 'Send')}</button>
         </div>
       </form>{hasStats ? <SessionStats messages={state.messages} /> : <div className="hint">{T('Enter 发送 · Shift+Enter 换行 · 同一时间只运行一个任务', 'Enter to send · Shift+Enter for a new line · one task at a time')}</div>}</footer>
     </div><Slot name="overlay" />

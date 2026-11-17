@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url';
 
 // Compile the real store and request layer; only React/i18n are irrelevant here.
 const built = await build({
-  stdin: { contents: "export { HostStore } from './store'; export { setViewing } from './api';", resolveDir: fileURLToPath(new URL('../src/', import.meta.url)) },
+  stdin: { contents: "export { HostStore } from './store'; export { setViewing, viewing } from './api';", resolveDir: fileURLToPath(new URL('../src/', import.meta.url)) },
   bundle: true, write: false, platform: 'node', format: 'esm',
   plugins: [{ name: 'ui-stubs', setup(b) {
     b.onResolve({ filter: /^(react|\.\/i18n)$/ }, args => ({ path: args.path, namespace: 'ui-stubs' }));
     b.onLoad({ filter: /.*/, namespace: 'ui-stubs' }, () => ({ contents: 'export const useSyncExternalStore = () => {}; export const T = (zh, en) => en; export const errorText = e => String(e);' }));
   } }],
 });
-const { HostStore, setViewing } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const { HostStore, setViewing, viewing } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 let requests, timers, nextTimer, sources, originals;
 const drain = async () => { for (let i = 0; i < 12; ++i) await Promise.resolve(); };
 const state = (id = 'a', extra = {}) => ({ session_id: id, running: false, parallel_runs: true, messages: [], runs: [], ...extra });
@@ -49,6 +49,50 @@ afterEach(() => {
   for (const [key, descriptor] of originals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
   }
+});
+
+test('session-switch feedback is immediate without changing the viewed chat or its draft key', () => {
+  const store = new HostStore(); store.setState(state());
+  let updates = 0; const off = store.subscribe(() => ++updates);
+  const previous = store.getSnapshot().state;
+  const finish = store.beginSessionSwitch({ id: 'b', title: 'Chat B' });
+  assert.equal(updates, 1);
+  assert.deepEqual(store.getSnapshot().switchingSession, { id: 'b', title: 'Chat B' });
+  assert.equal(store.getSnapshot().state, previous);
+  assert.equal(viewing(), 'a');
+  assert.equal(store.getSnapshot().changing, false);
+  // Failure/abort just removes feedback; the previous transcript stays available.
+  finish(); finish();
+  assert.equal(updates, 2);
+  assert.equal(store.getSnapshot().switchingSession, undefined);
+  assert.equal(store.getSnapshot().state, previous);
+  off();
+});
+
+test('only the newest switch owns feedback, including across intermediate snapshots', () => {
+  const store = new HostStore(); store.setState(state());
+  const finishB = store.beginSessionSwitch({ id: 'b', title: 'Chat B' });
+  const finishC = store.beginSessionSwitch({ id: 'c', title: 'Chat C' });
+  finishB();
+  store.setState(state('b'));
+  assert.deepEqual(store.getSnapshot().switchingSession, { id: 'c', title: 'Chat C' });
+  store.setState(state('c'));
+  assert.equal(store.getSnapshot().switchingSession.id, 'c');
+  finishC();
+  assert.equal(store.getSnapshot().switchingSession, undefined);
+  assert.equal(store.getSnapshot().state.session_id, 'c');
+  finishB();
+  assert.equal(store.getSnapshot().state.session_id, 'c');
+});
+
+test('session-switch cleanup leaves unrelated operation locks intact', () => {
+  const store = new HostStore(); store.setState(state());
+  const unlock = store.lock();
+  const finish = store.beginSessionSwitch({ id: 'b', title: 'Chat B' });
+  finish();
+  assert.equal(store.getSnapshot().changing, true);
+  unlock();
+  assert.equal(store.getSnapshot().changing, false);
 });
 
 test('same-view refreshes share one request and promise', async () => {

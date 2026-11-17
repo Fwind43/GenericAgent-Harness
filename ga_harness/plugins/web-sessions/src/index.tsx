@@ -157,16 +157,30 @@ export function Sessions({ api }: { api: PluginAPI }) {
   // clickable while the request is in flight. Clicks made meanwhile are not dropped; the
   // newest one is opened as soon as the request in flight returns.
   const [target, setTarget] = useState(''), wanted = useRef('');
+  const endSwitch = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => { wanted.current = ''; endSwitch.current?.(); endSwitch.current = undefined; }, []);
   const openChat = async (session: Session, recent: boolean) => {
+    if (api.signal.aborted) return;
     const key = recent && session.project_id ? `p:${session.project_id}` : '';
     quiet.current = key && key !== current ? key : '';
     if (quiet.current) setToggled(old => old[key] === undefined ? { ...old, [key]: false } : old);
     const inFlight = !!wanted.current;
     wanted.current = session.id; setTarget(session.id);
+    // Keep one continuous transition across queued clicks, always naming the latest target.
+    const finish = api.beginSessionSwitch(session);
+    endSwitch.current?.(); endSwitch.current = finish;
+    pages.home();
     if (inFlight) return;
     try {
-      for (let id = ''; id !== wanted.current;) { id = wanted.current; if (!await act('select', { id })) break; }
-    } finally { wanted.current = ''; setTarget(''); }
+      for (let id = ''; wanted.current && !api.signal.aborted && id !== wanted.current;) {
+        id = wanted.current;
+        // An obsolete request failing must not discard a newer click.
+        if (!await act('select', { id }) && id === wanted.current) break;
+      }
+    } finally {
+      wanted.current = ''; if (!api.signal.aborted) setTarget('');
+      endSwitch.current?.(); endSwitch.current = undefined;
+    }
   };
   const change = (path: string, body: object, reset: boolean) => run(async () => {
     const next = await api.host.post<HostState>(path, body); api.setState(next, reset);
