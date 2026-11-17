@@ -3,12 +3,20 @@ name: desktop
 # Temporary diagnostic build only: no Release, tag, update manifest or container publication.
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Build a new package or verify the already-delivered DMG
+        type: choice
+        options: [build, runtime]
+        default: build
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
+    if: inputs.mode != 'runtime'
     name: macos-arm64-dockfix
     runs-on: macos-15
     env:
@@ -83,3 +91,46 @@ jobs:
             desktop/dist/*.dmg
             desktop/dist/SHA256SUMS.txt
             desktop/dist/README-临时包.md
+
+  runtime:
+    if: inputs.mode == 'runtime'
+    name: macos-arm64-runtime
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download the original delivered artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ga-harness-0.0.46-dockfix.1-macos-arm64
+          run-id: 44003394550
+          github-token: ${{ github.token }}
+          path: delivered
+      - name: Verify and install the original DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd delivered
+          shasum -a 256 -c SHA256SUMS.txt
+          MOUNT="$RUNNER_TEMP/dockfix-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach ./*.dmg -readonly -nobrowse -mountpoint "$MOUNT"
+          APP=("$MOUNT"/*.app)
+          DEST="/Applications/$(basename "${APP[0]}")"
+          sudo ditto "${APP[0]}" "$DEST"
+          hdiutil detach "$MOUNT"
+          echo "DOCKFIX_APP=$DEST" >> "$GITHUB_ENV"
+          /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST"
+      - name: Launch real application and verify Dock recovery
+        run: node desktop/scripts/verify-dock-runtime.mjs "$DOCKFIX_APP" runtime-evidence
+      - name: Preserve runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dockfix-runtime-evidence
+          path: runtime-evidence
+          if-no-files-found: warn
+          retention-days: 14
