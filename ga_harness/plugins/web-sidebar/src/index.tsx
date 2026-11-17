@@ -12,7 +12,7 @@ type GitData = { git: boolean; branch: string; files: { path: string; status: st
 type DiffData = { path: string; diff: string; truncated: boolean };
 type View = { kind: 'file' | 'diff'; path: string };
 
-const K_OPEN = 'gah.web-sidebar.open', K_WIDTH = 'gah.web-sidebar.width';
+const K_OPEN = 'gah.web-sidebar.open', K_WIDTH = 'gah.web-sidebar.width', K_WRAP = 'gah.web-sidebar.wrap';
 const MIN_W = 260, MAX_W = 960;
 const load = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* private mode */ } };
@@ -159,10 +159,12 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
   const [draft, setDraft] = useState<string | null>(null);   // non-null while editing
   const [saving, setSaving] = useState(false);
   const [raw, setRaw] = useState(false);
+  const [wrap, setWrap] = useState(() => load(K_WRAP) !== '0');
   const editing = useRef(false);
   editing.current = draft !== null;
   const dirty = draft !== null && data !== null && draft !== data.text;
 
+  useEffect(() => { store(K_WRAP, wrap ? '1' : '0'); }, [wrap]);
   useEffect(() => { setData(null); setDraft(null); setRaw(false); }, [sid, path]);
   useEffect(() => {
     if (editing.current) return;   // never replace text under the user's cursor
@@ -192,6 +194,8 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
       <span className="name" title={data?.abs || path}>{baseName(path)}{dirty ? ' \u25cf' : ''}</span>
       {data ? <span className="meta">{fmtSize(data.size)}</span> : null}
       <span className="spacer" />
+      {data?.kind === 'text' && (draft !== null || !markdown) ? <button type="button" className={'gah-sb-btn' + (wrap ? ' on' : '')}
+        aria-pressed={wrap} title={T('\u81ea\u52a8\u6362\u884c', 'Word wrap')} onClick={() => setWrap(value => !value)}>{T('\u81ea\u52a8\u6362\u884c', 'Word wrap')}</button> : null}
       {draft === null && data?.kind === 'text' && isMarkdown(path) ? <button type="button" className="gah-sb-btn" onClick={() => setRaw(!raw)}>{raw ? T('\u9884\u89c8', 'Preview') : T('\u6e90\u7801', 'Source')}</button> : null}
       {draft === null && editable ? <button type="button" className="gah-sb-btn" onClick={() => setDraft(data!.text)}>{T('\u7f16\u8f91', 'Edit')}</button> : null}
       {draft !== null ? <>
@@ -204,7 +208,7 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
     {!data ? (error ? null : <div className="gah-sb-note">{T('\u52a0\u8f7d\u4e2d\u2026', 'Loading…')}</div>)
       : data.kind === 'image' ? <div className="gah-sb-image"><img src={api.fileURL(data.abs)} alt={baseName(path)} /></div>
       : data.kind === 'binary' ? <div className="gah-sb-note">{T('\u4e8c\u8fdb\u5236\u6216\u975e UTF-8 \u6587\u4ef6\uff0c\u65e0\u6cd5\u9884\u89c8', 'Binary or non-UTF-8 file; no preview')}</div>
-      : draft !== null ? <textarea className="gah-sb-edit" value={draft} spellCheck={false} autoFocus disabled={saving}
+      : draft !== null ? <textarea className={"gah-sb-edit" + (wrap ? " gah-sb-wrap" : "")} wrap={wrap ? "soft" : "off"} value={draft} spellCheck={false} autoFocus disabled={saving}
           aria-label={T('\u7f16\u8f91\u6587\u4ef6', 'Edit file')} onChange={event => setDraft(event.target.value)}
           onKeyDown={event => {
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save(); }
@@ -217,7 +221,7 @@ function FileView({ api, sid, path, tick, onClose }: { api: PluginAPI; sid: stri
           }} />
       : <>
         {data.truncated ? <div className="gah-sb-note">{T('\u6587\u4ef6\u8d85\u8fc7 1 MB\uff0c\u4ec5\u663e\u793a\u5f00\u5934\u4e14\u4e0d\u53ef\u7f16\u8f91', 'File exceeds 1 MB: showing the beginning, read-only')}</div> : null}
-        {markdown ? <Markdown text={data.text} /> : <pre className="gah-sb-code">{data.text}</pre>}
+        {markdown ? <Markdown text={data.text} /> : <pre className={"gah-sb-code" + (wrap ? " gah-sb-wrap" : "")}>{data.text}</pre>}
       </>}
   </div>;
 }
