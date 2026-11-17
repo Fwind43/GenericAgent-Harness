@@ -254,6 +254,72 @@ def test_tool_receipt_summary_handles_argument_shapes(output_app, browser):
     page.close()
 
 
+def test_markdown_cjk_strong_boundaries(output_app, browser):
+    _, _, base = output_app
+    page = browser.new_page(locale="zh-CN")
+    page.goto(base)
+    page.wait_for_function("!!window.GAHOutput")
+    cases = [
+        ("**交付边界：**Git 差异检查已通过；`client.js` 尚未生成。",
+         ["交付边界："], [], ["client.js"]),
+        ("**注意：**未运行测试。", ["注意："], [], []),
+        ("**说明：**Git；**验证：**未测试。", ["说明：", "验证："], [], []),
+        ("**说明。**正文", ["说明。"], [], []),
+        ("**完成！**下一步", ["完成！"], [], []),
+        ("**关键（可选）**正文", ["关键（可选）"], [], []),
+        ("**版本“新版”**已就绪", ["版本“新版”"], [], []),
+        ("**包含 *斜体*：**正文", ["包含 斜体："], ["斜体"], []),
+        ("**包含 `client.js`：**正文", ["包含 client.js："], [], ["client.js"]),
+        ("**包含 `标签：**Git`：**正文", ["包含 标签：**Git："], [], ["标签：**Git"]),
+        (r"**包含 标签：\*\*Git：**正文", ["包含 标签：**Git："], [], []),
+        ("[**说明：**Git](https://example.test/docs)", ["说明："], [], []),
+        ("**加粗**，*斜体* 和 **标签：** 正文", ["加粗", "标签："], ["斜体"], []),
+        ("***标准嵌套***", ["标准嵌套"], ["标准嵌套"], []),
+        ("**English:**text", [], [], []),
+        ("** 标签：**正文", [], [], []),
+        ("**标签： **正文", [], [], []),
+        ("**未闭合：*正文", [], [], []),
+        (r"\*\*标签：\*\*正文", [], [], []),
+        ("`**标签：**Git`", [], [], ["**标签：**Git"]),
+        ("```md\n**标签：**Git\n```", [], [], ["**标签：**Git\n"]),
+        ("    **标签：**Git\n", [], [], ["**标签：**Git\n"]),
+        ("[链接](https://example.test/标签：**Git)", [], [], []),
+    ]
+    results = page.evaluate("""sources => sources.map(source => {
+        const node = GAHOutput.markdown(source);
+        const text = selector => [...node.querySelectorAll(selector)].map(n => n.textContent);
+        return {source: node._markdown, strong: text('strong'), em: text('em'), code: text('code')};
+    })""", [source for source, *_ in cases])
+    for (source, strong, em, code), result in zip(cases, results):
+        assert result == {"source": source, "strong": strong, "em": em, "code": code}, source
+    page.close()
+
+
+def test_markdown_cjk_strong_streaming_and_safety(output_app, browser):
+    _, _, base = output_app
+    page = browser.new_page(locale="zh-CN")
+    page.goto(base)
+    page.wait_for_function("!!window.GAHOutput")
+    result = page.evaluate("""() => {
+        const node = GAHOutput.markdown('**交付边界：');
+        const partial = {text: node.textContent, strong: node.querySelectorAll('strong').length};
+        const source = '**交付边界：**Git **<img src=x onerror="window.__cjkXSS=1">：**正文';
+        GAHOutput.setMarkdown(node, source);
+        document.body.append(node);
+        return {partial, source: node._markdown, text: node.textContent.trim(),
+            strong: [...node.querySelectorAll('strong')].map(n => n.textContent),
+            unsafe: node.querySelectorAll('img, script, [onerror]').length,
+            xss: !!window.__cjkXSS};
+    }""")
+    assert result["partial"] == {"text": "**交付边界：\n", "strong": 0}
+    assert result["source"] == '**交付边界：**Git **<img src=x onerror="window.__cjkXSS=1">：**正文'
+    assert result["text"] == '交付边界：Git <img src=x onerror="window.__cjkXSS=1">：正文'
+    assert result["strong"] == ["交付边界：", '<img src=x onerror="window.__cjkXSS=1">：']
+    assert result["unsafe"] == 0
+    assert not result["xss"]
+    page.close()
+
+
 def test_markdown_safety_copy_and_themes(output_app, browser):
     fe, _, base = output_app
     fe.messages = seeded_messages()

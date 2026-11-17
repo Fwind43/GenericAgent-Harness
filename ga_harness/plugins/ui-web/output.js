@@ -12,7 +12,24 @@
   })[c]);
   const parser = window.marked && new window.marked.Marked({
     gfm: true, breaks: true,
-    renderer: { html: token => escapeHTML(token.text) }
+    renderer: { html: token => escapeHTML(token.text) },
+    tokenizer: {
+      emStrong(src, maskedSrc, prevChar) {
+        if (!src.startsWith('**') || src.startsWith('***')) return false;
+        // CommonMark rejects **标签：**正文: punctuation before the closing **
+        // cannot touch a letter after it. Relax only CJK closing punctuation.
+        // Marked has already masked code, escapes and link destinations. Change
+        // only that delimiter-detection mask, never the source or copied text.
+        const mask = maskedSrc.slice(-src.length);
+        const relaxed = mask.replace(
+          /[、。，．；：！？…—）］｝〉》」』】〕〗〙〛’”](?=\*\*(?!\*)[^\s\p{P}\p{S}])/gu,
+          'a'
+        );
+        if (relaxed === mask) return false;
+        // Keep Marked's delimiter balancing, nesting and original source slices.
+        return window.marked.Tokenizer.prototype.emStrong.call(this, src, relaxed, prevChar) || false;
+      }
+    }
   });
   const tags = ['p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em',
     'del', 'blockquote', 'ul', 'ol', 'li', 'pre', 'code', 'a', 'img', 'table',
