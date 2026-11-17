@@ -29,7 +29,18 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showWindow());
   // macOS: clicking the Dock icon brings the hidden window back.
   app.on('activate', () => showWindow());
-  app.whenReady().then(boot);
+  app.whenReady().then(() => { ensureDockIcon(); return boot(); });
+}
+
+// macOS: some launch contexts (login / session restore) start the process as an accessory app
+// (lsappinfo "UIElement"): no Dock icon, no Cmd-Tab, and the policy never recovers by itself.
+// A login launch only hides the window; the app itself is always a regular one.
+function ensureDockIcon() {
+  if (process.platform !== 'darwin') return;
+  try { app.setActivationPolicy('regular'); } catch (err) { console.error('[shell] setActivationPolicy failed:', err); }
+  try {
+    if (app.dock && !app.dock.isVisible()) app.dock.show().catch((err) => console.error('[shell] dock.show failed:', err));
+  } catch (err) { console.error('[shell] dock.show failed:', err); }
 }
 
 function fromBackend(event) {
@@ -237,6 +248,7 @@ function relaunch() {
 
 function showWindow() {
   if (!win || win.isDestroyed()) return;
+  ensureDockIcon();
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();

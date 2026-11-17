@@ -69,7 +69,10 @@ function setEnabled(on) {
   } else if (process.platform === 'win32') {
     app.setLoginItemSettings({ openAtLogin: on, name: WIN_NAME, path: winExec(), args: [HIDDEN_ARG] });
   } else {
-    app.setLoginItemSettings({ openAtLogin: on, openAsHidden: true });
+    // No openAsHidden: it is deprecated (ignored on macOS 13+) and asks the system to launch the
+    // app hidden. The login launch stays a regular app with a Dock icon; main.js only keeps the
+    // window hidden (launchedHidden) and restores the Dock icon itself.
+    app.setLoginItemSettings({ openAtLogin: on });
   }
   return isEnabled();
 }
