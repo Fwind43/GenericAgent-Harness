@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 import { T, type Json, type PluginInfo, type PluginInstallJob } from '@gah/sdk';
 import { descriptionOf, PluginTags, stateLabel, Switch } from './helpers';
 
-export type PluginChange = (action: 'save' | 'reset', enabled?: boolean, config?: Record<string, Json>) => void;
+export type PluginChange = (action: 'save' | 'reset', enabled?: boolean, config?: Record<string, Json>, clearSecrets?: string[]) => void;
 // Package index presets; an empty URL keeps the installer's default (PyPI / pip config).
 const MIRRORS: [string, string][] = [
   ['https://pypi.tuna.tsinghua.edu.cn/simple', '\u6e05\u534e Tsinghua'],
@@ -17,6 +17,9 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onToggle
   const [enabled, setEnabled] = useState(plugin.enabled);
   const [mirror, setMirror] = useState(packageIndex);
   const [values, setValues] = useState<Record<string, Json>>({ ...plugin.config });
+  // Secret values never reach the browser: blank keeps the saved one, "clear" removes it.
+  const [clearing, setClearing] = useState<string[]>([]);
+  const secretSet = (key: string) => !!plugin.secrets_set?.includes(key);
   const locked = busy || running || plugin.protected;
   const update = (key: string, value: Json) => setValues(previous => ({ ...previous, [key]: value }));
   const warning = [plugin.missing?.length ? T('\u5f53\u524d\u7f3a\u5c11\uff1a', 'Missing: ') + plugin.missing.join(', ') : '',
@@ -26,10 +29,11 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onToggle
     const config: Record<string, Json> = {};
     for (const [key, spec] of Object.entries(plugin.fields)) {
       const value = values[key] ?? '';
-      if (spec.type === 'boolean') config[key] = !!value;
+      if (spec.secret) { if (value !== '' && !clearing.includes(key)) config[key] = value; }
+      else if (spec.type === 'boolean') config[key] = !!value;
       else if (value !== '' || spec.type === 'string') config[key] = spec.type === 'integer' ? Number(value) : value;
     }
-    onChange('save', enabled, config);
+    onChange('save', enabled, config, clearing);
   };
   return <div className="plugin-detail-card">
     <div className="plugin-detail-head"><h3 className="plugin-title">{plugin.name}</h3>{plugin.version && <span className="plugin-version">{'v' + plugin.version.replace(/^v/i, '')}</span>}<span className="plugin-badge plugin-status" data-state={plugin.state}>{stateLabel(plugin)}</span></div>
@@ -63,12 +67,15 @@ export function PluginDetails({ plugin, busy, running, error, onChange, onToggle
           {spec.type !== 'boolean' && <span>{label}</span>}
           {spec.type === 'boolean' ? <><input {...common} type="checkbox" checked={!!values[key]} onChange={event => update(key, event.target.checked)} /><span>{label}</span></>
             : spec.type === 'choice' ? <select {...common} value={text} onChange={event => update(key, event.target.value)}>{spec.options?.map(option => <option key={option.value} value={option.value}>{T(option.label_zh || option.label || option.value, option.label || option.value)}</option>)}</select>
+            : spec.secret ? <span className="plugin-secret"><input {...common} type="password" autoComplete="new-password" spellCheck={false} value={clearing.includes(key) ? '' : text} disabled={locked || clearing.includes(key)}
+                placeholder={clearing.includes(key) ? T('\u4fdd\u5b58\u540e\u6e05\u9664', 'Cleared on save') : secretSet(key) ? T('\u5df2\u8bbe\u7f6e\uff1b\u7559\u7a7a\u4fdd\u6301\u4e0d\u53d8', 'Set; leave blank to keep') : T('\u672a\u8bbe\u7f6e', 'Not set')} onChange={event => update(key, event.target.value)} />
+              {secretSet(key) && <button type="button" className="secondary plugin-secret-clear" disabled={locked} onClick={() => setClearing(list => list.includes(key) ? list.filter(k => k !== key) : [...list, key])}>{clearing.includes(key) ? T('\u64a4\u9500', 'Undo') : T('\u6e05\u9664', 'Clear')}</button>}</span>
             : spec.multiline && spec.type === 'string' ? <textarea {...common} rows={4} value={text} onChange={event => update(key, event.target.value)} />
             : <input {...common} type={spec.type === 'integer' ? 'number' : 'text'} step={spec.type === 'integer' ? 1 : undefined} min={spec.min} max={spec.max} value={text} onChange={event => update(key, event.target.value)} />}
           {descriptionOf(spec) && <small>{descriptionOf(spec)}</small>}
         </label>;
       })}</div>
-      <p className="plugin-note">{running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\u3002', 'A task is running; view only.') : plugin.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002', 'Core and frontend plugins are protected; change them in the startup config.') : T('\u4ec5\u663e\u793a\u516c\u5f00\u914d\u7f6e\uff1b\u5bc6\u94a5\u8bf7\u5230\u6a21\u578b\u914d\u7f6e\u4e2d\u7ba1\u7406\u3002', 'Only public settings are shown; manage keys in Models.')}</p>
+      <p className="plugin-note">{running ? T('\u4efb\u52a1\u8fd0\u884c\u4e2d\uff0c\u4ec5\u53ef\u67e5\u770b\u3002', 'A task is running; view only.') : plugin.protected ? T('\u57fa\u7840\u80fd\u529b\u4e0e\u524d\u7aef\u53d7\u4fdd\u62a4\uff0c\u8bf7\u901a\u8fc7\u542f\u52a8\u914d\u7f6e\u8c03\u6574\u3002', 'Core and frontend plugins are protected; change them in the startup config.') : T('\u5bc6\u94a5\u53ea\u5199\u4e0d\u8bfb\uff0c\u4fdd\u5b58\u5728\u672c\u673a\u63d2\u4ef6\u914d\u7f6e\u4e2d\u3002', 'Keys are write-only and stored in the local plugin settings.')}</p>
       {error && <p className="gah-error" role="status">{error}</p>}
       <div className="model-actions plugin-actions"><button type="button" className="secondary plugin-reset" disabled={locked || !plugin.overridden} onClick={() => onChange('reset')}>{T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings')}</button><button type="submit" disabled={locked}>{plugin.hot ? T('\u4fdd\u5b58\u5e76\u7acb\u5373\u751f\u6548', 'Save and apply now') : T('\u4fdd\u5b58\uff0c\u4e0b\u6b21\u542f\u52a8\u751f\u6548', 'Save (applies on next start)')}</button></div>
     </form>

@@ -44,12 +44,12 @@ export function PluginManager({ api }: { api: PluginAPI }) {
       else api.notice(item?.restart_required ? T('\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Saved; applies on next start') : enabled ? T('\u5df2\u542f\u7528 ', 'Enabled ') + plugin.name : T('\u5df2\u505c\u7528 ', 'Disabled ') + plugin.name);
     }, setError);
   };
-  const change: PluginChange = async (action, enabled, values) => {
+  const change: PluginChange = async (action, enabled, values, clearSecrets) => {
     if (!selected || selected.protected || busy || lockedByRun(selected) || !config) return;
     if (action === 'reset' && !(await confirmDialog({ title: T('\u6062\u590d\u542f\u52a8\u914d\u7f6e', 'Restore startup settings'), danger: true, message: T('\u6e05\u9664\u7f51\u9875\u8986\u76d6\u5e76\u6062\u590d\u542f\u52a8\u914d\u7f6e\uff1f\u4e0b\u6b21\u542f\u52a8\u751f\u6548\u3002', 'Clear web overrides and restore startup settings? Applies on next start.') }))) return;
     setError('');
     void run(async () => {
-      const next = await api.host.post<PluginCatalog>('/api/plugins', { action, name: selected.name, revision: config.revision, ...(action === 'save' ? { enabled, config: values } : {}) });
+      const next = await api.host.post<PluginCatalog>('/api/plugins', { action, name: selected.name, revision: config.revision, ...(action === 'save' ? { enabled, config: values, clear_secrets: clearSecrets || [] } : {}) });
       setConfig(next);
       const live = !next.items.find(plugin => plugin.name === selected.name)?.restart_required;
       api.notice(live ? T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\u5e76\u5df2\u5373\u65f6\u751f\u6548', 'Plugin settings saved and applied') : T('\u63d2\u4ef6\u914d\u7f6e\u5df2\u4fdd\u5b58\uff1b\u4e0b\u6b21\u542f\u52a8\u65f6\u751f\u6548', 'Plugin settings saved; they apply on next start'));

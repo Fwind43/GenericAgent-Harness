@@ -59,6 +59,11 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
     const [enabled, setEnabled] = react.useState(plugin.enabled);
     const [mirror, setMirror] = react.useState(packageIndex);
     const [values, setValues] = react.useState({ ...plugin.config });
+    const [clearing, setClearing] = react.useState([]);
+    const secretSet = (key) => {
+      var _a2;
+      return !!((_a2 = plugin.secrets_set) == null ? void 0 : _a2.includes(key));
+    };
     const locked = busy || running || plugin.protected;
     const update = (key, value) => setValues((previous) => ({ ...previous, [key]: value }));
     const warning = [
@@ -71,10 +76,12 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
       const config = {};
       for (const [key, spec] of Object.entries(plugin.fields)) {
         const value = values[key] ?? "";
-        if (spec.type === "boolean") config[key] = !!value;
+        if (spec.secret) {
+          if (value !== "" && !clearing.includes(key)) config[key] = value;
+        } else if (spec.type === "boolean") config[key] = !!value;
         else if (value !== "" || spec.type === "string") config[key] = spec.type === "integer" ? Number(value) : value;
       }
-      onChange("save", enabled, config);
+      onChange("save", enabled, config, clearing);
     };
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-card", children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "plugin-detail-head", children: [
@@ -152,11 +159,26 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
             spec.type === "boolean" ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
               /* @__PURE__ */ jsxRuntime.jsx("input", { ...common, type: "checkbox", checked: !!values[key], onChange: (event) => update(key, event.target.checked) }),
               /* @__PURE__ */ jsxRuntime.jsx("span", { children: label })
-            ] }) : spec.type === "choice" ? /* @__PURE__ */ jsxRuntime.jsx("select", { ...common, value: text, onChange: (event) => update(key, event.target.value), children: (_a2 = spec.options) == null ? void 0 : _a2.map((option) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: option.value, children: sdk.T(option.label_zh || option.label || option.value, option.label || option.value) }, option.value)) }) : spec.multiline && spec.type === "string" ? /* @__PURE__ */ jsxRuntime.jsx("textarea", { ...common, rows: 4, value: text, onChange: (event) => update(key, event.target.value) }) : /* @__PURE__ */ jsxRuntime.jsx("input", { ...common, type: spec.type === "integer" ? "number" : "text", step: spec.type === "integer" ? 1 : void 0, min: spec.min, max: spec.max, value: text, onChange: (event) => update(key, event.target.value) }),
+            ] }) : spec.type === "choice" ? /* @__PURE__ */ jsxRuntime.jsx("select", { ...common, value: text, onChange: (event) => update(key, event.target.value), children: (_a2 = spec.options) == null ? void 0 : _a2.map((option) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: option.value, children: sdk.T(option.label_zh || option.label || option.value, option.label || option.value) }, option.value)) }) : spec.secret ? /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "plugin-secret", children: [
+              /* @__PURE__ */ jsxRuntime.jsx(
+                "input",
+                {
+                  ...common,
+                  type: "password",
+                  autoComplete: "new-password",
+                  spellCheck: false,
+                  value: clearing.includes(key) ? "" : text,
+                  disabled: locked || clearing.includes(key),
+                  placeholder: clearing.includes(key) ? sdk.T("保存后清除", "Cleared on save") : secretSet(key) ? sdk.T("已设置；留空保持不变", "Set; leave blank to keep") : sdk.T("未设置", "Not set"),
+                  onChange: (event) => update(key, event.target.value)
+                }
+              ),
+              secretSet(key) && /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-secret-clear", disabled: locked, onClick: () => setClearing((list) => list.includes(key) ? list.filter((k) => k !== key) : [...list, key]), children: clearing.includes(key) ? sdk.T("撤销", "Undo") : sdk.T("清除", "Clear") })
+            ] }) : spec.multiline && spec.type === "string" ? /* @__PURE__ */ jsxRuntime.jsx("textarea", { ...common, rows: 4, value: text, onChange: (event) => update(key, event.target.value) }) : /* @__PURE__ */ jsxRuntime.jsx("input", { ...common, type: spec.type === "integer" ? "number" : "text", step: spec.type === "integer" ? 1 : void 0, min: spec.min, max: spec.max, value: text, onChange: (event) => update(key, event.target.value) }),
             descriptionOf(spec) && /* @__PURE__ */ jsxRuntime.jsx("small", { children: descriptionOf(spec) })
           ] }, key);
         }) }),
-        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", children: running ? sdk.T("任务运行中，仅可查看。", "A task is running; view only.") : plugin.protected ? sdk.T("基础能力与前端受保护，请通过启动配置调整。", "Core and frontend plugins are protected; change them in the startup config.") : sdk.T("仅显示公开配置；密钥请到模型配置中管理。", "Only public settings are shown; manage keys in Models.") }),
+        /* @__PURE__ */ jsxRuntime.jsx("p", { className: "plugin-note", children: running ? sdk.T("任务运行中，仅可查看。", "A task is running; view only.") : plugin.protected ? sdk.T("基础能力与前端受保护，请通过启动配置调整。", "Core and frontend plugins are protected; change them in the startup config.") : sdk.T("密钥只写不读，保存在本机插件配置中。", "Keys are write-only and stored in the local plugin settings.") }),
         error && /* @__PURE__ */ jsxRuntime.jsx("p", { className: "gah-error", role: "status", children: error }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "model-actions plugin-actions", children: [
           /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "secondary plugin-reset", disabled: locked || !plugin.overridden, onClick: () => onChange("reset"), children: sdk.T("恢复启动配置", "Restore startup settings") }),
@@ -449,13 +471,13 @@ var GAHPlugin_web_plugins = (function(exports, jsxRuntime, react, sdk) {
         else api.notice((item == null ? void 0 : item.restart_required) ? sdk.T("已保存；下次启动时生效", "Saved; applies on next start") : enabled ? sdk.T("已启用 ", "Enabled ") + plugin.name : sdk.T("已停用 ", "Disabled ") + plugin.name);
       }, setError);
     };
-    const change = async (action, enabled, values) => {
+    const change = async (action, enabled, values, clearSecrets) => {
       if (!selected || selected.protected || busy || lockedByRun(selected) || !config) return;
       if (action === "reset" && !await sdk.confirmDialog({ title: sdk.T("恢复启动配置", "Restore startup settings"), danger: true, message: sdk.T("清除网页覆盖并恢复启动配置？下次启动生效。", "Clear web overrides and restore startup settings? Applies on next start.") })) return;
       setError("");
       void run(async () => {
         var _a;
-        const next = await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values } : {} });
+        const next = await api.host.post("/api/plugins", { action, name: selected.name, revision: config.revision, ...action === "save" ? { enabled, config: values, clear_secrets: clearSecrets || [] } : {} });
         setConfig(next);
         const live = !((_a = next.items.find((plugin) => plugin.name === selected.name)) == null ? void 0 : _a.restart_required);
         api.notice(live ? sdk.T("插件配置已保存并已即时生效", "Plugin settings saved and applied") : sdk.T("插件配置已保存；下次启动时生效", "Plugin settings saved; they apply on next start"));

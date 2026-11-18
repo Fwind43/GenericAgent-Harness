@@ -84,6 +84,34 @@ def test_persist_cold_reload_reset_and_idempotency(tmp_path):
         rt.dispose()
 
 
+def test_secret_fields_are_write_only(tmp_path):
+    rt, m = make_manager(tmp_path)
+    try:
+        def saved():
+            data = m.preferences.read()[0]
+            return next(e for e in m.preferences.resolve(data) if e["name"] == "demo")["config"]
+        c = m.catalog()
+        demo = item(c)
+        assert demo["fields"]["secret"]["secret"] is True
+        assert "default" not in demo["fields"]["secret"]
+        assert demo["secrets_set"] == ["secret"]
+        assert "secret" not in demo["config"]
+        c = change(m, config={"limit": 20, "secret": "NEW-VALUE"})
+        assert "NEW-VALUE" not in json.dumps(c)
+        assert saved()["secret"] == "NEW-VALUE"
+        change(m, config={"limit": 21, "secret": ""})
+        assert saved()["secret"] == "NEW-VALUE"
+        change(m, config={"limit": 22})
+        assert saved()["secret"] == "NEW-VALUE"
+        c = change(m, config={"limit": 22}, clear_secrets=["secret"])
+        assert saved()["secret"] == ""
+        assert item(c)["secrets_set"] == []
+        with pytest.raises(ValueError):
+            change(m, config={}, clear_secrets=["limit"])
+    finally:
+        rt.dispose()
+
+
 @pytest.mark.parametrize("name", ["plugin-manager", "ga-core", "ui-web", "ui-cli"])
 def test_protected(tmp_path, name):
     rt, m = make_manager(tmp_path)

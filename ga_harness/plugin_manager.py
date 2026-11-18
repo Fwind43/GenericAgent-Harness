@@ -149,13 +149,27 @@ def choice_options(spec):
     return out if len({o["value"] for o in out}) == len(out) else None
 
 
+def is_secret(key, spec):
+    """Write-only string setting: ``secret = true``, or a credential-like key name.
+
+    ``secret = false`` opts a credential-looking string out (e.g. a key *name*).
+    """
+    if spec.get("type") != "string":
+        return False
+    if "secret" in spec:
+        return spec["secret"] is True
+    return bool(SENSITIVE.search(key))
+
+
 def public_fields(manifest):
+    """Editable settings. Secret fields are included and marked ``secret``; their
+    values never leave the server (see ``PluginManager.catalog``)."""
     fields = {}
     for k, v in manifest.settings.items():
-        if not isinstance(v, dict) or v.get("secret") or SENSITIVE.search(k):
+        if not isinstance(v, dict):
             continue
         if v.get("type") in {"string", "integer", "boolean"}:
-            fields[k] = v
+            fields[k] = {**v, "secret": True} if is_secret(k, v) else v
         elif v.get("type") == "choice" and (options := choice_options(v)):
             fields[k] = {**v, "options": options}
     return fields
@@ -304,9 +318,13 @@ class PluginManager:
                 target, current = desired.get(name, absent), running.get(name, absent)
                 h = self.ctx.runtime.handles.get(name)
                 fields = public_fields(m) if not protected(m) else {}
-                values = {}
+                values, secrets_set = {}, []
                 for key, spec in fields.items():
                     value = target["config"].get(key, spec.get("default"))
+                    if spec.get("secret"):
+                        if isinstance(value, str) and value:
+                            secrets_set.append(key)
+                        continue  # write-only: never sent to the browser or the agent
                     try:
                         values.update(validate_values(m, {key: value}))
                     except ValueError:
@@ -331,7 +349,9 @@ class PluginManager:
                               "run_safe": run_safe(m, p.manifests),
                               "source": "user" if user_plugin(m) else "builtin",
                               "source_meta": read_source_meta(m.path) if user_plugin(m) else {},
-                              "fields": fields, "config": values,
+                              "fields": {k: ({x: y for x, y in v.items() if x != "default"} if v.get("secret") else v)
+                                         for k, v in fields.items()},
+                              "config": values, "secrets_set": secrets_set,
                               "requires": m.inject, "provides": m.provides,
                               "missing": [c for c in m.inject if not c.endswith("?") and not self.ctx.has(c)],
                               "dependents": sorted(n for n, other in p.manifests.items()
@@ -448,7 +468,8 @@ class PluginManager:
                 else:
                     if type(body.get("enabled")) is not bool:
                         raise ValueError("enabled must be a boolean")
-                    values = validate_values(p.manifests[name], body.get("config", {}))
+                    values = self._merge_secrets(p.manifests[name], entries.get(name, {}),
+                                                 body.get("config", {}), body.get("clear_secrets", []))
                     entries[name] = {"enabled": body["enabled"], "config": values}
                 issues = p.issues(p.resolve(data))
                 if issues:
@@ -467,6 +488,28 @@ class PluginManager:
                     result["applied"] = False
                     result["hot_error"] = f"hot apply failed ({type(error).__name__}); restart to apply"
             return {**self.catalog(), **result}
+
+    @staticmethod
+    def _merge_secrets(manifest, saved, config, clear):
+        """Validate ``config``; an omitted or empty secret keeps the saved value and
+        ``clear`` (secret keys) stores an empty string, which also masks startup config."""
+        if not isinstance(config, dict):
+            raise ValueError("config must be an object")
+        if not isinstance(clear, list) or not all(isinstance(k, str) for k in clear):
+            raise ValueError("clear_secrets must be a list of field names")
+        fields = public_fields(manifest)
+        secret = {k for k, v in fields.items() if v.get("secret")}
+        if set(clear) - secret:
+            raise ValueError("clear_secrets may only name secret fields")
+        config = {k: v for k, v in config.items() if not (k in secret and v == "")}
+        values = validate_values(manifest, config)
+        old = saved.get("config", {}) if isinstance(saved, dict) else {}
+        for key in secret:
+            if key in clear:
+                values[key] = ""
+            elif key not in values and isinstance(old.get(key), str):
+                values[key] = old[key]
+        return values
 
     def _hot_apply(self, name, entry):
         """Unmount ``name`` and remount it from disk with ``entry``'s config."""

@@ -75,7 +75,7 @@ export interface ModelConfig {
 export interface ModelResult { config: ModelConfig; state: HostState }
 export interface PluginField {
   type: 'boolean' | 'integer' | 'string' | 'choice'; label?: string; label_zh?: string;
-  description?: string; description_zh?: string; multiline?: boolean; min?: number; max?: number;
+  description?: string; description_zh?: string; multiline?: boolean; min?: number; max?: number; secret?: boolean;
   options?: { value: string; label?: string; label_zh?: string }[];
 }
 export interface PluginSourceMeta {
@@ -88,7 +88,7 @@ export interface PluginInfo {
   source_meta?: PluginSourceMeta | null;
   requires?: string[]; provides?: string[]; dependents?: string[]; missing?: string[];
   packages?: string[]; missing_packages?: string[]; worker_only?: boolean; workers?: string[];
-  error?: string; fields: Record<string, PluginField>; config: Record<string, Json>;
+  error?: string; fields: Record<string, PluginField>; config: Record<string, Json>; secrets_set?: string[];
 }
 export interface PluginInstallJob { name: string; packages: string[]; index_url: string; state: 'running' | 'ok' | 'failed'; ok: boolean; started: number; finished?: number | null; log: string }
 export interface PluginCatalog { items: PluginInfo[]; revision: string; profile: string; restart_required: boolean; install_job?: PluginInstallJob | null; package_index?: string }
