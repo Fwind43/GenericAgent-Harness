@@ -8,6 +8,8 @@
 //                                  links (web-lan/web-tailscale) survive restarts; the backend
 //                                  writes runtime changes (plugin "reset token") back to it
 //   GAH_WEB_READY_FILE=<path>      {"url","pid"} appears once the server listens
+//   GAH_STARTUP_PROGRESS_FILE=<p>  {"pid","seq","stage","detail","ts"} rewritten at each startup
+//                                  stage (ga_harness/startup.py); any change keeps waitReady waiting
 //   GAH_WEB_EXIT_ON_STDIN_EOF=1    backend stops by itself if this process dies
 'use strict';
 
@@ -440,6 +442,8 @@ class Backend {
     this.tokenFile = path.join(userData, 'backend-token');
     this.startToken = loadToken(this.tokenFile);
     this.readyFile = path.join(userData, 'run', `backend-${process.pid}.json`);
+    this.progressFile = path.join(userData, 'run', `backend-${process.pid}.progress.json`);
+    this.progress = null;    // last startup stage {stage, detail, ...} seen by waitReady
     this.logDir = programLogDir(resourcesPath, userData);
     this.logFile = path.join(this.logDir, 'backend.log');
     this.child = null;
@@ -539,6 +543,8 @@ class Backend {
     try { this.reapOrphans(); } catch { /* best effort */ }
     fs.mkdirSync(path.dirname(this.logFile), { recursive: true });
     fs.rmSync(this.readyFile, { force: true });
+    fs.rmSync(this.progressFile, { force: true });
+    this.progress = null;
     const log = fs.createWriteStream(this.logFile, { flags: 'a' });
     log.write(`\n=== ${new Date().toISOString()} ${this.settings.python} ${this.settings.args.join(' ')}\n`);
     const env = {
@@ -552,6 +558,7 @@ class Backend {
       GAH_WEB_TOKEN: this.token,
       GAH_WEB_TOKEN_FILE: this.tokenFile,
       GAH_WEB_READY_FILE: this.readyFile,
+      GAH_STARTUP_PROGRESS_FILE: this.progressFile,
       GAH_WEB_EXIT_ON_STDIN_EOF: '1',
       GAH_HOME: this.dataDir().path,
       GAH_LOG_DIR: this.logDir,
@@ -589,19 +596,43 @@ class Backend {
   }
 
   // Resolves with the base URL once the ready file appears; rejects if the backend dies first.
-  async waitReady(timeoutMs = 60000) {
-    const deadline = Date.now() + timeoutMs;
+  // A cold start (first-run .pyc compilation, antivirus scanning every new file, many plugins)
+  // can take minutes, so there is no fixed deadline: the backend reports each startup stage to
+  // the progress file and only `idleMs` without any change fails. `maxMs` is a hard cap so a
+  // backend that keeps reporting but never listens still gives up. onProgress(info) feeds the UI.
+  async waitReady({ idleMs = 120000, maxMs = 600000, onProgress } = {}) {
+    const started = Date.now();
+    let lastChange = started;
+    let lastRaw = null;
     let dead = false;
     this.exited.then(() => { dead = true; });
-    while (Date.now() < deadline) {
+    for (;;) {
       if (dead) throw new Error('backend exited before it was ready');
       try {
         const info = JSON.parse(fs.readFileSync(this.readyFile, 'utf8'));
         if (info.url) { this.url = info.url; return info.url; }
       } catch { /* not written yet */ }
+      let raw = null;
+      try { raw = fs.readFileSync(this.progressFile, 'utf8'); } catch { /* not written yet */ }
+      if (raw && raw !== lastRaw) {
+        lastRaw = raw;
+        lastChange = Date.now();
+        try {
+          this.progress = JSON.parse(raw);
+          if (onProgress) onProgress(this.progress);
+        } catch { /* ignore a malformed record; the change itself still counts */ }
+      }
+      const now = Date.now();
+      const p = this.progress;
+      const stage = p ? ` (last stage: ${p.stage}${p.detail ? ` ${p.detail}` : ''})` : '';
+      if (now - lastChange > idleMs) {
+        throw new Error(`backend made no startup progress for ${Math.round(idleMs / 1000)}s${stage}`);
+      }
+      if (now - started > maxMs) {
+        throw new Error(`backend not ready after ${Math.round(maxMs / 1000)}s${stage}`);
+      }
       await new Promise((r) => setTimeout(r, 150));
     }
-    throw new Error(`backend not ready after ${timeoutMs / 1000}s`);
   }
 
   // Graceful first (stdin EOF -> backend aborts the run and stops), then kill the whole tree.
@@ -616,6 +647,7 @@ class Backend {
     if (!done) this.killTree();
     await Promise.race([this.exited, new Promise((r) => setTimeout(r, 2000))]);
     fs.rmSync(this.readyFile, { force: true });
+    fs.rmSync(this.progressFile, { force: true });
   }
 
   killTree() {

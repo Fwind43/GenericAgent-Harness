@@ -52,6 +52,7 @@ from urllib.parse import quote, urlsplit
 
 from ga_harness import model_keys, presets, uploads
 from ga_harness.sessions import EFFORTS, apply_effort
+from ga_harness.startup import progress
 
 from .handler import _Handler, _clip
 
@@ -1352,6 +1353,7 @@ class WebFrontend:
         try:
             url = self.start()
             self.log(f"[GenericAgent-Harness web] {url}  (Ctrl+C to stop)")
+            progress("ready", url)
             self._write_ready()
             if self.exit_on_stdin_eof:
                 self._watch_stdin()

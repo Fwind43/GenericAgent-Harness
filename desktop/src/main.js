@@ -550,6 +550,68 @@ async function ensureGaRoot() {
   return pickGaRoot(reason, value);
 }
 
+// ---- Startup window --------------------------------------------------------------------
+// A cold start can take minutes (first-run .pyc compilation, antivirus scanning). Fast starts
+// never see this window: it only appears after STARTUP_SPLASH_DELAY_MS, and never on a
+// tray-hidden login launch. It shows the backend's latest startup stage.
+const STARTUP_SPLASH_DELAY_MS = 1500;
+
+function stageText(info) {
+  const stages = {
+    imports: t('加载核心模块', 'Loading core modules'),
+    launcher: t('准备 Python 运行环境', 'Preparing the Python runtime'),
+    discover: t('扫描插件', 'Scanning plugins'),
+    plugins: t('加载插件', 'Loading plugins'),
+    frontend: t('启动 Web 服务', 'Starting the web server'),
+    ready: t('即将完成', 'Almost ready'),
+  };
+  if (!info) return t('正在启动后端…', 'Starting the backend...');
+  const label = stages[info.stage] || info.stage;
+  return info.detail && info.stage === 'plugins' ? `${label} ${info.detail}` : label;
+}
+
+function startupSplash() {
+  let splash = null;
+  let text = stageText(null);
+  const started = Date.now();
+  const render = () => {
+    if (!splash || splash.isDestroyed()) return;
+    const secs = Math.round((Date.now() - started) / 1000);
+    const hint = secs >= 20 ? t('首次启动或杀毒软件扫描时可能需要几分钟', 'The first start or an antivirus scan can take a few minutes') : '';
+    splash.webContents.executeJavaScript(
+      `document.getElementById('s').textContent=${JSON.stringify(text)};`
+      + `document.getElementById('h').textContent=${JSON.stringify(hint)};`
+      + `document.getElementById('t').textContent=${JSON.stringify(`${secs}s`)};`,
+    ).catch(() => {});
+  };
+  const timer = setTimeout(() => {
+    if (startHidden) return;   // login launch: stay quiet; the tray appears once ready
+    splash = new BrowserWindow({
+      width: 420, height: 160, frame: false, resizable: false, show: false, center: true,
+      title: 'GenericAgent-Harness', icon: ICON, skipTaskbar: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    const html = `<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px system-ui,sans-serif;
+      display:flex;flex-direction:column;justify-content:center;height:100vh;padding:0 24px;box-sizing:border-box;
+      background:#1e1e22;color:#ddd;-webkit-app-region:drag;user-select:none">
+      <div style="font-weight:600;font-size:15px;margin-bottom:10px">GenericAgent-Harness</div>
+      <div><span id="s"></span> <span id="t" style="color:#888"></span></div>
+      <div id="h" style="color:#888;font-size:12px;margin-top:8px"></div></body>`;
+    splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    splash.once('ready-to-show', () => { if (splash && !splash.isDestroyed()) { render(); splash.show(); } });
+  }, STARTUP_SPLASH_DELAY_MS);
+  const tick = setInterval(render, 1000);
+  return {
+    update(info) { text = stageText(info); render(); },
+    close() {
+      clearTimeout(timer);
+      clearInterval(tick);
+      if (splash && !splash.isDestroyed()) splash.destroy();
+      splash = null;
+    },
+  };
+}
+
 async function boot() {
   try {
     backend = new Backend(app.getPath('userData'), app.isPackaged ? process.resourcesPath : null, app.getVersion());
@@ -559,7 +621,13 @@ async function boot() {
       return;
     }
     backend.start();
-    const url = await backend.waitReady();
+    const splash = startupSplash();
+    let url;
+    try {
+      url = await backend.waitReady({ onProgress: (info) => splash.update(info) });
+    } finally {
+      splash.close();
+    }
     origin = new URL(url).origin;
     updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState, openSettings: openMirrorSettings });
     pluginWindows = new PluginWindows({ dataDir: app.getPath('userData'), preload: path.join(__dirname, 'preload.js'), icon: ICON, onChange: () => refreshTrayMenu() });

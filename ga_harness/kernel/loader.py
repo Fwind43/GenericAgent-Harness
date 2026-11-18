@@ -183,20 +183,23 @@ def build_tree(profile: str, profile_dirs, patch_files=(), cli_patches=()) -> li
     return tree
 
 
-def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest]) -> list[str]:
+def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest],
+          on_plugin: Callable[[int, int, str], None] | None = None) -> list[str]:
     """Add every enabled entry to the runtime. Returns names that were mounted.
 
     Entries whose declared ``packages`` are not installed are skipped (never
-    installed here) and recorded in ``runtime.unmet_packages``.
+    installed here) and recorded in ``runtime.unmet_packages``. ``on_plugin(index, total,
+    name)`` is called before each enabled entry is considered (startup progress).
     """
     from ..packages import missing_for
     mounted = []
     unmet = getattr(runtime, "unmet_packages", None)
     if unmet is None:
         unmet = runtime.unmet_packages = {}
-    for e in tree:
-        if e["disabled"]:
-            continue
+    enabled = [e for e in tree if not e["disabled"]]
+    for i, e in enumerate(enabled):
+        if on_plugin is not None:
+            on_plugin(i + 1, len(enabled), e["name"])
         if e["name"] not in manifests:
             raise KeyError(f"plugin {e['name']!r} has no manifest")
         if manifests[e["name"]].worker_only:

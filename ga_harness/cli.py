@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 from . import paths
+from .startup import progress
+progress("imports")
 from .kernel import Runtime
 from .kernel.loader import build_tree, discover, mount
 
@@ -92,12 +94,14 @@ def main(argv=None) -> int:
         from . import launcher
         args.ga_root = launcher.resolve_ga_root(args.ga_root)
         if args.cmd == "run":
+            progress("launcher")
             rc = launcher.maybe_reexec(raw, args.ga_root)
             if rc is not None:
                 return rc
             from . import logfile
             logfile.setup("host")
 
+    progress("discover")
     manifests = discover(PLUGIN_DIRS + _extra_dirs("GAH_PLUGIN_PATH"))
     if args.cmd == "plugins":
         for m in manifests.values():
@@ -127,7 +131,9 @@ def main(argv=None) -> int:
     rt = Runtime()
     try:
         rt.ctx.provide("plugin.catalog", {"preferences": preferences, "tree": tree})
-        mount(rt, tree, manifests)
+        mount(rt, tree, manifests,
+              on_plugin=lambda i, n, name: progress("plugins", f"{i}/{n} {name}"))
+        progress("frontend")
         from .plugin_manager import frontend_capabilities
         dormant = frontend_capabilities(manifests)
         bad = {k: v for k, v in rt.status().items() if v.get("state") != "active"
