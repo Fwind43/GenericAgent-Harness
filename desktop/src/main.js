@@ -16,6 +16,9 @@ let win = null;
 let origin = null;
 let quitting = false;
 let tray = null;
+// True until boot() has shown the main window (or reported a failure): the startup window
+// may be the only window then, and closing it must not quit the app (issue #2).
+let booting = true;
 let updater = null;
 let pluginWindows = null;
 // Started by the login item: stay in the tray until the user opens the window.
@@ -613,6 +616,7 @@ function startupSplash() {
 }
 
 async function boot() {
+  let splash = null;
   try {
     backend = new Backend(app.getPath('userData'), app.isPackaged ? process.resourcesPath : null, app.getVersion());
     initLanguage(backend.settings.file);
@@ -621,19 +625,18 @@ async function boot() {
       return;
     }
     backend.start();
-    const splash = startupSplash();
-    let url;
-    try {
-      url = await backend.waitReady({ onProgress: (info) => splash.update(info) });
-    } finally {
-      splash.close();
-    }
+    splash = startupSplash();
+    const url = await backend.waitReady({ onProgress: (info) => splash.update(info) });
     origin = new URL(url).origin;
     updater = new Updater({ getBackend: () => backend, getWindow: () => win, relaunch, prepareQuit, onState: sendUpdateState, openSettings: openMirrorSettings });
     pluginWindows = new PluginWindows({ dataDir: app.getPath('userData'), preload: path.join(__dirname, 'preload.js'), icon: ICON, onChange: () => refreshTrayMenu() });
     registerBridge();
     createTray();
     createWindow(url);
+    // Close the startup window only once the main window exists, so there is never a moment
+    // with no window (window-all-closed would quit the app before the tray exists).
+    splash.close();
+    booting = false;
     updater.schedule();
     backend.exited.then((code) => {
       if (quitting) return;
@@ -642,6 +645,7 @@ async function boot() {
       app.quit();
     });
   } catch (err) {
+    if (splash) splash.close();   // booting stays true: the error dialogs below decide the exit
     const tail = backend ? backend.tail.slice(-15).join('\n') : '';
     const where = backend ? t(`\n\n日志：${backend.logFile}\n设置：${backend.settings.file}`, `\n\nLog: ${backend.logFile}\nSettings: ${backend.settings.file}`) : '';
     if (backend) await backend.stop(1000);
@@ -679,7 +683,7 @@ async function boot() {
 app.on('session-end', () => { quitting = true; });
 
 // With a tray the window is only hidden, so this fires only without one (or during quit).
-app.on('window-all-closed', () => { if (!tray) app.quit(); });
+app.on('window-all-closed', () => { if (!tray && !booting) app.quit(); });
 
 app.on('before-quit', (event) => {
   if (quitting || !backend) return;
