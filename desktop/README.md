@@ -61,7 +61,7 @@ The shell sets these for `ui-web` (documented in its module docstring):
 
 | Variable | Purpose |
 |---|---|
-| `GAH_WEB_PORT=0` | free port on 127.0.0.1; the browser launch uses a random port by default too |
+| `GAH_WEB_PORT=0` | free port on 127.0.0.1, preferring the one used last time (`$GAH_HOME/ui-web-port.json`) so the page origin and its localStorage (theme, language) survive restarts; the browser launch does the same by default |
 | `GAH_WEB_OPEN_BROWSER=0` | the shell owns the window |
 | `GAH_WEB_TOKEN` | random per launch; required on every request (HttpOnly cookie after `/?gah_token=`) |
 | `GAH_WEB_READY_FILE` | `{"url","pid"}` written atomically once listening (no token inside) |

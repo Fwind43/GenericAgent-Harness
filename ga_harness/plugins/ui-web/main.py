@@ -15,7 +15,8 @@ Web plugins: ordinary plugins that inject ``web.host`` and call
 ``/web/<name>/`` and their routes under ``/api/p/<name>/<path>``; the page loads them at
 runtime (``GAH.define`` in the browser) and drops them again when they are withdrawn.
 
-Config: host (127.0.0.1), port (0 = any free port, the default; external access goes through
+Config: host (127.0.0.1), port (0 = any free port, the default, reusing the last one when
+it is still free so browser storage keeps its origin; external access goes through
 plugins such as web-lan/web-tailscale on their own user-chosen ports), open_browser (true), token, ready_file,
 allowed_origins (extra browser origins allowed to POST, e.g. a tunnel/reverse-proxy URL),
 allow_no_token (false; binding a non-loopback host without a token is refused unless true).
@@ -50,7 +51,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
-from ga_harness import model_keys, presets, uploads
+from ga_harness import model_keys, paths, presets, uploads
 from ga_harness.sessions import EFFORTS, apply_effort
 from ga_harness.startup import progress
 
@@ -410,6 +411,49 @@ class WebHost:
     def set_token(self, token):
         """Replace the access token (invalidates existing cookies). Empty is refused when exposed."""
         return self.frontend.set_token(token)
+
+
+PORT_FILE = "ui-web-port.json"
+
+
+class _Server(ThreadingHTTPServer):
+    # On Windows SO_REUSEADDR lets a second socket bind a port another server is already
+    # listening on, so reusing the remembered port could silently share it; keep it off there.
+    allow_reuse_address = os.name != "nt"
+
+
+def _port_file():
+    return paths.home() / PORT_FILE
+
+
+def _remembered_port(host):
+    """The port this host bound last time, or 0. Browser storage (theme, language, drafts...)
+    is per origin, so a fresh random port on every start would look like a reset."""
+    try:
+        port = int(json.loads(_port_file().read_text(encoding="utf-8")).get(str(host), 0))
+    except Exception:
+        return 0
+    return port if 1024 <= port <= 65535 else 0
+
+
+def _remember_port(host, port):
+    try:
+        path = _port_file()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        if data.get(str(host)) == port:
+            return
+        data[str(host)] = port
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        pass
 
 
 class WebFrontend:
@@ -1204,9 +1248,21 @@ class WebFrontend:
 
         class Handler(_Handler):
             frontend = fe
-        self.server = ThreadingHTTPServer((self.host, self.port), Handler)
+        self.server = None
+        # port 0 = any free port, but prefer the one used last time so the page keeps its
+        # origin (and with it localStorage: theme, language...) across restarts.
+        last = _remembered_port(self.host) if not self.port else 0
+        if last:
+            try:
+                self.server = _Server((self.host, last), Handler)
+            except OSError:
+                self.server = None
+        if self.server is None:
+            self.server = _Server((self.host, self.port), Handler)
         self.server.daemon_threads = True
         host, port = self.server.server_address[:2]
+        if not self.port:
+            _remember_port(self.host, port)
         if host in WILDCARD_HOSTS:
             host = "127.0.0.1"                 # a wildcard is not browsable; open the loopback alias
         self.bound_port = port
