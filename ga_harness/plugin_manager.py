@@ -149,6 +149,9 @@ def choice_options(spec):
     return out if len({o["value"] for o in out}) == len(out) else None
 
 
+SECRET_REF_SUFFIXES = ("_name", "_env", "_var", "_id", "_path", "_file", "_url", "_header")
+
+
 def is_secret(key, spec):
     """Write-only string setting: ``secret = true``, or a credential-like key name.
 
@@ -158,6 +161,8 @@ def is_secret(key, spec):
         return False
     if "secret" in spec:
         return spec["secret"] is True
+    if key.lower().endswith(SECRET_REF_SUFFIXES):
+        return False  # names/locations of a secret, not the secret itself
     return bool(SENSITIVE.search(key))
 
 

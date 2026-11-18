@@ -340,3 +340,13 @@ def test_import_replace_hot_reloads_enabled_user_plugin(tmp_path, monkeypatch):
         assert sys.modules["ga_harness_ext_hot_user.main"].MARKER == "v2"
     finally:
         rt.dispose()
+
+
+def test_secret_heuristic_skips_key_references():
+    from ga_harness.plugin_manager import is_secret
+    s = {"type": "string"}
+    assert is_secret("api_key", s) and is_secret("deepseek_credential", s)
+    for k in ["key_name", "api_key_env", "token_url", "secret_path"]:
+        assert not is_secret(k, s)
+    assert is_secret("key_name", {**s, "secret": True})
+    assert not is_secret("api_key", {**s, "secret": False})
