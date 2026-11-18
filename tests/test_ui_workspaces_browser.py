@@ -114,6 +114,9 @@ def test_workspace_editor_lifecycle_and_responsive_themes(workspace_app, browser
         for width in (1280, 390):
             page.set_viewport_size({"width": width, "height": 820})
             for theme in ("light", "dark", "warm"):
+                # Narrow screens fold the header controls into the "more" menu (09076a2).
+                if not page.locator("#theme").is_visible():
+                    page.locator(".gah-head-more").click()
                 page.locator("#theme").select_option(theme)
                 pw.expect(page.locator("html")).to_have_attribute("data-theme", theme)
                 palettes.add(page.evaluate("getComputedStyle(document.body).backgroundColor"))

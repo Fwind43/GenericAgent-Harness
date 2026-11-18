@@ -197,16 +197,18 @@ def test_picker_pending_error_and_busy_states(browser, models_app):
         page.route("**/api/effort", lambda route: pending.append(route))
         trigger.click()
         picker.get_by_role("button", name="high", exact=True).click()
-        pw.expect(trigger).to_be_disabled()
+        # aa7951d: the trigger stays enabled while a change is pending and reports aria-busy instead.
+        pw.expect(trigger).to_have_attribute("aria-busy", "true")
         assert len(pending) == 1
         pending.pop().fulfill(status=409, json={"error": "synthetic effort conflict"})
+        pw.expect(trigger).not_to_have_attribute("aria-busy", "true")
         pw.expect(trigger).to_be_enabled()
         pw.expect(page.get_by_text("synthetic effort conflict", exact=True)).to_be_visible()
         assert page.request.get(base + "api/state").json()["effort"] == original["effort"]
         page.unroute("**/api/effort")
         busy_state = dict(original, running=True)
         page.route("**/api/state", lambda route: route.fulfill(json=busy_state))
-        page.route("**/api/events", lambda route: route.fulfill(
+        page.route("**/api/events*", lambda route: route.fulfill(
             content_type="text/event-stream",
             body="event: snapshot\ndata: " + json.dumps(busy_state) + "\n\n"))
         page.reload()

@@ -29,7 +29,7 @@ def test_plugin_http_persistence_conflicts_busy_and_errors(tmp_path):
         body["revision"] = saved["revision"]
         assert _req(base + "api/plugins", {**body, "name": "ga-core"})[0] == 400
         assert _req(base + "api/plugins", {**body, "name": "ga-hooks", "enabled": False, "config": {}})[0] == 409
-        assert _req(base + "api/plugins", {**body, "config": {"secret": "not-public"}})[0] == 400
+        assert _req(base + "api/plugins", {**body, "config": {"secret": 1}})[0] == 400  # secrets are write-only, but must be strings
         assert _req(base + "api/plugins", {**body, "config": {"limit": True}})[0] == 400
         assert _req(base + "api/plugins", [body])[0] == 400
         assert manager.preferences.path.read_bytes() == raw

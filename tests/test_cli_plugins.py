@@ -19,7 +19,7 @@ def test_cli_applies_saved_preferences_before_mount(tmp_path, monkeypatch, capsy
     monkeypatch.delenv("GAH_PROFILE_PATH", raising=False)
     mounted = []
 
-    def capture_mount(rt, tree, manifests):
+    def capture_mount(rt, tree, manifests, **_):
         catalog = rt.ctx.get("plugin.catalog")
         assert catalog["tree"] == tree
         baseline = next(e for e in catalog["preferences"].baseline if e["name"] == "ga-events")

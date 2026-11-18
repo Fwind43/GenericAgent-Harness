@@ -105,7 +105,10 @@ def test_cards_filter_detail_and_save(browser, plugins_app):
     pw.expect(detail.locator(".plugin-title")).to_have_text("demo")
     limit = detail.locator('[data-plugin-field="limit"]')
     pw.expect(limit).to_have_value("10")
-    assert detail.locator('[data-plugin-field="secret"]').count() == 0
+    # 0d2aeaf: secrets are write-only password fields; the saved value never reaches the page.
+    secret = detail.locator('[data-plugin-field="secret"]')
+    pw.expect(secret).to_have_attribute("type", "password")
+    pw.expect(secret).to_have_value("")
     shot(page, "plugins_detail_1280")
     mode = detail.locator('select[data-plugin-field="mode"]')
     pw.expect(mode).to_have_value("fast")

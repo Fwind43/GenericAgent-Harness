@@ -17,7 +17,7 @@ def test_startup_scope_config_and_fail_closed(tmp_path, monkeypatch, capfd, opti
     mounted, called = [], []
     value = str(tmp_path) if value == "DIR" else value
 
-    def mount(rt, tree, manifests):
+    def mount(rt, tree, manifests, **_):
         mounted.append(next(e for e in tree if e["name"] == "workspace-store"))
         rt.ctx.provide("frontend", SimpleNamespace(main=lambda **kw: called.append(kw) or 0))
         if active:
