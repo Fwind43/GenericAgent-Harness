@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import model_keys
+from . import model_keys, startup
 
 
 def capture(agent):
@@ -70,18 +70,26 @@ def restore(agent, state):
 
 
 def settle(messages, status, error=None):
-    """Close every unfinished message/turn/tool after a run or service interruption."""
+    """Close every unfinished message/turn/tool after a run or service interruption.
+
+    Returns whether anything changed.
+    """
+    changed = False
     for message in messages:
         if message.get("status") == "running":
             message["status"] = status
+            changed = True
             if error:
                 message["error"] = error
         for turn in message.get("turns", []):
             if turn.get("status") == "running":
                 turn["status"] = status
+                changed = True
             for tool in turn.get("tools", []):
                 if tool.get("status") == "running":
                     tool["status"] = status
+                    changed = True
+    return changed
 
 
 class Sessions:
@@ -185,14 +193,33 @@ class Sessions:
             if not db.execute("SELECT 1 FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone():
                 self._select(db, self._new(db))
             # Recover all conversations, not only the one selected when the host died.
-            for row in db.execute("SELECT id,messages FROM sessions WHERE deleted=0").fetchall():
-                messages = json.loads(row["messages"])
-                before = copy.deepcopy(messages)
-                settle(messages, "interrupted", "Service interrupted; not automatically retried")
-                if before != messages:
-                    db.execute("UPDATE sessions SET messages=? WHERE id=?", (json.dumps(messages, ensure_ascii=False), row["id"]))
+            self._recover(db)
         self._ready = True
         restore(self.agent, self.current()["state"])
+
+    @staticmethod
+    def _recover(db):
+        """Mark work left "running" by a dead host as interrupted.
+
+        Every JSON encoding of a "running" status contains the token "running" (quotes
+        included), so SQLite skips the other transcripts without Python decoding them: a cold
+        start over hundreds of MB of history must not parse it all (issue #2). A false hit (the
+        token elsewhere) only costs one decode. Long recoveries report startup progress so a
+        supervising shell does not take them for a hang.
+        """
+        rows = db.execute("SELECT id FROM sessions WHERE deleted=0 AND instr(messages, '\"running\"')>0").fetchall()
+        total, last = len(rows), time.monotonic()
+        for i, (sid,) in enumerate(rows, 1):
+            row = db.execute("SELECT messages FROM sessions WHERE id=?", (sid,)).fetchone()
+            try:
+                messages = json.loads(row[0])
+            except ValueError:
+                continue
+            if settle(messages, "interrupted", "Service interrupted; not automatically retried"):
+                db.execute("UPDATE sessions SET messages=? WHERE id=?", (json.dumps(messages, ensure_ascii=False), sid))
+            if time.monotonic() - last >= 2:
+                last = time.monotonic()
+                startup.progress("sessions", f"recover {i}/{total}")
 
     @staticmethod
     def _decode(row):

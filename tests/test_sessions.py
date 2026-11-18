@@ -1,3 +1,4 @@
+import json
 import queue
 from types import SimpleNamespace as NS
 
@@ -70,6 +71,44 @@ def test_crashed_run_is_not_replayed(tmp_path):
     assert message["status"] == message["turns"][0]["status"] == "interrupted"
     assert message["turns"][0]["tools"][0]["status"] == "interrupted"
     assert Sessions(agent(), path).current()["messages"] == cold.current()["messages"]
+
+
+def test_cold_start_decodes_only_transcripts_with_running_work(tmp_path, monkeypatch):
+    from ga_harness import sessions as mod
+
+    path = tmp_path / "sessions.sqlite3"
+    store = Sessions(agent(), path)
+    quiet = store.current()["id"]
+    store.save([{"role": "user", "text": 'he said "running" twice'},
+                {"role": "assistant", "status": "done", "turns": [{"status": "done", "tools": []}]}])
+    decoy = store.change("new")["id"]
+    store.save([{"role": "assistant", "status": "done", "note": "running"}])
+    crashed = store.change("new")["id"]
+    store.save([{"role": "assistant", "status": "running", "turns": [{"status": "running", "tools": []}]}])
+    store.change("select", quiet)
+    before = {s["id"]: s for s in store.listing()}
+
+    decoded, reports = [], []
+    monkeypatch.setattr(mod, "json", NS(loads=lambda raw: decoded.append(raw) or json.loads(raw), dumps=json.dumps))
+    ticks = iter(range(0, 1000, 5))
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(mod.startup, "progress", lambda *a: reports.append(a))
+    with store._db() as db:
+        Sessions._recover(db)
+    monkeypatch.undo()
+
+    # The quoted text and the done chat are skipped by SQLite; only the decoy and the crash decode.
+    assert len(decoded) == 2
+    assert reports == [("sessions", "recover 1/2"), ("sessions", "recover 2/2")]
+    cold = Sessions(agent(), path)
+    message = cold.get(crashed)["messages"][0]
+    assert message["status"] == message["turns"][0]["status"] == "interrupted"
+    assert message["error"] == "Service interrupted; not automatically retried"
+    assert cold.get(quiet)["messages"][0]["text"] == 'he said "running" twice'
+    assert cold.get(decoy)["messages"] == [{"role": "assistant", "status": "done", "note": "running"}]
+    after = {s["id"]: s for s in cold.listing()}
+    assert after[quiet]["updated"] == before[quiet]["updated"]
+    assert after[decoy]["updated"] == before[decoy]["updated"]
 
 
 def test_busy_and_invalid_operations_preserve_selection(tmp_path):
