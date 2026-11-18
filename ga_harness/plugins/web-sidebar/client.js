@@ -409,6 +409,40 @@
       if (open) setView(null);
       setOpen(!open);
     };
+    const nav = react.useRef({ root, rootKey, canLeave, activeView });
+    nav.current = { root, rootKey, canLeave, activeView };
+    react.useEffect(() => api.openFile(async (ref, event) => {
+      var _a;
+      if (event && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button === 1)) return false;
+      if (ref.kind !== "code" && ref.kind !== "doc" || ref.ext === "pdf") return false;
+      const start = nav.current;
+      if (!start.root.sid) return false;
+      let abs = "", base = "";
+      try {
+        const [info, tree] = await Promise.all([
+          api.host.get(api.fileURL(ref.path, { info: true })),
+          api.get("tree?" + qs({ ...start.root, path: "" }))
+        ]);
+        abs = info.path;
+        base = tree.root;
+      } catch {
+        return false;
+      }
+      const now = nav.current;
+      if (now.rootKey !== start.rootKey) return false;
+      const norm = (p) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+      const fold = (p) => /^[A-Za-z]:/.test(p) ? p.toLowerCase() : p;
+      abs = norm(abs);
+      base = norm(base);
+      if (!abs || !base || !fold(abs).startsWith(fold(base) + "/")) return false;
+      const rel = abs.slice(base.length + 1);
+      const same = ((_a = now.activeView) == null ? void 0 : _a.kind) === "file" && now.activeView.path === rel;
+      if (!same && !now.canLeave()) return true;
+      if (!same) setView({ kind: "file", path: rel, rootKey: now.rootKey });
+      setTab("files");
+      setOpen(true);
+      return true;
+    }), [api]);
     react.useEffect(() => {
       store(K_OPEN, open ? "1" : "0");
     }, [open]);

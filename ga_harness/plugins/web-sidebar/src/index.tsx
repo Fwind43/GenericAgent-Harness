@@ -297,6 +297,38 @@ function Sidebar({ api }: { api: PluginAPI }) {
     setOpen(!open);
   };
 
+  // Clicking a text/code reference in a chat message opens it here when it lies under the
+  // current browsing root; anything else (media, PDFs, outside files, modified clicks) keeps
+  // the host's default (lightbox or new tab).
+  const nav = useRef({ root, rootKey, canLeave, activeView });
+  nav.current = { root, rootKey, canLeave, activeView };
+  useEffect(() => api.openFile(async (ref, event) => {
+    if (event && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button === 1)) return false;
+    if ((ref.kind !== 'code' && ref.kind !== 'doc') || ref.ext === 'pdf') return false;
+    const start = nav.current;
+    if (!start.root.sid) return false;
+    let abs = '', base = '';
+    try {
+      const [info, tree] = await Promise.all([
+        api.host.get<{ path: string }>(api.fileURL(ref.path, { info: true })),
+        api.get<Tree>('tree?' + qs({ ...start.root, path: '' })),
+      ]);
+      abs = info.path; base = tree.root;
+    } catch { return false; }
+    const now = nav.current;
+    if (now.rootKey !== start.rootKey) return false;
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const fold = (p: string) => /^[A-Za-z]:/.test(p) ? p.toLowerCase() : p;   // Windows paths are case-insensitive
+    abs = norm(abs); base = norm(base);
+    if (!abs || !base || !fold(abs).startsWith(fold(base) + '/')) return false;
+    const rel = abs.slice(base.length + 1);
+    const same = now.activeView?.kind === 'file' && now.activeView.path === rel;
+    if (!same && !now.canLeave()) return true;   // the user chose to keep unsaved edits
+    if (!same) setView({ kind: 'file', path: rel, rootKey: now.rootKey });
+    setTab('files'); setOpen(true);
+    return true;
+  }), [api]);
+
   useEffect(() => { store(K_OPEN, open ? '1' : '0'); }, [open]);
   useEffect(() => { setSelection(null); }, [sid]);
   useEffect(() => { setView(null); }, [rootKey]);
