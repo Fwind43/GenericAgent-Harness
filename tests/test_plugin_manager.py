@@ -123,7 +123,7 @@ def test_protected(tmp_path, name):
         rt.dispose()
 
 
-@pytest.mark.parametrize("config", [{"secret": "x"}, {"limit": True}, {"limit": 0}, {"limit": 101}, {"limit": "10"}])
+@pytest.mark.parametrize("config", [{"secret": 1}, {"unknown": "x"}, {"limit": True}, {"limit": 0}, {"limit": 101}, {"limit": "10"}])
 def test_invalid_config_no_write(tmp_path, config):
     rt, m = make_manager(tmp_path)
     try:
