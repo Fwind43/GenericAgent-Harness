@@ -1,0 +1,22 @@
+.gah-ico[data-i="key"]{--i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4'/%3E%3Cpath d='m21 2-9.6 9.6'/%3E%3Ccircle cx='7.5' cy='15.5' r='5.5'/%3E%3C/svg%3E")}
+.kc-dialog .kc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.kc-dialog h3{margin:0 0 4px;font-size:15px}
+.kc-dialog h4{margin:0;font-size:13px}
+.kc-dialog .kc-muted{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.kc-dialog .kc-path{margin-top:10px;word-break:break-all}
+.kc-dialog .kc-error{display:block;margin:8px 0 0;color:var(--danger,#c0392b);font-size:12px}
+.kc-dialog .kc-list{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+.kc-dialog .kc-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.kc-dialog .kc-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.kc-dialog .kc-len{flex:1;white-space:nowrap}
+.kc-dialog .kc-actions{display:flex;gap:6px;flex-shrink:0}
+.kc-dialog .kc-form{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--border);border-radius:8px}
+.kc-dialog .kc-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.kc-dialog .kc-form input{min-height:32px;padding:5px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+.kc-dialog .kc-buttons{display:flex;justify-content:flex-end;gap:6px}
+.kc-dialog .btn{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+.kc-dialog .btn:hover:not(:disabled){background:var(--surface-muted)}
+.kc-dialog .btn:disabled{opacity:.5;cursor:default}
+.kc-dialog .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.kc-dialog .btn.danger{color:var(--danger,#c0392b)}
+@media (max-width:560px){.kc-dialog .kc-row{flex-wrap:wrap}.kc-dialog .kc-len{flex-basis:100%;order:3}}

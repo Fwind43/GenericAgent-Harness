@@ -1,0 +1,14 @@
+name = "keychain"
+category = "extension"
+entry = "main:apply"
+description = "GA keychain manager: list, add, replace and delete secrets in the GenericAgent keychain (~/ga_keychain.enc) from Settings. Values are write-only and never sent back to the browser."
+description_zh = "GA 钥匙串管理：在设置里列出、新增、替换和删除 GenericAgent 钥匙串（~/ga_keychain.enc）中的密钥；密钥值只写不读，不会发回浏览器。"
+inject = ["web.host"]
+
+[settings.path]
+type = "string"
+default = ""
+label = "Keychain file"
+label_zh = "钥匙串文件"
+description = "Path of the keychain file; empty = ~/ga_keychain.enc (the file GenericAgent's keychain module uses)."
+description_zh = "钥匙串文件路径；留空即 ~/ga_keychain.enc（GenericAgent keychain 模块使用的文件）。"
