@@ -312,6 +312,37 @@ function refreshTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
+// Referenced local files render as same-origin `api/file?path=...` links; the path may be
+// relative to the session workspace, so ask the backend (which also enforces its allowed roots)
+// for the resolved absolute path. Returns null for any other link.
+function fileLinkPath(linkURL) {
+  try {
+    const u = new URL(linkURL);
+    if (u.origin !== origin || !u.pathname.endsWith('/api/file')) return null;
+    return u.searchParams.get('path') || null;
+  } catch { return null; }
+}
+
+async function resolveFileLink(linkURL) {
+  const u = new URL(linkURL);
+  u.searchParams.delete('download');
+  u.searchParams.set('info', '1');
+  const res = await win.webContents.session.fetch(u.toString(), { credentials: 'include' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || typeof body.path !== 'string' || !path.isAbsolute(body.path)) {
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return body.path;
+}
+
+function fileLinkAction(linkURL, fn) {
+  return () => {
+    resolveFileLink(linkURL).then(fn).catch((err) => {
+      dialog.showErrorBox('GenericAgent-Harness', t(`无法定位文件：${err.message || err}`, `Cannot locate file: ${err.message || err}`));
+    });
+  };
+}
+
 function showContextMenu(params) {
   if (!win || win.isDestroyed()) return;
   const { editFlags = {}, isEditable, selectionText, linkURL, mediaType, srcURL } = params;
@@ -332,7 +363,14 @@ function showContextMenu(params) {
   } else if (hasText) {
     items.push({ role: 'copy', label: t('复制', 'Copy') });
   }
-  if (linkURL && /^https?:\/\//i.test(linkURL)) {
+  const filePath = linkURL ? fileLinkPath(linkURL) : null;
+  if (filePath) {
+    sep();
+    items.push(
+      { label: t('在文件夹中显示', 'Show in folder'), click: fileLinkAction(linkURL, (p) => shell.showItemInFolder(p)) },
+      { label: t('复制文件路径', 'Copy file path'), click: fileLinkAction(linkURL, (p) => clipboard.writeText(p)) },
+    );
+  } else if (linkURL && /^https?:\/\//i.test(linkURL)) {
     sep();
     items.push(
       { label: t('在浏览器中打开链接', 'Open link in browser'), click: () => openExternalQuiet(linkURL) },
