@@ -665,7 +665,7 @@ class WebFrontend:
         return self._roots_cache[1]
 
     def resolve_file(self, raw):
-        """-> (Path, root) for an existing regular file under an allowed root, else raise LookupError."""
+        """-> (Path, root) for an existing regular file (any local path; root = matching workspace/GA root or the drive anchor), else raise LookupError."""
         raw = str(raw or "").strip()
         if raw.lower().startswith("file:"):
             from urllib.parse import unquote
@@ -684,9 +684,8 @@ class WebFrontend:
             target = target.resolve()
         except (OSError, RuntimeError):
             raise LookupError("unresolvable path")
-        root = next((r for r in roots if target.is_relative_to(r)), None)
-        if root is None:
-            raise PermissionError("outside workspaces and GA root")
+        # No sandbox: any local file may be referenced; root is informational only.
+        root = next((r for r in roots if target.is_relative_to(r)), None) or Path(target.anchor or target.parent)
         if not target.is_file():
             raise LookupError("not a file")
         return target, root
