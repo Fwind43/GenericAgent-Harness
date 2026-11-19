@@ -1,0 +1,6 @@
+name = "swarm"
+category = "extension"
+entry = "main:apply"
+description = "Swarm mode: a coordinator session builds a team of member sessions that talk to each other on a shared message board (@mentions wake teammates)."
+description_zh = "\u8702\u7fa4\u6a21\u5f0f\uff1a\u534f\u8c03\u8005\u4f1a\u8bdd\u7ec4\u5efa\u6210\u5458\u56e2\u961f\uff0c\u6210\u5458\u5728\u5171\u4eab\u7559\u8a00\u677f\u4e0a\u76f4\u63a5\u4e92\u52a8\uff08@\u63d0\u53ca\u5373\u5524\u9192\uff09\u3002"
+inject = ["web.host", "runs", "sessions", "models?"]

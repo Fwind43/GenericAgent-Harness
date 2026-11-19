@@ -126,6 +126,11 @@ name = "run-queue"
 [[plugins]]
 name = "conductor"
 
+# swarm mode: a coordinator builds a team of member sessions that talk on a shared
+# message board (@mentions wake teammates); toggled per session from the web UI or /swarm
+[[plugins]]
+name = "swarm"
+
 # vision_ask tool: send local images to the current model or a mykey.py model
 [[plugins]]
 name = "vlm-tool"

@@ -16,7 +16,7 @@ LLM_FAILED = "The model call failed; the run stopped. "
 # GA's own markers for a failed model call, written into the reply text.
 LLM_ERROR_MARKS = ("!!!Error:", "[!!! \u6d41\u5f02\u5e38\u4e2d\u65ad")
 # Run sources that are automatic wake-ups rather than something a person typed.
-WAKE_SOURCES = frozenset({"conductor"})
+WAKE_SOURCES = frozenset({"conductor", "swarm"})
 
 
 def _llm_failed(text):

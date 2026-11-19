@@ -1,0 +1,7 @@
+name = "swarm-worker"
+category = "core"
+entry = "main:apply"
+description = "Worker half of swarm mode: gives swarm coordinators and members the shared message-board tools."
+description_zh = "\u8702\u7fa4\u6a21\u5f0f\u7684 worker \u7aef\uff1a\u4e3a\u534f\u8c03\u8005\u4e0e\u6210\u5458\u4f1a\u8bdd\u63d0\u4f9b\u5171\u4eab\u7559\u8a00\u677f\u5de5\u5177\u3002"
+inject = ["ga.tools", "ga.prompt?"]
+worker_only = true
