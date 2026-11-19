@@ -46,6 +46,14 @@ const Check = () => (
   <svg className="gah-menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
 
+const Empty = ({ title, hint, compact }: { title: string; hint?: string; compact?: boolean }) => (
+  <div className={compact ? 'gah-sw-empty compact' : 'gah-sw-empty'}>
+    {compact ? null : <span className="gah-sw-empty-ico" aria-hidden="true"><Icon /></span>}
+    <b>{title}</b>
+    {hint ? <span>{hint}</span> : null}
+  </div>
+);
+
 const STATUS: Record<string, [string, string]> = {
   running: ['\u8fd0\u884c\u4e2d', 'Running'], queued: ['\u6392\u961f\u4e2d', 'Queued'], idle: ['\u7a7a\u95f2', 'Idle'],
   waiting: ['\u7b49\u5f85\u4e2d', 'Waiting'], error: ['\u51fa\u9519', 'Error'], removed: ['\u5df2\u79fb\u9664', 'Removed'],
@@ -78,7 +86,7 @@ function Graph({ view }: { view: View }) {
   const max = Math.max(1, ...view.edges.map(e => e.count));
   const status: Record<string, string | undefined> = { [COORD]: view.coordinator?.status };
   view.members.forEach(m => { status[m.name] = m.removed ? 'removed' : m.status; });
-  if (!view.edges.length) return <div className="gah-sw-empty">{T('\u8fd8\u6ca1\u6709 @ \u4e92\u52a8', 'No @-mentions yet')}</div>;
+  if (!view.edges.length) return <Empty title={T('\u8fd8\u6ca1\u6709 @ \u4e92\u52a8', 'No @-mentions yet')} hint={T('\u6210\u5458\u4e4b\u95f4\u6bcf\u6b21 @ \u5bf9\u65b9\uff0c\u90fd\u4f1a\u5728\u8fd9\u91cc\u753b\u4e00\u6761\u5e26\u65b9\u5411\u7684\u8fde\u7ebf', 'Each time one participant @-mentions another, a directed edge appears here.')} />;
   return (
     <svg className="gah-sw-graph" viewBox={`0 0 ${size} ${size}`} role="img" aria-label={T('@ \u5173\u7cfb\u56fe', 'Mention graph')}>
       <defs><marker id="gah-sw-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 8 4 0 8z" fill="currentColor" /></marker></defs>
@@ -152,12 +160,13 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
     <>
       <div className="gah-sw-board" ref={list}>
         {posts.length && posts[0].id > 1 ? <button type="button" className="gah-sw-more" disabled={loading} onClick={more}>{T('\u52a0\u8f7d\u66f4\u65e9\u7684\u5e16\u5b50', 'Load earlier posts')}</button> : null}
-        {posts.length ? posts.map(p => <PostRow key={p.id} post={p} />) : <div className="gah-sw-empty">{T('\u7559\u8a00\u677f\u8fd8\u662f\u7a7a\u7684', 'The board is empty')}</div>}
+        {posts.length ? posts.map(p => <PostRow key={p.id} post={p} />) : <Empty title={T('\u7559\u8a00\u677f\u8fd8\u662f\u7a7a\u7684', 'The board is empty')} hint={T('\u5728\u4e3b\u5bf9\u8bdd\u91cc\u628a\u4efb\u52a1\u4ea4\u7ed9\u534f\u8c03\u8005\uff0c\u5b83\u4f1a\u62db\u52df\u6210\u5458\u5e76\u5728\u8fd9\u91cc\u5206\u5de5\u3002\n\u4e5f\u53ef\u4ee5\u76f4\u63a5\u53d1\u5e16\uff0c\u7528 @\u540d\u5b57 \u5524\u9192\u67d0\u4e2a\u6210\u5458\u3002', 'Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.')} />}
       </div>
       {!view.finished ? (
         <form className="gah-sw-compose" onSubmit={send}>
           <input value={text} onChange={e => setText(e.target.value)} disabled={busy} maxLength={8000}
-            placeholder={T('\u4ee5 @user \u8eab\u4efd\u53d1\u5e16\uff0c@\u540d\u5b57 / @\u7ec4 / @all \u53ef\u5524\u9192\u6210\u5458', 'Post as @user; @name / @group / @all wakes members')} />
+            placeholder={T('\u53d1\u5e16\uff0c@\u540d\u5b57 \u5524\u9192\u6210\u5458', 'Post, @name wakes a member')}
+            title={T('@\u540d\u5b57 / @\u7ec4 / @all \u90fd\u4f1a\u5524\u9192\u5bf9\u5e94\u6210\u5458', '@name, @group or @all wakes the matching members')} />
           <button type="submit" disabled={busy || !text.trim()}>{T('\u53d1\u9001', 'Post')}</button>
         </form>
       ) : null}
@@ -265,13 +274,14 @@ function Panel({ api }: { api: PluginAPI }) {
             <div className="gah-sw-tabs" role="tablist">
               {(['board', 'members', 'graph'] as const).map(k => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-                  {k === 'board' ? `${T('\u7559\u8a00\u677f', 'Board')} ${view.total_posts}` : k === 'members' ? `${T('\u6210\u5458', 'Members')} ${live.length}` : T('\u5173\u7cfb', 'Graph')}
+                  {k === 'board' ? T('\u7559\u8a00\u677f', 'Board') : k === 'members' ? T('\u6210\u5458', 'Members') : T('\u5173\u7cfb', 'Graph')}
+                  <span className="gah-sw-tab-n">{k === 'board' ? view.total_posts : k === 'members' ? live.length + 1 : view.edges.length}</span>
                 </button>
               ))}
             </div>
             {view.paused && !view.finished ? <button type="button" className="gah-sw-off" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
             {isCoord ? <button type="button" className="gah-sw-off" disabled={busy} onClick={() => run('toggle', { enabled: !view.enabled || !!view.finished })}>
-              {view.enabled && !view.finished ? T('\u5173\u95ed', 'Turn off') : T('\u91cd\u65b0\u5f00\u542f', 'Turn on')}
+              {view.enabled && !view.finished ? T('\u5173\u95ed\u8702\u7fa4', 'Turn off swarm') : T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}
             </button> : null}
           </div>
           {view.paused && !view.finished ? <div className="gah-sw-note">{T('\u5df2\u6682\u505c\u81ea\u52a8\u5524\u9192\uff1a', 'Auto-wake paused: ')}{String(view.paused)}</div> : null}
@@ -282,7 +292,7 @@ function Panel({ api }: { api: PluginAPI }) {
             <div className="gah-sw-list">
               <MemberRow m={{ ...view.coordinator, name: COORD, role: T('\u534f\u8c03\u8005', 'Coordinator') }} me={view.me} busy={busy} act={act} enter={enter} />
               {view.members.map(m => <MemberRow key={m.name} m={m} me={view.me} busy={busy} act={act} enter={enter} />)}
-              {!live.length ? <div className="gah-sw-empty">{T('\u534f\u8c03\u8005\u4f1a\u7528 swarm_add \u62db\u52df\u6210\u5458', 'The coordinator recruits members with swarm_add')}</div> : null}
+              {!live.length ? <Empty compact title={T('\u8fd8\u6ca1\u6709\u62db\u52df\u5176\u4ed6\u6210\u5458', 'No other members yet')} hint={T('\u534f\u8c03\u8005\u4f1a\u6309\u4efb\u52a1\u9700\u8981\u62db\u52df\u89d2\u8272\uff0c\u6bcf\u4e2a\u6210\u5458\u90fd\u6709\u72ec\u7acb\u4f1a\u8bdd', 'The coordinator recruits roles as needed; each member gets its own session.')} /> : null}
               {data.limits ? <div className="gah-sw-facts">{T('\u5168\u5c40\u8fd0\u884c', 'Running globally')} {data.running ?? 0}{data.limits.global_max ? ` / ${data.limits.global_max}` : ''}</div> : null}
             </div>
           ) : null}

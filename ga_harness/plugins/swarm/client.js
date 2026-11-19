@@ -29,6 +29,11 @@
     /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M7 4.7 4.2 10.4M9 4.7l2.8 5.7M4.9 12h6.2", strokeLinecap: "round" })
   ] });
   const Check = () => /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-menu-check", viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "m3.5 8.5 3 3 6-7", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round" }) });
+  const Empty = ({ title, hint, compact }) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: compact ? "gah-sw-empty compact" : "gah-sw-empty", children: [
+    compact ? null : /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-empty-ico", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx(Icon, {}) }),
+    /* @__PURE__ */ jsxRuntime.jsx("b", { children: title }),
+    hint ? /* @__PURE__ */ jsxRuntime.jsx("span", { children: hint }) : null
+  ] });
   const STATUS = {
     running: ["运行中", "Running"],
     queued: ["排队中", "Queued"],
@@ -84,7 +89,7 @@
     view.members.forEach((m) => {
       status[m.name] = m.removed ? "removed" : m.status;
     });
-    if (!view.edges.length) return /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-empty", children: sdk.T("还没有 @ 互动", "No @-mentions yet") });
+    if (!view.edges.length) return /* @__PURE__ */ jsxRuntime.jsx(Empty, { title: sdk.T("还没有 @ 互动", "No @-mentions yet"), hint: sdk.T("成员之间每次 @ 对方，都会在这里画一条带方向的连线", "Each time one participant @-mentions another, a directed edge appears here.") });
     return /* @__PURE__ */ jsxRuntime.jsxs("svg", { className: "gah-sw-graph", viewBox: `0 0 ${size} ${size}`, role: "img", "aria-label": sdk.T("@ 关系图", "Mention graph"), children: [
       /* @__PURE__ */ jsxRuntime.jsx("defs", { children: /* @__PURE__ */ jsxRuntime.jsx("marker", { id: "gah-sw-arrow", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "6", markerHeight: "6", orient: "auto", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M0 0 8 4 0 8z", fill: "currentColor" }) }) }),
       view.edges.filter((e) => pos[e.from] && pos[e.to] && e.from !== e.to).map((e) => {
@@ -177,7 +182,7 @@
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-board", ref: list, children: [
         posts.length && posts[0].id > 1 ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", disabled: loading, onClick: more, children: sdk.T("加载更早的帖子", "Load earlier posts") }) : null,
-        posts.length ? posts.map((p) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p }, p.id)) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-empty", children: sdk.T("留言板还是空的", "The board is empty") })
+        posts.length ? posts.map((p) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p }, p.id)) : /* @__PURE__ */ jsxRuntime.jsx(Empty, { title: sdk.T("留言板还是空的", "The board is empty"), hint: sdk.T("在主对话里把任务交给协调者，它会招募成员并在这里分工。\n也可以直接发帖，用 @名字 唤醒某个成员。", "Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.") })
       ] }),
       !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "gah-sw-compose", onSubmit: send, children: [
         /* @__PURE__ */ jsxRuntime.jsx(
@@ -187,7 +192,8 @@
             onChange: (e) => setText(e.target.value),
             disabled: busy,
             maxLength: 8e3,
-            placeholder: sdk.T("以 @user 身份发帖，@名字 / @组 / @all 可唤醒成员", "Post as @user; @name / @group / @all wakes members")
+            placeholder: sdk.T("发帖，@名字 唤醒成员", "Post, @name wakes a member"),
+            title: sdk.T("@名字 / @组 / @all 都会唤醒对应成员", "@name, @group or @all wakes the matching members")
           }
         ),
         /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: busy || !text.trim(), children: sdk.T("发送", "Post") })
@@ -323,9 +329,12 @@
       ),
       open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw", ref: pop, role: "dialog", "aria-label": sdk.T("蜂群", "Swarm"), children: [
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-bar", children: [
-          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-tabs", role: "tablist", children: ["board", "members", "graph"].map((k) => /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": tab === k, className: tab === k ? "on" : "", onClick: () => setTab(k), children: k === "board" ? `${sdk.T("留言板", "Board")} ${view.total_posts}` : k === "members" ? `${sdk.T("成员", "Members")} ${live.length}` : sdk.T("关系", "Graph") }, k)) }),
+          /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-tabs", role: "tablist", children: ["board", "members", "graph"].map((k) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "tab", "aria-selected": tab === k, className: tab === k ? "on" : "", onClick: () => setTab(k), children: [
+            k === "board" ? sdk.T("留言板", "Board") : k === "members" ? sdk.T("成员", "Members") : sdk.T("关系", "Graph"),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-tab-n", children: k === "board" ? view.total_posts : k === "members" ? live.length + 1 : view.edges.length })
+          ] }, k)) }),
           view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-off", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
-          isCoord ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-off", disabled: busy, onClick: () => run("toggle", { enabled: !view.enabled || !!view.finished }), children: view.enabled && !view.finished ? sdk.T("关闭", "Turn off") : sdk.T("重新开启", "Turn on") }) : null
+          isCoord ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-off", disabled: busy, onClick: () => run("toggle", { enabled: !view.enabled || !!view.finished }), children: view.enabled && !view.finished ? sdk.T("关闭蜂群", "Turn off swarm") : sdk.T("重新开启蜂群", "Turn swarm on") }) : null
         ] }),
         view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-note", children: [
           sdk.T("已暂停自动唤醒：", "Auto-wake paused: "),
@@ -340,7 +349,7 @@
         tab === "members" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-list", children: [
           /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m: { ...view.coordinator, name: COORD, role: sdk.T("协调者", "Coordinator") }, me: view.me, busy, act, enter }),
           view.members.map((m) => /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m, me: view.me, busy, act, enter }, m.name)),
-          !live.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-empty", children: sdk.T("协调者会用 swarm_add 招募成员", "The coordinator recruits members with swarm_add") }) : null,
+          !live.length ? /* @__PURE__ */ jsxRuntime.jsx(Empty, { compact: true, title: sdk.T("还没有招募其他成员", "No other members yet"), hint: sdk.T("协调者会按任务需要招募角色，每个成员都有独立会话", "The coordinator recruits roles as needed; each member gets its own session.") }) : null,
           data.limits ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-facts", children: [
             sdk.T("全局运行", "Running globally"),
             " ",

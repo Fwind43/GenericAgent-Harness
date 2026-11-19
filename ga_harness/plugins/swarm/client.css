@@ -5,21 +5,27 @@
 .gah-sw-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .gah-sw-count{opacity:.8}
 .gah-sw-state{font-size:11px;color:var(--muted)}
-.gah-sw-caret{opacity:.7;transition:transform .15s}
+.gah-sw-caret{margin-left:2px;opacity:.7;transition:transform .15s}
 .gah-sw-chip.open .gah-sw-caret{transform:rotate(180deg)}
 .gah-sw-icon{flex:none}
-.gah-sw{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:min(460px,calc(100vw - 24px));display:flex;flex-direction:column;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 10px 32px rgba(0,0,0,.12);font-size:12.5px;color:var(--text)}
+.gah-sw{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:min(460px,calc(100vw - 24px));display:flex;flex-direction:column;padding:4px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 36px rgba(0,0,0,.16),0 2px 6px rgba(0,0,0,.06);font-size:12.5px;color:var(--text)}
 .gah-sw-bar{display:flex;align-items:center;gap:6px;padding:4px 4px 6px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.gah-sw-tab-n{display:inline-block;min-width:16px;height:16px;margin-left:5px;padding:0 4px;border-radius:8px;background:color-mix(in srgb,currentColor 12%,transparent);font-size:10.5px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums;vertical-align:1px}
 .gah-sw-tabs{display:flex;gap:2px;flex:1 1 auto;min-width:0}
-.gah-sw-tabs button{all:unset;cursor:pointer;padding:3px 10px;border-radius:6px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gah-sw-tabs button{all:unset;cursor:pointer;padding:4px 10px;border-radius:6px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .gah-sw-tabs button:hover{color:var(--text)}
-.gah-sw-tabs button.on{color:var(--text);background:var(--surface-muted);font-weight:600}
+.gah-sw-tabs button.on{color:var(--accent);background:color-mix(in srgb,var(--accent) 11%,transparent);font-weight:600}
 .gah-sw-tabs button:focus-visible,.gah-sw-off:focus-visible,.gah-sw-act:focus-visible,.gah-sw-name:focus-visible,.gah-sw-more:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.gah-sw-off{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:2px 8px;border-radius:6px;white-space:nowrap}
-.gah-sw-off:hover:not(:disabled){color:var(--text);background:var(--border)}
+.gah-sw-off{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:2px 9px;border:1px solid var(--border);border-radius:6px;white-space:nowrap}
+.gah-sw-off:hover:not(:disabled){color:#d24b4b;border-color:color-mix(in srgb,#d24b4b 40%,transparent);background:color-mix(in srgb,#d24b4b 10%,transparent)}
+.gah-sw-off:disabled{opacity:.5;cursor:default}
 .gah-sw-note{margin:0 4px 4px;padding:5px 8px;border-radius:6px;background:color-mix(in srgb,#c98a1b 12%,transparent);color:#a06c10;font-size:12px;word-break:break-word}
 .gah-sw-note.err{background:color-mix(in srgb,#d24b4b 12%,transparent);color:#d24b4b}
-.gah-sw-empty{padding:12px;color:var(--muted);text-align:center}
+.gah-sw-empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px 24px 20px;color:var(--muted);text-align:center;line-height:1.5}
+.gah-sw-empty b{color:var(--text);font-weight:600;font-size:13px}
+.gah-sw-empty span:last-child:not(.gah-sw-empty-ico){font-size:12px;max-width:340px;white-space:pre-line;text-wrap:pretty}
+.gah-sw-empty-ico{display:grid;place-items:center;width:34px;height:34px;margin-bottom:4px;border-radius:50%;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent)}
+.gah-sw-empty-ico .gah-sw-icon{width:17px;height:17px}
 .gah-sw-board{display:flex;flex-direction:column;gap:6px;max-height:min(55vh,460px);overflow-y:auto;overflow-x:hidden;padding:2px 4px}
 .gah-sw-post{padding:6px 8px;border-radius:8px;background:color-mix(in srgb,var(--border) 22%,transparent)}
 .gah-sw-post.user{background:color-mix(in srgb,var(--accent) 10%,transparent)}
@@ -32,11 +38,11 @@
 .gah-sw-at{color:var(--accent);font-weight:500}
 .gah-sw-more{all:unset;cursor:pointer;font-size:11.5px;color:var(--accent);padding:2px 0;align-self:center}
 .gah-sw-more:disabled{opacity:.5;cursor:default}
-.gah-sw-compose{display:flex;gap:6px;padding:6px 4px 2px;border-top:1px solid var(--border);margin-top:4px}
-.gah-sw-compose input{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)}
+.gah-sw-compose{display:flex;gap:6px;padding:8px 4px 4px;border-top:1px solid var(--border);margin-top:4px}
+.gah-sw-compose input{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;height:30px;box-sizing:border-box;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)}
 .gah-sw-compose input:focus{outline:none;border-color:var(--accent)}
-.gah-sw-compose button{font:inherit;font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
-.gah-sw-compose button:disabled{opacity:.5;cursor:default}
+.gah-sw-compose button{font:inherit;font-size:12px;height:30px;padding:0 14px;border-radius:8px;white-space:nowrap;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.gah-sw-compose button:disabled{background:transparent;border-color:var(--border);color:var(--muted);cursor:default}
 .gah-sw-list{display:flex;flex-direction:column;gap:2px;max-height:min(60vh,480px);overflow-y:auto;overflow-x:hidden}
 .gah-sw-member{border-radius:8px}
 .gah-sw-member.removed{opacity:.5}
@@ -55,7 +61,9 @@
 .gah-sw-dot.queued,.gah-sw-dot.waiting{background:#c98a1b}
 .gah-sw-dot.error{background:#d24b4b}
 .gah-sw-brief{padding:0 10px 8px 23px;display:flex;flex-direction:column;gap:4px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto}
-.gah-sw-facts{color:var(--muted);font-size:11.5px;padding:4px 8px;font-variant-numeric:tabular-nums}
+.gah-sw-facts{color:var(--muted);font-size:11.5px;margin-top:4px;padding:8px 8px 2px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums}
+.gah-sw-empty.compact{padding:12px 16px 10px;gap:2px}
+.gah-sw-empty.compact b{font-size:12.5px}
 .gah-sw-facts code{font-size:11px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 .gah-sw-err{color:#d24b4b}
 .gah-sw-graph{display:block;width:100%;max-width:340px;margin:4px auto;color:var(--muted)}
