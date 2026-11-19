@@ -112,6 +112,9 @@ def purge_modules(name):
         del sys.modules[key]
 
 
+CHOICE_ALIASES = {"select", "enum"}
+
+
 def protected(manifest):
     return manifest.name in PROTECTED or bool(set(manifest.provides) & {"agent", "frontend", "plugin.manager", "plugin.catalog"})
 
@@ -173,6 +176,8 @@ def public_fields(manifest):
     for k, v in manifest.settings.items():
         if not isinstance(v, dict):
             continue
+        if v.get("type") in CHOICE_ALIASES:  # common third-party spelling of ``choice``
+            v = {**v, "type": "choice"}
         if v.get("type") in {"string", "integer", "boolean"}:
             fields[k] = {**v, "secret": True} if is_secret(k, v) else v
         elif v.get("type") == "choice" and (options := choice_options(v)):
@@ -237,6 +242,24 @@ class PluginPreferences:
             raise ValueError("invalid plugin settings; repair the local file before saving") from None
         return data, hashlib.sha256(raw).hexdigest()
 
+    @staticmethod
+    def _valid_config(manifest, config):
+        """Saved values that still validate; a stale field (plugin upgrade changed its
+        schema, removed option, ...) is dropped with a warning instead of refusing to
+        start the whole backend. The file is not rewritten, so nothing is lost."""
+        try:
+            return validate_values(manifest, config)
+        except ValueError:
+            pass
+        values = {}
+        for key, value in config.items():
+            try:
+                values.update(validate_values(manifest, {key: value}))
+            except ValueError:
+                print(f"[gah] ignoring invalid saved setting {manifest.name}.{key}; "
+                      "using the default", file=sys.stderr, flush=True)
+        return values
+
     def resolve(self, data):
         tree = copy.deepcopy(self.baseline)
         entries = {e["name"]: e for e in tree}
@@ -246,7 +269,7 @@ class PluginPreferences:
                 continue  # keep preferences for temporarily absent plugin directories
             if protected(manifest):
                 raise ValueError("protected plugins cannot be overridden by plugin settings")
-            values = validate_values(manifest, patch.get("config", {}))
+            values = self._valid_config(manifest, patch.get("config", {}))
             if name not in entries:
                 entries[name] = {"name": name, "disabled": True, "config": {}}
                 index = next((i for i, e in enumerate(tree) if "frontend" in self.manifests[e["name"]].provides), len(tree))

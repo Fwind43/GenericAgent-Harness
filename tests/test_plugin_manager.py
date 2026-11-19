@@ -350,3 +350,27 @@ def test_secret_heuristic_skips_key_references():
         assert not is_secret(k, s)
     assert is_secret("key_name", {**s, "secret": True})
     assert not is_secret("api_key", {**s, "secret": False})
+
+
+def test_select_alias_is_a_choice_field():
+    from ga_harness.plugin_manager import public_fields, validate_values
+    m = Manifest("s", "main:apply", Path("."), settings={
+        "src": {"type": "select", "default": "a", "options": ["a", "b"]}})
+    assert public_fields(m)["src"]["type"] == "choice"
+    assert validate_values(m, {"src": "b"}) == {"src": "b"}
+    with pytest.raises(ValueError):
+        validate_values(m, {"src": "c"})
+
+
+def test_resolve_drops_stale_fields_instead_of_failing(tmp_path, capfd):
+    ms = {"demo": Manifest("demo", "main:apply", tmp_path, settings={
+        "limit": {"type": "integer", "min": 1, "max": 100, "default": 10},
+        "mode": {"type": "choice", "default": "a", "options": ["a", "b"]}})}
+    p = PluginPreferences(tmp_path / "plugins.json", "test", ms, [entry("demo")])
+    data = {"version": 1, "profiles": {"test": {"demo": {"config": {
+        "limit": 25, "mode": "gone", "removed": "SYNTHETIC-PRIVATE"}}}}}
+    tree = p.resolve(data)
+    assert tree[0]["config"] == {"limit": 25}
+    err = capfd.readouterr().err
+    assert "demo.mode" in err and "demo.removed" in err
+    assert "SYNTHETIC-PRIVATE" not in err and "gone" not in err
