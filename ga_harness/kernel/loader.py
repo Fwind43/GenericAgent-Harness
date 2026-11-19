@@ -70,6 +70,23 @@ class Manifest:
     def to_plugin(self) -> Plugin:
         return Plugin(self.name, self.load_apply(), list(self.inject), list(self.provides))
 
+    def to_plugin_or_broken(self) -> Plugin:
+        """Like :meth:`to_plugin`, but an import failure yields a plugin that fails on apply.
+
+        The broken stand-in requires and provides nothing, so the runtime activates it
+        immediately, records the original exception and reports the plugin as ``error``
+        instead of the whole host failing to start.
+        """
+        try:
+            return self.to_plugin()
+        except Exception as e:
+            unload_plugin_modules(self.name)
+            err = e
+
+            def broken(_ctx, _config):
+                raise err
+            return Plugin(self.name, broken, [], [])
+
 
 def unload_plugin_modules(name: str) -> None:
     """Purge cached Python modules for ``name`` so an updated plugin reloads from disk."""
@@ -208,6 +225,7 @@ def mount(runtime: Runtime, tree: list[dict], manifests: dict[str, Manifest],
         if lack:
             unmet[e["name"]] = lack
             continue
-        runtime.add(manifests[e["name"]].to_plugin(), e["config"])
+        # A plugin that fails to import is mounted in error state; it must not abort startup.
+        runtime.add(manifests[e["name"]].to_plugin_or_broken(), e["config"])
         mounted.append(e["name"])
     return mounted

@@ -80,3 +80,23 @@ def test_extends_cycle(tmp_path):
     w(tmp_path / "a.toml", 'extends = "b"\n'); w(tmp_path / "b.toml", 'extends = "a"\n')
     with pytest.raises(ValueError):
         build_tree("a", [tmp_path])
+
+
+def test_mount_survives_plugin_import_error(env):
+    w(env / "plugins/broken/plugin.toml", 'name = "broken"\ninject = ["greeter"]\nprovides = ["thing"]\n')
+    w(env / "plugins/broken/main.py", """
+        from pathlib import Path
+        Path("/definitely/missing/dir/.env").read_text()
+        def apply(ctx, cfg):
+            pass
+    """)
+    ms = discover([env / "plugins"])
+    tree = build_tree("base", [env / "profiles"]) + [{"name": "broken", "config": {}, "disabled": False}]
+    rt = Runtime()
+    assert mount(rt, tree, ms) == ["greeter", "user", "broken"]
+    assert rt.ctx.said == "HELLO"
+    st = rt.status()["broken"]
+    assert st["state"] == "error" and "FileNotFoundError" in st["error"]
+    assert not rt.ctx.has("thing")
+    import sys
+    assert not any(k.startswith("ga_harness_ext_broken") for k in sys.modules)
