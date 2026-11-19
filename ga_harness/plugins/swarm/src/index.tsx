@@ -214,6 +214,8 @@ function Panel({ api }: { api: PluginAPI }) {
   const [tab, setTab] = useState<'board' | 'members' | 'graph'>('board');
   const box = useRef<HTMLDivElement>(null);
   const pop = useRef<HTMLDivElement>(null);
+  const kebab = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState(false);
   useLayoutEffect(() => {
     if (!open) return;
     const fit = () => {
@@ -242,6 +244,15 @@ function Panel({ api }: { api: PluginAPI }) {
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('touchstart', down); document.removeEventListener('keydown', key); };
   }, [open]);
   useEffect(() => { setOpen(false); }, [sid]);
+  useEffect(() => { if (!open) setMenu(false); }, [open]);
+  useEffect(() => {
+    if (!menu) return;
+    const down = (event: Event) => { if (!kebab.current?.contains(event.target as Node)) setMenu(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); setMenu(false); } };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key, true);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key, true); };
+  }, [menu]);
   const view = data?.view;
   if (!data || !sid || !view) return null;
   const isCoord = view.me === COORD;
@@ -279,10 +290,23 @@ function Panel({ api }: { api: PluginAPI }) {
                 </button>
               ))}
             </div>
-            {view.paused && !view.finished ? <button type="button" className="gah-sw-off" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
-            {isCoord ? <button type="button" className="gah-sw-off" disabled={busy} onClick={() => run('toggle', { enabled: !view.enabled || !!view.finished })}>
-              {view.enabled && !view.finished ? T('\u5173\u95ed\u8702\u7fa4', 'Turn off swarm') : T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}
-            </button> : null}
+            {view.paused && !view.finished ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
+            {isCoord && (!view.enabled || view.finished) ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('toggle', { enabled: true })}>{T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}</button> : null}
+            {isCoord && view.enabled && !view.finished ? (
+              <div className="gah-sw-kebab" ref={kebab}>
+                <button type="button" className={`gah-sw-kebab-btn${menu ? ' open' : ''}`} aria-haspopup="menu" aria-expanded={menu} aria-label={T('\u66f4\u591a', 'More')} title={T('\u66f4\u591a', 'More')} onClick={() => setMenu(!menu)}>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" fill="currentColor" /><circle cx="8" cy="8" r="1.3" fill="currentColor" /><circle cx="12.5" cy="8" r="1.3" fill="currentColor" /></svg>
+                </button>
+                {menu ? (
+                  <div className="gah-sw-menu" role="menu">
+                    <button type="button" role="menuitem" className="gah-sw-danger" disabled={busy} onClick={() => { setMenu(false); void run('toggle', { enabled: false }); }}>
+                      <b>{T('\u5173\u95ed\u8702\u7fa4', 'Turn off swarm')}</b>
+                      <span>{T('\u505c\u6b62\u81ea\u52a8\u5524\u9192\u6210\u5458\uff0c\u7559\u8a00\u548c\u4f1a\u8bdd\u90fd\u4fdd\u7559\n\u53ef\u4ee5\u968f\u65f6\u91cd\u65b0\u5f00\u542f', 'Stops auto-waking members; posts and sessions are kept.\nYou can turn it back on anytime.')}</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {view.paused && !view.finished ? <div className="gah-sw-note">{T('\u5df2\u6682\u505c\u81ea\u52a8\u5524\u9192\uff1a', 'Auto-wake paused: ')}{String(view.paused)}</div> : null}
           {view.finished ? <div className="gah-sw-note">{T('\u534f\u8c03\u8005\u5df2\u5ba3\u5e03\u7ed3\u675f\uff1a', 'Coordinator finished: ')}{typeof view.finished === 'string' ? view.finished : ''}</div> : null}

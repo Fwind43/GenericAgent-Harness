@@ -82,3 +82,17 @@
 .gah-sw-board{max-height:min(50dvh,460px)}
 .gah-sw-list{max-height:min(56dvh,480px)}
 }
+.gah-sw-on{all:unset;cursor:pointer;font-size:12px;color:var(--accent);padding:2px 9px;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:6px;white-space:nowrap}
+.gah-sw-on:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.gah-sw-on:disabled{opacity:.5;cursor:default}
+.gah-sw-kebab{position:relative;flex:0 0 auto}
+.gah-sw-kebab-btn{all:unset;cursor:pointer;display:grid;place-items:center;width:26px;height:24px;border-radius:6px;color:var(--muted)}
+.gah-sw-kebab-btn:hover,.gah-sw-kebab-btn.open{color:var(--text);background:color-mix(in srgb,var(--text) 8%,transparent)}
+.gah-sw-kebab-btn:focus-visible,.gah-sw-on:focus-visible,.gah-sw-menu button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gah-sw-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:2;width:268px;padding:4px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.08),0 10px 28px rgba(0,0,0,.18)}
+.gah-sw-menu button{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:2px;width:100%;padding:7px 9px;border-radius:7px}
+.gah-sw-menu button b{font-size:12.5px;font-weight:600}
+.gah-sw-menu button span{font-size:11.5px;line-height:1.45;color:var(--muted);white-space:pre-line}
+.gah-sw-menu button.gah-sw-danger b{color:#d24b4b}
+.gah-sw-menu button:hover:not(:disabled){background:color-mix(in srgb,#d24b4b 9%,transparent)}
+.gah-sw-menu button:disabled{opacity:.5;cursor:default}

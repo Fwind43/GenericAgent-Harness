@@ -249,6 +249,8 @@
     const [tab, setTab] = react.useState("board");
     const box = react.useRef(null);
     const pop = react.useRef(null);
+    const kebab = react.useRef(null);
+    const [menu, setMenu] = react.useState(false);
     react.useLayoutEffect(() => {
       if (!open) return;
       const fit = () => {
@@ -288,6 +290,28 @@
     react.useEffect(() => {
       setOpen(false);
     }, [sid]);
+    react.useEffect(() => {
+      if (!open) setMenu(false);
+    }, [open]);
+    react.useEffect(() => {
+      if (!menu) return;
+      const down = (event) => {
+        var _a2;
+        if (!((_a2 = kebab.current) == null ? void 0 : _a2.contains(event.target))) setMenu(false);
+      };
+      const key = (event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          setMenu(false);
+        }
+      };
+      document.addEventListener("mousedown", down);
+      document.addEventListener("keydown", key, true);
+      return () => {
+        document.removeEventListener("mousedown", down);
+        document.removeEventListener("keydown", key, true);
+      };
+    }, [menu]);
     const view = data == null ? void 0 : data.view;
     if (!data || !sid || !view) return null;
     const isCoord = view.me === COORD;
@@ -333,8 +357,22 @@
             k === "board" ? sdk.T("留言板", "Board") : k === "members" ? sdk.T("成员", "Members") : sdk.T("关系", "Graph"),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-tab-n", children: k === "board" ? view.total_posts : k === "members" ? live.length + 1 : view.edges.length })
           ] }, k)) }),
-          view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-off", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
-          isCoord ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-off", disabled: busy, onClick: () => run("toggle", { enabled: !view.enabled || !!view.finished }), children: view.enabled && !view.finished ? sdk.T("关闭蜂群", "Turn off swarm") : sdk.T("重新开启蜂群", "Turn swarm on") }) : null
+          view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
+          isCoord && (!view.enabled || view.finished) ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("toggle", { enabled: true }), children: sdk.T("重新开启蜂群", "Turn swarm on") }) : null,
+          isCoord && view.enabled && !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-kebab", ref: kebab, children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sw-kebab-btn${menu ? " open" : ""}`, "aria-haspopup": "menu", "aria-expanded": menu, "aria-label": sdk.T("更多", "More"), title: sdk.T("更多", "More"), onClick: () => setMenu(!menu), children: /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
+              /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "3.5", cy: "8", r: "1.3", fill: "currentColor" }),
+              /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "8", cy: "8", r: "1.3", fill: "currentColor" }),
+              /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "12.5", cy: "8", r: "1.3", fill: "currentColor" })
+            ] }) }),
+            menu ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-menu", role: "menu", children: /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sw-danger", disabled: busy, onClick: () => {
+              setMenu(false);
+              void run("toggle", { enabled: false });
+            }, children: [
+              /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("关闭蜂群", "Turn off swarm") }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("停止自动唤醒成员，留言和会话都保留\n可以随时重新开启", "Stops auto-waking members; posts and sessions are kept.\nYou can turn it back on anytime.") })
+            ] }) }) : null
+          ] }) : null
         ] }),
         view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-note", children: [
           sdk.T("已暂停自动唤醒：", "Auto-wake paused: "),
