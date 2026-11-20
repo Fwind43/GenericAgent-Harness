@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useHost, T, defineReact, pages, type HostState, type PluginAPI } from '@gah/sdk';
 
 type Member = {
@@ -131,8 +131,21 @@ function PostRow({ post }: { post: Post }) {
   );
 }
 
+type Mention = { tag: string; hint: string; kind: 'member' | 'group' | 'all' };
+function mentionOptions(view: View): Mention[] {
+  const people = [view.coordinator, ...view.members].filter(m => m && !m.removed); // the board posts as "user", so every participant is a valid target
+  return [
+    ...people.map(m => ({ tag: m.name, hint: m.name === COORD ? T('\u534f\u8c03\u8005', 'Coordinator') : m.role || '', kind: 'member' as const })),
+    ...Object.entries(view.groups || {}).map(([g, names]) => ({ tag: g, hint: names.map(n => `@${n}`).join(' '), kind: 'group' as const })),
+    { tag: 'all', hint: T('\u6240\u6709\u6210\u5458', 'Everyone'), kind: 'all' as const },
+  ];
+}
+
 function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: string, b?: Record<string, unknown>) => Promise<boolean>; busy: boolean }) {
   const [text, setText] = useState('');
+  const [at, setAt] = useState<{ start: number; q: string } | null>(null);
+  const [pick, setPick] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
   const [older, setOlder] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const list = useRef<HTMLDivElement>(null);
@@ -156,6 +169,33 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
     if (!value || busy) return;
     if (await run('post', { text: value })) setText('');
   };
+  // @-completion: same tag shape as the backend MENTION_RE (letter first, then [A-Za-z0-9_-]).
+  const options: Mention[] = at ? mentionOptions(view).filter(o => o.tag.toLowerCase().startsWith(at.q.toLowerCase())).slice(0, 8) : [];
+  const menu = at && options.length ? options : null;
+  const track = (value: string, caret: number | null) => {
+    const hit = /(?:^|[^\w@])@([A-Za-z0-9_-]{0,32})$/.exec(value.slice(0, caret ?? value.length));
+    setAt(hit ? { start: (caret ?? value.length) - hit[1].length - 1, q: hit[1] } : null);
+    setPick(0);
+  };
+  const choose = (o: Mention) => {
+    if (!at) return;
+    const rest = text.slice(at.start + 1 + at.q.length).replace(/^ /, '');
+    const next = `${text.slice(0, at.start)}@${o.tag} ${rest}`;
+    const caret = at.start + o.tag.length + 2;
+    setText(next);
+    setAt(null);
+    requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(caret, caret); } });
+  };
+  const keys = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (!menu || event.nativeEvent.isComposing) return;
+    const n = menu.length;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') setPick(i => (i + (event.key === 'ArrowDown' ? 1 : n - 1)) % n);
+    else if (event.key === 'Enter' || event.key === 'Tab') choose(menu[Math.min(pick, n - 1)]);
+    else if (event.key === 'Escape') setAt(null);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
   return (
     <>
       <div className="gah-sw-board" ref={list}>
@@ -164,7 +204,17 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
       </div>
       {!view.finished ? (
         <form className="gah-sw-compose" onSubmit={send}>
-          <input value={text} onChange={e => setText(e.target.value)} disabled={busy} maxLength={8000}
+          {menu ? <ul className="gah-sw-mention" role="listbox" id="gah-sw-mention">{menu.map((o, i) =>
+            <li key={`${o.kind}:${o.tag}`} id={`gah-sw-mention-${i}`} role="option" aria-selected={i === pick} className={i === pick ? 'on' : undefined}
+              onMouseDown={e => { e.preventDefault(); choose(o); }} onMouseEnter={() => setPick(i)}>
+              <b>@{o.tag}</b><span>{o.hint}</span>
+            </li>)}</ul> : null}
+          <input ref={input} value={text} disabled={busy} maxLength={8000} autoComplete="off"
+            onChange={e => { setText(e.target.value); track(e.target.value, e.target.selectionStart); }}
+            onClick={e => track(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onKeyDown={keys} onBlur={() => setAt(null)}
+            role="combobox" aria-expanded={!!menu} aria-controls="gah-sw-mention" aria-autocomplete="list"
+            aria-activedescendant={menu ? `gah-sw-mention-${Math.min(pick, menu.length - 1)}` : undefined}
             placeholder={T('\u53d1\u5e16\uff0c@\u540d\u5b57 \u5524\u9192\u6210\u5458', 'Post, @name wakes a member')}
             title={T('@\u540d\u5b57 / @\u7ec4 / @all \u90fd\u4f1a\u5524\u9192\u5bf9\u5e94\u6210\u5458', '@name, @group or @all wakes the matching members')} />
           <button type="submit" disabled={busy || !text.trim()}>{T('\u53d1\u9001', 'Post')}</button>
