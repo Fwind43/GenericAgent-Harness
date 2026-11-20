@@ -101,3 +101,8 @@
 .gah-sw-menu button.gah-sw-danger b{color:#d24b4b}
 .gah-sw-menu button:hover:not(:disabled){background:color-mix(in srgb,#d24b4b 9%,transparent)}
 .gah-sw-menu button:disabled{opacity:.5;cursor:default}
+.gah-sw-model{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:4px;padding:8px 8px 2px;border-top:1px solid var(--border);white-space:normal}
+.gah-sw-model label{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);min-width:0}
+.gah-sw-model select{font:inherit;font-size:12px;color:inherit;background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 6px;max-width:170px}
+.gah-sw-model .gah-sw-on{margin-left:auto}
+.gah-sw-model-note{flex-basis:100%;font-size:11px;color:var(--muted)}

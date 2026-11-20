@@ -182,6 +182,8 @@ def apply(ctx, config):
         row = {k: m.get(k) for k in ("name", "role", "session", "groups", "model", "model_key",
                                      "effort", "status", "branch", "worktree", "removed",
                                      "runs", "started", "finished", "pending", "error")}
+        if m.get("pending_settings"):
+            row["pending_settings"] = dict(m["pending_settings"])
         if not brief:
             row["brief"] = m.get("brief", "")
         if m.get("status") == "running" and m.get("started"):
@@ -255,6 +257,41 @@ def apply(ctx, config):
         if not isinstance(value, str) or not re.fullmatch(r"[a-z]{2,12}", value.strip().lower()):
             raise ValueError("effort must be a reasoning level such as low, medium or high")
         return value.strip().lower()
+
+    def _settings(body):
+        """Model/effort changes from a request; a present but empty value resets to default."""
+        values = {}
+        if "model" in body:
+            values.update(_model(body.get("model")) or {"model": None, "model_key": None})
+        if "effort" in body:
+            values["effort"] = _effort(body.get("effort"))
+        if not values:
+            raise ValueError("nothing to change: give model and/or effort")
+        return values
+
+    def _sync(p):
+        """Mirror the session's own model/effort (it may change in the session itself)."""
+        try:
+            state = sessions.state_of(p["session"]) or {}
+        except Exception:
+            return
+        for k in ("model", "model_key", "effort"):
+            p[k] = state.get(k)
+
+    def _apply_pending(p):
+        """Apply settings queued while the member was running; True when nothing is left."""
+        values = p.get("pending_settings")
+        if not values:
+            return True
+        try:
+            sessions.remember_for(p["session"], **values)
+        except RuntimeError:
+            return False
+        except Exception:
+            log.warning("swarm: applying settings for %s failed", p.get("name"), exc_info=True)
+        p.pop("pending_settings", None)
+        _sync(p)
+        return True
 
     # ---- board -----------------------------------------------------------
     def _targets(sw, author, text):
@@ -342,6 +379,8 @@ def apply(ctx, config):
 
     def _start(sw, name, text):
         p = _part(sw, name)
+        _apply_pending(p)
+        _sync(p)
         record = runs.start(text, session_id=p["session"], source=SOURCE,
                             timeout=settings["turn_timeout"])
         p.update(status="running", run_id=record["id"], started=time.time(), finished=None, error="")
@@ -604,6 +643,35 @@ def apply(ctx, config):
         _publish()
         return {"removed": name, "cancelling": bool(run_id)}
 
+    def set_model(body, call=None):
+        sw, _ = _swarm_of(_sid(body), coordinator=True)
+        return _set_model(sw, _text(body, "name", limit=32).lower().lstrip("@"), body)
+
+    def _set_model(sw, name, body):
+        values = _settings(body)
+        with lock:
+            m = sw["members"].get(name)
+            if m is None or m.get("removed"):
+                raise ValueError(f"no member @{name}")
+            try:
+                sessions.remember_for(m["session"], **values)
+                deferred = False
+            except RuntimeError:
+                # Running: a session's settings are fixed for its turn; apply before the next one.
+                m["pending_settings"] = {**(m.get("pending_settings") or {}), **values}
+                deferred = True
+            else:
+                m.pop("pending_settings", None)
+                _sync(m)
+            label = values.get("model") if "model" in values else None
+            what = ", ".join(x for x in (
+                ("model " + (label or "default")) if "model" in values else "",
+                ("effort " + (values["effort"] or "default")) if "effort" in values else "") if x)
+            _add_post(sw, "system", f"@{name} now uses {what}"
+                      + (" (from the next turn)" if deferred else ""), kind="system")
+        _publish()
+        return {"member": _public_member(m), "deferred": deferred}
+
     def models(body, call=None):
         rows = _catalog()
         if rows is None:
@@ -622,7 +690,8 @@ def apply(ctx, config):
         return {"finished": True}
 
     OPS = {"role": role, "post": post, "read": read, "wait": wait, "members": members,
-           "add": add, "remove": remove, "models": models, "finish": finish}
+           "add": add, "remove": remove, "models": models, "set_model": set_model,
+           "finish": finish}
 
     def rpc(body, call=None):
         body = body if isinstance(body, dict) else {}
@@ -678,6 +747,16 @@ def apply(ctx, config):
         sw, _ = _swarm_of(_sid(body))
         return _remove(sw, _text(body, "name", limit=32).lower())
 
+    def web_model(body):
+        sw, _ = _swarm_of(_sid(body))
+        return _set_model(sw, _text(body, "name", limit=32).lower().lstrip("@"), body)
+
+    def web_models(body):
+        rows = _catalog()
+        return {"models": [] if rows is None else
+                [{"key": r.get("key"), "name": r["name"], "model": r.get("model")} for r in rows],
+                "available": rows is not None}
+
     def web_cancel(body):
         sw, _ = _swarm_of(_sid(body))
         name = _text(body, "name", limit=32).lower()
@@ -732,6 +811,10 @@ def apply(ctx, config):
                             p.update(status="idle", run_id=None, finished=time.time(),
                                      last_status=record.get("status") or "done",
                                      error=(record.get("error") or "")[:300])
+                            if p.get("pending_settings"):
+                                _apply_pending(p)  # may still be active; _start retries
+                            else:
+                                _sync(p)
                             sw["last_activity"] = time.time()
                             hit = True
                     # Any finished run (also a private user turn) may unblock queued wake-ups.
@@ -799,6 +882,8 @@ def apply(ctx, config):
                                 routes={("POST", "toggle"): _route(toggle),
                                         ("POST", "post"): _route(user_post),
                                         ("POST", "remove"): _route(web_remove),
+                                        ("POST", "model"): _route(web_model),
+                                        ("POST", "models"): _route(web_models),
                                         ("POST", "cancel"): _route(web_cancel),
                                         ("POST", "resume"): _route(resume),
                                         ("POST", "board"): _route(board)}))

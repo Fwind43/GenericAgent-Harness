@@ -6,7 +6,10 @@ type Member = {
   effort?: string | null; status?: string; branch?: string | null; worktree?: string | null; removed?: boolean;
   runs?: number; started?: number | null; finished?: number | null; pending?: number; error?: string | null;
   brief?: string; elapsed?: number;
+  pending_settings?: { model?: string | null; model_key?: string | null; effort?: string | null } | null;
 };
+type ModelRow = { key?: string | null; name: string; model?: string | null };
+const EFFORTS = ['low', 'medium', 'high'];
 type Post = { id: number; author: string; text: string; created: number; mentions: string[]; kind: string; reply_to?: number; via?: string };
 type Edge = { from: string; to: string; count: number };
 type View = {
@@ -224,8 +227,43 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
   );
 }
 
-function MemberRow({ m, me, busy, act, enter }: {
+function ModelEdit({ m, busy, models, save }: {
+  m: Member; busy: boolean; models: ModelRow[] | null; save: (m: Member, model: string, effort: string) => Promise<boolean>;
+}) {
+  const cur = m.pending_settings || m;
+  const [model, setModel] = useState(cur.model_key || cur.model || '');
+  const [effort, setEffort] = useState(cur.effort || '');
+  const efforts = effort && !EFFORTS.includes(effort) ? [...EFFORTS, effort] : EFFORTS;
+  const rows = models || [];
+  const known = !model || rows.some(r => (r.key || r.name) === model || r.name === model);
+  const dirty = model !== (cur.model_key || cur.model || '') || effort !== (cur.effort || '');
+  return (
+    <div className="gah-sw-model">
+      <label>
+        <span>{T('\u6a21\u578b', 'Model')}</span>
+        <select value={model} disabled={busy || models === null} onChange={e => setModel(e.target.value)}>
+          <option value="">{T('\u9ed8\u8ba4\u6a21\u578b', 'Default model')}</option>
+          {!known ? <option value={model}>{model}</option> : null}
+          {rows.map(r => <option key={r.key || r.name} value={r.key || r.name}>{r.name}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>{T('\u63a8\u7406', 'Effort')}</span>
+        <select value={effort} disabled={busy} onChange={e => setEffort(e.target.value)}>
+          <option value="">{T('\u9ed8\u8ba4', 'Default')}</option>
+          {efforts.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      </label>
+      <button type="button" className="gah-sw-on" disabled={busy || !dirty} onClick={() => void save(m, model, effort)}>{T('\u5e94\u7528', 'Apply')}</button>
+      {m.pending_settings ? <div className="gah-sw-model-note">{T('\u5f53\u524d\u8fd0\u884c\u7ed3\u675f\u540e\u751f\u6548', 'Takes effect after the current run')}</div> : null}
+      {models !== null && !models.length ? <div className="gah-sw-model-note">{T('\u6ca1\u6709\u53ef\u9009\u7684\u6a21\u578b\u76ee\u5f55', 'No model catalog available')}</div> : null}
+    </div>
+  );
+}
+
+function MemberRow({ m, me, busy, act, enter, models, loadModels, save }: {
   m: Member; me: string; busy: boolean; act: (path: string, m: Member) => void; enter: (m: Member) => void;
+  models: ModelRow[] | null; loadModels: () => void; save: (m: Member, model: string, effort: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const st = m.removed ? 'removed' : m.status || 'idle';
@@ -233,7 +271,7 @@ function MemberRow({ m, me, busy, act, enter }: {
   return (
     <div className={`gah-sw-member${m.removed ? ' removed' : ''}${m.name === me ? ' me' : ''}`}>
       <div className="gah-sw-row">
-        <button type="button" className="gah-sw-name" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <button type="button" className="gah-sw-name" onClick={() => { if (!open) loadModels(); setOpen(!open); }} aria-expanded={open}>
           <span className={`gah-sw-dot ${st}`} aria-hidden="true" />
           <b>@{m.name}</b>
           {m.groups?.length ? <span className="gah-sw-groups">{m.groups.map(g => `@${g}`).join(' ')}</span> : null}
@@ -252,6 +290,7 @@ function MemberRow({ m, me, busy, act, enter }: {
             {m.worktree ? <> {'\u00b7'} <code title={m.worktree}>{m.worktree}</code></> : null}
           </div>
           {m.error ? <div className="gah-sw-err">{m.error}</div> : null}
+          {!m.removed ? <ModelEdit key={`${m.model_key || m.model || ''}|${m.effort || ''}|${JSON.stringify(m.pending_settings || null)}`} m={m} busy={busy} models={models} save={save} /> : null}
         </div>
       ) : null}
     </div>
@@ -266,6 +305,8 @@ function Panel({ api }: { api: PluginAPI }) {
   const pop = useRef<HTMLDivElement>(null);
   const kebab = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
+  const [models, setModels] = useState<ModelRow[] | null>(null);
+  const modelsLoading = useRef(false);
   useLayoutEffect(() => {
     if (!open) return;
     const fit = () => {
@@ -312,6 +353,15 @@ function Panel({ api }: { api: PluginAPI }) {
     if (path === 'remove' && !window.confirm(T(`\u786e\u5b9a\u628a @${m.name} \u79fb\u51fa\u8702\u7fa4\uff1f`, `Remove @${m.name} from the swarm?`))) return;
     await run(path, { name: m.name });
   };
+  const loadModels = () => {
+    if (models !== null || modelsLoading.current) return;
+    modelsLoading.current = true;
+    api.post('models', { session_id: sid })
+      .then(res => setModels(((res || {}) as { models?: ModelRow[] }).models || []))
+      .catch(error => { api.notice(errText(error)); setModels([]); })
+      .finally(() => { modelsLoading.current = false; });
+  };
+  const save = (m: Member, model: string, effort: string) => run('model', { name: m.name, model, effort });
   const enter = async (m: Member) => {
     if (!m.session) return;
     setOpen(false);
@@ -364,8 +414,8 @@ function Panel({ api }: { api: PluginAPI }) {
           {tab === 'board' ? <Board api={api} view={view} run={run} busy={busy} /> : null}
           {tab === 'members' ? (
             <div className="gah-sw-list">
-              <MemberRow m={{ ...view.coordinator, name: COORD, role: T('\u534f\u8c03\u8005', 'Coordinator') }} me={view.me} busy={busy} act={act} enter={enter} />
-              {view.members.map(m => <MemberRow key={m.name} m={m} me={view.me} busy={busy} act={act} enter={enter} />)}
+              <MemberRow m={{ ...view.coordinator, name: COORD, role: T('\u534f\u8c03\u8005', 'Coordinator') }} me={view.me} busy={busy} act={act} enter={enter} models={models} loadModels={loadModels} save={save} />
+              {view.members.map(m => <MemberRow key={m.name} m={m} me={view.me} busy={busy} act={act} enter={enter} models={models} loadModels={loadModels} save={save} />)}
               {!live.length ? <Empty compact title={T('\u8fd8\u6ca1\u6709\u62db\u52df\u5176\u4ed6\u6210\u5458', 'No other members yet')} hint={T('\u534f\u8c03\u8005\u4f1a\u6309\u4efb\u52a1\u9700\u8981\u62db\u52df\u89d2\u8272\uff0c\u6bcf\u4e2a\u6210\u5458\u90fd\u6709\u72ec\u7acb\u4f1a\u8bdd', 'The coordinator recruits roles as needed; each member gets its own session.')} /> : null}
               {data.limits ? <div className="gah-sw-facts">{T('\u5168\u5c40\u8fd0\u884c', 'Running globally')} {data.running ?? 0}{data.limits.global_max ? ` / ${data.limits.global_max}` : ''}</div> : null}
             </div>

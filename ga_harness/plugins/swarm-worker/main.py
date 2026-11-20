@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 
 RPC_TIMEOUT = 60.0
+ROLE_TRIES = 3
+log = logging.getLogger("gah.swarm-worker")
 WAIT_MAX = 900
 
 
@@ -66,6 +69,13 @@ COORD_TOOLS = {
     "swarm_remove_member": (_tool("swarm_remove_member",
         "Remove a member (its running turn is cancelled; its session and posts are kept).",
         {"name": {"type": "string"}}, ["name"]), "remove"),
+    "swarm_set_member_model": (_tool("swarm_set_member_model",
+        "Change a member's model and/or reasoning effort. Pass only what changes; an empty string "
+        "resets it to the default. A running member switches from its next turn.",
+        {"name": {"type": "string"},
+         "model": {"type": "string", "description": "Configured model key or name ('' = inherit)."},
+         "effort": {"type": "string", "description": "Reasoning effort ('' = inherit)."}},
+        ["name"]), "set_model"),
     "swarm_models": (_tool("swarm_models", "List configured models (key, name) for per-role selection."), "models"),
     "swarm_finish": (_tool("swarm_finish",
         "Close the swarm when the user's request is done: no further automatic wake-ups.",
@@ -80,7 +90,8 @@ mention wakes the mentioned participant. You alone add or remove members.
 - Design the team first (swarm_add_member: distinct names, focused roles, model per role,
   worktree for members that edit the same repository), then post the plan to the board
   and @mention who starts. Let members coordinate among themselves; step in when they
-  are stuck, disagree, or loop.
+  are stuck, disagree, or loop. If a member's model is too weak or too costly for its
+  role, switch it with swarm_set_member_model.
 - Do not relay every message: members read the board themselves.
 - End your turn instead of polling; you are woken when mentioned (@coordinator) or when
   the board goes quiet. When everything is delivered call swarm_finish, then reply to the user.
@@ -95,7 +106,27 @@ those who must act. When your part is done post a short, verifiable result and e
 turn; do not wait in loops.
 {groups}Your brief:
 {brief}
-"""
+{team}"""
+
+
+def _team(info):
+    """Teammate roster for the member prompt, so mentions go to the right person."""
+    me = info.get("name")
+    rows = []
+    for m in info.get("members") or []:
+        name = m.get("name") if isinstance(m, dict) else None
+        if not name or name == me:
+            continue
+        line = "- @" + name
+        if m.get("role"):
+            line += " -- " + str(m["role"])
+        if m.get("groups"):
+            line += " (" + ", ".join("@" + g for g in m["groups"]) + ")"
+        rows.append(line)
+    if not rows:
+        return ""
+    return ("Teammates (snapshot from the start of this run; call swarm_members for the "
+            "current list):\n" + "\n".join(rows) + "\n")
 
 
 def apply(ctx, config):
@@ -103,7 +134,7 @@ def apply(ctx, config):
     tools = ctx.get("ga.tools") if ctx.has("ga.tools") else None
     if host is None or tools is None:
         return
-    state = {"role": None, "checked": False, "info": {}}
+    state = {"role": None, "checked": False, "tries": 0, "info": {}}
 
     def call(op, args):
         StepOutcome = importlib.import_module("agent_loop").StepOutcome
@@ -131,11 +162,22 @@ def apply(ctx, config):
         return run
 
     def setup():
-        state["checked"] = True
+        # A failed role lookup must not silently turn a swarm session into a plain
+        # one for the whole run: leave it unchecked and retry on the next hook call,
+        # up to ROLE_TRIES attempts.
+        state["tries"] += 1
         try:
             info = host.call("swarm", {"op": "role", "session_id": host.session_id}, 30.0) or {}
-        except Exception:
+        except Exception as exc:
+            if state["tries"] >= ROLE_TRIES:
+                state["checked"] = True
+                log.warning("swarm role lookup failed %d times for session %s, giving up: %s",
+                            state["tries"], host.session_id, exc)
+            else:
+                log.warning("swarm role lookup failed for session %s (attempt %d/%d): %s",
+                            host.session_id, state["tries"], ROLE_TRIES, exc)
             return
+        state["checked"] = True
         state["role"], state["info"] = info.get("role"), info
         if state["role"] not in ("coordinator", "member"):
             return
@@ -167,7 +209,8 @@ def apply(ctx, config):
             return text + "\n" + MEMBER_PROMPT.format(
                 name=info.get("name", "?"), role=info.get("member_role", ""),
                 groups=("Your groups: " + ", ".join("@" + g for g in groups) + "\n") if groups else "",
-                brief=(info.get("brief") or "(none)").strip())
+                brief=(info.get("brief") or "(none)").strip(),
+                team=_team(info))
         return text
 
     ctx.on("ga.agent_before", before)

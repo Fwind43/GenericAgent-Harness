@@ -1,5 +1,6 @@
 (function(jsxRuntime, react, sdk) {
   "use strict";
+  const EFFORTS = ["low", "medium", "high"];
   const COORD = "coordinator";
   const errText = (error) => String((error == null ? void 0 : error.message) || error);
   function useSwarm(api) {
@@ -278,14 +279,46 @@
       ] }) : null
     ] });
   }
-  function MemberRow({ m, me, busy, act, enter }) {
+  function ModelEdit({ m, busy, models, save }) {
+    const cur = m.pending_settings || m;
+    const [model, setModel] = react.useState(cur.model_key || cur.model || "");
+    const [effort, setEffort] = react.useState(cur.effort || "");
+    const efforts = effort && !EFFORTS.includes(effort) ? [...EFFORTS, effort] : EFFORTS;
+    const rows = models || [];
+    const known = !model || rows.some((r) => (r.key || r.name) === model || r.name === model);
+    const dirty = model !== (cur.model_key || cur.model || "") || effort !== (cur.effort || "");
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-model", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("label", { children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("模型", "Model") }),
+        /* @__PURE__ */ jsxRuntime.jsxs("select", { value: model, disabled: busy || models === null, onChange: (e) => setModel(e.target.value), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("默认模型", "Default model") }),
+          !known ? /* @__PURE__ */ jsxRuntime.jsx("option", { value: model, children: model }) : null,
+          rows.map((r) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: r.key || r.name, children: r.name }, r.key || r.name))
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsxs("label", { children: [
+        /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T("推理", "Effort") }),
+        /* @__PURE__ */ jsxRuntime.jsxs("select", { value: effort, disabled: busy, onChange: (e) => setEffort(e.target.value), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("option", { value: "", children: sdk.T("默认", "Default") }),
+          efforts.map((v) => /* @__PURE__ */ jsxRuntime.jsx("option", { value: v, children: v }, v))
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy || !dirty, onClick: () => void save(m, model, effort), children: sdk.T("应用", "Apply") }),
+      m.pending_settings ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-model-note", children: sdk.T("当前运行结束后生效", "Takes effect after the current run") }) : null,
+      models !== null && !models.length ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-model-note", children: sdk.T("没有可选的模型目录", "No model catalog available") }) : null
+    ] });
+  }
+  function MemberRow({ m, me, busy, act, enter, models, loadModels, save }) {
     var _a;
     const [open, setOpen] = react.useState(false);
     const st = m.removed ? "removed" : m.status || "idle";
     const detail = [m.role, m.model || sdk.T("默认模型", "Default model"), m.effort, m.branch && `⎇ ${m.branch}`].filter(Boolean).join(" · ");
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-member${m.removed ? " removed" : ""}${m.name === me ? " me" : ""}`, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-row", children: [
-        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sw-name", onClick: () => setOpen(!open), "aria-expanded": open, children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: "gah-sw-name", onClick: () => {
+          if (!open) loadModels();
+          setOpen(!open);
+        }, "aria-expanded": open, children: [
           /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sw-dot ${st}`, "aria-hidden": "true" }),
           /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
             "@",
@@ -316,7 +349,8 @@
             /* @__PURE__ */ jsxRuntime.jsx("code", { title: m.worktree, children: m.worktree })
           ] }) : null
         ] }),
-        m.error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-err", children: m.error }) : null
+        m.error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-err", children: m.error }) : null,
+        !m.removed ? /* @__PURE__ */ jsxRuntime.jsx(ModelEdit, { m, busy, models, save }, `${m.model_key || m.model || ""}|${m.effort || ""}|${JSON.stringify(m.pending_settings || null)}`) : null
       ] }) : null
     ] });
   }
@@ -329,6 +363,8 @@
     const pop = react.useRef(null);
     const kebab = react.useRef(null);
     const [menu, setMenu] = react.useState(false);
+    const [models, setModels] = react.useState(null);
+    const modelsLoading = react.useRef(false);
     react.useLayoutEffect(() => {
       if (!open) return;
       const fit = () => {
@@ -399,6 +435,17 @@
       if (path === "remove" && !window.confirm(sdk.T(`确定把 @${m.name} 移出蜂群？`, `Remove @${m.name} from the swarm?`))) return;
       await run(path, { name: m.name });
     };
+    const loadModels = () => {
+      if (models !== null || modelsLoading.current) return;
+      modelsLoading.current = true;
+      api.post("models", { session_id: sid }).then((res) => setModels((res || {}).models || [])).catch((error) => {
+        api.notice(errText(error));
+        setModels([]);
+      }).finally(() => {
+        modelsLoading.current = false;
+      });
+    };
+    const save = (m, model, effort) => run("model", { name: m.name, model, effort });
     const enter = async (m) => {
       if (!m.session) return;
       setOpen(false);
@@ -463,8 +510,8 @@
         data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-note err", children: data.persistence_error }) : null,
         tab === "board" ? /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy }) : null,
         tab === "members" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-list", children: [
-          /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m: { ...view.coordinator, name: COORD, role: sdk.T("协调者", "Coordinator") }, me: view.me, busy, act, enter }),
-          view.members.map((m) => /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m, me: view.me, busy, act, enter }, m.name)),
+          /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m: { ...view.coordinator, name: COORD, role: sdk.T("协调者", "Coordinator") }, me: view.me, busy, act, enter, models, loadModels, save }),
+          view.members.map((m) => /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m, me: view.me, busy, act, enter, models, loadModels, save }, m.name)),
           !live.length ? /* @__PURE__ */ jsxRuntime.jsx(Empty, { compact: true, title: sdk.T("还没有招募其他成员", "No other members yet"), hint: sdk.T("协调者会按任务需要招募角色，每个成员都有独立会话", "The coordinator recruits roles as needed; each member gets its own session.") }) : null,
           data.limits ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-facts", children: [
             sdk.T("全局运行", "Running globally"),
