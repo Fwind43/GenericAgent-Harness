@@ -5,7 +5,7 @@ answers the ``swarm`` RPC. At the start of a run this plugin asks the host for t
 session's role:
 
 * ``coordinator`` -- board tools plus member management (only the coordinator may
-  add or remove members) and ``swarm_finish``.
+  add or remove members) and ``swarm_await_user``.
 * ``member``      -- board tools only; the member's role brief goes into the prompt.
 * otherwise       -- nothing.
 
@@ -77,9 +77,11 @@ COORD_TOOLS = {
          "effort": {"type": "string", "description": "Reasoning effort ('' = inherit)."}},
         ["name"]), "set_model"),
     "swarm_models": (_tool("swarm_models", "List configured models (key, name) for per-role selection."), "models"),
-    "swarm_finish": (_tool("swarm_finish",
-        "Close the swarm when the user's request is done: no further automatic wake-ups.",
-        {"summary": {"type": "string"}}, ["summary"]), "finish"),
+    "swarm_await_user": (_tool("swarm_await_user",
+        "Deliver a phase or ask for a decision. Record a handoff and wait for the user "
+        "without closing the swarm or discarding queued work.",
+        {"summary": {"type": "string", "description": "What was delivered or what input is needed."}},
+        ["summary"]), "await_user"),
 }
 
 COORD_PROMPT = """
@@ -94,7 +96,9 @@ mention wakes the mentioned participant. You alone add or remove members.
   role, switch it with swarm_set_member_model.
 - Do not relay every message: members read the board themselves.
 - End your turn instead of polling; you are woken when mentioned (@coordinator) or when
-  the board goes quiet. When everything is delivered call swarm_finish, then reply to the user.
+  the board goes quiet. When a phase is delivered or a decision is needed, call
+  swarm_await_user with the result or question, then reply to the user and end your turn.
+  The team stays available for follow-up. Only the user can turn swarm mode off.
 """
 
 MEMBER_PROMPT = """

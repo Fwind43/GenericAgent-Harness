@@ -39,6 +39,7 @@
     running: ["运行中", "Running"],
     queued: ["排队中", "Queued"],
     idle: ["空闲", "Idle"],
+    recovering: ["等待恢复", "Waiting to resume"],
     waiting: ["等待中", "Waiting"],
     error: ["出错", "Error"],
     removed: ["已移除", "Removed"]
@@ -228,7 +229,7 @@
         posts.length && posts[0].id > 1 ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", disabled: loading, onClick: more, children: sdk.T("加载更早的帖子", "Load earlier posts") }) : null,
         posts.length ? posts.map((p) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p }, p.id)) : /* @__PURE__ */ jsxRuntime.jsx(Empty, { title: sdk.T("留言板还是空的", "The board is empty"), hint: sdk.T("在主对话里把任务交给协调者，它会招募成员并在这里分工。\n也可以直接发帖，用 @名字 唤醒某个成员。", "Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.") })
       ] }),
-      !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "gah-sw-compose", onSubmit: send, children: [
+      view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "gah-sw-compose", onSubmit: send, children: [
         menu ? /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "gah-sw-mention", role: "listbox", id: "gah-sw-mention", children: menu.map((o, i) => /* @__PURE__ */ jsxRuntime.jsxs(
           "li",
           {
@@ -312,6 +313,7 @@
     var _a;
     const [open, setOpen] = react.useState(false);
     const st = m.removed ? "removed" : m.status || "idle";
+    const stopLabel = st === "recovering" ? sdk.T("取消恢复", "Cancel recovery") : sdk.T("停止当前运行", "Stop current run");
     const detail = [m.role, m.model || sdk.T("默认模型", "Default model"), m.effort, m.branch && `⎇ ${m.branch}`].filter(Boolean).join(" · ");
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-member${m.removed ? " removed" : ""}${m.name === me ? " me" : ""}`, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-row", children: [
@@ -329,11 +331,12 @@
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-st", children: [
           statusLabel(st),
+          m.recovery ? ` ${m.recovery.attempt}/${m.recovery.limit}` : "",
           st === "running" && m.elapsed != null ? ` ${fmtSecs(m.elapsed)}` : "",
           m.pending ? ` +${m.pending}` : ""
         ] }),
         m.session && m.name !== me ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-act", title: sdk.T("打开该成员会话（私聊不会发到留言板）", "Open member session (private chat stays off the board)"), onClick: () => enter(m), children: "↗" }) : null,
-        st === "running" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-act", disabled: busy, title: sdk.T("停止当前运行", "Stop current run"), onClick: () => act("cancel", m), children: "■" }) : null,
+        st === "running" || st === "recovering" ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-act", disabled: busy, title: stopLabel, "aria-label": stopLabel, onClick: () => act("cancel", m), children: "■" }) : null,
         !m.removed && m.name !== COORD ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-act", disabled: busy, title: sdk.T("移出蜂群", "Remove from swarm"), onClick: () => act("remove", m), children: "×" }) : null
       ] }),
       open ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-brief", children: [
@@ -457,13 +460,13 @@
       }
     };
     const label = isCoord ? sdk.T("蜂群", "Swarm") : `@${view.me}`;
-    const state = view.finished ? sdk.T("已结束", "Finished") : view.paused ? sdk.T("已暂停", "Paused") : !view.enabled ? sdk.T("已关闭", "Off") : "";
+    const state = !view.enabled ? sdk.T("已关闭", "Off") : view.awaiting_user ? sdk.T("等待你的回复", "Awaiting your reply") : view.paused ? sdk.T("已暂停", "Paused") : "";
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-anchor", ref: box, children: [
       /* @__PURE__ */ jsxRuntime.jsxs(
         "button",
         {
           type: "button",
-          className: `gah-sw-chip${view.enabled && !view.finished ? " on" : ""}${open ? " open" : ""}`,
+          className: `gah-sw-chip${view.enabled ? " on" : ""}${open ? " open" : ""}`,
           "aria-expanded": open,
           onClick: () => setOpen(!open),
           title: isCoord ? sdk.T("蜂群模式：本会话是协调者", "Swarm mode: this session is the coordinator") : sdk.T("本会话是蜂群成员；在这里私聊不会发到留言板", "This session is a swarm member; chatting here stays off the board"),
@@ -482,9 +485,9 @@
             k === "board" ? sdk.T("留言板", "Board") : k === "members" ? sdk.T("成员", "Members") : sdk.T("关系", "Graph"),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-tab-n", children: k === "board" ? view.total_posts : k === "members" ? live.length + 1 : view.edges.length })
           ] }, k)) }),
-          view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
-          isCoord && (!view.enabled || view.finished) ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("toggle", { enabled: true }), children: sdk.T("重新开启蜂群", "Turn swarm on") }) : null,
-          isCoord && view.enabled && !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-kebab", ref: kebab, children: [
+          view.enabled && view.paused && !view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
+          isCoord && !view.enabled ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("toggle", { enabled: true }), children: sdk.T("重新开启蜂群", "Turn swarm on") }) : null,
+          isCoord && view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-kebab", ref: kebab, children: [
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sw-kebab-btn${menu ? " open" : ""}`, "aria-haspopup": "menu", "aria-expanded": menu, "aria-label": sdk.T("更多", "More"), title: sdk.T("更多", "More"), onClick: () => setMenu(!menu), children: /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
               /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "3.5", cy: "8", r: "1.3", fill: "currentColor" }),
               /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "8", cy: "8", r: "1.3", fill: "currentColor" }),
@@ -499,14 +502,11 @@
             ] }) }) : null
           ] }) : null
         ] }),
-        view.paused && !view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-note", children: [
+        view.enabled && view.paused && !view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-note", children: [
           sdk.T("已暂停自动唤醒：", "Auto-wake paused: "),
           String(view.paused)
         ] }) : null,
-        view.finished ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-note", children: [
-          sdk.T("协调者已宣布结束：", "Coordinator finished: "),
-          typeof view.finished === "string" ? view.finished : ""
-        ] }) : null,
+        view.enabled && view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-note", children: sdk.T("自动唤醒已暂停。在协调者对话中回复，或在看板发帖即可继续。", "Automatic wake-ups are on hold. Reply in the coordinator chat or post on the board to continue.") }) : null,
         data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-note err", children: data.persistence_error }) : null,
         tab === "board" ? /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy }) : null,
         tab === "members" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-list", children: [

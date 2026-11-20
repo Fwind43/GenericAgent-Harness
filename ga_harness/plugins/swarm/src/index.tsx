@@ -5,7 +5,7 @@ type Member = {
   name: string; role?: string; session?: string; groups?: string[]; model?: string | null; model_key?: string | null;
   effort?: string | null; status?: string; branch?: string | null; worktree?: string | null; removed?: boolean;
   runs?: number; started?: number | null; finished?: number | null; pending?: number; error?: string | null;
-  brief?: string; elapsed?: number;
+  brief?: string; elapsed?: number; recovery?: { attempt: number; limit: number };
   pending_settings?: { model?: string | null; model_key?: string | null; effort?: string | null } | null;
 };
 type ModelRow = { key?: string | null; name: string; model?: string | null };
@@ -13,7 +13,7 @@ const EFFORTS = ['low', 'medium', 'high'];
 type Post = { id: number; author: string; text: string; created: number; mentions: string[]; kind: string; reply_to?: number; via?: string };
 type Edge = { from: string; to: string; count: number };
 type View = {
-  id: string; me: string; enabled: boolean; finished?: unknown; paused?: unknown; coordinator: Member;
+  id: string; me: string; enabled: boolean; awaiting_user: boolean; paused?: unknown; coordinator: Member;
   members: Member[]; groups: Record<string, string[]>; posts: Post[]; total_posts: number; edges: Edge[]; wakes: number;
 };
 type Swarm = {
@@ -59,6 +59,7 @@ const Empty = ({ title, hint, compact }: { title: string; hint?: string; compact
 
 const STATUS: Record<string, [string, string]> = {
   running: ['\u8fd0\u884c\u4e2d', 'Running'], queued: ['\u6392\u961f\u4e2d', 'Queued'], idle: ['\u7a7a\u95f2', 'Idle'],
+  recovering: ['\u7b49\u5f85\u6062\u590d', 'Waiting to resume'],
   waiting: ['\u7b49\u5f85\u4e2d', 'Waiting'], error: ['\u51fa\u9519', 'Error'], removed: ['\u5df2\u79fb\u9664', 'Removed'],
 };
 const statusLabel = (s?: string) => { const v = STATUS[s || 'idle']; return v ? T(v[0], v[1]) : (s || ''); };
@@ -205,7 +206,7 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
         {posts.length && posts[0].id > 1 ? <button type="button" className="gah-sw-more" disabled={loading} onClick={more}>{T('\u52a0\u8f7d\u66f4\u65e9\u7684\u5e16\u5b50', 'Load earlier posts')}</button> : null}
         {posts.length ? posts.map(p => <PostRow key={p.id} post={p} />) : <Empty title={T('\u7559\u8a00\u677f\u8fd8\u662f\u7a7a\u7684', 'The board is empty')} hint={T('\u5728\u4e3b\u5bf9\u8bdd\u91cc\u628a\u4efb\u52a1\u4ea4\u7ed9\u534f\u8c03\u8005\uff0c\u5b83\u4f1a\u62db\u52df\u6210\u5458\u5e76\u5728\u8fd9\u91cc\u5206\u5de5\u3002\n\u4e5f\u53ef\u4ee5\u76f4\u63a5\u53d1\u5e16\uff0c\u7528 @\u540d\u5b57 \u5524\u9192\u67d0\u4e2a\u6210\u5458\u3002', 'Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.')} />}
       </div>
-      {!view.finished ? (
+      {view.enabled ? (
         <form className="gah-sw-compose" onSubmit={send}>
           {menu ? <ul className="gah-sw-mention" role="listbox" id="gah-sw-mention">{menu.map((o, i) =>
             <li key={`${o.kind}:${o.tag}`} id={`gah-sw-mention-${i}`} role="option" aria-selected={i === pick} className={i === pick ? 'on' : undefined}
@@ -267,6 +268,7 @@ function MemberRow({ m, me, busy, act, enter, models, loadModels, save }: {
 }) {
   const [open, setOpen] = useState(false);
   const st = m.removed ? 'removed' : m.status || 'idle';
+  const stopLabel = st === 'recovering' ? T('\u53d6\u6d88\u6062\u590d', 'Cancel recovery') : T('\u505c\u6b62\u5f53\u524d\u8fd0\u884c', 'Stop current run');
   const detail = [m.role, m.model || T('\u9ed8\u8ba4\u6a21\u578b', 'Default model'), m.effort, m.branch && `\u2387 ${m.branch}`].filter(Boolean).join(' \u00b7 ');
   return (
     <div className={`gah-sw-member${m.removed ? ' removed' : ''}${m.name === me ? ' me' : ''}`}>
@@ -277,9 +279,9 @@ function MemberRow({ m, me, busy, act, enter, models, loadModels, save }: {
           {m.groups?.length ? <span className="gah-sw-groups">{m.groups.map(g => `@${g}`).join(' ')}</span> : null}
           <span className="gah-sw-detail">{detail}</span>
         </button>
-        <span className="gah-sw-st">{statusLabel(st)}{st === 'running' && m.elapsed != null ? ` ${fmtSecs(m.elapsed)}` : ''}{m.pending ? ` +${m.pending}` : ''}</span>
+        <span className="gah-sw-st">{statusLabel(st)}{m.recovery ? ` ${m.recovery.attempt}/${m.recovery.limit}` : ''}{st === 'running' && m.elapsed != null ? ` ${fmtSecs(m.elapsed)}` : ''}{m.pending ? ` +${m.pending}` : ''}</span>
         {m.session && m.name !== me ? <button type="button" className="gah-sw-act" title={T('\u6253\u5f00\u8be5\u6210\u5458\u4f1a\u8bdd\uff08\u79c1\u804a\u4e0d\u4f1a\u53d1\u5230\u7559\u8a00\u677f\uff09', 'Open member session (private chat stays off the board)')} onClick={() => enter(m)}>{'\u2197'}</button> : null}
-        {st === 'running' ? <button type="button" className="gah-sw-act" disabled={busy} title={T('\u505c\u6b62\u5f53\u524d\u8fd0\u884c', 'Stop current run')} onClick={() => act('cancel', m)}>{'\u25a0'}</button> : null}
+        {st === 'running' || st === 'recovering' ? <button type="button" className="gah-sw-act" disabled={busy} title={stopLabel} aria-label={stopLabel} onClick={() => act('cancel', m)}>{'\u25a0'}</button> : null}
         {!m.removed && m.name !== COORD ? <button type="button" className="gah-sw-act" disabled={busy} title={T('\u79fb\u51fa\u8702\u7fa4', 'Remove from swarm')} onClick={() => act('remove', m)}>{'\u00d7'}</button> : null}
       </div>
       {open ? (
@@ -369,10 +371,10 @@ function Panel({ api }: { api: PluginAPI }) {
     catch (error) { api.notice(errText(error)); }
   };
   const label = isCoord ? T('\u8702\u7fa4', 'Swarm') : `@${view.me}`;
-  const state = view.finished ? T('\u5df2\u7ed3\u675f', 'Finished') : view.paused ? T('\u5df2\u6682\u505c', 'Paused') : !view.enabled ? T('\u5df2\u5173\u95ed', 'Off') : '';
+  const state = !view.enabled ? T('\u5df2\u5173\u95ed', 'Off') : view.awaiting_user ? T('\u7b49\u5f85\u4f60\u7684\u56de\u590d', 'Awaiting your reply') : view.paused ? T('\u5df2\u6682\u505c', 'Paused') : '';
   return (
     <div className="gah-sw-anchor" ref={box}>
-      <button type="button" className={`gah-sw-chip${view.enabled && !view.finished ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}
+      <button type="button" className={`gah-sw-chip${view.enabled ? ' on' : ''}${open ? ' open' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}
         title={isCoord ? T('\u8702\u7fa4\u6a21\u5f0f\uff1a\u672c\u4f1a\u8bdd\u662f\u534f\u8c03\u8005', 'Swarm mode: this session is the coordinator') : T('\u672c\u4f1a\u8bdd\u662f\u8702\u7fa4\u6210\u5458\uff1b\u5728\u8fd9\u91cc\u79c1\u804a\u4e0d\u4f1a\u53d1\u5230\u7559\u8a00\u677f', 'This session is a swarm member; chatting here stays off the board')}>
         <Icon /><span>{label}</span>
         <span className="gah-sw-count">{running ? `${running}/${live.length + 1}` : live.length + 1}</span>
@@ -390,9 +392,9 @@ function Panel({ api }: { api: PluginAPI }) {
                 </button>
               ))}
             </div>
-            {view.paused && !view.finished ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
-            {isCoord && (!view.enabled || view.finished) ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('toggle', { enabled: true })}>{T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}</button> : null}
-            {isCoord && view.enabled && !view.finished ? (
+            {view.enabled && view.paused && !view.awaiting_user ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
+            {isCoord && !view.enabled ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('toggle', { enabled: true })}>{T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}</button> : null}
+            {isCoord && view.enabled ? (
               <div className="gah-sw-kebab" ref={kebab}>
                 <button type="button" className={`gah-sw-kebab-btn${menu ? ' open' : ''}`} aria-haspopup="menu" aria-expanded={menu} aria-label={T('\u66f4\u591a', 'More')} title={T('\u66f4\u591a', 'More')} onClick={() => setMenu(!menu)}>
                   <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" fill="currentColor" /><circle cx="8" cy="8" r="1.3" fill="currentColor" /><circle cx="12.5" cy="8" r="1.3" fill="currentColor" /></svg>
@@ -408,8 +410,8 @@ function Panel({ api }: { api: PluginAPI }) {
               </div>
             ) : null}
           </div>
-          {view.paused && !view.finished ? <div className="gah-sw-note">{T('\u5df2\u6682\u505c\u81ea\u52a8\u5524\u9192\uff1a', 'Auto-wake paused: ')}{String(view.paused)}</div> : null}
-          {view.finished ? <div className="gah-sw-note">{T('\u534f\u8c03\u8005\u5df2\u5ba3\u5e03\u7ed3\u675f\uff1a', 'Coordinator finished: ')}{typeof view.finished === 'string' ? view.finished : ''}</div> : null}
+          {view.enabled && view.paused && !view.awaiting_user ? <div className="gah-sw-note">{T('\u5df2\u6682\u505c\u81ea\u52a8\u5524\u9192\uff1a', 'Auto-wake paused: ')}{String(view.paused)}</div> : null}
+          {view.enabled && view.awaiting_user ? <div className="gah-sw-note">{T('\u81ea\u52a8\u5524\u9192\u5df2\u6682\u505c\u3002\u5728\u534f\u8c03\u8005\u5bf9\u8bdd\u4e2d\u56de\u590d\uff0c\u6216\u5728\u770b\u677f\u53d1\u5e16\u5373\u53ef\u7ee7\u7eed\u3002', 'Automatic wake-ups are on hold. Reply in the coordinator chat or post on the board to continue.')}</div> : null}
           {data.persistence_error ? <div className="gah-sw-note err">{data.persistence_error}</div> : null}
           {tab === 'board' ? <Board api={api} view={view} run={run} busy={busy} /> : null}
           {tab === 'members' ? (

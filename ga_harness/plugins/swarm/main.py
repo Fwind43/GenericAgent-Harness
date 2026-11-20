@@ -40,6 +40,13 @@ MAX_TEXT = 20000
 MAX_POSTS = 2000
 SNAPSHOT_POSTS = 200
 PINGPONG_WINDOW = 10
+# Delays before resuming the same board assignment in the same member session.
+RECOVERY_DELAYS = (5, 15, 60)
+WORKER_CRASH_ERRORS = frozenset({
+    "Worker could not start", "Worker monitor could not start", "Worker exited before completion",
+    "Worker connection closed before completion", "Run monitor stopped before completion",
+    "Run output could not be saved",
+})
 DEFAULTS = {"max_concurrent": 3, "global_max": 6, "idle_wake": 30,
             "max_auto_wakes": 60, "turn_timeout": 3600}
 
@@ -127,10 +134,16 @@ def apply(ctx, config):
     swarms = store.data["swarms"]  # coordinator session id -> swarm
     settings = {k: _num(config, k) for k in DEFAULTS}
 
-    # A host restart loses every live run: nothing is running any more.
+    # Old state has no saved assignment. Only new member wakes can be replayed.
     for sw in swarms.values():
+        # Older coordinators marked a delivered phase as finished. Keep its board and
+        # leave it quiet across restarts until the user chooses to continue.
+        if sw.pop("finished", None) and sw.get("enabled"):
+            sw["awaiting_user"] = True
         for m in _all_parts(sw):
-            if m.get("status") == "running":
+            if not sw.get("enabled") or m.get("removed"):
+                m.pop("assignment", None)
+            if m.get("status") == "running" and not m.get("run_id"):
                 m.update(status="idle", run_id=None)
         sw.setdefault("wakes", 0)
 
@@ -186,6 +199,8 @@ def apply(ctx, config):
             row["pending_settings"] = dict(m["pending_settings"])
         if not brief:
             row["brief"] = m.get("brief", "")
+        if m.get("status") == "recovering" and m.get("assignment"):
+            row["recovery"] = {"attempt": m["assignment"]["retries"], "limit": len(RECOVERY_DELAYS)}
         if m.get("status") == "running" and m.get("started"):
             row["elapsed"] = round(time.time() - m["started"], 1)
         return row
@@ -349,6 +364,8 @@ def apply(ctx, config):
         p = _part(sw, name)
         if p is None or p.get("removed"):
             return
+        if not p.get("pending"):
+            p["pending_from"] = post_id
         p["pending"] = max(p.get("pending") or 0, post_id)
 
     def _deliver(sw, post):
@@ -364,9 +381,10 @@ def apply(ctx, config):
 
     def _wake_text(sw, name, upto):
         p = _part(sw, name)
-        cursor = p.get("cursor") or 0
-        posts = [x for x in sw["posts"] if x["id"] > cursor and x["id"] <= upto
-                 and name in x["mentions"]][-5:]
+        # Reading the board or posting a progress report can advance the read cursor
+        # while this participant is busy. Use the queued range for wake delivery.
+        first = p.get("pending_from") or min((p.get("cursor") or 0) + 1, upto)
+        posts = [x for x in sw["posts"] if first <= x["id"] <= upto and name in x["mentions"]][-5:]
         lines = []
         for x in posts:
             body = x["text"] if len(x["text"]) <= 1500 else x["text"][:1500] + " ..."
@@ -377,26 +395,141 @@ def apply(ctx, config):
                 "\nCatch up with board_read if needed, do your part, then board_post the result "
                 "(mention only who must act) and end your turn.")
 
-    def _start(sw, name, text):
-        p = _part(sw, name)
-        _apply_pending(p)
-        _sync(p)
-        record = runs.start(text, session_id=p["session"], source=SOURCE,
-                            timeout=settings["turn_timeout"])
-        p.update(status="running", run_id=record["id"], started=time.time(), finished=None, error="")
+    def _discard_assignment(p):
+        p.pop("assignment", None)
+        if p.get("status") == "recovering":
+            p["status"] = "idle"
+
+    def _retry(sw, p, *, new_request):
+        job = p["assignment"]
+        count = job["retries"]
+        if count >= len(RECOVERY_DELAYS):
+            _discard_assignment(p)
+            p["status"] = "error"
+            _add_post(sw, "system", f"{p['name']} could not resume the assignment from "
+                      f"board post #{job['through']} after {count} recovery attempts. "
+                      "Automatic recovery has stopped for this assignment.", kind="system")
+            return
+        # An ambiguous submit must reuse its key. A known terminal run needs a new one.
+        if new_request:
+            job["request_id"] = uuid.uuid4().hex
+        job.update(retries=count + 1, retry_at=time.time() + RECOVERY_DELAYS[count])
+        p["status"] = "recovering"
+
+    def _settle(sw, p, record):
+        status = record.get("status") or "done"
+        error = record.get("error") or ""
+        p.update(status="idle", run_id=None, finished=time.time(), last_status=status, error=error[:300])
+        crashed = status == "interrupted" or (status == "error" and error in WORKER_CRASH_ERRORS)
+        if crashed and p.get("assignment") and sw.get("enabled") and not p.get("removed"):
+            _retry(sw, p, new_request=True)
+        else:
+            _discard_assignment(p)
+        if p.get("pending_settings"):
+            _apply_pending(p)
+        else:
+            _sync(p)
+        sw["last_activity"] = time.time()
+
+    def _reconcile():
+        # Hooks handle normal finishes. The run ledger also covers a host crash,
+        # plugin reload, or a finish event missed between subscription and startup.
+        dirty = False
+        with lock:
+            if stop.is_set():
+                return
+            for sw in swarms.values():
+                for p in _all_parts(sw):
+                    rid = p.get("run_id")
+                    if not rid or p.get("status") != "running":
+                        continue
+                    try:
+                        record = runs.get(rid)
+                    except ValueError as error:
+                        # A deleted run is not evidence of a worker crash.
+                        record = {"status": "error", "error": str(error)}
+                    except Exception:
+                        log.warning("swarm: cannot reconcile run %s", rid, exc_info=True)
+                        continue
+                    if record.get("status") == "cancelling":
+                        if p.get("assignment"):
+                            _discard_assignment(p)
+                            dirty = True
+                    elif record.get("status") != "running":
+                        _settle(sw, p, record)
+                        dirty = True
+        if dirty:
+            _publish()
+
+    def _dispatch(sw, p, is_coord):
+        through = p.get("pending") or 0
+        if is_coord:
+            text = _wake_text(sw, COORD, through)
+            options = {}
+        else:
+            job = p.get("assignment")
+            if job is None:
+                job = p["assignment"] = {"through": through, "text": _wake_text(sw, p["name"], through),
+                                         "request_id": uuid.uuid4().hex, "retries": 0}
+                p["pending"] = 0  # subsequent mentions have their own queue
+            # Write intent before crossing into the run service. If the host dies
+            # before recording the returned ID, resubmission finds that same run.
+            store.save()
+            if store.persistence_error:
+                return False
+            options = {"request_id": job["request_id"]}
+            text = job["text"]
+            if job["retries"]:
+                text = ("[Swarm] Resume your interrupted assignment in this same session and workspace. "
+                        "Check your conversation, board posts and existing work first. Continue from the "
+                        "last confirmed step. If the result is already posted, end this turn.\n\n" + text)
+        try:
+            _apply_pending(p)
+            _sync(p)
+            record = runs.start(text, session_id=p["session"], source=SOURCE,
+                                timeout=settings["turn_timeout"], **options)
+        except Exception as error:
+            # A concurrent private turn can win the race with active_for().
+            if _busy(p["session"]):
+                return False
+            p["error"] = str(error)[:300]
+            log.warning("swarm: wake of %s failed: %s", p.get("name"), error)
+            if not is_coord:
+                _retry(sw, p, new_request=False)
+            return True
+
+        p.update(status="running", run_id=record["id"], started=record.get("created") or time.time(),
+                 finished=None, error="")
         p["runs"] = (p.get("runs") or 0) + 1
+        if is_coord:
+            if (p.get("pending") or 0) <= through:
+                p["pending"] = 0
+        else:
+            sw["wakes"] = sw.get("wakes", 0) + 1
+        # start() can return a terminal record, including a synchronous worker
+        # startup failure whose run.finished hook already fired before this point.
+        if record.get("status") == "cancelling":
+            _discard_assignment(p)
+        elif record.get("status", "running") != "running":
+            _settle(sw, p, record)
+        return True
 
     def _pump():
-        """Start queued wake-ups within the per-swarm and global limits."""
-        started = False
+        """Start queued wake-ups and due recoveries within the existing limits."""
+        dirty = False
         with lock:
+            if stop.is_set():
+                return
             for sw in list(swarms.values()):
-                if not sw.get("enabled") or sw.get("finished"):
+                if not sw.get("enabled") or sw.get("awaiting_user"):
                     continue
                 parts = [sw["coordinator"]] + _active_members(sw)
                 running = sum(p.get("status") == "running" for p in parts)
                 for p in parts:
-                    if not p.get("pending") or p.get("status") == "running":
+                    job = p.get("assignment")
+                    if p.get("status") == "running" or not (p.get("pending") or job):
+                        continue
+                    if job and job.get("retry_at", 0) > time.time():
                         continue
                     is_coord = p is sw["coordinator"]
                     if not is_coord and sw.get("paused"):
@@ -407,37 +540,31 @@ def apply(ctx, config):
                     if not is_coord and sw.get("wakes", 0) >= settings["max_auto_wakes"]:
                         _pause(sw, f"{settings['max_auto_wakes']} automatic wake-ups without "
                                    "coordinator or user input")
+                        dirty = True
                         continue
                     if _busy(p["session"]):
-                        continue  # the user is talking to it; retry when that run ends
-                    upto = p["pending"]
-                    try:
-                        _start(sw, COORD if is_coord else p["name"], _wake_text(sw, COORD if is_coord else p["name"], upto))
-                    except Exception as error:
-                        p["error"] = str(error)[:300]
-                        log.warning("swarm: wake of %s failed: %s", p.get("name"), error)
                         continue
-                    p["pending"] = 0
-                    started = True
-                    if not is_coord:
-                        running += 1
-                        sw["wakes"] = sw.get("wakes", 0) + 1
-        if started:
+                    if _dispatch(sw, p, is_coord):
+                        dirty = True
+                        if not is_coord and p.get("status") == "running":
+                            running += 1
+        if dirty:
             _publish()
 
     def _monitor():
         """Idle monitor: once nothing is running or queued, wake the coordinator once per
-        board state so it can review, re-plan or finish."""
+        board state so it can review, re-plan or hand the results to the user."""
         while not stop.wait(2.0):
             try:
+                _reconcile()
                 wake = False
                 with lock:
                     now = time.time()
                     for sid, sw in swarms.items():
-                        if not sw.get("enabled") or sw.get("finished") or not _active_members(sw):
+                        if not sw.get("enabled") or sw.get("awaiting_user") or not _active_members(sw):
                             continue
                         parts = [sw["coordinator"]] + _active_members(sw)
-                        if any(p.get("status") == "running" or p.get("pending") for p in parts):
+                        if any(p.get("status") == "running" or p.get("pending") or p.get("assignment") for p in parts):
                             continue
                         if any(_busy(p["session"]) for p in parts):
                             continue
@@ -448,7 +575,7 @@ def apply(ctx, config):
                         sw["idle_seq"] = sw.get("seq", 0)
                         note = _add_post(sw, "system", "@coordinator The board is quiet: no member is "
                                          "running and nobody is waiting on a mention. Review the "
-                                         "results, assign the next step, or call swarm_finish.", kind="system")
+                                         "results, assign the next step, or call swarm_await_user for user input.", kind="system")
                         sw["idle_seq"] = sw["seq"]
                         _queue(sw, COORD, note["id"])
                         wake = True
@@ -462,7 +589,7 @@ def apply(ctx, config):
     def _swarm_of(sid, coordinator=False):
         with lock:
             sw, name = _locate(sid)
-        if sw is None:
+        if sw is None or not sw.get("enabled"):
             raise RuntimeError("this session is not part of an active swarm")
         if coordinator and name != COORD:
             raise RuntimeError("only the coordinator can do this")
@@ -475,7 +602,7 @@ def apply(ctx, config):
             if sw is None:
                 return {"role": "none"}
             if name == COORD:
-                return {"role": "coordinator", "name": COORD, "finished": bool(sw.get("finished")),
+                return {"role": "coordinator", "name": COORD, "awaiting_user": bool(sw.get("awaiting_user")),
                         "paused": sw.get("paused"), "members": _roster(sw)}
             m = sw["members"][name]
             return {"role": "member", "name": name, "member_role": m.get("role", ""),
@@ -494,8 +621,6 @@ def apply(ctx, config):
             except Exception:
                 via = None
         with lock:
-            if sw.get("finished"):
-                raise RuntimeError("the swarm is finished")
             item = _add_post(sw, name, text, reply_to, via=via if via and via != SOURCE else None)
             p = _part(sw, name)
             p["cursor"] = max(p.get("cursor") or 0, item["id"])
@@ -540,7 +665,7 @@ def apply(ctx, config):
                          and (any_post or name in x["mentions"])]
                 if fresh:
                     break
-                if sw.get("finished") or stop.is_set() or (call is not None and call.cancelled.is_set()):
+                if sw.get("awaiting_user") or not sw.get("enabled") or stop.is_set() or (call is not None and call.cancelled.is_set()):
                     break
                 left = end - time.time()
                 if left <= 0:
@@ -550,7 +675,8 @@ def apply(ctx, config):
                 p["cursor"] = max(p.get("cursor") or 0, fresh[-1]["id"])
                 if name in fresh[-1]["mentions"] and (p.get("pending") or 0) <= fresh[-1]["id"]:
                     p["pending"] = 0  # already delivered by the wait itself
-        return {"posts": fresh, "timed_out": not fresh, "finished": bool(sw.get("finished"))}
+            awaiting = bool(sw.get("awaiting_user"))
+        return {"posts": fresh, "timed_out": not fresh and time.time() >= end, "awaiting_user": awaiting}
 
     def members(body, call=None):
         sw, _ = _swarm_of(_sid(body))
@@ -576,8 +702,6 @@ def apply(ctx, config):
         model, effort = _model(body.get("model")), _effort(body.get("effort"))
         coord = sw["coordinator"]["session"]
         with lock:
-            if sw.get("finished"):
-                raise RuntimeError("the swarm is finished")
             if name in sw["members"] and not sw["members"][name].get("removed"):
                 raise ValueError(f"member @{name} already exists")
             names = {m["name"] for m in _active_members(sw)}
@@ -634,7 +758,9 @@ def apply(ctx, config):
                 raise ValueError(f"no member @{name}")
             run_id = m.get("run_id") if m.get("status") == "running" else None
             m.update(removed=True, pending=0)
+            _discard_assignment(m)
             _add_post(sw, "system", f"@{name} left the swarm", kind="system")
+            store.save()
         if run_id:
             try:
                 runs.cancel(run_id)
@@ -678,20 +804,20 @@ def apply(ctx, config):
             raise RuntimeError("model selection is unavailable (no model catalog)")
         return {"models": [{"key": r.get("key"), "name": r["name"], "model": r.get("model")} for r in rows]}
 
-    def finish(body, call=None):
-        sw, _ = _swarm_of(_sid(body), coordinator=True)
+    def await_user(body, call=None):
         summary = _text(body, "summary", limit=4000)
         with lock:
-            _add_post(sw, COORD, summary, kind="finish")
-            sw["finished"] = time.time()
-            for p in _all_parts(sw):
-                p["pending"] = 0
+            sw, _ = _swarm_of(_sid(body), coordinator=True)
+            if sw.get("awaiting_user"):
+                return {"awaiting_user": True}
+            _add_post(sw, COORD, summary, kind="handoff")
+            sw["awaiting_user"] = True
         _publish()
-        return {"finished": True}
+        return {"awaiting_user": True}
 
     OPS = {"role": role, "post": post, "read": read, "wait": wait, "members": members,
            "add": add, "remove": remove, "models": models, "set_model": set_model,
-           "finish": finish}
+           "await_user": await_user}
 
     def rpc(body, call=None):
         body = body if isinstance(body, dict) else {}
@@ -717,15 +843,16 @@ def apply(ctx, config):
                                         "coordinator": {"name": COORD, "session": sid, "status": "idle",
                                                         "cursor": 0, "pending": 0, "runs": 0},
                                         "members": {}, "posts": [], "seq": 0, "wakes": 0}
-                else:
+                elif not sw.get("enabled"):
                     sw["enabled"] = True
-                    sw.pop("finished", None)
                     sw.pop("paused", None)
                     sw["wakes"] = 0
             elif sw is not None:
                 sw["enabled"] = False
+                sw.pop("awaiting_user", None)
                 for p in _all_parts(sw):
                     p["pending"] = 0
+                    _discard_assignment(p)
         _publish()
         return {"enabled": on}
 
@@ -733,11 +860,11 @@ def apply(ctx, config):
         sid = _sid(body)
         with lock:
             sw, _ = _locate(sid)
-            if sw is None:
+            if sw is None or not sw.get("enabled"):
                 raise RuntimeError("this session is not part of an active swarm")
-            if sw.get("finished"):
-                raise RuntimeError("the swarm is finished; turn swarm mode on again to resume")
             item = _add_post(sw, "user", _text(body, "text"))
+            if sw.pop("awaiting_user", False) and not item["mentions"]:
+                item["mentions"].append(COORD)  # a plain reply goes to the coordinator
             _deliver(sw, item)
         _publish()
         _pump()
@@ -766,6 +893,8 @@ def apply(ctx, config):
                 raise ValueError(f"no participant @{name}")
             run_id = p.get("run_id") if p.get("status") == "running" else None
             p["pending"] = 0
+            _discard_assignment(p)
+        _publish()
         if run_id:
             runs.cancel(run_id)
         return {"cancelling": bool(run_id)}
@@ -799,6 +928,21 @@ def apply(ctx, config):
         return route
 
     # ---- hooks -----------------------------------------------------------
+    def on_started(data, nxt=None):
+        # Only a human turn in the coordinator chat resumes the whole swarm.
+        # The turn already carries the user's message, so don't enqueue a second one.
+        source = (data.get("run") or {}).get("source") or ""
+        if source == "user" or source.startswith("channel:"):
+            with lock:
+                sw = swarms.get(data.get("session_id"))
+                resumed = sw and sw.get("enabled") and sw.pop("awaiting_user", False)
+                if resumed:
+                    sw.pop("paused", None)
+                    sw.update(wakes=0, last_activity=time.time())
+            if resumed:
+                _publish()
+        return nxt(data) if nxt else None
+
     def on_finished(data, nxt=None):
         try:
             sid, run_id = data.get("session_id"), data.get("run_id")
@@ -808,14 +952,7 @@ def apply(ctx, config):
                 for sw in swarms.values():
                     for p in _all_parts(sw):
                         if p["session"] == sid and p.get("run_id") == run_id and p.get("status") == "running":
-                            p.update(status="idle", run_id=None, finished=time.time(),
-                                     last_status=record.get("status") or "done",
-                                     error=(record.get("error") or "")[:300])
-                            if p.get("pending_settings"):
-                                _apply_pending(p)  # may still be active; _start retries
-                            else:
-                                _sync(p)
-                            sw["last_activity"] = time.time()
+                            _settle(sw, p, record)
                             hit = True
                     # Any finished run (also a private user turn) may unblock queued wake-ups.
                     if any(p["session"] == sid for p in _all_parts(sw)):
@@ -847,7 +984,7 @@ def apply(ctx, config):
                     sw, me = swarms[current], COORD  # disabled: still show its history
                 if sw is not None:
                     view = {"id": sw["id"], "me": me, "enabled": bool(sw.get("enabled")),
-                            "finished": sw.get("finished"), "paused": sw.get("paused"),
+                            "awaiting_user": bool(sw.get("awaiting_user")), "paused": sw.get("paused"),
                             "coordinator": _public_member(sw["coordinator"], brief=True),
                             "members": [_public_member(m) for m in sw["members"].values()],
                             "groups": _groups(sw), "posts": sw["posts"][-SNAPSHOT_POSTS:],
@@ -868,7 +1005,9 @@ def apply(ctx, config):
     ctx.scope.add(runs.register_rpc("swarm", rpc))
     ctx.scope.add(runs.register_worker_plugin("swarm-worker"))
     ctx.on("web.snapshot", snapshot)
+    ctx.on("run.started", on_started)
     ctx.on("run.finished", on_finished)
+    _reconcile()
 
     def is_enabled(sid):
         with lock:

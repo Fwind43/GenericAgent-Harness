@@ -42,6 +42,8 @@ class World:
     def __init__(self, tmp_path):
         self.tmp_path = tmp_path
         self.started = []  # (session_id, text, source, run_id)
+        self.records = {}
+        self.requests = {}
         self.cancelled = []
         self.sessions = {"coord": {"id": "coord", "workspace": None}}
         self.remembered = {}
@@ -51,11 +53,25 @@ class World:
         self._n = 0
 
     def services(self):
-        def start(text, session_id=None, source=None, timeout=None):
+        def start(text, session_id=None, source=None, timeout=None, request_id=None):
+            key = (session_id, source, request_id)
+            if request_id is not None and key in self.requests:
+                return dict(self.records[self.requests[key]])
             self._n += 1
             rid = f"run{self._n}"
+            self.records[rid] = {"id": rid, "session_id": session_id, "source": source, "status": "running"}
+            if request_id is not None:
+                self.requests[key] = rid
             self.started.append((session_id, text, source, rid))
-            return {"id": rid}
+            return dict(self.records[rid])
+
+        def active_for(sid):
+            return next((r for r in self.records.values() if r["session_id"] == sid
+                         and r["status"] in ("running", "cancelling")), None)
+
+        def cancel(rid):
+            self.records[rid]["status"] = "cancelling"
+            self.cancelled.append(rid)
 
         def create(parent_id=None, title=None, workspace=None):
             self._n += 1
@@ -68,8 +84,8 @@ class World:
             return lambda: None
 
         runs = SimpleNamespace(
-            start=start, active_for=lambda sid: False, get=lambda rid: {"source": "web"},
-            cancel=self.cancelled.append,
+            start=start, active_for=active_for, get=lambda rid: dict(self.records[rid]),
+            cancel=cancel,
             register_rpc=lambda name, fn: self.rpc.__setitem__(name, fn) or (lambda: None),
             register_worker_plugin=lambda name: self.worker_plugins.append(name) or (lambda: None),
         )
@@ -127,9 +143,10 @@ def wait_for(cond, timeout=3.0):
     return cond()
 
 
-def finish_run(ctx, world, sid, run_id):
-    ctx.hooks["run.finished"]({"session_id": sid, "run_id": run_id,
-                               "run": {"id": run_id, "status": "done", "session_id": sid}})
+def finish_run(ctx, world, sid, run_id, status="done", error=None):
+    record = world.records[run_id]
+    record.update(status=status, error=error)
+    ctx.hooks["run.finished"]({"session_id": sid, "run_id": run_id, "run": dict(record)})
 
 
 def started_for(world, sid):
@@ -228,28 +245,125 @@ def test_per_swarm_concurrency_limit(load, world):
     assert wait_for(lambda: started_for(world, other))
 
 
-def test_finish_blocks_further_posts(load, world):
-    load()
+def test_handoff_holds_mentions_until_user_reply(load, world):
+    ctx = load()
     world.route("toggle", {"session_id": "coord", "enabled": True})
-    world.call({"op": "finish", "summary": "done"}, session_id="coord")
-    with pytest.raises(RuntimeError):
-        world.call({"op": "post", "text": "more"}, session_id="coord")
+    member = world.call({"op": "add", "name": "a", "role": "R"}, session_id="coord")["member"]
+    handoff = {"op": "await_user", "summary": "Draft ready for review"}
+    with pytest.raises(RuntimeError, match="only the coordinator"):
+        world.call(handoff, session_id=member["session"])
+    world.call(handoff, session_id="coord")
+    world.call(handoff, session_id="coord")
+    posts = world.call({"op": "read", "since": 0}, session_id="coord")["posts"]
+    assert [p["text"] for p in posts if p["kind"] == "handoff"] == [handoff["summary"]]
+
+    world.call({"op": "post", "text": "@coordinator late report"}, session_id=member["session"])
+    for sid, source in [("coord", "swarm"), (member["session"], "user")]:
+        ctx.hooks["run.started"]({"session_id": sid, "run": {"source": source}})
+    assert ctx.provided["swarm.mode"].enabled("coord")
+    assert world.call({"op": "role"}, session_id="coord")["awaiting_user"]
+    assert not started_for(world, "coord")
+
+    status, body = world.route("post", {"session_id": "coord", "text": "Please revise"})
+    assert status == 200 and body["post"]["mentions"] == ["coordinator"]
+    assert not world.call({"op": "role"}, session_id="coord")["awaiting_user"]
+    wake, = started_for(world, "coord")
+    assert "Please revise" in wake[1] and "late report" in wake[1]
 
 
-def test_state_persists_and_running_resets(load, world, tmp_path):
+def test_plugin_reload_preserves_live_member_and_handoff(load, world, tmp_path):
     ctx = load()
     world.route("toggle", {"session_id": "coord", "enabled": True})
     a = world.call({"op": "add", "name": "a", "role": "R"}, session_id="coord")["member"]["session"]
     world.call({"op": "post", "text": "@a go"}, session_id="coord")
     assert wait_for(lambda: started_for(world, a))
+    world.call({"op": "await_user", "summary": "Ready for review"}, session_id="coord")
     ctx.close()
     assert (tmp_path / "swarm.json").is_file()
 
     ctx2 = load()
     assert ctx2.provided["swarm.mode"].enabled("coord") is True
     members = world.call({"op": "members"}, session_id="coord")["members"]
-    assert [m["status"] for m in members if m["name"] == "a"] == ["idle"]
+    assert [m["status"] for m in members if m["name"] == "a"] == ["running"]
+    assert len(started_for(world, a)) == 1
     assert world.call({"op": "role"}, session_id=a)["role"] == "member"
+    assert world.call({"op": "role"}, session_id="coord")["awaiting_user"]
+    ctx2.hooks["run.started"]({"session_id": "coord", "run": {"source": "user"}})
+    assert not world.call({"op": "role"}, session_id="coord")["awaiting_user"]
+    assert not started_for(world, "coord")  # the chat turn already carries the reply
+
+
+def start_member_assignment(world):
+    world.route("toggle", {"session_id": "coord", "enabled": True})
+    sid = world.call({"op": "add", "name": "a", "role": "Reviewer"}, session_id="coord")["member"]["session"]
+    world.call({"op": "post", "text": "@a review the first draft"}, session_id="coord")
+    assert wait_for(lambda: started_for(world, sid))
+    return sid, started_for(world, sid)[0][3]
+
+
+def test_crashed_member_resumes_before_queued_mention(load, world, swarm_mod, monkeypatch):
+    monkeypatch.setattr(swarm_mod, "RECOVERY_DELAYS", (0, 0, 0))
+    ctx = load()
+    sid, original = start_member_assignment(world)
+    world.call({"op": "post", "text": "@a check the appendix next"}, session_id="coord")
+    world.call({"op": "read"}, session_id=sid)  # reading advances the board cursor
+    finish_run(ctx, world, sid, original, "error", "Worker exited before completion")
+
+    assert wait_for(lambda: len(started_for(world, sid)) == 2)
+    _, prompt, _, resumed = started_for(world, sid)[1]
+    assert resumed != original and "review the first draft" in prompt and "Resume" in prompt
+    assert "appendix" not in prompt
+    finish_run(ctx, world, sid, resumed)
+    assert wait_for(lambda: len(started_for(world, sid)) == 3)
+    followup = started_for(world, sid)[2][1]
+    assert "check the appendix next" in followup and "first draft" not in followup
+    assert not started_for(world, "coord")
+
+
+def test_reload_recovers_interruption_missed_by_hook(load, world, swarm_mod, monkeypatch):
+    monkeypatch.setattr(swarm_mod, "RECOVERY_DELAYS", (0, 0, 0))
+    ctx = load()
+    sid, original = start_member_assignment(world)
+    ctx.close()
+    world.records[original].update(status="interrupted", error="Service interrupted before completion")
+    load()
+    assert wait_for(lambda: len(started_for(world, sid)) == 2)
+    _, prompt, _, resumed = started_for(world, sid)[1]
+    assert resumed != original and "review the first draft" in prompt and "Resume" in prompt
+    assert set(world.sessions) == {"coord", sid}
+
+
+def test_stop_during_recovery_survives_reload(load, world, swarm_mod, monkeypatch):
+    monkeypatch.setattr(swarm_mod, "RECOVERY_DELAYS", (3600,))
+    ctx = load()
+    sid, original = start_member_assignment(world)
+    finish_run(ctx, world, sid, original, "interrupted")
+    member, = world.call({"op": "members"}, session_id="coord")["members"]
+    assert member["status"] == "recovering" and member["recovery"]["attempt"] == 1
+    status, _ = world.route("cancel", {"session_id": "coord", "name": "a"})
+    assert status == 200
+    ctx.close()
+    load()
+    member, = world.call({"op": "members"}, session_id="coord")["members"]
+    assert member["status"] == "idle" and "recovery" not in member
+    assert len(started_for(world, sid)) == 1
+
+
+def test_recovery_budget_is_per_assignment(load, world, swarm_mod, monkeypatch):
+    retries = len(swarm_mod.RECOVERY_DELAYS)
+    monkeypatch.setattr(swarm_mod, "RECOVERY_DELAYS", (0,) * retries)
+    ctx = load()
+    sid, run_id = start_member_assignment(world)
+    for attempt in range(retries):
+        finish_run(ctx, world, sid, run_id, "error", "Worker exited before completion")
+        assert wait_for(lambda: len(started_for(world, sid)) == attempt + 2)
+        run_id = started_for(world, sid)[-1][3]
+    finish_run(ctx, world, sid, run_id, "error", "Worker exited before completion")
+    member, = world.call({"op": "members"}, session_id="coord")["members"]
+    assert member["status"] == "error" and "recovery" not in member
+    world.call({"op": "post", "text": "@a review a new draft"}, session_id="coord")
+    assert wait_for(lambda: len(started_for(world, sid)) == retries + 2)
+    assert "review a new draft" in started_for(world, sid)[-1][1]
 
 
 def test_snapshot_hook_exposes_swarm(load, world):
@@ -294,12 +408,14 @@ def test_worker_tools_by_role(load, world, worker_mod, monkeypatch):
 
     world.route("toggle", {"session_id": "coord", "enabled": True})
     tools, prompt = _worker(worker_mod, world, "coord", monkeypatch)
-    assert {"board_post", "board_read", "swarm_add_member", "swarm_finish"} <= set(tools)
+    assert {"board_post", "board_read", "swarm_add_member", "swarm_await_user"} <= set(tools)
+    assert "swarm_finish" not in tools
     out = tools["swarm_add_member"](None, {"name": "alice", "role": "Researcher", "brief": "B1"}, None)
     member = json.loads(out.msg)["member"]
 
     tools, prompt = _worker(worker_mod, world, member["session"], monkeypatch)
-    assert "board_post" in tools and "swarm_add_member" not in tools
+    assert "board_post" in tools
+    assert {"swarm_add_member", "swarm_await_user", "swarm_finish"}.isdisjoint(tools)
     assert "alice" in prompt and "B1" in prompt
     out = tools["board_post"](None, {"text": "@coordinator hello"}, None)
     assert json.loads(out.msg)["woken"] == ["coordinator"]

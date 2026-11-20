@@ -161,14 +161,17 @@ class Runs:
                     kind TEXT NOT NULL, data TEXT NOT NULL, created REAL NOT NULL,
                     PRIMARY KEY(run_id,seq))""")
                 for row in db.execute("SELECT * FROM runs WHERE status IN ('running','cancelling')").fetchall():
-                    error = "Service interrupted; not automatically retried"
-                    self._append(db, row["id"], "run.finished", {"status": "interrupted", "error": error})
-                    db.execute("UPDATE runs SET status='interrupted',ended=?,error=? WHERE id=?",
-                               (time.time(), error, row["id"]))
+                    # A committed stop request survives a host crash, as it does in _finish().
+                    cancelled = row["status"] == "cancelling"
+                    status = "aborted" if cancelled else "interrupted"
+                    error = None if cancelled else "Service interrupted before completion"
+                    self._append(db, row["id"], "run.finished", {"status": status, "error": error})
+                    db.execute("UPDATE runs SET status=?,ended=?,error=? WHERE id=?",
+                               (status, time.time(), error, row["id"]))
                     session = db.execute("SELECT * FROM sessions WHERE id=? AND deleted=0", (row["session_id"],)).fetchone()
                     if session is not None:
                         current = self.sessions._decode(session)
-                        settle(current["messages"], "interrupted", error)
+                        settle(current["messages"], status, error)
                         self.sessions._write(db, current, current["messages"], current["state"])
 
     def _append(self, db, rid, kind, data):
@@ -649,30 +652,31 @@ class Runs:
             for call in list(live["calls"].values()):
                 call.cancelled.set()
             live["finished"].set()
-        log.error("run %s: abandoned while active; marking error", rid)
+        status = "aborted" if live["cancel_at"] is not None else "error"
+        log.error("run %s: abandoned while active; marking %s", rid, status)
         messages = copy.deepcopy(live["messages"])
         record = None
         try:
-            settle(messages, "error", error)
+            settle(messages, status, error)
             with self.lock:
                 if self.get(rid)["status"] in ACTIVE:
                     session = self.sessions.get(live["session_id"])
                     with self.sessions._db() as db:
                         self.sessions._write(db, session, messages, live["state"])
-                        self._append(db, rid, "run.finished", {"status": "error", "error": error})
-                        db.execute("UPDATE runs SET status='error',ended=?,error=? WHERE id=?", (time.time(), error, rid))
+                        self._append(db, rid, "run.finished", {"status": status, "error": error})
+                        db.execute("UPDATE runs SET status=?,ended=?,error=? WHERE id=?", (status, time.time(), error, rid))
                 record = self.get(rid)
         except Exception:
             log.exception("run %s: could not save abandoned transcript", rid)
             try:
                 with self.lock, self.sessions._db() as db:
-                    db.execute("UPDATE runs SET status='error',ended=?,error=? WHERE id=? AND status IN ('running','cancelling')",
-                               (time.time(), error, rid))
+                    db.execute("UPDATE runs SET status=?,ended=?,error=? WHERE id=? AND status IN ('running','cancelling')",
+                               (status, time.time(), error, rid))
                     record = self.get(rid)
             except Exception:
                 log.exception("run %s: could not mark abandoned run", rid)
         if record is None:
-            record = {"id": rid, "session_id": live["session_id"], "seq": None, "status": "error", "error": error}
+            record = {"id": rid, "session_id": live["session_id"], "seq": None, "status": status, "error": error}
         self._notify("run.finished", record, run=record, message=messages[-1] if messages else None)
 
     def cancel(self, run_id):
