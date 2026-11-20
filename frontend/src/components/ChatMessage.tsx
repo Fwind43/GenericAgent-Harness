@@ -207,12 +207,49 @@ function ConductorWake({ m }: { m: Message }) {
     </Disclosure>}
   </div>;
 }
+// Swarm wake-ups (swarm/main.py `_wake_text`): a header line, the mentioning board
+// posts as "#id @author: body" (bodies may span lines), then a fixed instruction
+// for the agent. Messages without a persisted source are matched by header.
+const SWARM_HEAD = '[Swarm]';
+const SWARM_TAIL = 'Catch up with board_read';
+export function isSwarmWake(m: Message) {
+  if (m.role !== 'user') return false;
+  if (m.source === 'swarm') return true;
+  return !m.source && !!m.text?.startsWith(SWARM_HEAD);
+}
+function SwarmWake({ m }: { m: Message }) {
+  const text = m.text || '';
+  const lines = text.split('\n');
+  const mentioned = lines[0].startsWith('[Swarm] You were mentioned');
+  const posts: { id: string; author: string; body: string }[] = [];
+  for (const line of lines.slice(1)) {
+    if (line.startsWith(SWARM_TAIL)) break;
+    const hit = /^#(\d+) @(\S+?): ?(.*)$/.exec(line);
+    if (hit) posts.push({ id: hit[1], author: hit[2], body: hit[3] });
+    else if (posts.length) posts.at(-1)!.body += '\n' + line;
+  }
+  return <div className="msg conductor-wake swarm-wake">
+    <div className="cw-head">
+      <span className="cw-label">{T('蜂群', 'Swarm')}</span>
+      <span>{mentioned ? T('看板上有人提到了你', 'You were mentioned on the board') : T('看板有新动态', 'The board has news for you')}</span>
+      <MessageTime message={m} />
+    </div>
+    {posts.length ? <ul className="cw-tasks">{posts.map(p => <li key={p.id} title={p.body}>
+      <span className="cw-status sw-author">@{p.author}</span>
+      <span className="cw-title">{p.body.trim().replace(/\s+/g, ' ')}</span><code className="cw-id">#{p.id}</code>
+    </li>)}</ul> : null}
+    {text && <Disclosure className="cw-details" chevron="start" title={T('触发详情', 'Trigger details')}>
+      <div className="cw-text">{text}</div>
+    </Disclosure>}
+  </div>;
+}
 // Slot "message": plugins may wrap a whole message.
 export const ChatMessage = memo(function ChatMessage({ index, ...props }: { message: Message; last: boolean; index?: number }) {
   return <MessageIndex.Provider value={index ?? null}><Slot name="message" props={props}><MessageView {...props} /></Slot></MessageIndex.Provider>;
 });
 const MessageView = memo(function MessageView({ message: m, last }: { message: Message; last: boolean }) {
   if (isConductorWake(m)) return <ConductorWake m={m} />;
+  if (isSwarmWake(m)) return <SwarmWake m={m} />;
   const turns = (m.turns ?? []).filter(Boolean), running = m.status === 'running', fin = turns.at(-1);
   // A terminal question is user-facing output, not a hidden execution step.
   const finalQuestion = !!fin && !['aborted', 'error'].includes(m.status ?? '')
