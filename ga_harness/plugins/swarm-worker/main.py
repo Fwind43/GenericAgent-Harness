@@ -4,9 +4,8 @@ The host plugin ``swarm`` owns swarms, members, the shared board and wake-ups an
 answers the ``swarm`` RPC. At the start of a run this plugin asks the host for the
 session's role:
 
-* ``coordinator`` -- board tools plus member management (only the coordinator may
-  add or remove members) and ``swarm_await_user``.
-* ``member``      -- board tools only; the member's role brief goes into the prompt.
+* ``coordinator`` -- non-blocking board tools, member management and ``swarm_await_user``.
+* ``member``      -- board tools including ``board_wait``; the role brief goes into the prompt.
 * otherwise       -- nothing.
 
 Unlike conductor mode nothing is hidden: every participant keeps its normal tools
@@ -45,13 +44,16 @@ BOARD_TOOLS = {
     "board_read": (_tool("board_read",
         "Read board posts newer than your cursor (or since=id) and advance your cursor.",
         {**SINCE, "limit": {"type": "integer", "description": "Max posts (default 30)."}}), "read"),
+    "swarm_members": (_tool("swarm_members",
+        "List the swarm's participants with their role, groups, model and current status."), "members"),
+}
+
+MEMBER_TOOLS = {
     "board_wait": (_tool("board_wait",
         "Block until a new board post mentions you (or any new post if any=true) or the timeout ends. "
         "Prefer ending your turn when you have nothing to do: you are woken automatically when mentioned.",
         {"timeout": {"type": "integer", "description": f"Seconds, 10..{WAIT_MAX} (default 300)."},
          "any": {"type": "boolean", "description": "Return on any new post, not only mentions."}}), "wait"),
-    "swarm_members": (_tool("swarm_members",
-        "List the swarm's participants with their role, groups, model and current status."), "members"),
 }
 
 COORD_TOOLS = {
@@ -186,8 +188,7 @@ def apply(ctx, config):
         if state["role"] not in ("coordinator", "member"):
             return
         table = dict(BOARD_TOOLS)
-        if state["role"] == "coordinator":
-            table.update(COORD_TOOLS)
+        table.update(COORD_TOOLS if state["role"] == "coordinator" else MEMBER_TOOLS)
         names = set(tools.names())
         for name, (schema, op) in table.items():
             if name not in names:

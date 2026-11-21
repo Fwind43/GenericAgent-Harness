@@ -651,6 +651,8 @@ def apply(ctx, config):
 
     def wait(body, call=None):
         sw, name = _swarm_of(_sid(body))
+        if name == COORD:
+            raise RuntimeError("board_wait is for members only; end your turn and let @coordinator wake you")
         try:
             timeout = max(10, min(900, int(body.get("timeout") or 300)))
         except (TypeError, ValueError):
