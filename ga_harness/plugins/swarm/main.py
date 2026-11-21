@@ -930,6 +930,27 @@ def apply(ctx, config):
         return route
 
     # ---- hooks -----------------------------------------------------------
+    def _trace_direct(data):
+        """Leave a board note when the user privately instructs a member in its own
+        session, so the coordinator and teammates aren't working against an unseen order.
+        The note mentions nobody: it informs, it doesn't wake anyone."""
+        sid = data.get("session_id")
+        task = ((data.get("run") or {}).get("task") or "").strip()
+        if not sid or not task:
+            return False
+        for sw in swarms.values():
+            if not sw.get("enabled"):
+                continue
+            for p in _active_members(sw):
+                if p.get("session") == sid:
+                    brief = " ".join(task.split())
+                    brief = brief if len(brief) <= 300 else brief[:300] + " ..."
+                    post = _add_post(sw, "user", f"(private to {p['name']}) {brief}", kind="direct")
+                    post["mentions"] = []
+                    store.save()
+                    return True
+        return False
+
     def on_started(data, nxt=None):
         # Only a human turn in the coordinator chat resumes the whole swarm.
         # The turn already carries the user's message, so don't enqueue a second one.
@@ -941,7 +962,8 @@ def apply(ctx, config):
                 if resumed:
                     sw.pop("paused", None)
                     sw.update(wakes=0, last_activity=time.time())
-            if resumed:
+                traced = _trace_direct(data)
+            if resumed or traced:
                 _publish()
         return nxt(data) if nxt else None
 

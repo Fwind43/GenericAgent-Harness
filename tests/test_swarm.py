@@ -293,6 +293,20 @@ def test_plugin_reload_preserves_live_member_and_handoff(load, world, tmp_path):
     assert not started_for(world, "coord")  # the chat turn already carries the reply
 
 
+def test_user_turn_in_member_session_leaves_silent_board_note(load, world):
+    ctx = load()
+    world.route("toggle", {"session_id": "coord", "enabled": True})
+    a = world.call({"op": "add", "name": "a", "role": "R"}, session_id="coord")["member"]["session"]
+    ctx.hooks["run.started"]({"session_id": a, "run": {"source": "user", "task": "  use   tabs\nnot spaces "}})
+    ctx.hooks["run.started"]({"session_id": a, "run": {"source": "swarm", "task": "board wake"}})
+    ctx.hooks["run.started"]({"session_id": "coord", "run": {"source": "user", "task": "hello"}})
+    posts = world.call({"op": "read", "since": 0}, session_id="coord")["posts"]
+    direct = [p for p in posts if p["kind"] == "direct"]
+    assert [(p["author"], p["text"], p["mentions"]) for p in direct] == [
+        ("user", "(private to a) use tabs not spaces", [])]
+    assert not started_for(world, a) and not started_for(world, "coord")
+
+
 def start_member_assignment(world):
     world.route("toggle", {"session_id": "coord", "enabled": True})
     sid = world.call({"op": "add", "name": "a", "role": "Reviewer"}, session_id="coord")["member"]["session"]

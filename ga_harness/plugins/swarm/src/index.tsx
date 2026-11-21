@@ -123,7 +123,8 @@ function PostRow({ post }: { post: Post }) {
   return (
     <div className={`gah-sw-post ${post.kind}${post.author === 'user' ? ' user' : ''}`}>
       <div className="gah-sw-meta">
-        <b>@{post.author}</b><span>#{post.id}</span>{post.reply_to ? <span>{'\u21aa'} #{post.reply_to}</span> : null}
+        <b>@{post.author}</b><span>#{post.id}</span>
+        {post.kind === 'direct' ? <span className="gah-sw-direct" title={T('\u4f60\u5728\u6210\u5458\u4f1a\u8bdd\u91cc\u7684\u79c1\u804a\u6307\u793a\uff0c\u81ea\u52a8\u8bb0\u5f55\u5230\u7559\u8a00\u677f\uff0c\u4e0d\u4f1a\u5524\u9192\u4efb\u4f55\u4eba', 'Your private instruction in a member session, recorded here without waking anyone')}>{T('\u79c1\u804a', 'Private')}</span> : null}{post.reply_to ? <span>{'\u21aa'} #{post.reply_to}</span> : null}
         {post.via ? <span title={T('\u6765\u81ea\u975e\u8702\u7fa4\u8c03\u5ea6\u7684\u8fd0\u884c', 'Posted from a run not scheduled by the swarm')}>{post.via}</span> : null}
         <span className="gah-sw-time">{fmtTime(post.created)}</span>
       </div>
@@ -346,6 +347,22 @@ function Panel({ api }: { api: PluginAPI }) {
     document.addEventListener('keydown', key, true);
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key, true); };
   }, [menu]);
+  const swid = data?.view?.id || '';
+  const tail = data?.view?.posts || [];
+  const lastId = tail.length ? tail[tail.length - 1].id : 0;
+  const [seen, setSeen] = useState<number | null>(null);
+  useEffect(() => {
+    if (!swid) { setSeen(null); return; }
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(`gah-sw-seen:${swid}`); } catch { /* storage unavailable */ }
+    setSeen(stored === null ? null : Number(stored) || 0);
+  }, [swid]);
+  useEffect(() => {
+    // First sight of a swarm counts its existing history as read; after that, reading the board marks it read.
+    if (!swid || (seen !== null && !(open && tab === 'board' && lastId > seen))) return;
+    setSeen(lastId);
+    try { localStorage.setItem(`gah-sw-seen:${swid}`, String(lastId)); } catch { /* storage unavailable */ }
+  }, [swid, seen, open, tab, lastId]);
   const view = data?.view;
   if (!data || !sid || !view) return null;
   const isCoord = view.me === COORD;
@@ -370,6 +387,9 @@ function Panel({ api }: { api: PluginAPI }) {
     try { api.setState(await api.host.post<HostState>('/api/sessions', { action: 'select', id: m.session }), true); pages.home(); }
     catch (error) { api.notice(errText(error)); }
   };
+  const fresh = seen === null ? [] : view.posts.filter(p => p.id > seen && p.author !== 'user');
+  const latest = fresh[fresh.length - 1];
+  const gist = latest ? `@${latest.author}: ${latest.text.replace(/\s+/g, ' ').trim()}` : '';
   const label = isCoord ? T('\u8702\u7fa4', 'Swarm') : `@${view.me}`;
   const state = !view.enabled ? T('\u5df2\u5173\u95ed', 'Off') : view.awaiting_user ? T('\u7b49\u5f85\u4f60\u7684\u56de\u590d', 'Awaiting your reply') : view.paused ? T('\u5df2\u6682\u505c', 'Paused') : '';
   return (
@@ -379,6 +399,7 @@ function Panel({ api }: { api: PluginAPI }) {
         <Icon /><span>{label}</span>
         <span className="gah-sw-count">{running ? `${running}/${live.length + 1}` : live.length + 1}</span>
         {state ? <span className="gah-sw-state">{state}</span> : null}
+        {fresh.length && !open ? <span className="gah-sw-latest" title={gist}><span className="gah-sw-unread">{fresh.length > 99 ? '99+' : fresh.length}</span><span className="gah-sw-gist">{gist}</span></span> : null}
         <svg className="gah-sw-caret" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" /></svg>
       </button>
       {open ? (

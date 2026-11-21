@@ -135,6 +135,7 @@
           "#",
           post.id
         ] }),
+        post.kind === "direct" ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-direct", title: sdk.T("你在成员会话里的私聊指示，自动记录到留言板，不会唤醒任何人", "Your private instruction in a member session, recorded here without waking anyone"), children: sdk.T("私聊", "Private") }) : null,
         post.reply_to ? /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
           "↪",
           " #",
@@ -358,7 +359,7 @@
     ] });
   }
   function Panel({ api }) {
-    var _a;
+    var _a, _b, _c;
     const { data, sid, busy, run } = useSwarm(api);
     const [open, setOpen] = react.useState(false);
     const [tab, setTab] = react.useState("board");
@@ -429,11 +430,35 @@
         document.removeEventListener("keydown", key, true);
       };
     }, [menu]);
+    const swid = ((_a = data == null ? void 0 : data.view) == null ? void 0 : _a.id) || "";
+    const tail = ((_b = data == null ? void 0 : data.view) == null ? void 0 : _b.posts) || [];
+    const lastId = tail.length ? tail[tail.length - 1].id : 0;
+    const [seen, setSeen] = react.useState(null);
+    react.useEffect(() => {
+      if (!swid) {
+        setSeen(null);
+        return;
+      }
+      let stored = null;
+      try {
+        stored = localStorage.getItem(`gah-sw-seen:${swid}`);
+      } catch {
+      }
+      setSeen(stored === null ? null : Number(stored) || 0);
+    }, [swid]);
+    react.useEffect(() => {
+      if (!swid || seen !== null && !(open && tab === "board" && lastId > seen)) return;
+      setSeen(lastId);
+      try {
+        localStorage.setItem(`gah-sw-seen:${swid}`, String(lastId));
+      } catch {
+      }
+    }, [swid, seen, open, tab, lastId]);
     const view = data == null ? void 0 : data.view;
     if (!data || !sid || !view) return null;
     const isCoord = view.me === COORD;
     const live = view.members.filter((m) => !m.removed);
-    const running = live.filter((m) => m.status === "running").length + (((_a = view.coordinator) == null ? void 0 : _a.status) === "running" ? 1 : 0);
+    const running = live.filter((m) => m.status === "running").length + (((_c = view.coordinator) == null ? void 0 : _c.status) === "running" ? 1 : 0);
     const act = async (path, m) => {
       if (path === "remove" && !window.confirm(sdk.T(`确定把 @${m.name} 移出蜂群？`, `Remove @${m.name} from the swarm?`))) return;
       await run(path, { name: m.name });
@@ -459,6 +484,9 @@
         api.notice(errText(error));
       }
     };
+    const fresh = seen === null ? [] : view.posts.filter((p) => p.id > seen && p.author !== "user");
+    const latest = fresh[fresh.length - 1];
+    const gist = latest ? `@${latest.author}: ${latest.text.replace(/\s+/g, " ").trim()}` : "";
     const label = isCoord ? sdk.T("蜂群", "Swarm") : `@${view.me}`;
     const state = !view.enabled ? sdk.T("已关闭", "Off") : view.awaiting_user ? sdk.T("等待你的回复", "Awaiting your reply") : view.paused ? sdk.T("已暂停", "Paused") : "";
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-anchor", ref: box, children: [
@@ -475,6 +503,10 @@
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: label }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-count", children: running ? `${running}/${live.length + 1}` : live.length + 1 }),
             state ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-state", children: state }) : null,
+            fresh.length && !open ? /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-latest", title: gist, children: [
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-unread", children: fresh.length > 99 ? "99+" : fresh.length }),
+              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-gist", children: gist })
+            ] }) : null,
             /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-sw-caret", viewBox: "0 0 16 16", width: "10", height: "10", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "m4 6 4 4 4-4", fill: "none", stroke: "currentColor", strokeWidth: "1.6" }) })
           ]
         }
