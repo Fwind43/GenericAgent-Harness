@@ -283,6 +283,7 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
       }
     };
     const row = (session, depth, home, recent = false, kids = 0) => {
+      var _a;
       const kidsShown = kids > 0 && kidsOpen(session.id);
       const menuKey = `s:${session.id}:${recent ? "r" : "p"}:${home ?? ""}`, menuOpen = menu === menuKey;
       const pick = (fn) => () => {
@@ -340,6 +341,12 @@ var GAHPlugin_web_sessions = (function(exports, jsxRuntime, react, sdk) {
               /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }),
               sdk.T("重命名", "Rename")
             ] }),
+            ((_a = state.web_plugins) == null ? void 0 : _a.some((plugin) => plugin.name === "session-title")) ? /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy || !!status, onClick: pick(() => run(async () => {
+              await api.host.post("/api/p/session-title/generate", { session_id: session.id });
+            })), children: [
+              /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "pencil" }),
+              sdk.T("AI 生成标题", "AI title")
+            ] }) : null,
             /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", role: "menuitem", className: "gah-sess-menu-item", disabled: busy || !!status, onClick: pick(() => setMoving(session.id)), children: [
               /* @__PURE__ */ jsxRuntime.jsx(sdk.Icon, { name: "folder" }),
               sdk.T("移动到项目", "Move to project")

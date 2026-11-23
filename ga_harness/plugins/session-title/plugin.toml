@@ -1,0 +1,30 @@
+name = "session-title"
+category = "extension"
+entry = "main:apply"
+description = "AI session titles: after the first reply, the session's model writes a short title; sessions can also be retitled from the menu."
+description_zh = "AI 生成会话标题：首轮回复后由会话模型自动生成简短标题，也可在会话菜单中手动重新生成。"
+inject = ["web.host", "sessions"]
+
+[settings.auto]
+type = "boolean"
+default = true
+label = "Auto-title new sessions"
+label_zh = "自动为新会话生成标题"
+description = "After the first finished reply, replace the default title (first message) with an AI title. Manually renamed sessions are never touched."
+description_zh = "首轮回复完成后，用 AI 标题替换默认标题（首条消息）；手动改过的标题不会被覆盖。"
+
+[settings.model]
+type = "string"
+default = ""
+label = "Title model"
+label_zh = "标题模型"
+description = "mykey.py key of the model used for titles. Empty: the session's own model."
+description_zh = "生成标题所用模型的 mykey.py 变量名；留空则使用会话当前模型。"
+
+[settings.timeout]
+type = "integer"
+default = 60
+label = "Timeout (s)"
+label_zh = "超时（秒）"
+description = "Read timeout of each title request."
+description_zh = "每次标题请求的读取超时。"

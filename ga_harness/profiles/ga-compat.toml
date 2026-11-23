@@ -121,6 +121,10 @@ name = "worldline"
 [[plugins]]
 name = "run-queue"
 
+# AI session titles: auto-title after the first reply; "AI title" in the chat menu
+[[plugins]]
+name = "session-title"
+
 # conductor mode: a session plans/delegates to child task sessions (toggled per session,
 # from the web UI or a chat's /conductor command)
 [[plugins]]
