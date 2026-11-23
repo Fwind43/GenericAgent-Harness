@@ -251,7 +251,7 @@ def apply(ctx, config):
         try:
             sid = data.get("session_id")
             status = (data.get("run") or {}).get("status") or data.get("status")
-            if sid and status not in ("aborted", "error", "failed") and _cfg("auto", True):
+            if sid and status not in ("aborted", "error", "failed") and _cfg("auto", False):
                 with lock:
                     start = sid not in busy and sid not in done
                     if start:
