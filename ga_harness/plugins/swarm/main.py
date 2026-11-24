@@ -29,6 +29,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from ga_harness.worker import EMPTY_REPLY, LLM_FAILED
+
 log = logging.getLogger(__name__)
 HERE = Path(__file__).resolve().parent
 SOURCE = "swarm"
@@ -406,9 +408,12 @@ def apply(ctx, config):
         if count >= len(RECOVERY_DELAYS):
             _discard_assignment(p)
             p["status"] = "error"
-            _add_post(sw, "system", f"{p['name']} could not resume the assignment from "
-                      f"board post #{job['through']} after {count} recovery attempts. "
-                      "Automatic recovery has stopped for this assignment.", kind="system")
+            note = _add_post(sw, "system", f"{p['name']} could not resume the assignment from "
+                             f"board post #{job['through']} after {count} recovery attempts. "
+                             "Automatic recovery has stopped for this assignment.", kind="system")
+            if p is sw["coordinator"]:
+                # The failure notice itself must not trigger another quiet-board wake.
+                sw["idle_seq"] = note["id"]
             return
         # An ambiguous submit must reuse its key. A known terminal run needs a new one.
         if new_request:
@@ -420,8 +425,11 @@ def apply(ctx, config):
         status = record.get("status") or "done"
         error = record.get("error") or ""
         p.update(status="idle", run_id=None, finished=time.time(), last_status=status, error=error[:300])
-        crashed = status == "interrupted" or (status == "error" and error in WORKER_CRASH_ERRORS)
-        if crashed and p.get("assignment") and sw.get("enabled") and not p.get("removed"):
+        # Retry only explicit worker/model failures from a tracked board wake. A
+        # cancelled run or an unrelated execution error must not restart the work.
+        retryable = status == "interrupted" or (status == "error" and (
+            error in WORKER_CRASH_ERRORS or error == EMPTY_REPLY or error.startswith(LLM_FAILED)))
+        if retryable and p.get("assignment") and sw.get("enabled") and not p.get("removed"):
             _retry(sw, p, new_request=True)
         else:
             _discard_assignment(p)
@@ -462,49 +470,41 @@ def apply(ctx, config):
             _publish()
 
     def _dispatch(sw, p, is_coord):
-        through = p.get("pending") or 0
-        if is_coord:
-            text = _wake_text(sw, COORD, through)
-            options = {}
-        else:
-            job = p.get("assignment")
-            if job is None:
-                job = p["assignment"] = {"through": through, "text": _wake_text(sw, p["name"], through),
-                                         "request_id": uuid.uuid4().hex, "retries": 0}
-                p["pending"] = 0  # subsequent mentions have their own queue
-            # Write intent before crossing into the run service. If the host dies
-            # before recording the returned ID, resubmission finds that same run.
-            store.save()
-            if store.persistence_error:
-                return False
-            options = {"request_id": job["request_id"]}
-            text = job["text"]
-            if job["retries"]:
-                text = ("[Swarm] Resume your interrupted assignment in this same session and workspace. "
-                        "Check your conversation, board posts and existing work first. Continue from the "
-                        "last confirmed step. If the result is already posted, end this turn.\n\n" + text)
+        job = p.get("assignment")
+        if job is None:
+            through = p["pending"]
+            job = p["assignment"] = {"through": through, "text": _wake_text(sw, p["name"], through),
+                                     "request_id": uuid.uuid4().hex, "retries": 0}
+            p["pending"] = 0  # subsequent mentions have their own queue
+        # Write intent before crossing into the run service. If the host dies
+        # before recording the returned ID, resubmission finds that same run.
+        store.save()
+        if store.persistence_error:
+            return False
+        text = job["text"]
+        if job["retries"]:
+            text = ("[Swarm] Resume your interrupted assignment in this same session and workspace. "
+                    "Check your conversation, board posts and existing work first. Continue from the "
+                    "last confirmed step without repeating completed actions or sending the same "
+                    "assignment twice. If this assignment is already fulfilled, end this turn.\n\n" + text)
         try:
             _apply_pending(p)
             _sync(p)
             record = runs.start(text, session_id=p["session"], source=SOURCE,
-                                timeout=settings["turn_timeout"], **options)
+                                timeout=settings["turn_timeout"], request_id=job["request_id"])
         except Exception as error:
             # A concurrent private turn can win the race with active_for().
             if _busy(p["session"]):
                 return False
             p["error"] = str(error)[:300]
             log.warning("swarm: wake of %s failed: %s", p.get("name"), error)
-            if not is_coord:
-                _retry(sw, p, new_request=False)
+            _retry(sw, p, new_request=False)
             return True
 
         p.update(status="running", run_id=record["id"], started=record.get("created") or time.time(),
                  finished=None, error="")
         p["runs"] = (p.get("runs") or 0) + 1
-        if is_coord:
-            if (p.get("pending") or 0) <= through:
-                p["pending"] = 0
-        else:
+        if not is_coord:
             sw["wakes"] = sw.get("wakes", 0) + 1
         # start() can return a terminal record, including a synchronous worker
         # startup failure whose run.finished hook already fired before this point.
@@ -813,6 +813,8 @@ def apply(ctx, config):
             if sw.get("awaiting_user"):
                 return {"awaiting_user": True}
             _add_post(sw, COORD, summary, kind="handoff")
+            # The handoff fulfills this wake even if the final model reply fails.
+            _discard_assignment(sw["coordinator"])
             sw["awaiting_user"] = True
         _publish()
         return {"awaiting_user": True}
