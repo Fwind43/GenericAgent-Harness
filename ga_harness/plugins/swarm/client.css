@@ -107,7 +107,6 @@
 .gah-sw-model .gah-sw-on{margin-left:auto}
 .gah-sw-model-note{flex-basis:100%;font-size:11px;color:var(--muted)}
 .gah-sw-latest { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 260px; }
-.gah-sw-unread { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent, #3b82f6); color: #fff; font-size: 10.5px; font-weight: 600; line-height: 16px; text-align: center; }
 .gah-sw-gist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75; font-size: 12px; }
 .gah-sw-direct { padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, currentColor 10%, transparent); font-size: 11px; }
 @media (max-width: 720px) { .gah-sw-gist { display: none; } }

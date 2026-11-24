@@ -503,10 +503,7 @@
             /* @__PURE__ */ jsxRuntime.jsx("span", { children: label }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-count", children: running ? `${running}/${live.length + 1}` : live.length + 1 }),
             state ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-state", children: state }) : null,
-            fresh.length && !open ? /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-latest", title: gist, children: [
-              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-unread", children: fresh.length > 99 ? "99+" : fresh.length }),
-              /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-gist", children: gist })
-            ] }) : null,
+            fresh.length && !open ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-latest", title: gist, children: /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-gist", children: gist }) }) : null,
             /* @__PURE__ */ jsxRuntime.jsx("svg", { className: "gah-sw-caret", viewBox: "0 0 16 16", width: "10", height: "10", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "m4 6 4 4 4-4", fill: "none", stroke: "currentColor", strokeWidth: "1.6" }) })
           ]
         }

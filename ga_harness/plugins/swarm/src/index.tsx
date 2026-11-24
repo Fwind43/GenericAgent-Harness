@@ -399,7 +399,7 @@ function Panel({ api }: { api: PluginAPI }) {
         <Icon /><span>{label}</span>
         <span className="gah-sw-count">{running ? `${running}/${live.length + 1}` : live.length + 1}</span>
         {state ? <span className="gah-sw-state">{state}</span> : null}
-        {fresh.length && !open ? <span className="gah-sw-latest" title={gist}><span className="gah-sw-unread">{fresh.length > 99 ? '99+' : fresh.length}</span><span className="gah-sw-gist">{gist}</span></span> : null}
+        {fresh.length && !open ? <span className="gah-sw-latest" title={gist}><span className="gah-sw-gist">{gist}</span></span> : null}
         <svg className="gah-sw-caret" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" /></svg>
       </button>
       {open ? (
