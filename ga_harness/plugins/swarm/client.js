@@ -1,4 +1,4 @@
-(function(jsxRuntime, react, sdk) {
+(function(jsxRuntime, react, reactDom, sdk) {
   "use strict";
   const EFFORTS = ["low", "medium", "high"];
   const COORD = "coordinator";
@@ -45,7 +45,7 @@
     removed: ["已移除", "Removed"]
   };
   const statusLabel = (s) => {
-    const v = STATUS[s];
+    const v = STATUS[s || "idle"];
     return v ? sdk.T(v[0], v[1]) : s || "";
   };
   const fmtSecs = (s) => s == null ? "" : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m${Math.round(s % 60)}s` : `${Math.floor(s / 3600)}h${Math.floor(s % 3600 / 60)}m`;
@@ -516,6 +516,20 @@
           ] }, k)) }),
           view.enabled && view.paused && !view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), title: String(view.paused), children: sdk.T("继续", "Resume") }) : null,
           isCoord && !view.enabled ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("toggle", { enabled: true }), children: sdk.T("重新开启蜂群", "Turn swarm on") }) : null,
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "button",
+            {
+              type: "button",
+              className: "gah-sw-kebab-btn gah-sw-popout",
+              title: sdk.T("在新窗口打开群聊", "Open group chat in a new window"),
+              "aria-label": sdk.T("弹出群聊窗口", "Pop out group chat"),
+              onClick: () => {
+                setOpen(false);
+                popout(view.id, sid);
+              },
+              children: /* @__PURE__ */ jsxRuntime.jsx("svg", { viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntime.jsx("path", { d: "M9 2.5h4.5V7M13.5 2.5 8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3", fill: "none", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }) })
+            }
+          ),
           isCoord && view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-kebab", ref: kebab, children: [
             /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: `gah-sw-kebab-btn${menu ? " open" : ""}`, "aria-haspopup": "menu", "aria-expanded": menu, "aria-label": sdk.T("更多", "More"), title: sdk.T("更多", "More"), onClick: () => setMenu(!menu), children: /* @__PURE__ */ jsxRuntime.jsxs("svg", { viewBox: "0 0 16 16", width: "14", height: "14", "aria-hidden": "true", children: [
               /* @__PURE__ */ jsxRuntime.jsx("circle", { cx: "3.5", cy: "8", r: "1.3", fill: "currentColor" }),
@@ -570,10 +584,80 @@
     }), [api, sid, data]);
     return null;
   }
+  const ROOM = (() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      return q.get("gah_swarm") ? { id: q.get("gah_swarm") || "", sid: q.get("s") || "" } : null;
+    } catch {
+      return null;
+    }
+  })();
+  function popout(id, sid) {
+    const url = `${window.location.pathname}?gah_swarm=${encodeURIComponent(id)}&s=${encodeURIComponent(sid)}`;
+    const w = window.open(url, `gah-swarm-${id}`, "popup=yes,width=980,height=780");
+    if (w) w.focus();
+  }
+  function Room({ api }) {
+    const { data, sid, busy, run } = useSwarm(api);
+    const switching = react.useRef(false);
+    react.useEffect(() => {
+      if (!(ROOM == null ? void 0 : ROOM.sid) || !sid || sid === ROOM.sid || switching.current) return;
+      switching.current = true;
+      api.host.post("/api/sessions", { action: "select", id: ROOM.sid }).then((st) => api.setState(st, true)).catch((error) => api.notice(errText(error)));
+    }, [api, sid]);
+    const view = data == null ? void 0 : data.view;
+    react.useEffect(() => {
+      document.title = `${sdk.T("蜂群群聊", "Swarm chat")}${view ? ` · ${view.members.filter((m) => !m.removed).length + 1}` : ""}`;
+    }, [view]);
+    let body;
+    if (!data || !sid) body = /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-room-empty", children: sdk.T("加载中…", "Loading…") });
+    else if (!view) body = /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-room-empty", children: sdk.T("当前会话不在蜂群中", "This session is not in a swarm") });
+    else {
+      const people = [{ ...view.coordinator, name: COORD, role: sdk.T("协调者", "Coordinator") }, ...view.members.filter((m) => !m.removed)];
+      const state = !view.enabled ? sdk.T("已关闭", "Off") : view.awaiting_user ? sdk.T("等待你的回复", "Awaiting your reply") : view.paused ? sdk.T("已暂停", "Paused") : "";
+      body = /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("header", { className: "gah-sw-room-head", children: [
+          /* @__PURE__ */ jsxRuntime.jsx(Icon, {}),
+          /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("蜂群群聊", "Swarm chat") }),
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-room-sub", children: [
+            view.me === COORD ? "" : `@${view.me} · `,
+            sdk.T(`${people.length} 位成员`, `${people.length} members`)
+          ] }),
+          state ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-state", children: state }) : null,
+          view.enabled && view.paused && !view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), children: sdk.T("继续", "Resume") }) : null
+        ] }),
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-room-body", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("aside", { className: "gah-sw-room-roster", children: people.map((m) => /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-room-person", title: m.error || m.role || "", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sw-dot ${m.status || "idle"}` }),
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-room-name", children: [
+              "@",
+              m.name,
+              m.name === view.me ? /* @__PURE__ */ jsxRuntime.jsx("i", { children: sdk.T("（我）", " (me)") }) : null
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-room-role", children: m.role || "" }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-room-st", children: statusLabel(m.status) })
+          ] }, m.name)) }),
+          /* @__PURE__ */ jsxRuntime.jsxs("main", { className: "gah-sw-room-main", children: [
+            data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-note err", children: data.persistence_error }) : null,
+            /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy })
+          ] })
+        ] })
+      ] });
+    }
+    return reactDom.createPortal(/* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-room", children: body }), document.body);
+  }
   function SwarmPlugin({ api }) {
     react.useEffect(() => api.mount("composer-menu", /* @__PURE__ */ jsxRuntime.jsx(Toggle, { api })), [api]);
-    react.useEffect(() => api.mount("header", /* @__PURE__ */ jsxRuntime.jsx(Panel, { api })), [api]);
-    return /* @__PURE__ */ jsxRuntime.jsx(Slash, { api });
+    react.useEffect(() => ROOM ? void 0 : api.mount("header", /* @__PURE__ */ jsxRuntime.jsx(Panel, { api })), [api]);
+    react.useEffect(() => {
+      if (!ROOM) return;
+      document.documentElement.classList.add("gah-sw-room-mode");
+      return () => document.documentElement.classList.remove("gah-sw-room-mode");
+    }, []);
+    return ROOM ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntime.jsx(Slash, { api }),
+      /* @__PURE__ */ jsxRuntime.jsx(Room, { api })
+    ] }) : /* @__PURE__ */ jsxRuntime.jsx(Slash, { api });
   }
   sdk.defineReact("swarm", SwarmPlugin);
-})(GAH.jsxRuntime, GAH.React, GAH);
+})(GAH.jsxRuntime, GAH.React, GAH.ReactDOM, GAH);

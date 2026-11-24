@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useHost, T, defineReact, pages, type HostState, type PluginAPI } from '@gah/sdk';
 
 type Member = {
@@ -415,6 +416,10 @@ function Panel({ api }: { api: PluginAPI }) {
             </div>
             {view.enabled && view.paused && !view.awaiting_user ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')} title={String(view.paused)}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
             {isCoord && !view.enabled ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('toggle', { enabled: true })}>{T('\u91cd\u65b0\u5f00\u542f\u8702\u7fa4', 'Turn swarm on')}</button> : null}
+            <button type="button" className="gah-sw-kebab-btn gah-sw-popout" title={T('\u5728\u65b0\u7a97\u53e3\u6253\u5f00\u7fa4\u804a', 'Open group chat in a new window')}
+              aria-label={T('\u5f39\u51fa\u7fa4\u804a\u7a97\u53e3', 'Pop out group chat')} onClick={() => { setOpen(false); popout(view.id, sid); }}>
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
             {isCoord && view.enabled ? (
               <div className="gah-sw-kebab" ref={kebab}>
                 <button type="button" className={`gah-sw-kebab-btn${menu ? ' open' : ''}`} aria-haspopup="menu" aria-expanded={menu} aria-label={T('\u66f4\u591a', 'More')} title={T('\u66f4\u591a', 'More')} onClick={() => setMenu(!menu)}>
@@ -469,10 +474,71 @@ function Slash({ api }: { api: PluginAPI }) {
   return null;
 }
 
+// Pop-out "group chat" window: same app, opened with ?gah_swarm=<id>&s=<session>, showing only the swarm.
+const ROOM = (() => { try { const q = new URLSearchParams(window.location.search); return q.get('gah_swarm') ? { id: q.get('gah_swarm') || '', sid: q.get('s') || '' } : null; } catch { return null; } })();
+function popout(id: string, sid: string) {
+  const url = `${window.location.pathname}?gah_swarm=${encodeURIComponent(id)}&s=${encodeURIComponent(sid)}`;
+  const w = window.open(url, `gah-swarm-${id}`, 'popup=yes,width=980,height=780');
+  if (w) w.focus();
+}
+
+function Room({ api }: { api: PluginAPI }) {
+  const { data, sid, busy, run } = useSwarm(api);
+  const switching = useRef(false);
+  useEffect(() => {
+    // The pop-out normally inherits the opener's chat; if not, point this window at the swarm session.
+    if (!ROOM?.sid || !sid || sid === ROOM.sid || switching.current) return;
+    switching.current = true;
+    api.host.post<HostState>('/api/sessions', { action: 'select', id: ROOM.sid })
+      .then(st => api.setState(st, true)).catch(error => api.notice(errText(error)));
+  }, [api, sid]);
+  const view = data?.view;
+  useEffect(() => { document.title = `${T('\u8702\u7fa4\u7fa4\u804a', 'Swarm chat')}${view ? ` \u00b7 ${view.members.filter(m => !m.removed).length + 1}` : ''}`; }, [view]);
+  let body;
+  if (!data || !sid) body = <div className="gah-sw-room-empty">{T('\u52a0\u8f7d\u4e2d\u2026', 'Loading\u2026')}</div>;
+  else if (!view) body = <div className="gah-sw-room-empty">{T('\u5f53\u524d\u4f1a\u8bdd\u4e0d\u5728\u8702\u7fa4\u4e2d', 'This session is not in a swarm')}</div>;
+  else {
+    const people = [{ ...view.coordinator, name: COORD, role: T('\u534f\u8c03\u8005', 'Coordinator') } as Member, ...view.members.filter(m => !m.removed)];
+    const state = !view.enabled ? T('\u5df2\u5173\u95ed', 'Off') : view.awaiting_user ? T('\u7b49\u5f85\u4f60\u7684\u56de\u590d', 'Awaiting your reply') : view.paused ? T('\u5df2\u6682\u505c', 'Paused') : '';
+    body = (
+      <>
+        <header className="gah-sw-room-head">
+          <Icon /><b>{T('\u8702\u7fa4\u7fa4\u804a', 'Swarm chat')}</b>
+          <span className="gah-sw-room-sub">{view.me === COORD ? '' : `@${view.me} \u00b7 `}{T(`${people.length} \u4f4d\u6210\u5458`, `${people.length} members`)}</span>
+          {state ? <span className="gah-sw-state">{state}</span> : null}
+          {view.enabled && view.paused && !view.awaiting_user ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
+        </header>
+        <div className="gah-sw-room-body">
+          <aside className="gah-sw-room-roster">
+            {people.map(m => (
+              <div key={m.name} className="gah-sw-room-person" title={m.error || m.role || ''}>
+                <span className={`gah-sw-dot ${m.status || 'idle'}`} />
+                <span className="gah-sw-room-name">@{m.name}{m.name === view.me ? <i>{T('\uff08\u6211\uff09', ' (me)')}</i> : null}</span>
+                <span className="gah-sw-room-role">{m.role || ''}</span>
+                <span className="gah-sw-room-st">{statusLabel(m.status)}</span>
+              </div>
+            ))}
+          </aside>
+          <main className="gah-sw-room-main">
+            {data.persistence_error ? <div className="gah-sw-note err">{data.persistence_error}</div> : null}
+            <Board api={api} view={view} run={run} busy={busy} />
+          </main>
+        </div>
+      </>
+    );
+  }
+  return createPortal(<div className="gah-sw-room">{body}</div>, document.body);
+}
+
 function SwarmPlugin({ api }: { api: PluginAPI }) {
   useEffect(() => api.mount('composer-menu', <Toggle api={api} />), [api]);
-  useEffect(() => api.mount('header', <Panel api={api} />), [api]);
-  return <Slash api={api} />;
+  useEffect(() => ROOM ? undefined : api.mount('header', <Panel api={api} />), [api]);
+  useEffect(() => {
+    if (!ROOM) return;
+    document.documentElement.classList.add('gah-sw-room-mode');
+    return () => document.documentElement.classList.remove('gah-sw-room-mode');
+  }, []);
+  return ROOM ? <><Slash api={api} /><Room api={api} /></> : <Slash api={api} />;
 }
 
 defineReact('swarm', SwarmPlugin);

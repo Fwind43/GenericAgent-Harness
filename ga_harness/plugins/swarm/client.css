@@ -110,3 +110,25 @@
 .gah-sw-gist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75; font-size: 12px; }
 .gah-sw-direct { padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, currentColor 10%, transparent); font-size: 11px; }
 @media (max-width: 720px) { .gah-sw-gist { display: none; } }
+
+/* Pop-out group chat window (?gah_swarm=...) */
+html.gah-sw-room-mode, html.gah-sw-room-mode body { overflow: hidden; }
+.gah-sw-room { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--bg); color: var(--fg, inherit); }
+.gah-sw-room-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); flex: none; }
+.gah-sw-room-head b { font-size: 15px; }
+.gah-sw-room-sub { opacity: .65; font-size: 12px; }
+.gah-sw-room-head .gah-sw-on { margin-left: auto; }
+.gah-sw-room-body { flex: 1; min-height: 0; display: flex; }
+.gah-sw-room-roster { width: 220px; flex: none; overflow-y: auto; padding: 8px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.gah-sw-room-person { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "dot name st" ". role role"; align-items: center; column-gap: 6px; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+.gah-sw-room-person:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.gah-sw-room-person .gah-sw-dot { grid-area: dot; }
+.gah-sw-room-name { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.gah-sw-room-name i { font-style: normal; font-weight: 400; opacity: .6; }
+.gah-sw-room-role { grid-area: role; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .6; font-size: 12px; }
+.gah-sw-room-st { grid-area: st; opacity: .6; font-size: 11px; }
+.gah-sw-room-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 8px 12px 12px; gap: 8px; }
+.gah-sw-room-main .gah-sw-board { flex: 1; min-height: 0; max-height: none; }
+.gah-sw-room-main .gah-sw-compose { flex: none; }
+.gah-sw-room-empty { margin: auto; opacity: .6; }
+@media (max-width: 640px) { .gah-sw-room-roster { display: none; } }
