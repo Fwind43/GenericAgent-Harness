@@ -155,35 +155,43 @@
         markMentions(node);
       } else node.textContent = text;
     }, [text]);
-    return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: `gah-sw-text${clamp ? " clamp" : ""}` });
+    return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: `gah-sw-text md${clamp ? " clamp" : ""}` });
   }
+  const hueOf = (name) => {
+    let h = 0;
+    for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return name === "user" ? "var(--accent)" : `hsl(${h} 55% 52%)`;
+  };
   function PostRow({ post, floor, onReply }) {
     const [open, setOpen] = react.useState(false);
     const long = post.text.length > 280 || post.text.split("\n").length > 6;
     const md = post.kind !== "system";
-    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-post ${post.kind}${post.author === "user" ? " user" : ""}`, children: [
-      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-meta", children: [
-        floor ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-floor", children: floor === 1 ? sdk.T("楼主", "OP") : sdk.T(`${floor}楼`, `#${floor}`) }) : null,
-        /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
-          "@",
-          post.author
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-post ${post.kind}${post.author === "user" ? " user" : ""}${floor ? " floor" : ""}${floor === 1 ? " op" : ""}`, children: [
+      floor ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-avatar", style: { background: hueOf(post.author) }, "aria-hidden": "true", children: (post.author[0] || "?").toUpperCase() }) : null,
+      /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-post-main", children: [
+        /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-meta", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
+            "@",
+            post.author
+          ] }),
+          floor ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: `gah-sw-floor${floor === 1 ? " op" : ""}`, children: floor === 1 ? sdk.T("楼主", "OP") : sdk.T(`${floor}楼`, `#${floor}`) }) : null,
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-id", children: [
+            "#",
+            post.id
+          ] }),
+          post.kind === "direct" ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-direct", title: sdk.T("你在成员会话里的私聊指示，自动记录到留言板，不会唤醒任何人", "Your private instruction in a member session, recorded here without waking anyone"), children: sdk.T("私聊", "Private") }) : null,
+          post.reply_to ? /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+            "↪",
+            " #",
+            post.reply_to
+          ] }) : null,
+          post.via ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: sdk.T("来自非蜂群调度的运行", "Posted from a run not scheduled by the swarm"), children: post.via }) : null,
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-time", title: new Date(post.created * 1e3).toLocaleString(), children: fmtTime(post.created) }),
+          onReply ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-reply", onClick: onReply, children: sdk.T("回复", "Reply") }) : null
         ] }),
-        /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-          "#",
-          post.id
-        ] }),
-        post.kind === "direct" ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-direct", title: sdk.T("你在成员会话里的私聊指示，自动记录到留言板，不会唤醒任何人", "Your private instruction in a member session, recorded here without waking anyone"), children: sdk.T("私聊", "Private") }) : null,
-        post.reply_to ? /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
-          "↪",
-          " #",
-          post.reply_to
-        ] }) : null,
-        post.via ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: sdk.T("来自非蜂群调度的运行", "Posted from a run not scheduled by the swarm"), children: post.via }) : null,
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-time", children: fmtTime(post.created) }),
-        onReply ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-reply", onClick: onReply, children: sdk.T("回复", "Reply") }) : null
-      ] }),
-      md ? /* @__PURE__ */ jsxRuntime.jsx(PostText, { text: post.text, clamp: long && !open }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: `gah-sw-text${long && !open ? " clamp" : ""}`, children: post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith("@") ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-at", children: p }, i) : p) }),
-      long ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", onClick: () => setOpen(!open), children: open ? sdk.T("收起", "Less") : sdk.T("展开", "More") }) : null
+        md ? /* @__PURE__ */ jsxRuntime.jsx(PostText, { text: post.text, clamp: long && !open }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: `gah-sw-text${long && !open ? " clamp" : ""}`, children: post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith("@") ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-at", children: p }, i) : p) }),
+        long ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", onClick: () => setOpen(!open), children: open ? sdk.T("收起", "Less") : sdk.T("展开", "More") }) : null
+      ] })
     ] });
   }
   function mentionOptions(view) {
@@ -432,7 +440,21 @@
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-hint", children: sdk.T("第一行是标题，下面写任务细节。用 @名字 / @组 / @all 指派成员；不 @ 任何人时只是发帖，不会唤醒谁（协调者在等你回复时除外）。Ctrl+Enter 发布。", "The first line is the title; details go below. Use @name / @group / @all to assign members; without a mention nobody is woken (unless the coordinator is awaiting your reply). Ctrl+Enter publishes.") }),
         /* @__PURE__ */ jsxRuntime.jsx(Compose, { view, busy, send: publish, multiline: true, placeholder: sdk.T("标题\n\n任务描述… @名字 指派", "Title\n\nTask details… @name to assign") })
       ] }) : shown ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
-        /* @__PURE__ */ jsxRuntime.jsx("h3", { className: "gah-sw-thread-title", children: titleOf(shown.root.text) || `#${shown.root.id}` }),
+        /* @__PURE__ */ jsxRuntime.jsxs("header", { className: "gah-sw-thread-head", children: [
+          /* @__PURE__ */ jsxRuntime.jsx("h3", { className: "gah-sw-thread-title", children: titleOf(shown.root.text) || `#${shown.root.id}` }),
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-thread-meta", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              "@",
+              shown.root.author
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T(`${shown.posts.length - 1} 回复`, `${shown.posts.length - 1} replies`) }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T(`${new Set(shown.posts.map((p) => p.author)).size} 人参与`, `${new Set(shown.posts.map((p) => p.author)).size} participants`) }),
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              sdk.T("最后活动 ", "Last active "),
+              fmtTime(shown.last)
+            ] })
+          ] })
+        ] }),
         /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-floors", ref: floors, children: shown.posts.map((p, i) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p, floor: i + 1, onReply: view.enabled ? () => setReply(p.id) : void 0 }, p.id)) }),
         view.enabled ? /* @__PURE__ */ jsxRuntime.jsx(
           Compose,

@@ -178,3 +178,32 @@ html.gah-sw-room-mode, html.gah-sw-room-mode body { overflow: hidden; }
 .gah-sw-compose.multi textarea { resize: vertical; min-height: 120px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: inherit; }
 .gah-sw-compose.multi button { align-self: flex-end; }
 @media (max-width: 760px) { .gah-sw-topics { width: 170px; } }
+/* forum polish */
+.gah-sw-thread { gap: 0; }
+.gah-sw-thread-head { padding: 4px 6px 10px; border-bottom: 1px solid var(--border); }
+.gah-sw-thread-title { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.4; color: var(--text); }
+.gah-sw-thread-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+.gah-sw-thread-meta span + span::before { content: "\00b7"; margin-right: 12px; opacity: .6; }
+.gah-sw-floors { gap: 10px; padding: 12px 6px 12px 2px; }
+.gah-sw-floors .gah-sw-post.floor { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--border) 80%, transparent); border-radius: 10px; background: var(--surface, transparent); transition: border-color .15s; }
+.gah-sw-floors .gah-sw-post.floor:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.gah-sw-floors .gah-sw-post.floor.op { border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface, transparent)); }
+.gah-sw-floors .gah-sw-post.floor.user:not(.op) { background: color-mix(in srgb, var(--accent) 7%, var(--surface, transparent)); }
+.gah-sw-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 600; line-height: 1; user-select: none; margin-top: 1px; }
+.gah-sw-post-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gah-sw-floors .gah-sw-meta { align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.gah-sw-floors .gah-sw-meta b { font-size: 13px; }
+.gah-sw-floors .gah-sw-time { margin-left: 4px; }
+.gah-sw-floors .gah-sw-time::before { content: "\00b7"; margin-right: 6px; opacity: .6; }
+.gah-sw-id { opacity: .7; }
+.gah-sw-floor { font-size: 10.5px; line-height: 16px; padding: 0 6px; border-radius: 999px; color: var(--muted); background: color-mix(in srgb, var(--border) 50%, transparent); }
+.gah-sw-floor.op { color: #fff; background: var(--accent); }
+.gah-sw-floors .gah-sw-reply { margin-left: auto; padding: 2px 10px; border-radius: 999px; border: 1px solid transparent; opacity: 0; transition: opacity .15s, background .15s; }
+.gah-sw-floors .gah-sw-post:hover .gah-sw-reply, .gah-sw-floors .gah-sw-reply:focus-visible { opacity: 1; }
+.gah-sw-floors .gah-sw-reply:hover { text-decoration: none; background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+@media (hover: none) { .gah-sw-floors .gah-sw-reply { opacity: .8; } }
+.gah-sw-floors .gah-sw-text { font-size: 13px; line-height: 1.65; color: var(--text); margin-top: 0; }
+.gah-sw-floors .gah-sw-more { align-self: flex-start; margin-top: 4px; }
+.gah-sw-thread > .gah-sw-compose { margin-top: 0; padding: 10px 4px 4px; }
+.gah-sw-topic { border-radius: 8px; }
+.gah-sw-topic.on { box-shadow: inset 3px 0 0 var(--accent); }

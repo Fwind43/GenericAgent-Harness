@@ -146,24 +146,33 @@ function PostText({ text, clamp }: { text: string; clamp: boolean }) {
     if (out) { out.setMarkdown(node, text); markMentions(node); }
     else node.textContent = text;
   }, [text]);
-  return <div ref={ref} className={`gah-sw-text${clamp ? ' clamp' : ''}`} />;
+  return <div ref={ref} className={`gah-sw-text md${clamp ? ' clamp' : ''}`} />;
 }
+
+const hueOf = (name: string) => {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return name === 'user' ? 'var(--accent)' : `hsl(${h} 55% 52%)`;
+};
 
 function PostRow({ post, floor, onReply }: { post: Post; floor?: number; onReply?: () => void }) {
   const [open, setOpen] = useState(false);
   const long = post.text.length > 280 || post.text.split('\n').length > 6;
   const md = post.kind !== 'system';
   return (
-    <div className={`gah-sw-post ${post.kind}${post.author === 'user' ? ' user' : ''}`}>
+    <div className={`gah-sw-post ${post.kind}${post.author === 'user' ? ' user' : ''}${floor ? ' floor' : ''}${floor === 1 ? ' op' : ''}`}>
+      {floor ? <span className="gah-sw-avatar" style={{ background: hueOf(post.author) }} aria-hidden="true">{(post.author[0] || '?').toUpperCase()}</span> : null}
+      <div className="gah-sw-post-main">
       <div className="gah-sw-meta">
-        {floor ? <span className="gah-sw-floor">{floor === 1 ? T('\u697c\u4e3b', 'OP') : T(`${floor}\u697c`, `#${floor}`)}</span> : null}<b>@{post.author}</b><span>#{post.id}</span>
+        <b>@{post.author}</b>{floor ? <span className={`gah-sw-floor${floor === 1 ? ' op' : ''}`}>{floor === 1 ? T('\u697c\u4e3b', 'OP') : T(`${floor}\u697c`, `#${floor}`)}</span> : null}<span className="gah-sw-id">#{post.id}</span>
         {post.kind === 'direct' ? <span className="gah-sw-direct" title={T('\u4f60\u5728\u6210\u5458\u4f1a\u8bdd\u91cc\u7684\u79c1\u804a\u6307\u793a\uff0c\u81ea\u52a8\u8bb0\u5f55\u5230\u7559\u8a00\u677f\uff0c\u4e0d\u4f1a\u5524\u9192\u4efb\u4f55\u4eba', 'Your private instruction in a member session, recorded here without waking anyone')}>{T('\u79c1\u804a', 'Private')}</span> : null}{post.reply_to ? <span>{'\u21aa'} #{post.reply_to}</span> : null}
         {post.via ? <span title={T('\u6765\u81ea\u975e\u8702\u7fa4\u8c03\u5ea6\u7684\u8fd0\u884c', 'Posted from a run not scheduled by the swarm')}>{post.via}</span> : null}
-        <span className="gah-sw-time">{fmtTime(post.created)}</span>
+        <span className="gah-sw-time" title={new Date(post.created * 1000).toLocaleString()}>{fmtTime(post.created)}</span>
         {onReply ? <button type="button" className="gah-sw-reply" onClick={onReply}>{T('\u56de\u590d', 'Reply')}</button> : null}
       </div>
       {md ? <PostText text={post.text} clamp={long && !open} /> : <div className={`gah-sw-text${long && !open ? ' clamp' : ''}`}>{post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith('@') ? <span key={i} className="gah-sw-at">{p}</span> : p)}</div>}
       {long ? <button type="button" className="gah-sw-more" onClick={() => setOpen(!open)}>{open ? T('\u6536\u8d77', 'Less') : T('\u5c55\u5f00', 'More')}</button> : null}
+      </div>
     </div>
   );
 }
@@ -358,7 +367,15 @@ function Forum({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
           </div>
         ) : shown ? (
           <>
-            <h3 className="gah-sw-thread-title">{titleOf(shown.root.text) || `#${shown.root.id}`}</h3>
+            <header className="gah-sw-thread-head">
+              <h3 className="gah-sw-thread-title">{titleOf(shown.root.text) || `#${shown.root.id}`}</h3>
+              <div className="gah-sw-thread-meta">
+                <span>@{shown.root.author}</span>
+                <span>{T(`${shown.posts.length - 1} \u56de\u590d`, `${shown.posts.length - 1} replies`)}</span>
+                <span>{T(`${new Set(shown.posts.map(p => p.author)).size} \u4eba\u53c2\u4e0e`, `${new Set(shown.posts.map(p => p.author)).size} participants`)}</span>
+                <span>{T('\u6700\u540e\u6d3b\u52a8 ', 'Last active ')}{fmtTime(shown.last)}</span>
+              </div>
+            </header>
             <div className="gah-sw-floors" ref={floors}>
               {shown.posts.map((p, i) => <PostRow key={p.id} post={p} floor={i + 1} onReply={view.enabled ? () => setReply(p.id) : undefined} />)}
             </div>
