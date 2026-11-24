@@ -359,7 +359,7 @@
     ] });
   }
   function Panel({ api }) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const { data, sid, busy, run } = useSwarm(api);
     const [open, setOpen] = react.useState(false);
     const [tab, setTab] = react.useState("board");
@@ -464,7 +464,7 @@
       await run(path, { name: m.name });
     };
     const loadModels = () => {
-      if (models !== null || modelsLoading.current) return;
+      if (modelsLoading.current) return;
       modelsLoading.current = true;
       api.post("models", { session_id: sid }).then((res) => setModels((res || {}).models || [])).catch((error) => {
         api.notice(errText(error));
@@ -474,6 +474,14 @@
       });
     };
     const save = (m, model, effort) => run("model", { name: m.name, model, effort });
+    const { state: host } = sdk.useHost();
+    const modelSig = `${sid}|${JSON.stringify((((_d = host == null ? void 0 : host.models) == null ? void 0 : _d.items) || []).map((r) => [r.key, r.name, r.model]))}`;
+    const seenSig = react.useRef(modelSig);
+    react.useEffect(() => {
+      if (seenSig.current === modelSig) return;
+      seenSig.current = modelSig;
+      if (models !== null) loadModels();
+    }, [modelSig]);
     const enter = async (m) => {
       if (!m.session) return;
       setOpen(false);

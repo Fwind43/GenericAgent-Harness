@@ -373,8 +373,9 @@ function Panel({ api }: { api: PluginAPI }) {
     if (path === 'remove' && !window.confirm(T(`\u786e\u5b9a\u628a @${m.name} \u79fb\u51fa\u8702\u7fa4\uff1f`, `Remove @${m.name} from the swarm?`))) return;
     await run(path, { name: m.name });
   };
+  // Always refetch on expand (stale list stays visible meanwhile), and refetch when the host model catalog changes.
   const loadModels = () => {
-    if (models !== null || modelsLoading.current) return;
+    if (modelsLoading.current) return;
     modelsLoading.current = true;
     api.post('models', { session_id: sid })
       .then(res => setModels(((res || {}) as { models?: ModelRow[] }).models || []))
@@ -382,6 +383,14 @@ function Panel({ api }: { api: PluginAPI }) {
       .finally(() => { modelsLoading.current = false; });
   };
   const save = (m: Member, model: string, effort: string) => run('model', { name: m.name, model, effort });
+  const { state: host } = useHost();
+  const modelSig = `${sid}|${JSON.stringify((((host as unknown as { models?: { items?: ModelRow[] } })?.models?.items) || []).map(r => [r.key, r.name, r.model]))}`;
+  const seenSig = useRef(modelSig);
+  useEffect(() => {
+    if (seenSig.current === modelSig) return;
+    seenSig.current = modelSig;
+    if (models !== null) loadModels();
+  }, [modelSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const enter = async (m: Member) => {
     if (!m.session) return;
     setOpen(false);
