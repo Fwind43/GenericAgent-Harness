@@ -22,11 +22,20 @@ from __future__ import annotations
 import importlib
 import json
 import logging
+import re
 
 RPC_TIMEOUT = 60.0
 ROLE_TRIES = 3
 log = logging.getLogger("gah.swarm-worker")
 WAIT_MAX = 900
+# Host wake-ups and resume prompts start with this tag; anything else opening a run
+# came from the user, who expects a visible answer before the turn ends.
+WAKE_TAG = "[Swarm]"
+_HIDDEN = re.compile(r"<(summary|thinking|think)>.*?</\1>", re.S | re.I)
+REPLY_FIRST = (
+    "[Swarm] Not ended yet: this turn was started by the user's own message and you have "
+    "not answered it in text. Reply to the user now in plain text (e.g. the progress or "
+    "status they asked about, based on the board and members), then call swarm_end_turn.")
 
 
 def _tool(name, description, properties=None, required=()):
@@ -67,7 +76,8 @@ END_TURN_TOOL = _tool(END_TURN,
     "End your turn now and wait to be woken. Use this instead of sleeping, polling or "
     "waiting in code_run while teammates work: the host wakes you when you are "
     "@mentioned or when the board goes quiet. Waiting for the team counts as finishing "
-    "your current step.",
+    "your current step. If the user wrote to you this turn, answer them in text first: "
+    "this tool ends the turn and shows the user nothing.",
     {"note": {"type": "string", "description": "Optional short note on what you are waiting for."}})
 
 COORD_TOOLS = {
@@ -117,6 +127,9 @@ mention wakes the mentioned participant. You alone add or remove members.
   are stuck, disagree, or loop. If a member's model is too weak or too costly for its
   role, switch it with swarm_set_member_model.
 - Do not relay every message: members read the board themselves.
+- When the user writes to you (a question, a progress check, new instructions), always
+  answer them in plain text in that same turn; swarm_end_turn shows them nothing, so call
+  it only after your reply.
 - Once work is handed off, your step is complete: call swarm_end_turn to end your turn.
   Never wait for the team with code_run, sleep, timers or repeated board_read; you are
   woken when mentioned (@coordinator) or when the board goes quiet. When a phase is delivered or a decision is needed, call
@@ -161,7 +174,12 @@ def apply(ctx, config):
     tools = ctx.get("ga.tools") if ctx.has("ga.tools") else None
     if host is None or tools is None:
         return
-    state = {"role": None, "checked": False, "tries": 0, "info": {}}
+    state = {"role": None, "checked": False, "tries": 0, "info": {},
+             "user_turn": False, "replied": False, "nudged": False}
+
+    def _visible(response):
+        text = getattr(response, "content", None)
+        return bool(isinstance(text, str) and _HIDDEN.sub("", text).strip())
 
     def call(op, args):
         StepOutcome = importlib.import_module("agent_loop").StepOutcome
@@ -191,6 +209,11 @@ def apply(ctx, config):
     def end_turn(handler, args, response):
         StepOutcome = importlib.import_module("agent_loop").StepOutcome
         note = str((args or {}).get("note") or "").strip() if isinstance(args, dict) else ""
+        if state["user_turn"] and not state["nudged"] and not (state["replied"] or _visible(response)):
+            # Asked "how is it going?" and answered only with this tool: the user saw
+            # nothing. Push back once; a second call ends the turn regardless.
+            state["nudged"] = True
+            return StepOutcome(REPLY_FIRST, next_prompt=REPLY_FIRST + "\n")
         msg = "Turn ended; waiting to be woken by a mention or a quiet board."
         if note:
             msg += " Note: " + note
@@ -231,6 +254,14 @@ def apply(ctx, config):
     def before(gactx, nxt):
         if not state["checked"]:
             setup()
+        text = gactx.get("user_input") if isinstance(gactx, dict) else None
+        state["user_turn"] = isinstance(text, str) and not text.lstrip().startswith(WAKE_TAG)
+        state["replied"] = state["nudged"] = False
+        return nxt(gactx)
+
+    def llm_after(gactx, nxt):
+        if isinstance(gactx, dict) and _visible(gactx.get("response")):
+            state["replied"] = True
         return nxt(gactx)
 
     def prompt(text, nxt):
@@ -253,4 +284,5 @@ def apply(ctx, config):
         return text
 
     ctx.on("ga.agent_before", before)
+    ctx.on("ga.llm_after", llm_after)
     ctx.on("ga.system_prompt", prompt)
