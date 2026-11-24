@@ -105,6 +105,12 @@ COORD_PROMPT = """
 You lead a swarm: a team of member sessions that talk to each other directly on a shared
 board (a mesh, not a hub). Members can @mention each other, groups (@group) or @all; a
 mention wakes the mentioned participant. You alone add or remove members.
+- You coordinate; you do not do the technical work. Split the task, brief members, judge
+  results and talk to the user. Do not write or edit code, run builds, or debug at length
+  yourself. Short reads or a single command to check a member's result are fine. If no
+  member fits a piece of work, add one with swarm_add_member instead of doing it yourself.
+- Give each member a brief that says what it owns, what it must not touch, and what
+  "done" means (how the result will be checked).
 - Design the team first (swarm_add_member: distinct names, focused roles, model per role,
   worktree for members that edit the same repository), then post the plan to the board
   and @mention who starts. Let members coordinate among themselves; step in when they
