@@ -42,6 +42,7 @@ MAX_TEXT = 20000
 MAX_POSTS = 2000
 SNAPSHOT_POSTS = 200
 PINGPONG_WINDOW = 10
+WAKE_QUOTE_MAX = 8  # board posts quoted in one wake-up/steer; the rest are counted
 # Delays before resuming the same board assignment in the same member session.
 RECOVERY_DELAYS = (5, 15, 60)
 WORKER_CRASH_ERRORS = frozenset({
@@ -370,6 +371,38 @@ def apply(ctx, config):
             p["pending_from"] = post_id
         p["pending"] = max(p.get("pending") or 0, post_id)
 
+    def _steer_coord(sw, p):
+        """Hand new mentions to the running coordinator turn via ga-steer.
+
+        Instead of queueing a whole new turn behind a long one, the mentions are
+        injected at the next step boundary. ``steering`` remembers the range so it
+        can be put back in the queue if the run ends before applying it."""
+        rid = p.get("run_id")
+        if not rid or p.get("steering") or not p.get("pending"):
+            return False
+        through = p["pending"]
+        item = {"id": uuid.uuid4().hex, "text": _wake_text(sw, p["name"], through), "raw": True}
+        try:
+            ok = runs.push(rid, "steer", item)
+        except Exception:
+            ok = False
+        if not ok:
+            return False
+        p["steering"] = {"id": item["id"], "from": p.get("pending_from"), "through": through}
+        p["pending"] = 0
+        p.pop("pending_from", None)
+        return True
+
+    def _unsteer(p):
+        """Requeue a steer that was never applied (run ended or item unused)."""
+        st = p.pop("steering", None)
+        if not st:
+            return False
+        if st.get("from") and (not p.get("pending") or st["from"] < (p.get("pending_from") or st["from"])):
+            p["pending_from"] = st["from"]
+        p["pending"] = max(p.get("pending") or 0, st["through"])
+        return True
+
     def _deliver(sw, post):
         if post["author"] in (COORD, "user"):
             sw["wakes"] = 0
@@ -386,13 +419,28 @@ def apply(ctx, config):
         # Reading the board or posting a progress report can advance the read cursor
         # while this participant is busy. Use the queued range for wake delivery.
         first = p.get("pending_from") or min((p.get("cursor") or 0) + 1, upto)
-        posts = [x for x in sw["posts"] if first <= x["id"] <= upto and name in x["mentions"]][-5:]
+        mentioned = [x for x in sw["posts"] if first <= x["id"] <= upto and name in x["mentions"]]
+        # A long turn can pile up many mentions. Quote all user posts first, then
+        # fill the remaining slots with the newest ones, and say what was left out.
+        keep = {x["id"] for x in mentioned if x["author"] == "user"}
+        for x in reversed(mentioned):
+            if len(keep) >= WAKE_QUOTE_MAX:
+                break
+            keep.add(x["id"])
+        posts = [x for x in mentioned if x["id"] in keep]
         lines = []
         for x in posts:
             body = x["text"] if len(x["text"]) <= 1500 else x["text"][:1500] + " ..."
             lines.append(f"#{x['id']} @{x['author']}: {body}")
-        head = ("[Swarm] You were mentioned on the board." if posts
-                else "[Swarm] The board has news for you.")
+        if not posts:
+            head = "[Swarm] The board has news for you."
+        elif len(mentioned) > len(posts):
+            head = (f"[Swarm] You were mentioned in {len(mentioned)} board posts "
+                    f"(#{mentioned[0]['id']}-#{mentioned[-1]['id']}). {len(mentioned) - len(posts)} "
+                    f"older ones are omitted below: call board_read(since={mentioned[0]['id'] - 1}) "
+                    "and handle them together in one pass.")
+        else:
+            head = "[Swarm] You were mentioned on the board."
         return (head + "\n" + "\n".join(lines) +
                 "\nCatch up with board_read if needed, do your part, then board_post the result "
                 "(mention only who must act) and end your turn.")
@@ -424,6 +472,7 @@ def apply(ctx, config):
     def _settle(sw, p, record):
         status = record.get("status") or "done"
         error = record.get("error") or ""
+        _unsteer(p)  # mentions steered into this run but never applied go back in the queue
         p.update(status="idle", run_id=None, finished=time.time(), last_status=status, error=error[:300])
         # Retry only explicit worker/model failures from a tracked board wake. A
         # cancelled run or an unrelated execution error must not restart the work.
@@ -527,7 +576,11 @@ def apply(ctx, config):
                 running = sum(p.get("status") == "running" for p in parts)
                 for p in parts:
                     job = p.get("assignment")
-                    if p.get("status") == "running" or not (p.get("pending") or job):
+                    if p.get("status") == "running":
+                        if p is sw["coordinator"] and _steer_coord(sw, p):
+                            dirty = True
+                        continue
+                    if not (p.get("pending") or job):
                         continue
                     if job and job.get("retry_at", 0) > time.time():
                         continue
@@ -990,6 +1043,34 @@ def apply(ctx, config):
             log.warning("swarm: run.finished handling failed: %s", error)
         return nxt(data) if nxt else None
 
+    def on_event(data, nxt=None):
+        # ga-steer reports which steered items reached the model. Applied ones are
+        # done; unused ones (the loop ended first) are requeued for a fresh turn.
+        try:
+            name, payload, sid = data.get("name"), data.get("data") or {}, data.get("session_id")
+            if name in ("plugin.steer.applied", "plugin.steer.unused") and sid:
+                ids = set(payload.get("ids") or [])
+                changed = False
+                with lock:
+                    sw = swarms.get(sid)
+                    p = sw and sw["coordinator"]
+                    st = p and p.get("steering")
+                    if st and st.get("id") in ids:
+                        if name == "plugin.steer.applied":
+                            p.pop("steering", None)
+                        else:
+                            _unsteer(p)
+                        sw["last_activity"] = time.time()
+                        store.save()
+                        changed = True
+                if changed:
+                    _publish()
+                    # More mentions may have queued while this steer was in flight.
+                    threading.Thread(target=_pump, daemon=True, name="swarm-pump").start()
+        except Exception as error:
+            log.warning("swarm: steer event handling failed: %s", error)
+        return nxt(data) if nxt else None
+
     def _edges(sw):
         counts = {}
         for x in sw["posts"]:
@@ -1030,9 +1111,11 @@ def apply(ctx, config):
     store.save()
     ctx.scope.add(runs.register_rpc("swarm", rpc))
     ctx.scope.add(runs.register_worker_plugin("swarm-worker"))
+    ctx.scope.add(runs.register_worker_plugin("ga-steer"))
     ctx.on("web.snapshot", snapshot)
     ctx.on("run.started", on_started)
     ctx.on("run.finished", on_finished)
+    ctx.on("run.event", on_event)
     _reconcile()
 
     def is_enabled(sid):

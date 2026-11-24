@@ -18,7 +18,12 @@ PREFIX = "[User message sent while you were working \u2014 take it into account 
 
 
 def _compose(items):
-    return PREFIX + "\n\n".join(item["text"] for item in items)
+    # ``raw`` items come from host plugins (e.g. swarm board mentions) that carry
+    # their own framing; only plain user messages get the generic prefix.
+    user = [item["text"] for item in items if not item.get("raw")]
+    parts = [PREFIX + "\n\n".join(user)] if user else []
+    parts += [item["text"] for item in items if item.get("raw")]
+    return "\n\n".join(parts)
 
 
 def apply(ctx, config):
@@ -71,7 +76,7 @@ def apply(ctx, config):
         if not isinstance(text, str) or not text.strip():
             return
         with lock:
-            state["items"].append({"id": data.get("id"), "text": text})
+            state["items"].append({"id": data.get("id"), "text": text, "raw": bool(data.get("raw"))})
             _sync()
 
     if host is not None:
