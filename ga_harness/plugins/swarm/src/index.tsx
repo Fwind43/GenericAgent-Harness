@@ -364,15 +364,6 @@ function Panel({ api }: { api: PluginAPI }) {
     setSeen(lastId);
     try { localStorage.setItem(`gah-sw-seen:${swid}`, String(lastId)); } catch { /* storage unavailable */ }
   }, [swid, seen, open, tab, lastId]);
-  const view = data?.view;
-  if (!data || !sid || !view) return null;
-  const isCoord = view.me === COORD;
-  const live = view.members.filter(m => !m.removed);
-  const running = live.filter(m => m.status === 'running').length + (view.coordinator?.status === 'running' ? 1 : 0);
-  const act = async (path: string, m: Member) => {
-    if (path === 'remove' && !window.confirm(T(`\u786e\u5b9a\u628a @${m.name} \u79fb\u51fa\u8702\u7fa4\uff1f`, `Remove @${m.name} from the swarm?`))) return;
-    await run(path, { name: m.name });
-  };
   // Always refetch on expand (stale list stays visible meanwhile), and refetch when the host model catalog changes.
   const loadModels = () => {
     if (modelsLoading.current) return;
@@ -391,6 +382,15 @@ function Panel({ api }: { api: PluginAPI }) {
     seenSig.current = modelSig;
     if (models !== null) loadModels();
   }, [modelSig]); // eslint-disable-line react-hooks/exhaustive-deps
+  const view = data?.view;
+  if (!data || !sid || !view) return null;
+  const isCoord = view.me === COORD;
+  const live = view.members.filter(m => !m.removed);
+  const running = live.filter(m => m.status === 'running').length + (view.coordinator?.status === 'running' ? 1 : 0);
+  const act = async (path: string, m: Member) => {
+    if (path === 'remove' && !window.confirm(T(`\u786e\u5b9a\u628a @${m.name} \u79fb\u51fa\u8702\u7fa4\uff1f`, `Remove @${m.name} from the swarm?`))) return;
+    await run(path, { name: m.name });
+  };
   const enter = async (m: Member) => {
     if (!m.session) return;
     setOpen(false);

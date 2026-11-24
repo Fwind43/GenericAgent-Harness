@@ -454,15 +454,6 @@
       } catch {
       }
     }, [swid, seen, open, tab, lastId]);
-    const view = data == null ? void 0 : data.view;
-    if (!data || !sid || !view) return null;
-    const isCoord = view.me === COORD;
-    const live = view.members.filter((m) => !m.removed);
-    const running = live.filter((m) => m.status === "running").length + (((_c = view.coordinator) == null ? void 0 : _c.status) === "running" ? 1 : 0);
-    const act = async (path, m) => {
-      if (path === "remove" && !window.confirm(sdk.T(`确定把 @${m.name} 移出蜂群？`, `Remove @${m.name} from the swarm?`))) return;
-      await run(path, { name: m.name });
-    };
     const loadModels = () => {
       if (modelsLoading.current) return;
       modelsLoading.current = true;
@@ -475,13 +466,22 @@
     };
     const save = (m, model, effort) => run("model", { name: m.name, model, effort });
     const { state: host } = sdk.useHost();
-    const modelSig = `${sid}|${JSON.stringify((((_d = host == null ? void 0 : host.models) == null ? void 0 : _d.items) || []).map((r) => [r.key, r.name, r.model]))}`;
+    const modelSig = `${sid}|${JSON.stringify((((_c = host == null ? void 0 : host.models) == null ? void 0 : _c.items) || []).map((r) => [r.key, r.name, r.model]))}`;
     const seenSig = react.useRef(modelSig);
     react.useEffect(() => {
       if (seenSig.current === modelSig) return;
       seenSig.current = modelSig;
       if (models !== null) loadModels();
     }, [modelSig]);
+    const view = data == null ? void 0 : data.view;
+    if (!data || !sid || !view) return null;
+    const isCoord = view.me === COORD;
+    const live = view.members.filter((m) => !m.removed);
+    const running = live.filter((m) => m.status === "running").length + (((_d = view.coordinator) == null ? void 0 : _d.status) === "running" ? 1 : 0);
+    const act = async (path, m) => {
+      if (path === "remove" && !window.confirm(sdk.T(`确定把 @${m.name} 移出蜂群？`, `Remove @${m.name} from the swarm?`))) return;
+      await run(path, { name: m.name });
+    };
     const enter = async (m) => {
       if (!m.session) return;
       setOpen(false);
