@@ -121,10 +121,46 @@
       ] }, n))
     ] });
   }
+  function markMentions(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        var _a;
+        return ((_a = n.parentElement) == null ? void 0 : _a.closest("code,pre,a,.gah-sw-at")) ? NodeFilter.FILTER_REJECT : /@[a-z0-9_-]/i.test(n.nodeValue || "") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const frag = document.createDocumentFragment();
+      for (const part of (node.nodeValue || "").split(/(@[a-z0-9_-]+)/gi)) {
+        if (!part) continue;
+        if (part.startsWith("@")) {
+          const span = document.createElement("span");
+          span.className = "gah-sw-at";
+          span.textContent = part;
+          frag.appendChild(span);
+        } else frag.appendChild(document.createTextNode(part));
+      }
+      node.replaceWith(frag);
+    }
+  }
+  function PostText({ text, clamp }) {
+    const ref = react.useRef(null);
+    react.useLayoutEffect(() => {
+      const node = ref.current;
+      const out = window.GAHOutput;
+      if (!node) return;
+      if (out) {
+        out.setMarkdown(node, text);
+        markMentions(node);
+      } else node.textContent = text;
+    }, [text]);
+    return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: `gah-sw-text${clamp ? " clamp" : ""}` });
+  }
   function PostRow({ post }) {
     const [open, setOpen] = react.useState(false);
     const long = post.text.length > 280 || post.text.split("\n").length > 6;
-    const parts = post.text.split(/(@[a-z0-9_-]+)/gi);
+    const md = post.kind !== "system";
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-post ${post.kind}${post.author === "user" ? " user" : ""}`, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-meta", children: [
         /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
@@ -144,7 +180,7 @@
         post.via ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: sdk.T("来自非蜂群调度的运行", "Posted from a run not scheduled by the swarm"), children: post.via }) : null,
         /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-time", children: fmtTime(post.created) })
       ] }),
-      /* @__PURE__ */ jsxRuntime.jsx("div", { className: `gah-sw-text${long && !open ? " clamp" : ""}`, children: parts.map((p, i) => p.startsWith("@") ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-at", children: p }, i) : p) }),
+      md ? /* @__PURE__ */ jsxRuntime.jsx(PostText, { text: post.text, clamp: long && !open }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: `gah-sw-text${long && !open ? " clamp" : ""}`, children: post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith("@") ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-at", children: p }, i) : p) }),
       long ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", onClick: () => setOpen(!open), children: open ? sdk.T("收起", "Less") : sdk.T("展开", "More") }) : null
     ] });
   }

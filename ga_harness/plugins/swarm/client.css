@@ -35,6 +35,22 @@
 .gah-sw-time{margin-left:auto}
 .gah-sw-text{margin-top:2px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
 .gah-sw-text.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.gah-sw-text.md{white-space:normal;font-size:13px;line-height:1.6;color:var(--text)}
+.gah-sw-text.md.clamp{display:block;max-height:9.6em;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
+.gah-sw-text.md>:first-child{margin-top:0}.gah-sw-text.md>:last-child{margin-bottom:0}
+.gah-sw-text.md p{margin:0 0 6px}
+.gah-sw-text.md h1,.gah-sw-text.md h2,.gah-sw-text.md h3,.gah-sw-text.md h4,.gah-sw-text.md h5,.gah-sw-text.md h6{font-size:13.5px;line-height:1.45;margin:10px 0 4px;letter-spacing:0}
+.gah-sw-text.md h1,.gah-sw-text.md h2{font-size:14.5px}
+.gah-sw-text.md ul,.gah-sw-text.md ol{margin:4px 0 6px;padding-left:1.4em}
+.gah-sw-text.md li{margin:2px 0}.gah-sw-text.md li>p{margin:2px 0}
+.gah-sw-text.md blockquote{margin:6px 0;padding:0 0 0 10px}
+.gah-sw-text.md hr{margin:10px 0}
+.gah-sw-text.md pre{margin:6px 0;font-size:12px;max-height:320px;overflow:auto}
+.gah-sw-text.md code{font-size:.88em;padding:0 4px}
+.gah-sw-text.md table{font-size:12px;line-height:1.5;margin:6px 0}
+.gah-sw-text.md th,.gah-sw-text.md td{padding:4px 8px;min-width:0}
+.gah-sw-text.md .md-table{margin:6px 0;overflow-x:auto}
+.gah-sw-text.md img{max-height:240px;margin:6px 0}
 .gah-sw-at{color:var(--accent);font-weight:500}
 .gah-sw-more{all:unset;cursor:pointer;font-size:11.5px;color:var(--accent);padding:2px 0;align-self:center}
 .gah-sw-more:disabled{opacity:.5;cursor:default}

@@ -117,10 +117,42 @@ function Graph({ view }: { view: View }) {
   );
 }
 
+/** Wrap @mentions in rendered Markdown text nodes (outside code and links) so they keep the accent style. */
+function markMentions(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => (n.parentElement?.closest('code,pre,a,.gah-sw-at') ? NodeFilter.FILTER_REJECT : /@[a-z0-9_-]/i.test(n.nodeValue || '') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+  });
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  for (const node of nodes) {
+    const frag = document.createDocumentFragment();
+    for (const part of (node.nodeValue || '').split(/(@[a-z0-9_-]+)/gi)) {
+      if (!part) continue;
+      if (part.startsWith('@')) {
+        const span = document.createElement('span');
+        span.className = 'gah-sw-at'; span.textContent = part; frag.appendChild(span);
+      } else frag.appendChild(document.createTextNode(part));
+    }
+    node.replaceWith(frag);
+  }
+}
+
+function PostText({ text, clamp }: { text: string; clamp: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    const out = (window as unknown as { GAHOutput?: { setMarkdown(n: HTMLElement, t: string): void } }).GAHOutput;
+    if (!node) return;
+    if (out) { out.setMarkdown(node, text); markMentions(node); }
+    else node.textContent = text;
+  }, [text]);
+  return <div ref={ref} className={`gah-sw-text${clamp ? ' clamp' : ''}`} />;
+}
+
 function PostRow({ post }: { post: Post }) {
   const [open, setOpen] = useState(false);
   const long = post.text.length > 280 || post.text.split('\n').length > 6;
-  const parts = post.text.split(/(@[a-z0-9_-]+)/gi);
+  const md = post.kind !== 'system';
   return (
     <div className={`gah-sw-post ${post.kind}${post.author === 'user' ? ' user' : ''}`}>
       <div className="gah-sw-meta">
@@ -129,9 +161,7 @@ function PostRow({ post }: { post: Post }) {
         {post.via ? <span title={T('\u6765\u81ea\u975e\u8702\u7fa4\u8c03\u5ea6\u7684\u8fd0\u884c', 'Posted from a run not scheduled by the swarm')}>{post.via}</span> : null}
         <span className="gah-sw-time">{fmtTime(post.created)}</span>
       </div>
-      <div className={`gah-sw-text${long && !open ? ' clamp' : ''}`}>
-        {parts.map((p, i) => p.startsWith('@') ? <span key={i} className="gah-sw-at">{p}</span> : p)}
-      </div>
+      {md ? <PostText text={post.text} clamp={long && !open} /> : <div className={`gah-sw-text${long && !open ? ' clamp' : ''}`}>{post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith('@') ? <span key={i} className="gah-sw-at">{p}</span> : p)}</div>}
       {long ? <button type="button" className="gah-sw-more" onClick={() => setOpen(!open)}>{open ? T('\u6536\u8d77', 'Less') : T('\u5c55\u5f00', 'More')}</button> : null}
     </div>
   );
