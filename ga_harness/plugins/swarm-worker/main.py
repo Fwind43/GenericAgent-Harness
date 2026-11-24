@@ -8,6 +8,12 @@ session's role:
 * ``member``      -- board tools including ``board_wait``; the role brief goes into the prompt.
 * otherwise       -- nothing.
 
+Both roles also get ``swarm_end_turn``: a local tool that ends the current run. The
+GA engine tells the model to keep calling tools while the user's request is
+unfinished, which made coordinators sleep in ``code_run`` while the team worked.
+Ending the turn through a tool satisfies that rule; the host wakes the session again
+on a mention or when the board goes quiet.
+
 Unlike conductor mode nothing is hidden: every participant keeps its normal tools
 and talks to the others directly through the board (mesh, not star).
 """
@@ -56,6 +62,14 @@ MEMBER_TOOLS = {
          "any": {"type": "boolean", "description": "Return on any new post, not only mentions."}}), "wait"),
 }
 
+END_TURN = "swarm_end_turn"
+END_TURN_TOOL = _tool(END_TURN,
+    "End your turn now and wait to be woken. Use this instead of sleeping, polling or "
+    "waiting in code_run while teammates work: the host wakes you when you are "
+    "@mentioned or when the board goes quiet. Waiting for the team counts as finishing "
+    "your current step.",
+    {"note": {"type": "string", "description": "Optional short note on what you are waiting for."}})
+
 COORD_TOOLS = {
     "swarm_add_member": (_tool("swarm_add_member",
         "Add a member: a new session with its own role brief, optional model/effort, groups and an "
@@ -97,8 +111,9 @@ mention wakes the mentioned participant. You alone add or remove members.
   are stuck, disagree, or loop. If a member's model is too weak or too costly for its
   role, switch it with swarm_set_member_model.
 - Do not relay every message: members read the board themselves.
-- End your turn instead of polling; you are woken when mentioned (@coordinator) or when
-  the board goes quiet. When a phase is delivered or a decision is needed, call
+- Once work is handed off, your step is complete: call swarm_end_turn to end your turn.
+  Never wait for the team with code_run, sleep, timers or repeated board_read; you are
+  woken when mentioned (@coordinator) or when the board goes quiet. When a phase is delivered or a decision is needed, call
   swarm_await_user with the result or question, then reply to the user and end your turn.
   The team stays available for follow-up. Only the user can turn swarm mode off.
 """
@@ -108,8 +123,8 @@ MEMBER_PROMPT = """
 You are part of a swarm; teammates work in their own sessions and talk through a shared
 board. Use board_read to catch up, board_post to hand off, ask or report (mention @name,
 @group, @all or @coordinator). Mentions wake the mentioned teammate, so mention only
-those who must act. When your part is done post a short, verifiable result and end your
-turn; do not wait in loops.
+those who must act. When your part is done post a short, verifiable result and call
+swarm_end_turn; do not wait in loops, sleeps or code_run.
 {groups}Your brief:
 {brief}
 {team}"""
@@ -167,6 +182,17 @@ def apply(ctx, config):
         run.__name__ = name
         return run
 
+    def end_turn(handler, args, response):
+        StepOutcome = importlib.import_module("agent_loop").StepOutcome
+        note = str((args or {}).get("note") or "").strip() if isinstance(args, dict) else ""
+        msg = "Turn ended; waiting to be woken by a mention or a quiet board."
+        if note:
+            msg += " Note: " + note
+        # No next_prompt: the agent loop treats this as CURRENT_TASK_DONE and stops.
+        return StepOutcome(msg, next_prompt=None)
+
+    end_turn.__name__ = END_TURN
+
     def setup():
         # A failed role lookup must not silently turn a swarm session into a plain
         # one for the whole run: leave it unchecked and retry on the next hook call,
@@ -193,6 +219,8 @@ def apply(ctx, config):
         for name, (schema, op) in table.items():
             if name not in names:
                 ctx.scope.add(tools.register(schema, handler_for(op, name)))
+        if END_TURN not in names:
+            ctx.scope.add(tools.register(END_TURN_TOOL, end_turn))
 
     def before(gactx, nxt):
         if not state["checked"]:

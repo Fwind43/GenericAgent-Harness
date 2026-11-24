@@ -436,3 +436,19 @@ def test_worker_tools_by_role(load, world, worker_mod, monkeypatch):
     # errors come back as tool text rather than raising
     out = tools["board_post"](None, {"text": ""}, None)
     assert out.msg.startswith("[Error]")
+
+
+def test_worker_end_turn_tool_stops_run(load, world, worker_mod, monkeypatch):
+    load()
+    world.route("toggle", {"session_id": "coord", "enabled": True})
+    tools, prompt = _worker(worker_mod, world, "coord", monkeypatch)
+    assert "swarm_end_turn" in tools and "swarm_end_turn" in prompt
+    assert "code_run" in prompt  # the prompt forbids waiting for the team in code_run
+    out = tools["swarm_end_turn"](None, {"note": "waiting for alice"}, None)
+    # no next_prompt -> GA's agent loop ends the run (CURRENT_TASK_DONE)
+    assert out.next_prompt is None and not out.should_exit
+    assert "waiting for alice" in out.msg
+    member = json.loads(tools["swarm_add_member"](None, {"name": "alice", "role": "R"}, None).msg)["member"]
+    tools, prompt = _worker(worker_mod, world, member["session"], monkeypatch)
+    assert "swarm_end_turn" in tools and "swarm_end_turn" in prompt
+    assert tools["swarm_end_turn"](None, {}, None).next_prompt is None
