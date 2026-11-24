@@ -452,7 +452,7 @@ function Panel({ api }: { api: PluginAPI }) {
           {tab === 'members' ? (
             <div className="gah-sw-list">
               <MemberRow m={{ ...view.coordinator, name: COORD, role: T('\u534f\u8c03\u8005', 'Coordinator') }} me={view.me} busy={busy} act={act} enter={enter} models={models} loadModels={loadModels} save={save} />
-              {view.members.map(m => <MemberRow key={m.name} m={m} me={view.me} busy={busy} act={act} enter={enter} models={models} loadModels={loadModels} save={save} />)}
+              {live.map(m => <MemberRow key={m.name} m={m} me={view.me} busy={busy} act={act} enter={enter} models={models} loadModels={loadModels} save={save} />)}
               {!live.length ? <Empty compact title={T('\u8fd8\u6ca1\u6709\u62db\u52df\u5176\u4ed6\u6210\u5458', 'No other members yet')} hint={T('\u534f\u8c03\u8005\u4f1a\u6309\u4efb\u52a1\u9700\u8981\u62db\u52df\u89d2\u8272\uff0c\u6bcf\u4e2a\u6210\u5458\u90fd\u6709\u72ec\u7acb\u4f1a\u8bdd', 'The coordinator recruits roles as needed; each member gets its own session.')} /> : null}
               {data.limits ? <div className="gah-sw-facts">{T('\u5168\u5c40\u8fd0\u884c', 'Running globally')} {data.running ?? 0}{data.limits.global_max ? ` / ${data.limits.global_max}` : ''}</div> : null}
             </div>

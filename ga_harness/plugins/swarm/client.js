@@ -562,7 +562,7 @@
         tab === "board" ? /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy }) : null,
         tab === "members" ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-list", children: [
           /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m: { ...view.coordinator, name: COORD, role: sdk.T("协调者", "Coordinator") }, me: view.me, busy, act, enter, models, loadModels, save }),
-          view.members.map((m) => /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m, me: view.me, busy, act, enter, models, loadModels, save }, m.name)),
+          live.map((m) => /* @__PURE__ */ jsxRuntime.jsx(MemberRow, { m, me: view.me, busy, act, enter, models, loadModels, save }, m.name)),
           !live.length ? /* @__PURE__ */ jsxRuntime.jsx(Empty, { compact: true, title: sdk.T("还没有招募其他成员", "No other members yet"), hint: sdk.T("协调者会按任务需要招募角色，每个成员都有独立会话", "The coordinator recruits roles as needed; each member gets its own session.") }) : null,
           data.limits ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-facts", children: [
             sdk.T("全局运行", "Running globally"),
