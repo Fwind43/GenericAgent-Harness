@@ -148,3 +148,33 @@ html.gah-sw-room-mode, html.gah-sw-room-mode body { overflow: hidden; }
 .gah-sw-room-main .gah-sw-compose { flex: none; }
 .gah-sw-room-empty { margin: auto; opacity: .6; }
 @media (max-width: 640px) { .gah-sw-room-roster { display: none; } }
+/* Forum (BBS) view in the pop-out room */
+.gah-sw-modes { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: color-mix(in srgb, var(--border) 30%, transparent); }
+.gah-sw-modes button { border: 0; background: none; padding: 2px 10px; border-radius: 6px; cursor: pointer; color: inherit; font: inherit; font-size: 12px; opacity: .7; }
+.gah-sw-modes button.on { background: var(--bg, Canvas); opacity: 1; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.gah-sw-forum { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.gah-sw-topics { width: 260px; flex: none; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 4px; border-right: 1px solid var(--border); }
+.gah-sw-topic, .gah-sw-newtopic { text-align: left; border: 1px solid transparent; background: none; color: inherit; font: inherit; padding: 7px 9px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.gah-sw-topic:hover, .gah-sw-newtopic:hover { background: color-mix(in srgb, var(--border) 25%, transparent); }
+.gah-sw-topic.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.gah-sw-newtopic { font-weight: 600; color: var(--accent); border-style: dashed; border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.gah-sw-newtopic.on { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.gah-sw-topic-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gah-sw-topic-meta { display: flex; gap: 8px; font-size: 11px; opacity: .6; }
+.gah-sw-topic-meta span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px; }
+.gah-sw-topics-empty { opacity: .55; font-size: 12px; padding: 8px; }
+.gah-sw-thread { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.gah-sw-thread-title { margin: 2px 0 0; font-size: 15px; overflow-wrap: anywhere; }
+.gah-sw-floors { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px 4px; }
+.gah-sw-floors .gah-sw-post { padding: 8px 10px; }
+.gah-sw-floor { font-size: 11px; padding: 0 6px; border-radius: 6px; background: color-mix(in srgb, var(--border) 45%, transparent); }
+.gah-sw-reply { margin-left: auto; border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; opacity: .75; padding: 0 2px; }
+.gah-sw-reply:hover { opacity: 1; text-decoration: underline; }
+.gah-sw-replychip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 12%, transparent); white-space: nowrap; }
+.gah-sw-replychip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 2px; }
+.gah-sw-newform { display: flex; flex-direction: column; gap: 8px; max-width: 760px; }
+.gah-sw-hint { font-size: 12px; opacity: .65; }
+.gah-sw-compose.multi { flex-direction: column; align-items: stretch; }
+.gah-sw-compose.multi textarea { resize: vertical; min-height: 120px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: inherit; }
+.gah-sw-compose.multi button { align-self: flex-end; }
+@media (max-width: 760px) { .gah-sw-topics { width: 170px; } }

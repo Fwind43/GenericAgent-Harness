@@ -431,7 +431,8 @@ def apply(ctx, config):
         lines = []
         for x in posts:
             body = x["text"] if len(x["text"]) <= 1500 else x["text"][:1500] + " ..."
-            lines.append(f"#{x['id']} @{x['author']}: {body}")
+            re_ = f" (re #{x['reply_to']})" if x.get("reply_to") else ""
+            lines.append(f"#{x['id']} @{x['author']}{re_}: {body}")
         if not posts:
             head = "[Swarm] The board has news for you."
         elif len(mentioned) > len(posts):
@@ -443,7 +444,7 @@ def apply(ctx, config):
             head = "[Swarm] You were mentioned on the board."
         return (head + "\n" + "\n".join(lines) +
                 "\nCatch up with board_read if needed, do your part, then board_post the result "
-                "(mention only who must act) and end your turn.")
+                "(pass reply_to=<post id> to keep it in that thread; mention only who must act) and end your turn.")
 
     def _discard_assignment(p):
         p.pop("assignment", None)
@@ -919,8 +920,15 @@ def apply(ctx, config):
             sw, _ = _locate(sid)
             if sw is None or not sw.get("enabled"):
                 raise RuntimeError("this session is not part of an active swarm")
-            item = _add_post(sw, "user", _text(body, "text"))
-            if sw.pop("awaiting_user", False) and not item["mentions"]:
+            reply_to = body.get("reply_to")
+            parent = next((x for x in sw["posts"] if x["id"] == reply_to), None) \
+                if isinstance(reply_to, int) and reply_to > 0 else None
+            item = _add_post(sw, "user", _text(body, "text"), parent["id"] if parent else None)
+            awaiting = sw.pop("awaiting_user", False)
+            if not item["mentions"] and parent and parent["author"] not in ("user", "system") \
+                    and (parent["author"] == COORD or not (sw["members"].get(parent["author"]) or {}).get("removed")):
+                item["mentions"].append(parent["author"])  # a thread reply goes back to whoever wrote that post
+            if awaiting and not item["mentions"]:
                 item["mentions"].append(COORD)  # a plain reply goes to the coordinator
             _deliver(sw, item)
         _publish()

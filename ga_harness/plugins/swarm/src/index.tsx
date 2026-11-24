@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useHost, T, defineReact, pages, type HostState, type PluginAPI } from '@gah/sdk';
 
@@ -149,17 +149,18 @@ function PostText({ text, clamp }: { text: string; clamp: boolean }) {
   return <div ref={ref} className={`gah-sw-text${clamp ? ' clamp' : ''}`} />;
 }
 
-function PostRow({ post }: { post: Post }) {
+function PostRow({ post, floor, onReply }: { post: Post; floor?: number; onReply?: () => void }) {
   const [open, setOpen] = useState(false);
   const long = post.text.length > 280 || post.text.split('\n').length > 6;
   const md = post.kind !== 'system';
   return (
     <div className={`gah-sw-post ${post.kind}${post.author === 'user' ? ' user' : ''}`}>
       <div className="gah-sw-meta">
-        <b>@{post.author}</b><span>#{post.id}</span>
+        {floor ? <span className="gah-sw-floor">{floor === 1 ? T('\u697c\u4e3b', 'OP') : T(`${floor}\u697c`, `#${floor}`)}</span> : null}<b>@{post.author}</b><span>#{post.id}</span>
         {post.kind === 'direct' ? <span className="gah-sw-direct" title={T('\u4f60\u5728\u6210\u5458\u4f1a\u8bdd\u91cc\u7684\u79c1\u804a\u6307\u793a\uff0c\u81ea\u52a8\u8bb0\u5f55\u5230\u7559\u8a00\u677f\uff0c\u4e0d\u4f1a\u5524\u9192\u4efb\u4f55\u4eba', 'Your private instruction in a member session, recorded here without waking anyone')}>{T('\u79c1\u804a', 'Private')}</span> : null}{post.reply_to ? <span>{'\u21aa'} #{post.reply_to}</span> : null}
         {post.via ? <span title={T('\u6765\u81ea\u975e\u8702\u7fa4\u8c03\u5ea6\u7684\u8fd0\u884c', 'Posted from a run not scheduled by the swarm')}>{post.via}</span> : null}
         <span className="gah-sw-time">{fmtTime(post.created)}</span>
+        {onReply ? <button type="button" className="gah-sw-reply" onClick={onReply}>{T('\u56de\u590d', 'Reply')}</button> : null}
       </div>
       {md ? <PostText text={post.text} clamp={long && !open} /> : <div className={`gah-sw-text${long && !open ? ' clamp' : ''}`}>{post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith('@') ? <span key={i} className="gah-sw-at">{p}</span> : p)}</div>}
       {long ? <button type="button" className="gah-sw-more" onClick={() => setOpen(!open)}>{open ? T('\u6536\u8d77', 'Less') : T('\u5c55\u5f00', 'More')}</button> : null}
@@ -177,19 +178,14 @@ function mentionOptions(view: View): Mention[] {
   ];
 }
 
-function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: string, b?: Record<string, unknown>) => Promise<boolean>; busy: boolean }) {
-  const [text, setText] = useState('');
-  const [at, setAt] = useState<{ start: number; q: string } | null>(null);
-  const [pick, setPick] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+const EMPTY_BOARD = <Empty title={T('\u7559\u8a00\u677f\u8fd8\u662f\u7a7a\u7684', 'The board is empty')} hint={T('\u5728\u4e3b\u5bf9\u8bdd\u91cc\u628a\u4efb\u52a1\u4ea4\u7ed9\u534f\u8c03\u8005\uff0c\u5b83\u4f1a\u62db\u52df\u6210\u5458\u5e76\u5728\u8fd9\u91cc\u5206\u5de5\u3002\n\u4e5f\u53ef\u4ee5\u76f4\u63a5\u53d1\u5e16\uff0c\u7528 @\u540d\u5b57 \u5524\u9192\u67d0\u4e2a\u6210\u5458\u3002', 'Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.')} />;
+
+function usePosts(api: PluginAPI, view: View) {
   const [older, setOlder] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
-  const list = useRef<HTMLDivElement>(null);
   const { state } = useHost();
   const posts = [...older.filter(p => !view.posts.some(q => q.id === p.id)), ...view.posts];
-  const last = view.posts[view.posts.length - 1]?.id;
   useEffect(() => { setOlder([]); }, [view.id]);
-  useEffect(() => { const el = list.current; if (el) el.scrollTop = el.scrollHeight; }, [last]);
   const more = async () => {
     if (!posts.length || loading) return;
     setLoading(true);
@@ -199,11 +195,22 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
     } catch (error) { api.notice(errText(error)); }
     finally { setLoading(false); }
   };
-  const send = async (event: FormEvent) => {
-    event.preventDefault();
+  return { posts, more, loading, hasMore: !!posts.length && posts[0].id > 1 };
+}
+
+// Composer with @-completion; multiline uses a textarea (Ctrl/Cmd+Enter sends).
+function Compose({ view, busy, send, placeholder, multiline, chip }: {
+  view: View; busy: boolean; send: (text: string) => Promise<boolean>; placeholder: string; multiline?: boolean; chip?: ReactNode;
+}) {
+  const [text, setText] = useState('');
+  const [at, setAt] = useState<{ start: number; q: string } | null>(null);
+  const [pick, setPick] = useState(0);
+  const input = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault();
     const value = text.trim();
     if (!value || busy) return;
-    if (await run('post', { text: value })) setText('');
+    if (await send(value)) setText('');
   };
   // @-completion: same tag shape as the backend MENTION_RE (letter first, then [A-Za-z0-9_-]).
   const options: Mention[] = at ? mentionOptions(view).filter(o => o.tag.toLowerCase().startsWith(at.q.toLowerCase())).slice(0, 8) : [];
@@ -222,8 +229,12 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
     setAt(null);
     requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(caret, caret); } });
   };
-  const keys = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (!menu || event.nativeEvent.isComposing) return;
+  const keys = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (!menu) {
+      if (multiline && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void submit(); }
+      return;
+    }
     const n = menu.length;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') setPick(i => (i + (event.key === 'ArrowDown' ? 1 : n - 1)) % n);
     else if (event.key === 'Enter' || event.key === 'Tab') choose(menu[Math.min(pick, n - 1)]);
@@ -232,31 +243,132 @@ function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: 
     event.preventDefault();
     event.stopPropagation();
   };
+  const props = {
+    ref: input, value: text, disabled: busy, maxLength: 8000, autoComplete: 'off', onKeyDown: keys, onBlur: () => setAt(null),
+    onChange: (e: { target: HTMLInputElement | HTMLTextAreaElement }) => { setText(e.target.value); track(e.target.value, e.target.selectionStart); },
+    onClick: (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => track(e.currentTarget.value, e.currentTarget.selectionStart),
+    role: 'combobox', 'aria-expanded': !!menu, 'aria-controls': 'gah-sw-mention', 'aria-autocomplete': 'list' as const,
+    'aria-activedescendant': menu ? `gah-sw-mention-${Math.min(pick, menu.length - 1)}` : undefined,
+    placeholder, title: T('@\u540d\u5b57 / @\u7ec4 / @all \u90fd\u4f1a\u5524\u9192\u5bf9\u5e94\u6210\u5458', '@name, @group or @all wakes the matching members'),
+  };
+  return (
+    <form className={`gah-sw-compose${multiline ? ' multi' : ''}`} onSubmit={submit}>
+      {menu ? <ul className="gah-sw-mention" role="listbox" id="gah-sw-mention">{menu.map((o, i) =>
+        <li key={`${o.kind}:${o.tag}`} id={`gah-sw-mention-${i}`} role="option" aria-selected={i === pick} className={i === pick ? 'on' : undefined}
+          onMouseDown={e => { e.preventDefault(); choose(o); }} onMouseEnter={() => setPick(i)}>
+          <b>@{o.tag}</b><span>{o.hint}</span>
+        </li>)}</ul> : null}
+      {chip || null}
+      {multiline ? <textarea {...props} rows={6} /> : <input {...props} />}
+      <button type="submit" disabled={busy || !text.trim()}>{multiline ? T('\u53d1\u5e03', 'Publish') : T('\u53d1\u9001', 'Post')}</button>
+    </form>
+  );
+}
+
+function Board({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: string, b?: Record<string, unknown>) => Promise<boolean>; busy: boolean }) {
+  const { posts, more, loading, hasMore } = usePosts(api, view);
+  const list = useRef<HTMLDivElement>(null);
+  const last = view.posts[view.posts.length - 1]?.id;
+  useEffect(() => { const el = list.current; if (el) el.scrollTop = el.scrollHeight; }, [last]);
   return (
     <>
       <div className="gah-sw-board" ref={list}>
-        {posts.length && posts[0].id > 1 ? <button type="button" className="gah-sw-more" disabled={loading} onClick={more}>{T('\u52a0\u8f7d\u66f4\u65e9\u7684\u5e16\u5b50', 'Load earlier posts')}</button> : null}
-        {posts.length ? posts.map(p => <PostRow key={p.id} post={p} />) : <Empty title={T('\u7559\u8a00\u677f\u8fd8\u662f\u7a7a\u7684', 'The board is empty')} hint={T('\u5728\u4e3b\u5bf9\u8bdd\u91cc\u628a\u4efb\u52a1\u4ea4\u7ed9\u534f\u8c03\u8005\uff0c\u5b83\u4f1a\u62db\u52df\u6210\u5458\u5e76\u5728\u8fd9\u91cc\u5206\u5de5\u3002\n\u4e5f\u53ef\u4ee5\u76f4\u63a5\u53d1\u5e16\uff0c\u7528 @\u540d\u5b57 \u5524\u9192\u67d0\u4e2a\u6210\u5458\u3002', 'Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.')} />}
+        {hasMore ? <button type="button" className="gah-sw-more" disabled={loading} onClick={more}>{T('\u52a0\u8f7d\u66f4\u65e9\u7684\u5e16\u5b50', 'Load earlier posts')}</button> : null}
+        {posts.length ? posts.map(p => <PostRow key={p.id} post={p} />) : EMPTY_BOARD}
       </div>
-      {view.enabled ? (
-        <form className="gah-sw-compose" onSubmit={send}>
-          {menu ? <ul className="gah-sw-mention" role="listbox" id="gah-sw-mention">{menu.map((o, i) =>
-            <li key={`${o.kind}:${o.tag}`} id={`gah-sw-mention-${i}`} role="option" aria-selected={i === pick} className={i === pick ? 'on' : undefined}
-              onMouseDown={e => { e.preventDefault(); choose(o); }} onMouseEnter={() => setPick(i)}>
-              <b>@{o.tag}</b><span>{o.hint}</span>
-            </li>)}</ul> : null}
-          <input ref={input} value={text} disabled={busy} maxLength={8000} autoComplete="off"
-            onChange={e => { setText(e.target.value); track(e.target.value, e.target.selectionStart); }}
-            onClick={e => track(e.currentTarget.value, e.currentTarget.selectionStart)}
-            onKeyDown={keys} onBlur={() => setAt(null)}
-            role="combobox" aria-expanded={!!menu} aria-controls="gah-sw-mention" aria-autocomplete="list"
-            aria-activedescendant={menu ? `gah-sw-mention-${Math.min(pick, menu.length - 1)}` : undefined}
-            placeholder={T('\u53d1\u5e16\uff0c@\u540d\u5b57 \u5524\u9192\u6210\u5458', 'Post, @name wakes a member')}
-            title={T('@\u540d\u5b57 / @\u7ec4 / @all \u90fd\u4f1a\u5524\u9192\u5bf9\u5e94\u6210\u5458', '@name, @group or @all wakes the matching members')} />
-          <button type="submit" disabled={busy || !text.trim()}>{T('\u53d1\u9001', 'Post')}</button>
-        </form>
-      ) : null}
+      {view.enabled ? <Compose view={view} busy={busy} send={text => run('post', { text })}
+        placeholder={T('\u53d1\u5e16\uff0c@\u540d\u5b57 \u5524\u9192\u6210\u5458', 'Post, @name wakes a member')} /> : null}
     </>
+  );
+}
+
+type Thread = { root: Post; posts: Post[]; last: number };
+// Group posts into threads by following reply_to to the earliest loaded ancestor; system notices are left out.
+function threadsOf(posts: Post[]): Thread[] {
+  const byId = new Map(posts.map(p => [p.id, p]));
+  const rootOf = (p: Post) => { let cur = p; const seen = new Set<number>(); while (cur.reply_to && byId.has(cur.reply_to) && !seen.has(cur.id)) { seen.add(cur.id); cur = byId.get(cur.reply_to)!; } return cur.id; };
+  const map = new Map<number, Thread>();
+  for (const p of posts) {
+    if (p.kind === 'system') continue;
+    const r = rootOf(p);
+    const root = byId.get(r)!;
+    if (root.kind === 'system') continue;
+    const t = map.get(r) || { root, posts: [], last: 0 };
+    t.posts.push(p);
+    t.last = Math.max(t.last, p.created);
+    map.set(r, t);
+  }
+  return [...map.values()].sort((a, b) => b.last - a.last);
+}
+const titleOf = (text: string) => {
+  const line = text.split('\n').map(l => l.replace(/^[#>*\-\s]+/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '';
+  return line.length > 80 ? `${line.slice(0, 80)}\u2026` : line;
+};
+
+function Forum({ api, view, run, busy }: { api: PluginAPI; view: View; run: (p: string, b?: Record<string, unknown>) => Promise<boolean>; busy: boolean }) {
+  const { posts, more, loading, hasMore } = usePosts(api, view);
+  const threads = threadsOf(posts);
+  const [sel, setSel] = useState<number | 'new' | null>(null);
+  const [reply, setReply] = useState<number | null>(null);
+  const [waitNew, setWaitNew] = useState<number | null>(null);
+  const floors = useRef<HTMLDivElement>(null);
+  const current = typeof sel === 'number' ? threads.find(t => t.root.id === sel) : undefined;
+  const shown = sel === 'new' ? null : current || (sel === null ? threads[0] : undefined);
+  useEffect(() => { setSel(null); setReply(null); }, [view.id]);
+  useEffect(() => { setReply(null); }, [shown?.root.id]);
+  useEffect(() => {
+    // After publishing, jump to the new topic once it shows up in the snapshot.
+    if (waitNew === null) return;
+    const t = threads.find(x => x.root.author === 'user' && x.root.id > waitNew);
+    if (t) { setSel(t.root.id); setWaitNew(null); }
+  }, [waitNew, threads]);
+  const lastFloor = shown?.posts[shown.posts.length - 1]?.id;
+  useEffect(() => { const el = floors.current; if (el) el.scrollTop = el.scrollHeight; }, [shown?.root.id, lastFloor]);
+  const maxId = posts.length ? posts[posts.length - 1].id : 0;
+  const publish = async (text: string) => {
+    const ok = await run('post', { text });
+    if (ok) setWaitNew(maxId);
+    return ok;
+  };
+  const target = shown ? (reply && shown.posts.some(p => p.id === reply) ? reply : shown.root.id) : null;
+  const targetPost = shown?.posts.find(p => p.id === target);
+  return (
+    <div className="gah-sw-forum">
+      <nav className="gah-sw-topics">
+        {view.enabled ? <button type="button" className={`gah-sw-newtopic${sel === 'new' ? ' on' : ''}`} onClick={() => setSel('new')}>+ {T('\u65b0\u5efa\u5e16\u5b50', 'New topic')}</button> : null}
+        {threads.map(t => (
+          <button type="button" key={t.root.id} className={`gah-sw-topic${shown?.root.id === t.root.id ? ' on' : ''}${t.root.author === 'user' ? ' user' : ''}`} onClick={() => setSel(t.root.id)}>
+            <span className="gah-sw-topic-title">{titleOf(t.root.text) || `#${t.root.id}`}</span>
+            <span className="gah-sw-topic-meta">
+              <span>@{t.root.author}</span>
+              <span>{T(`${t.posts.length - 1} \u56de\u590d`, `${t.posts.length - 1} replies`)}</span>
+              <span>{fmtTime(t.last)}</span>
+            </span>
+          </button>
+        ))}
+        {hasMore ? <button type="button" className="gah-sw-more" disabled={loading} onClick={more}>{T('\u52a0\u8f7d\u66f4\u65e9\u7684\u5e16\u5b50', 'Load earlier posts')}</button> : null}
+        {!threads.length && !hasMore ? <div className="gah-sw-topics-empty">{T('\u8fd8\u6ca1\u6709\u5e16\u5b50', 'No topics yet')}</div> : null}
+      </nav>
+      <section className="gah-sw-thread">
+        {sel === 'new' || (!shown && view.enabled) ? (
+          <div className="gah-sw-newform">
+            <b>{T('\u65b0\u5efa\u5e16\u5b50', 'New topic')}</b>
+            <span className="gah-sw-hint">{T('\u7b2c\u4e00\u884c\u662f\u6807\u9898\uff0c\u4e0b\u9762\u5199\u4efb\u52a1\u7ec6\u8282\u3002\u7528 @\u540d\u5b57 / @\u7ec4 / @all \u6307\u6d3e\u6210\u5458\uff1b\u4e0d @ \u4efb\u4f55\u4eba\u65f6\u53ea\u662f\u53d1\u5e16\uff0c\u4e0d\u4f1a\u5524\u9192\u8c01\uff08\u534f\u8c03\u8005\u5728\u7b49\u4f60\u56de\u590d\u65f6\u9664\u5916\uff09\u3002Ctrl+Enter \u53d1\u5e03\u3002', 'The first line is the title; details go below. Use @name / @group / @all to assign members; without a mention nobody is woken (unless the coordinator is awaiting your reply). Ctrl+Enter publishes.')}</span>
+            <Compose view={view} busy={busy} send={publish} multiline placeholder={T('\u6807\u9898\n\n\u4efb\u52a1\u63cf\u8ff0\u2026 @\u540d\u5b57 \u6307\u6d3e', 'Title\n\nTask details\u2026 @name to assign')} />
+          </div>
+        ) : shown ? (
+          <>
+            <h3 className="gah-sw-thread-title">{titleOf(shown.root.text) || `#${shown.root.id}`}</h3>
+            <div className="gah-sw-floors" ref={floors}>
+              {shown.posts.map((p, i) => <PostRow key={p.id} post={p} floor={i + 1} onReply={view.enabled ? () => setReply(p.id) : undefined} />)}
+            </div>
+            {view.enabled ? <Compose view={view} busy={busy} send={text => run('post', { text, reply_to: target })}
+              chip={targetPost && targetPost.id !== shown.root.id ? <span className="gah-sw-replychip">{'\u21aa'} #{targetPost.id} @{targetPost.author}<button type="button" onClick={() => setReply(null)} aria-label={T('\u53d6\u6d88', 'Cancel')}>{'\u00d7'}</button></span> : null}
+              placeholder={T(`\u56de\u590d #${target} @${targetPost?.author || ''}\uff08\u4f1a\u5524\u9192\u8be5\u697c\u4f5c\u8005\uff09`, `Reply to #${target} @${targetPost?.author || ''} (wakes its author)`)} /> : null}
+          </>
+        ) : <div className="gah-sw-room-empty">{EMPTY_BOARD}</div>}
+      </section>
+    </div>
   );
 }
 
@@ -532,6 +644,8 @@ function Room({ api }: { api: PluginAPI }) {
       .then(st => api.setState(st, true)).catch(error => api.notice(errText(error)));
   }, [api, sid]);
   const view = data?.view;
+  const [mode, setMode] = useState<'forum' | 'chat'>(() => { try { return localStorage.getItem('gah-sw-room-mode') === 'chat' ? 'chat' : 'forum'; } catch { return 'forum'; } });
+  const pickMode = (m: 'forum' | 'chat') => { setMode(m); try { localStorage.setItem('gah-sw-room-mode', m); } catch { /* ignore */ } };
   useEffect(() => { document.title = `${T('\u8702\u7fa4\u7fa4\u804a', 'Swarm chat')}${view ? ` \u00b7 ${view.members.filter(m => !m.removed).length + 1}` : ''}`; }, [view]);
   let body;
   if (!data || !sid) body = <div className="gah-sw-room-empty">{T('\u52a0\u8f7d\u4e2d\u2026', 'Loading\u2026')}</div>;
@@ -545,6 +659,10 @@ function Room({ api }: { api: PluginAPI }) {
           <Icon /><b>{T('\u8702\u7fa4\u7fa4\u804a', 'Swarm chat')}</b>
           <span className="gah-sw-room-sub">{view.me === COORD ? '' : `@${view.me} \u00b7 `}{T(`${people.length} \u4f4d\u6210\u5458`, `${people.length} members`)}</span>
           {state ? <span className="gah-sw-state">{state}</span> : null}
+          <span className="gah-sw-modes" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === 'forum'} className={mode === 'forum' ? 'on' : undefined} onClick={() => pickMode('forum')}>{T('\u8bba\u575b', 'Forum')}</button>
+            <button type="button" role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'on' : undefined} onClick={() => pickMode('chat')}>{T('\u7fa4\u804a', 'Chat')}</button>
+          </span>
           {view.enabled && view.paused && !view.awaiting_user ? <button type="button" className="gah-sw-on" disabled={busy} onClick={() => run('resume')}>{T('\u7ee7\u7eed', 'Resume')}</button> : null}
         </header>
         <div className="gah-sw-room-body">
@@ -558,9 +676,9 @@ function Room({ api }: { api: PluginAPI }) {
               </div>
             ))}
           </aside>
-          <main className="gah-sw-room-main">
+          <main className={`gah-sw-room-main ${mode}`}>
             {data.persistence_error ? <div className="gah-sw-note err">{data.persistence_error}</div> : null}
-            <Board api={api} view={view} run={run} busy={busy} />
+            {mode === 'forum' ? <Forum api={api} view={view} run={run} busy={busy} /> : <Board api={api} view={view} run={run} busy={busy} />}
           </main>
         </div>
       </>

@@ -157,12 +157,13 @@
     }, [text]);
     return /* @__PURE__ */ jsxRuntime.jsx("div", { ref, className: `gah-sw-text${clamp ? " clamp" : ""}` });
   }
-  function PostRow({ post }) {
+  function PostRow({ post, floor, onReply }) {
     const [open, setOpen] = react.useState(false);
     const long = post.text.length > 280 || post.text.split("\n").length > 6;
     const md = post.kind !== "system";
     return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: `gah-sw-post ${post.kind}${post.author === "user" ? " user" : ""}`, children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-meta", children: [
+        floor ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-floor", children: floor === 1 ? sdk.T("楼主", "OP") : sdk.T(`${floor}楼`, `#${floor}`) }) : null,
         /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
           "@",
           post.author
@@ -178,7 +179,8 @@
           post.reply_to
         ] }) : null,
         post.via ? /* @__PURE__ */ jsxRuntime.jsx("span", { title: sdk.T("来自非蜂群调度的运行", "Posted from a run not scheduled by the swarm"), children: post.via }) : null,
-        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-time", children: fmtTime(post.created) })
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-time", children: fmtTime(post.created) }),
+        onReply ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-reply", onClick: onReply, children: sdk.T("回复", "Reply") }) : null
       ] }),
       md ? /* @__PURE__ */ jsxRuntime.jsx(PostText, { text: post.text, clamp: long && !open }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: `gah-sw-text${long && !open ? " clamp" : ""}`, children: post.text.split(/(@[a-z0-9_-]+)/gi).map((p, i) => p.startsWith("@") ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-at", children: p }, i) : p) }),
       long ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", onClick: () => setOpen(!open), children: open ? sdk.T("收起", "Less") : sdk.T("展开", "More") }) : null
@@ -192,25 +194,15 @@
       { tag: "all", hint: sdk.T("所有成员", "Everyone"), kind: "all" }
     ];
   }
-  function Board({ api, view, run, busy }) {
-    var _a;
-    const [text, setText] = react.useState("");
-    const [at, setAt] = react.useState(null);
-    const [pick, setPick] = react.useState(0);
-    const input = react.useRef(null);
+  const EMPTY_BOARD = /* @__PURE__ */ jsxRuntime.jsx(Empty, { title: sdk.T("留言板还是空的", "The board is empty"), hint: sdk.T("在主对话里把任务交给协调者，它会招募成员并在这里分工。\n也可以直接发帖，用 @名字 唤醒某个成员。", "Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.") });
+  function usePosts(api, view) {
     const [older, setOlder] = react.useState([]);
     const [loading, setLoading] = react.useState(false);
-    const list = react.useRef(null);
     const { state } = sdk.useHost();
     const posts = [...older.filter((p) => !view.posts.some((q) => q.id === p.id)), ...view.posts];
-    const last = (_a = view.posts[view.posts.length - 1]) == null ? void 0 : _a.id;
     react.useEffect(() => {
       setOlder([]);
     }, [view.id]);
-    react.useEffect(() => {
-      const el = list.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, [last]);
     const more = async () => {
       if (!posts.length || loading) return;
       setLoading(true);
@@ -223,11 +215,18 @@
         setLoading(false);
       }
     };
-    const send = async (event) => {
-      event.preventDefault();
+    return { posts, more, loading, hasMore: !!posts.length && posts[0].id > 1 };
+  }
+  function Compose({ view, busy, send, placeholder, multiline, chip }) {
+    const [text, setText] = react.useState("");
+    const [at, setAt] = react.useState(null);
+    const [pick, setPick] = react.useState(0);
+    const input = react.useRef(null);
+    const submit = async (event) => {
+      event == null ? void 0 : event.preventDefault();
       const value = text.trim();
       if (!value || busy) return;
-      if (await run("post", { text: value })) setText("");
+      if (await send(value)) setText("");
     };
     const options = at ? mentionOptions(view).filter((o) => o.tag.toLowerCase().startsWith(at.q.toLowerCase())).slice(0, 8) : [];
     const menu = at && options.length ? options : null;
@@ -252,7 +251,14 @@
       });
     };
     const keys = (event) => {
-      if (!menu || event.nativeEvent.isComposing) return;
+      if (event.nativeEvent.isComposing) return;
+      if (!menu) {
+        if (multiline && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          void submit();
+        }
+        return;
+      }
       const n = menu.length;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") setPick((i) => (i + (event.key === "ArrowDown" ? 1 : n - 1)) % n);
       else if (event.key === "Enter" || event.key === "Tab") choose(menu[Math.min(pick, n - 1)]);
@@ -261,60 +267,191 @@
       event.preventDefault();
       event.stopPropagation();
     };
+    const props = {
+      ref: input,
+      value: text,
+      disabled: busy,
+      maxLength: 8e3,
+      autoComplete: "off",
+      onKeyDown: keys,
+      onBlur: () => setAt(null),
+      onChange: (e) => {
+        setText(e.target.value);
+        track(e.target.value, e.target.selectionStart);
+      },
+      onClick: (e) => track(e.currentTarget.value, e.currentTarget.selectionStart),
+      role: "combobox",
+      "aria-expanded": !!menu,
+      "aria-controls": "gah-sw-mention",
+      "aria-autocomplete": "list",
+      "aria-activedescendant": menu ? `gah-sw-mention-${Math.min(pick, menu.length - 1)}` : void 0,
+      placeholder,
+      title: sdk.T("@名字 / @组 / @all 都会唤醒对应成员", "@name, @group or @all wakes the matching members")
+    };
+    return /* @__PURE__ */ jsxRuntime.jsxs("form", { className: `gah-sw-compose${multiline ? " multi" : ""}`, onSubmit: submit, children: [
+      menu ? /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "gah-sw-mention", role: "listbox", id: "gah-sw-mention", children: menu.map((o, i) => /* @__PURE__ */ jsxRuntime.jsxs(
+        "li",
+        {
+          id: `gah-sw-mention-${i}`,
+          role: "option",
+          "aria-selected": i === pick,
+          className: i === pick ? "on" : void 0,
+          onMouseDown: (e) => {
+            e.preventDefault();
+            choose(o);
+          },
+          onMouseEnter: () => setPick(i),
+          children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
+              "@",
+              o.tag
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: o.hint })
+          ]
+        },
+        `${o.kind}:${o.tag}`
+      )) }) : null,
+      chip || null,
+      multiline ? /* @__PURE__ */ jsxRuntime.jsx("textarea", { ...props, rows: 6 }) : /* @__PURE__ */ jsxRuntime.jsx("input", { ...props }),
+      /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: busy || !text.trim(), children: multiline ? sdk.T("发布", "Publish") : sdk.T("发送", "Post") })
+    ] });
+  }
+  function Board({ api, view, run, busy }) {
+    var _a;
+    const { posts, more, loading, hasMore } = usePosts(api, view);
+    const list = react.useRef(null);
+    const last = (_a = view.posts[view.posts.length - 1]) == null ? void 0 : _a.id;
+    react.useEffect(() => {
+      const el = list.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, [last]);
     return /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
       /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-board", ref: list, children: [
-        posts.length && posts[0].id > 1 ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", disabled: loading, onClick: more, children: sdk.T("加载更早的帖子", "Load earlier posts") }) : null,
-        posts.length ? posts.map((p) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p }, p.id)) : /* @__PURE__ */ jsxRuntime.jsx(Empty, { title: sdk.T("留言板还是空的", "The board is empty"), hint: sdk.T("在主对话里把任务交给协调者，它会招募成员并在这里分工。\n也可以直接发帖，用 @名字 唤醒某个成员。", "Hand the task to the coordinator in the main chat; it recruits members and splits the work here.\nYou can also post directly; @name wakes a member.") })
+        hasMore ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", disabled: loading, onClick: more, children: sdk.T("加载更早的帖子", "Load earlier posts") }) : null,
+        posts.length ? posts.map((p) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p }, p.id)) : EMPTY_BOARD
       ] }),
-      view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("form", { className: "gah-sw-compose", onSubmit: send, children: [
-        menu ? /* @__PURE__ */ jsxRuntime.jsx("ul", { className: "gah-sw-mention", role: "listbox", id: "gah-sw-mention", children: menu.map((o, i) => /* @__PURE__ */ jsxRuntime.jsxs(
-          "li",
+      view.enabled ? /* @__PURE__ */ jsxRuntime.jsx(
+        Compose,
+        {
+          view,
+          busy,
+          send: (text) => run("post", { text }),
+          placeholder: sdk.T("发帖，@名字 唤醒成员", "Post, @name wakes a member")
+        }
+      ) : null
+    ] });
+  }
+  function threadsOf(posts) {
+    const byId = new Map(posts.map((p) => [p.id, p]));
+    const rootOf = (p) => {
+      let cur = p;
+      const seen = /* @__PURE__ */ new Set();
+      while (cur.reply_to && byId.has(cur.reply_to) && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        cur = byId.get(cur.reply_to);
+      }
+      return cur.id;
+    };
+    const map = /* @__PURE__ */ new Map();
+    for (const p of posts) {
+      if (p.kind === "system") continue;
+      const r = rootOf(p);
+      const root = byId.get(r);
+      if (root.kind === "system") continue;
+      const t = map.get(r) || { root, posts: [], last: 0 };
+      t.posts.push(p);
+      t.last = Math.max(t.last, p.created);
+      map.set(r, t);
+    }
+    return [...map.values()].sort((a, b) => b.last - a.last);
+  }
+  const titleOf = (text) => {
+    const line = text.split("\n").map((l) => l.replace(/^[#>*\-\s]+/, "").replace(/[*_`]/g, "").trim()).find(Boolean) || "";
+    return line.length > 80 ? `${line.slice(0, 80)}…` : line;
+  };
+  function Forum({ api, view, run, busy }) {
+    var _a;
+    const { posts, more, loading, hasMore } = usePosts(api, view);
+    const threads = threadsOf(posts);
+    const [sel, setSel] = react.useState(null);
+    const [reply, setReply] = react.useState(null);
+    const [waitNew, setWaitNew] = react.useState(null);
+    const floors = react.useRef(null);
+    const current = typeof sel === "number" ? threads.find((t) => t.root.id === sel) : void 0;
+    const shown = sel === "new" ? null : current || (sel === null ? threads[0] : void 0);
+    react.useEffect(() => {
+      setSel(null);
+      setReply(null);
+    }, [view.id]);
+    react.useEffect(() => {
+      setReply(null);
+    }, [shown == null ? void 0 : shown.root.id]);
+    react.useEffect(() => {
+      if (waitNew === null) return;
+      const t = threads.find((x) => x.root.author === "user" && x.root.id > waitNew);
+      if (t) {
+        setSel(t.root.id);
+        setWaitNew(null);
+      }
+    }, [waitNew, threads]);
+    const lastFloor = (_a = shown == null ? void 0 : shown.posts[shown.posts.length - 1]) == null ? void 0 : _a.id;
+    react.useEffect(() => {
+      const el = floors.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, [shown == null ? void 0 : shown.root.id, lastFloor]);
+    const maxId = posts.length ? posts[posts.length - 1].id : 0;
+    const publish = async (text) => {
+      const ok = await run("post", { text });
+      if (ok) setWaitNew(maxId);
+      return ok;
+    };
+    const target = shown ? reply && shown.posts.some((p) => p.id === reply) ? reply : shown.root.id : null;
+    const targetPost = shown == null ? void 0 : shown.posts.find((p) => p.id === target);
+    return /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-forum", children: [
+      /* @__PURE__ */ jsxRuntime.jsxs("nav", { className: "gah-sw-topics", children: [
+        view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: `gah-sw-newtopic${sel === "new" ? " on" : ""}`, onClick: () => setSel("new"), children: [
+          "+ ",
+          sdk.T("新建帖子", "New topic")
+        ] }) : null,
+        threads.map((t) => /* @__PURE__ */ jsxRuntime.jsxs("button", { type: "button", className: `gah-sw-topic${(shown == null ? void 0 : shown.root.id) === t.root.id ? " on" : ""}${t.root.author === "user" ? " user" : ""}`, onClick: () => setSel(t.root.id), children: [
+          /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-topic-title", children: titleOf(t.root.text) || `#${t.root.id}` }),
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-topic-meta", children: [
+            /* @__PURE__ */ jsxRuntime.jsxs("span", { children: [
+              "@",
+              t.root.author
+            ] }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: sdk.T(`${t.posts.length - 1} 回复`, `${t.posts.length - 1} replies`) }),
+            /* @__PURE__ */ jsxRuntime.jsx("span", { children: fmtTime(t.last) })
+          ] })
+        ] }, t.root.id)),
+        hasMore ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-more", disabled: loading, onClick: more, children: sdk.T("加载更早的帖子", "Load earlier posts") }) : null,
+        !threads.length && !hasMore ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-topics-empty", children: sdk.T("还没有帖子", "No topics yet") }) : null
+      ] }),
+      /* @__PURE__ */ jsxRuntime.jsx("section", { className: "gah-sw-thread", children: sel === "new" || !shown && view.enabled ? /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-newform", children: [
+        /* @__PURE__ */ jsxRuntime.jsx("b", { children: sdk.T("新建帖子", "New topic") }),
+        /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-hint", children: sdk.T("第一行是标题，下面写任务细节。用 @名字 / @组 / @all 指派成员；不 @ 任何人时只是发帖，不会唤醒谁（协调者在等你回复时除外）。Ctrl+Enter 发布。", "The first line is the title; details go below. Use @name / @group / @all to assign members; without a mention nobody is woken (unless the coordinator is awaiting your reply). Ctrl+Enter publishes.") }),
+        /* @__PURE__ */ jsxRuntime.jsx(Compose, { view, busy, send: publish, multiline: true, placeholder: sdk.T("标题\n\n任务描述… @名字 指派", "Title\n\nTask details… @name to assign") })
+      ] }) : shown ? /* @__PURE__ */ jsxRuntime.jsxs(jsxRuntime.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntime.jsx("h3", { className: "gah-sw-thread-title", children: titleOf(shown.root.text) || `#${shown.root.id}` }),
+        /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-floors", ref: floors, children: shown.posts.map((p, i) => /* @__PURE__ */ jsxRuntime.jsx(PostRow, { post: p, floor: i + 1, onReply: view.enabled ? () => setReply(p.id) : void 0 }, p.id)) }),
+        view.enabled ? /* @__PURE__ */ jsxRuntime.jsx(
+          Compose,
           {
-            id: `gah-sw-mention-${i}`,
-            role: "option",
-            "aria-selected": i === pick,
-            className: i === pick ? "on" : void 0,
-            onMouseDown: (e) => {
-              e.preventDefault();
-              choose(o);
-            },
-            onMouseEnter: () => setPick(i),
-            children: [
-              /* @__PURE__ */ jsxRuntime.jsxs("b", { children: [
-                "@",
-                o.tag
-              ] }),
-              /* @__PURE__ */ jsxRuntime.jsx("span", { children: o.hint })
-            ]
-          },
-          `${o.kind}:${o.tag}`
-        )) }) : null,
-        /* @__PURE__ */ jsxRuntime.jsx(
-          "input",
-          {
-            ref: input,
-            value: text,
-            disabled: busy,
-            maxLength: 8e3,
-            autoComplete: "off",
-            onChange: (e) => {
-              setText(e.target.value);
-              track(e.target.value, e.target.selectionStart);
-            },
-            onClick: (e) => track(e.currentTarget.value, e.currentTarget.selectionStart),
-            onKeyDown: keys,
-            onBlur: () => setAt(null),
-            role: "combobox",
-            "aria-expanded": !!menu,
-            "aria-controls": "gah-sw-mention",
-            "aria-autocomplete": "list",
-            "aria-activedescendant": menu ? `gah-sw-mention-${Math.min(pick, menu.length - 1)}` : void 0,
-            placeholder: sdk.T("发帖，@名字 唤醒成员", "Post, @name wakes a member"),
-            title: sdk.T("@名字 / @组 / @all 都会唤醒对应成员", "@name, @group or @all wakes the matching members")
+            view,
+            busy,
+            send: (text) => run("post", { text, reply_to: target }),
+            chip: targetPost && targetPost.id !== shown.root.id ? /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-replychip", children: [
+              "↪",
+              " #",
+              targetPost.id,
+              " @",
+              targetPost.author,
+              /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", onClick: () => setReply(null), "aria-label": sdk.T("取消", "Cancel"), children: "×" })
+            ] }) : null,
+            placeholder: sdk.T(`回复 #${target} @${(targetPost == null ? void 0 : targetPost.author) || ""}（会唤醒该楼作者）`, `Reply to #${target} @${(targetPost == null ? void 0 : targetPost.author) || ""} (wakes its author)`)
           }
-        ),
-        /* @__PURE__ */ jsxRuntime.jsx("button", { type: "submit", disabled: busy || !text.trim(), children: sdk.T("发送", "Post") })
-      ] }) : null
+        ) : null
+      ] }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-room-empty", children: EMPTY_BOARD }) })
     ] });
   }
   function ModelEdit({ m, busy, models, save }) {
@@ -650,6 +787,20 @@
       api.host.post("/api/sessions", { action: "select", id: ROOM.sid }).then((st) => api.setState(st, true)).catch((error) => api.notice(errText(error)));
     }, [api, sid]);
     const view = data == null ? void 0 : data.view;
+    const [mode, setMode] = react.useState(() => {
+      try {
+        return localStorage.getItem("gah-sw-room-mode") === "chat" ? "chat" : "forum";
+      } catch {
+        return "forum";
+      }
+    });
+    const pickMode = (m) => {
+      setMode(m);
+      try {
+        localStorage.setItem("gah-sw-room-mode", m);
+      } catch {
+      }
+    };
     react.useEffect(() => {
       document.title = `${sdk.T("蜂群群聊", "Swarm chat")}${view ? ` · ${view.members.filter((m) => !m.removed).length + 1}` : ""}`;
     }, [view]);
@@ -668,6 +819,10 @@
             sdk.T(`${people.length} 位成员`, `${people.length} members`)
           ] }),
           state ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-state", children: state }) : null,
+          /* @__PURE__ */ jsxRuntime.jsxs("span", { className: "gah-sw-modes", role: "tablist", children: [
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": mode === "forum", className: mode === "forum" ? "on" : void 0, onClick: () => pickMode("forum"), children: sdk.T("论坛", "Forum") }),
+            /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", role: "tab", "aria-selected": mode === "chat", className: mode === "chat" ? "on" : void 0, onClick: () => pickMode("chat"), children: sdk.T("群聊", "Chat") })
+          ] }),
           view.enabled && view.paused && !view.awaiting_user ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", className: "gah-sw-on", disabled: busy, onClick: () => run("resume"), children: sdk.T("继续", "Resume") }) : null
         ] }),
         /* @__PURE__ */ jsxRuntime.jsxs("div", { className: "gah-sw-room-body", children: [
@@ -681,9 +836,9 @@
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-room-role", children: m.role || "" }),
             /* @__PURE__ */ jsxRuntime.jsx("span", { className: "gah-sw-room-st", children: statusLabel(m.status) })
           ] }, m.name)) }),
-          /* @__PURE__ */ jsxRuntime.jsxs("main", { className: "gah-sw-room-main", children: [
+          /* @__PURE__ */ jsxRuntime.jsxs("main", { className: `gah-sw-room-main ${mode}`, children: [
             data.persistence_error ? /* @__PURE__ */ jsxRuntime.jsx("div", { className: "gah-sw-note err", children: data.persistence_error }) : null,
-            /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy })
+            mode === "forum" ? /* @__PURE__ */ jsxRuntime.jsx(Forum, { api, view, run, busy }) : /* @__PURE__ */ jsxRuntime.jsx(Board, { api, view, run, busy })
           ] })
         ] })
       ] });
