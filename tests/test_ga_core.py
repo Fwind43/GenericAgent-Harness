@@ -1,5 +1,7 @@
+import importlib.util
 import textwrap
 import uuid
+from types import SimpleNamespace
 
 from ga_harness.kernel import Runtime
 from ga_harness.kernel.loader import discover, mount
@@ -74,3 +76,71 @@ def test_update_slash_cmd_expands_official_prompt(tmp_path):
         assert "git reset --mixed e4d956f0207a2d268704634473196353946481bc" in out
     finally:
         rt.dispose()
+
+GA_CORE_MAIN = Path(__file__).resolve().parents[1] / "ga_harness" / "plugins" / "ga-core" / "main.py"
+
+
+def _load_ga_core_main():
+    spec = importlib.util.spec_from_file_location("ga_core_main_under_test", GA_CORE_MAIN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _ReadOnlyAskFacade:
+    """Stand-in for llmcore.MixinSession: node-specific names reject writes/deletes."""
+
+    def __init__(self):
+        object.__setattr__(self, "_sessions", [object()])
+        self.seen = []
+
+    def __setattr__(self, name, value):
+        if name == "ask":
+            raise AttributeError(f"MixinSession.{name} is node-specific and read-only")
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name):
+        if name == "ask":
+            raise AttributeError(f"MixinSession.{name} is node-specific and read-only")
+        object.__delattr__(self, name)
+
+    def ask(self, msg, *args, **kwargs):
+        self.seen.append(msg)
+        yield "chunk"
+
+
+def test_inject_images_survives_read_only_ask_facade(tmp_path):
+    mod = _load_ga_core_main()
+    img = tmp_path / "a.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    backend = _ReadOnlyAskFacade()
+    undo = mod._inject_images(SimpleNamespace(backend=backend), [str(img)])
+
+    assert callable(undo)
+    assert "ask" in vars(backend)          # installed on the instance, guard bypassed
+    msg = {"role": "user", "content": [{"type": "text", "text": "hi"}]}
+    assert list(backend.ask(msg)) == ["chunk"]
+    assert msg["content"][0] == {"type": "text", "text": "hi"}
+    assert msg["content"][-1]["type"] == "image"
+    assert backend.seen == [msg]
+
+    undo()
+    assert "ask" not in vars(backend)      # back to the node's own method
+    assert backend.ask.__self__ is backend
+
+
+def test_inject_images_restores_preexisting_instance_attr(tmp_path):
+    mod = _load_ga_core_main()
+    img = tmp_path / "b.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"1" * 32)
+    calls = []
+
+    def own(msg, *args, **kwargs):
+        calls.append(msg)
+        yield "own"
+
+    backend = SimpleNamespace(ask=own)
+    undo = mod._inject_images(SimpleNamespace(backend=backend), [str(img)])
+    assert list(backend.ask({"content": []})) == ["own"]
+    undo()
+    assert backend.ask is own and calls and calls[0]["content"][0]["type"] == "image"
