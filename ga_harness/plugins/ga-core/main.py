@@ -117,9 +117,9 @@ def _inject_images(client, paths):
     def undo():
         if vars(backend).get("ask") is patched:
             if had_own:
-                backend.ask = original
+                object.__setattr__(backend, "ask", original)
             else:
-                del backend.ask
+                object.__delattr__(backend, "ask")
 
     def patched(msg, *args, **kwargs):
         undo()
@@ -127,7 +127,10 @@ def _inject_images(client, paths):
             msg["content"].extend(blocks)
         return (yield from original(msg, *args, **kwargs))
 
-    backend.ask = patched
+    # Facades such as GA's MixinSession reject node-specific writes in
+    # __setattr__ (AttributeError: ... is node-specific and read-only), so
+    # install the one-shot override straight on the instance.
+    object.__setattr__(backend, "ask", patched)
     return undo
 
 
