@@ -156,7 +156,7 @@ def started_for(world, sid):
 def test_registration_and_toggle(load, world):
     ctx = load()
     assert "swarm" in world.rpc
-    assert world.worker_plugins == ["swarm-worker"]
+    assert world.worker_plugins == ["swarm-worker", "ga-steer"]  # ga-steer: mentions steered into running turns
     assert {"toggle", "post", "remove", "cancel", "resume", "board"} <= {k[1] for k in world.routes}
     mode = ctx.provided["swarm.mode"]
     assert mode.enabled("coord") is False
@@ -452,3 +452,40 @@ def test_worker_end_turn_tool_stops_run(load, world, worker_mod, monkeypatch):
     tools, prompt = _worker(worker_mod, world, member["session"], monkeypatch)
     assert "swarm_end_turn" in tools and "swarm_end_turn" in prompt
     assert tools["swarm_end_turn"](None, {}, None).next_prompt is None
+
+def test_worker_end_turn_answers_user_first(load, world, worker_mod, monkeypatch):
+    load()
+    world.route("toggle", {"session_id": "coord", "enabled": True})
+    monkeypatch.setitem(sys.modules, "agent_loop", SimpleNamespace(
+        StepOutcome=lambda msg, next_prompt=None, should_exit=False: SimpleNamespace(
+            msg=msg, next_prompt=next_prompt, should_exit=should_exit)))
+    tools = {}
+    host = SimpleNamespace(session_id="coord",
+                           call=lambda name, payload, timeout=None: world.call(payload, session_id="coord"))
+    ga_tools = SimpleNamespace(
+        names=lambda: list(tools),
+        register=lambda schema, fn: tools.__setitem__(schema["function"]["name"], fn) or (lambda: None))
+    ctx = FakeCtx({"run.host": host, "ga.tools": ga_tools})
+    worker_mod.apply(ctx, {})
+    start = lambda text: ctx.hooks["ga.agent_before"]({"user_input": text}, lambda g: g)
+    reply = lambda text: SimpleNamespace(content=text)
+    end = lambda resp: tools["swarm_end_turn"](None, {}, resp)
+
+    # user asks for progress, model answers only with the tool -> pushed back once
+    start("what is the progress?")
+    out = end(reply("<summary>checking</summary>"))
+    assert out.next_prompt and "Reply to the user" in out.next_prompt
+    assert end(reply("")).next_prompt is None  # second call always ends
+
+    # visible text in the same response is enough
+    start("status?")
+    assert end(reply("Alice is done; Bob is testing.")).next_prompt is None
+
+    # text from an earlier step of the turn counts as a reply
+    start("status?")
+    ctx.hooks["ga.llm_after"]({"response": reply("Two of three tasks done.")}, lambda g: g)
+    assert end(reply("")).next_prompt is None
+
+    # host wake-ups may end silently
+    start("[Swarm] You were mentioned on the board.\n#3 @alice: done")
+    assert end(reply("")).next_prompt is None
