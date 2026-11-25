@@ -25,6 +25,11 @@ TERMINAL = ("done", "error", "aborted", "interrupted")
 # High-frequency fragments; the final assistant.text/turn events are durable.
 STREAM_EVENTS = ("assistant.delta", "agent.chunk")
 STREAM_FLUSH_SECONDS = 1.0
+# A checkpoint rewrites the session's whole stored transcript, so long transcripts
+# are checkpointed less often: one extra second per STREAM_FLUSH_BYTES stored, up to
+# STREAM_FLUSH_MAX_SECONDS. Completion always saves in full regardless.
+STREAM_FLUSH_BYTES = 1 << 20
+STREAM_FLUSH_MAX_SECONDS = 30.0
 # Worker-plugin events: broadcast and logged, never folded into the transcript.
 PLUGIN_EVENT_PREFIX = "plugin."
 
@@ -393,11 +398,15 @@ class Runs:
                 noted = self._fold_notes(live["messages"], data)
                 with self.sessions._db() as db:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
-                    if noted:
-                        self._checkpoint(db, live)
+                if noted:
+                    # Saved by the regular checkpoint, never under ``self.lock``.
+                    live["dirty"] = True
+                flush = noted and self._flush_due(live)
                 record = {"id": rid, "session_id": live["session_id"], "seq": seq}
                 message = live["messages"][-1]
             self._notify("run.event", record, name=name, data=data, message=message)
+            if flush:
+                self._flush(rid, live)
             return
         with self.lock:
             live = self.live.get(rid)
@@ -421,7 +430,7 @@ class Runs:
                     seq = self._append(db, rid, "run.event", {"name": name, "data": data})
                 patch = self._patch(messages, name, data)
             live["dirty"] = True
-            flush = now - live["flushed"] >= STREAM_FLUSH_SECONDS
+            flush = self._flush_due(live, now)
             record = {"id": rid, "session_id": live["session_id"], "seq": seq}
         # Never ship the whole (often hundreds of KB) message per event: stream
         # fragments carry only their delta and durable events carry the one turn
@@ -514,12 +523,51 @@ class Runs:
             return
         live["state"] = {**live["state"], **state}
         live["dirty"] = True
-        self._flush(rid, live)
+        # Saved at the next due checkpoint (the monitor loop flushes when idle),
+        # not unconditionally: several busy runs with long transcripts otherwise
+        # rewrite megabytes per turn each and saturate the host.
+        if self._flush_due(live):
+            self._flush(rid, live)
+
+    @staticmethod
+    def _flush_due(live, now=None):
+        now = time.monotonic() if now is None else now
+        return now - live["flushed"] >= live.get("flush_interval", STREAM_FLUSH_SECONDS)
+
+    @staticmethod
+    def _encode(live):
+        """Serialize ``live`` for a checkpoint without re-encoding the unchanged part.
+
+        While a run is live only its last (running) message changes; earlier
+        messages are never mutated. Their JSON is cached once per message count, so
+        a checkpoint encodes just the tail instead of the whole (possibly tens of
+        MB) transcript. ``state`` is replaced, not mutated, by snapshots, so its
+        encoding is cached per object.
+        """
+        dumps = lambda value: json.dumps(value, ensure_ascii=False, allow_nan=False)
+        messages = live["messages"]
+        head = max(len(messages) - 1, 0)
+        cached = live.get("encoded_head")
+        if cached is None or cached[0] != head:
+            cached = live["encoded_head"] = (head, ",".join(dumps(m) for m in messages[:head]))
+        body = cached[1]
+        if messages:
+            tail = dumps(messages[-1])
+            body = f"{body},{tail}" if body else tail
+        state = live["state"]
+        cached = live.get("encoded_state")
+        if cached is None or cached[0] is not state:
+            cached = live["encoded_state"] = (state, dumps(state))
+        return f"[{body}]", cached[1]
 
     def _checkpoint(self, db, live):
         # A None title keeps the stored one, so a checkpoint no longer re-reads and
         # decodes the whole session just to write it back.
-        self.sessions._write(db, {"id": live["session_id"], "title": None}, live["messages"], live["state"])
+        encoded = self._encode(live)
+        self.sessions._write(db, {"id": live["session_id"], "title": None}, live["messages"], live["state"],
+                             encoded=encoded)
+        size = len(encoded[0]) + len(encoded[1])
+        live["flush_interval"] = min(STREAM_FLUSH_MAX_SECONDS, STREAM_FLUSH_SECONDS + size / STREAM_FLUSH_BYTES)
         live["dirty"], live["flushed"] = False, time.monotonic()
 
     def _finish(self, rid, status, error=None, *, state=None, text=None):
@@ -600,7 +648,7 @@ class Runs:
                     elif packet.get("kind") == "error":
                         self._finish(rid, "error", packet.get("error") or "Worker failed", state=packet.get("state"))
                         break
-                elif live.get("dirty") and time.monotonic() - live["flushed"] >= STREAM_FLUSH_SECONDS:
+                elif live.get("dirty") and self._flush_due(live):
                     # The worker went quiet (a long tool call, say) with events
                     # newer than the last checkpoint: save them now, not at the next event.
                     self._flush(rid, live)

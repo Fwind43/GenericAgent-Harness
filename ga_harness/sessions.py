@@ -330,7 +330,9 @@ class Sessions:
             messages = []
         return {"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages}
 
-    def _write(self, db, current, messages, state):
+    def _write(self, db, current, messages, state, *, encoded=None):
+        # ``encoded`` is an optional pre-serialized (messages_json, state_json) pair:
+        # run checkpoints pass it so a long transcript is not re-encoded on every flush.
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":
             first = next((m.get("text", "") for m in messages if m.get("role") == "user"), "")
@@ -340,8 +342,10 @@ class Sessions:
         # A None title (run checkpoints) keeps the stored one, so callers need not re-read the row.
         db.execute("UPDATE sessions SET title=COALESCE(?,title),updated=?,messages=?,state=?,"
                    "read_at=CASE WHEN id=(SELECT value FROM meta WHERE key='current') THEN ? ELSE read_at END WHERE id=?",
-                   (title, now, json.dumps(messages, ensure_ascii=False, allow_nan=False),
-                    json.dumps(state, ensure_ascii=False, allow_nan=False), now, current["id"]))
+                   (title, now,
+                    *(encoded or (json.dumps(messages, ensure_ascii=False, allow_nan=False),
+                                  json.dumps(state, ensure_ascii=False, allow_nan=False))),
+                    now, current["id"]))
 
     def save(self, messages):
         """Legacy single-agent API. Background workers must use save_for()."""
