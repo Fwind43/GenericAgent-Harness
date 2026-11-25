@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 from contextlib import contextmanager
+import hashlib
 import json
 import sqlite3
 import threading
@@ -149,7 +150,7 @@ class Sessions:
         sid = uuid.uuid4().hex
         now = time.time()
         db.execute("INSERT INTO sessions (id,title,updated,messages,state,deleted,workspace,project_id,parent_id,read_at) VALUES (?,?,?,?,?,0,?,?,?,?)",
-                   (sid, title, now, "[]", "{}", workspace, project_id, parent_id, now))
+                   (sid, title, now, "", "{}", workspace, project_id, parent_id, now))
         return sid
 
     def _select(self, db, sid, view=True):
@@ -168,6 +169,12 @@ class Sessions:
         with self._db() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=NORMAL")
+            # Transcripts live one row per message: a checkpoint of a long chat rewrites only the
+            # messages that changed instead of the whole JSON array. sessions.messages='' marks a
+            # migrated chat; a non-empty value is a legacy transcript, migrated on its next write.
+            db.execute("CREATE TABLE IF NOT EXISTS session_messages (session_id TEXT NOT NULL, idx INTEGER NOT NULL,"
+                       " digest BLOB NOT NULL, body TEXT NOT NULL, PRIMARY KEY (session_id, idx))")
+            db.execute("CREATE INDEX IF NOT EXISTS session_message_digest ON session_messages (session_id, idx, digest)")
             db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, updated REAL NOT NULL, messages TEXT NOT NULL, state TEXT NOT NULL, deleted INTEGER NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             columns = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
@@ -197,8 +204,8 @@ class Sessions:
         self._ready = True
         restore(self.agent, self.current()["state"])
 
-    @staticmethod
-    def _recover(db):
+    @classmethod
+    def _recover(cls, db):
         """Mark work left "running" by a dead host as interrupted.
 
         Every JSON encoding of a "running" status contains the token "running" (quotes
@@ -207,28 +214,83 @@ class Sessions:
         token elsewhere) only costs one decode. Long recoveries report startup progress so a
         supervising shell does not take them for a hang.
         """
-        rows = db.execute("SELECT id FROM sessions WHERE deleted=0 AND instr(messages, '\"running\"')>0").fetchall()
+        rows = db.execute("SELECT id FROM sessions WHERE deleted=0 AND instr(messages, '\"running\"')>0"
+                          " UNION SELECT s.id FROM sessions s JOIN session_messages m ON m.session_id=s.id"
+                          " WHERE s.deleted=0 AND instr(m.body, '\"running\"')>0").fetchall()
         total, last = len(rows), time.monotonic()
         for i, (sid,) in enumerate(rows, 1):
-            row = db.execute("SELECT messages FROM sessions WHERE id=?", (sid,)).fetchone()
             try:
-                messages = json.loads(row[0])
+                messages = cls._load(db, sid)
             except ValueError:
                 continue
             if settle(messages, "interrupted", "Service interrupted; not automatically retried"):
-                db.execute("UPDATE sessions SET messages=? WHERE id=?", (json.dumps(messages, ensure_ascii=False), sid))
+                cls._store_messages(db, sid, cls._bodies(messages))
             if time.monotonic() - last >= 2:
                 last = time.monotonic()
                 startup.progress("sessions", f"recover {i}/{total}")
 
     @staticmethod
-    def _decode(row):
+    def _bodies(messages):
+        return [json.dumps(m, ensure_ascii=False, allow_nan=False) for m in messages]
+
+    @staticmethod
+    def _digest(body):
+        return hashlib.blake2b(body.encode("utf-8", "surrogatepass"), digest_size=8).digest()
+
+    @staticmethod
+    def _joined(db, sid, legacy=None):
+        """One chat's transcript as JSON text: the legacy column while set, else its message rows."""
+        if legacy is None:
+            row = db.execute("SELECT messages FROM sessions WHERE id=?", (sid,)).fetchone()
+            legacy = row[0] if row is not None else ""
+        if legacy:
+            return legacy
+        return "[" + ",".join(r[0] for r in db.execute(
+            "SELECT body FROM session_messages WHERE session_id=? ORDER BY idx", (sid,))) + "]"
+
+    @classmethod
+    def _load(cls, db, sid, legacy=None):
+        return json.loads(cls._joined(db, sid, legacy))
+
+    @classmethod
+    def _store_messages(cls, db, sid, bodies, digests=None):
+        """Store a transcript as one row per message, writing only rows whose content changed.
+
+        Unchanged messages cost an 8-byte digest read (covered by session_message_digest), so a
+        checkpoint of a long chat whose tail grows no longer rewrites the whole history.
+        """
+        old = dict(db.execute("SELECT idx, digest FROM session_messages WHERE session_id=?", (sid,)).fetchall())
+        rows = []
+        for i, body in enumerate(bodies):
+            digest = digests[i] if digests is not None else cls._digest(body)
+            if old.get(i) != digest:
+                rows.append((sid, i, digest, body))
+        if rows:
+            db.executemany("INSERT OR REPLACE INTO session_messages (session_id,idx,digest,body) VALUES (?,?,?,?)", rows)
+        if old and max(old) >= len(bodies):
+            db.execute("DELETE FROM session_messages WHERE session_id=? AND idx>=?", (sid, len(bodies)))
+        db.execute("UPDATE sessions SET messages='' WHERE id=? AND messages<>''", (sid,))
+
+    @staticmethod
+    def _blank(db, sid, legacy):
+        """True when a chat has no transcript yet, in either storage form, without decoding it."""
+        if legacy:
+            return legacy.strip() == "[]"
+        return db.execute("SELECT 1 FROM session_messages WHERE session_id=? LIMIT 1", (sid,)).fetchone() is None
+
+    @classmethod
+    def _decode(cls, row, db=None):
+        """Row -> dict; a migrated transcript is read from session_messages through ``db``."""
         if row is None:
             raise ValueError("session not found")
         result = dict(row)
-        for key in ("messages", "state"):
-            if key in result:
-                result[key] = json.loads(result[key])
+        if "messages" in result:
+            legacy = result["messages"]
+            if not legacy and db is None:
+                raise RuntimeError("decoding a migrated transcript needs the open connection")
+            result["messages"] = json.loads(legacy) if legacy else cls._load(db, result["id"], legacy)
+        if "state" in result:
+            result["state"] = json.loads(result["state"])
         return result
 
     # Scalar columns only: skips parsing the (possibly huge) transcript and agent state.
@@ -241,7 +303,7 @@ class Sessions:
             table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
                 return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0",
-                                               (self._current_id(db),)).fetchone())
+                                               (self._current_id(db),)).fetchone(), db)
 
     # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
     # client of this host -- local or remote -- sees the same state. Values are JSON.
@@ -275,7 +337,7 @@ class Sessions:
             cols = self.LIGHT if light else "*"
             table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
-                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0", (sid,)).fetchone())
+                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0", (sid,)).fetchone(), db)
 
     def state_of(self, sid):
         """Agent state of one chat, without reading or parsing its transcript."""
@@ -302,14 +364,15 @@ class Sessions:
         with self.lock:
             self._init()
             with self._db() as db:
-                rows = db.execute("SELECT id,title,updated,messages FROM sessions WHERE deleted=0").fetchall()
+                rows = [(row["id"], row["title"], row["updated"], self._joined(db, row["id"], row["messages"]))
+                        for row in db.execute("SELECT id,title,updated,messages FROM sessions WHERE deleted=0").fetchall()]
         result = []
-        for row in rows:
+        for sid, title, updated, text in rows:
             try:
-                messages = json.loads(row["messages"])
+                messages = json.loads(text)
             except ValueError:
                 messages = []
-            result.append({"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages})
+            result.append({"id": sid, "title": title, "updated": updated, "messages": messages})
         return result
 
     def transcript(self, sid):
@@ -322,17 +385,19 @@ class Sessions:
             self._init()
             with self._db() as db:
                 row = db.execute("SELECT id,title,updated,messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+                text = self._joined(db, sid, row["messages"]) if row is not None else ""
         if row is None:
             return None
         try:
-            messages = json.loads(row["messages"])
+            messages = json.loads(text)
         except ValueError:
             messages = []
         return {"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages}
 
     def _write(self, db, current, messages, state, *, encoded=None):
-        # ``encoded`` is an optional pre-serialized (messages_json, state_json) pair:
-        # run checkpoints pass it so a long transcript is not re-encoded on every flush.
+        # ``encoded`` is an optional pre-serialized (message_bodies, state_json[, digests]) tuple:
+        # run checkpoints pass it so a long transcript is not re-encoded on every flush. A legacy
+        # (messages_json, state_json) pair is still accepted; its messages are re-encoded per row.
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":
             first = next((m.get("text", "") for m in messages if m.get("role") == "user"), "")
@@ -340,12 +405,16 @@ class Sessions:
         # A write to the chat on screen is seen as it happens; any other chat becomes unread.
         now = time.time()
         # A None title (run checkpoints) keeps the stored one, so callers need not re-read the row.
-        db.execute("UPDATE sessions SET title=COALESCE(?,title),updated=?,messages=?,state=?,"
+        if encoded and not isinstance(encoded[0], str):
+            bodies, state_json = encoded[0], encoded[1]
+            digests = encoded[2] if len(encoded) > 2 else None
+        else:
+            bodies, digests = self._bodies(messages), None
+            state_json = encoded[1] if encoded else json.dumps(state, ensure_ascii=False, allow_nan=False)
+        db.execute("UPDATE sessions SET title=COALESCE(?,title),updated=?,state=?,"
                    "read_at=CASE WHEN id=(SELECT value FROM meta WHERE key='current') THEN ? ELSE read_at END WHERE id=?",
-                   (title, now,
-                    *(encoded or (json.dumps(messages, ensure_ascii=False, allow_nan=False),
-                                  json.dumps(state, ensure_ascii=False, allow_nan=False))),
-                    now, current["id"]))
+                   (title, now, state_json, now, current["id"]))
+        self._store_messages(db, current["id"], bodies, digests)
 
     def save(self, messages):
         """Legacy single-agent API. Background workers must use save_for()."""
@@ -411,11 +480,11 @@ class Sessions:
                 if row is not None and not row["deleted"]:
                     return False
                 db.execute("INSERT OR REPLACE INTO sessions (id,title,updated,messages,state,deleted,workspace,project_id,parent_id,pinned,read_at)"
-                           " VALUES (?,?,?,?,?,0,?,?,'',?,?)",
+                           " VALUES (?,?,?,'',?,0,?,?,'',?,?)",
                            (sid, title or "\u65b0\u4f1a\u8bdd", float(updated),
-                            json.dumps(messages, ensure_ascii=False, allow_nan=False),
                             json.dumps(state, ensure_ascii=False, allow_nan=False),
                             workspace or "", project_id or "", float(pinned or 0), float(updated)))
+                self._store_messages(db, sid, self._bodies(messages))
             return True
 
     def exists(self, sid):

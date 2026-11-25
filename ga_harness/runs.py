@@ -188,7 +188,7 @@ class Runs:
                                (status, time.time(), error, row["id"]))
                     session = db.execute("SELECT * FROM sessions WHERE id=? AND deleted=0", (row["session_id"],)).fetchone()
                     if session is not None:
-                        current = self.sessions._decode(session)
+                        current = self.sessions._decode(session, db)
                         settle(current["messages"], status, error)
                         self.sessions._write(db, current, current["messages"], current["state"])
 
@@ -589,38 +589,47 @@ class Runs:
         return now - live["flushed"] >= live.get("flush_interval", STREAM_FLUSH_SECONDS)
 
     @staticmethod
-    def _encode(live):
+    def _encode(live, digest=None):
         """Serialize ``live`` for a checkpoint without re-encoding the unchanged part.
 
-        While a run is live only its last (running) message changes; earlier
-        messages are never mutated. Their JSON is cached once per message count, so
-        a checkpoint encodes just the tail instead of the whole (possibly tens of
-        MB) transcript. ``state`` is replaced, not mutated, by snapshots, so its
-        encoding is cached per object.
+        Returns ``(message_bodies, state_json, digests, size)``. While a run is live
+        only its last (running) message changes; earlier messages are never mutated.
+        Their per-message JSON (and, given ``digest``, their content digests) is
+        cached and extended as the transcript grows, so a checkpoint encodes just the
+        tail and the store rewrites only rows whose digest changed. ``state`` is
+        replaced, not mutated, by snapshots, so its encoding is cached per object.
         """
         dumps = lambda value: json.dumps(value, ensure_ascii=False, allow_nan=False)
         messages = live["messages"]
         head = max(len(messages) - 1, 0)
         cached = live.get("encoded_head")
-        if cached is None or cached[0] != head:
-            cached = live["encoded_head"] = (head, ",".join(dumps(m) for m in messages[:head]))
-        body = cached[1]
+        if cached is None or cached[0] > head or (digest is None) != (cached[2] is None):
+            cached = (0, [], None if digest is None else [], 0)
+        if cached[0] < head:
+            fresh = [dumps(m) for m in messages[cached[0]:head]]
+            cached = (head, cached[1] + fresh,
+                      None if digest is None else cached[2] + [digest(b) for b in fresh],
+                      cached[3] + sum(len(b) for b in fresh))
+        live["encoded_head"] = cached
+        bodies, digests, size = cached[1], cached[2], cached[3]
         if messages:
             tail = dumps(messages[-1])
-            body = f"{body},{tail}" if body else tail
+            bodies = bodies + [tail]
+            if digests is not None:
+                digests = digests + [digest(tail)]
+            size += len(tail)
         state = live["state"]
         cached = live.get("encoded_state")
         if cached is None or cached[0] is not state:
             cached = live["encoded_state"] = (state, dumps(state))
-        return f"[{body}]", cached[1]
+        return bodies, cached[1], digests, size + len(cached[1])
 
     def _checkpoint(self, db, live):
         # A None title keeps the stored one, so a checkpoint no longer re-reads and
         # decodes the whole session just to write it back.
-        encoded = self._encode(live)
+        bodies, state_json, digests, size = self._encode(live, getattr(self.sessions, "_digest", None))
         self.sessions._write(db, {"id": live["session_id"], "title": None}, live["messages"], live["state"],
-                             encoded=encoded)
-        size = len(encoded[0]) + len(encoded[1])
+                             encoded=(bodies, state_json, digests))
         live["flush_interval"] = min(STREAM_FLUSH_MAX_SECONDS, STREAM_FLUSH_SECONDS + size / STREAM_FLUSH_BYTES)
         live["dirty"], live["flushed"] = False, time.monotonic()
 

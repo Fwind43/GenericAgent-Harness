@@ -7,7 +7,6 @@ reply extraction, splitting and ordered delivery. See CHANNELS.md.
 from __future__ import annotations
 
 import io
-import json
 import os
 import queue
 import re
@@ -452,7 +451,7 @@ class Hub:
             directory = ws.project_workspace(project) if project else (self.workspace or ws.default_workspace)
             with store.lock, store._db() as db:
                 row = db.execute("SELECT messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
-                if row is None or json.loads(row[0] or "[]"):
+                if row is None or not store._blank(db, sid, row[0]):
                     return False
                 db.execute("UPDATE sessions SET workspace=?, project_id=?, updated=? WHERE id=?",
                            (str(directory), project["id"] if project else "", time.time(), sid))

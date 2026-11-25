@@ -6,7 +6,6 @@ selects another conversation; it never relabels an existing conversation's histo
 from __future__ import annotations
 
 import copy
-import json
 from pathlib import Path
 import re
 import threading
@@ -173,7 +172,7 @@ class Workspaces:
         store = self.sessions
         row = db.execute("SELECT id, messages, workspace, project_id FROM sessions WHERE id=? AND deleted=0",
                          (store._current_id(db),)).fetchone()
-        if row is not None and json.loads(row["messages"]) == []:
+        if row is not None and store._blank(db, row["id"], row["messages"]):
             db.execute("UPDATE sessions SET workspace=?, project_id=?, updated=? WHERE id=?",
                        (workspace, project_id, time.time(), row["id"]))
             return row["id"]
