@@ -834,3 +834,7 @@ class Runs:
             thread = live["thread"]
             if thread and thread is not threading.current_thread():
                 thread.join(timeout=max(0, deadline - time.monotonic()))
+        # Release the store's pooled SQLite handles (a later call simply reconnects).
+        close = getattr(self.sessions, "close", None)
+        if callable(close):
+            close()

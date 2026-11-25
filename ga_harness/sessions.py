@@ -114,6 +114,12 @@ class Sessions:
         # Per-request "chat on screen" (parallel mode only). Each web client names the chat it
         # shows; current() then answers for that client instead of the host-wide selection.
         self._viewer = threading.local()
+        # Idle connections reused across threads (opening one costs ~2ms on Windows, and the web
+        # UI serves each request on a fresh thread, so a per-thread cache would rarely hit).
+        # _gen invalidates every handle handed out before close().
+        self._pool = []
+        self._pool_lock = threading.Lock()
+        self._gen = 0
 
     def view(self, sid=None):
         """Bind this thread to the chat its client shows; None restores the host-wide selection."""
@@ -129,17 +135,69 @@ class Sessions:
         row = db.execute("SELECT value FROM meta WHERE key='current'").fetchone()
         return row[0] if row else None
 
-    @contextmanager
-    def _db(self):
+    _POOL_MAX = 8   # idle handles kept; extra ones from concurrent bursts are closed
+
+    def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        db = sqlite3.connect(self.path, timeout=15)
+        # Handles move between threads via the pool, never used by two at once (and the
+        # bundled SQLite is serialized-threadsafe), so the same-thread check is lifted.
+        db = sqlite3.connect(self.path, timeout=15, check_same_thread=False)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=15000")
+        return db
+
+    @contextmanager
+    def _db(self):
+        """A transaction on a pooled connection: commit on success, rollback on error.
+
+        Each call holds its handle exclusively, so a nested call gets a different one and its
+        transaction stays independent of the outer one exactly as with per-call connections.
+        """
+        entry = None
+        with self._pool_lock:
+            while self._pool:
+                cand = self._pool.pop()
+                if cand[1] == self._gen and cand[2] == self.path:
+                    entry = cand
+                    break
+                self._discard(cand[0])
+            gen = self._gen
+        if entry is None:
+            entry = (self._connect(), gen, self.path)
+        db = entry[0]
         try:
+            if db.in_transaction:
+                db.rollback()
             with db:
                 yield db
         finally:
+            try:
+                db.set_trace_callback(None)
+                reusable = not db.in_transaction   # never pool a handle with an open transaction
+            except Exception:
+                reusable = False
+            with self._pool_lock:
+                if (reusable and entry[1] == self._gen and entry[2] == self.path
+                        and len(self._pool) < self._POOL_MAX):
+                    self._pool.append(entry)
+                    db = None
+            if db is not None:
+                self._discard(db)
+
+    @staticmethod
+    def _discard(db):
+        try:
             db.close()
+        except Exception:
+            pass
+
+    def close(self):
+        """Close idle pooled connections; handles in use are closed when released."""
+        with self._pool_lock:
+            items, self._pool = self._pool, []
+            self._gen += 1
+        for db, _, _ in items:
+            self._discard(db)
 
     def _idle(self):
         q = getattr(self.agent, "task_queue", None)
