@@ -589,47 +589,55 @@ class Runs:
         return now - live["flushed"] >= live.get("flush_interval", STREAM_FLUSH_SECONDS)
 
     @staticmethod
-    def _encode(live, digest=None):
+    def _encode(live, digest=None, head_fn=None):
         """Serialize ``live`` for a checkpoint without re-encoding the unchanged part.
 
-        Returns ``(message_bodies, state_json, digests, size)``. While a run is live
+        Returns ``(message_bodies, state_json, digests, heads, size)``. While a run is live
         only its last (running) message changes; earlier messages are never mutated.
-        Their per-message JSON (and, given ``digest``, their content digests) is
-        cached and extended as the transcript grows, so a checkpoint encodes just the
-        tail and the store rewrites only rows whose digest changed. ``state`` is
-        replaced, not mutated, by snapshots, so its encoding is cached per object.
+        Their per-message JSON (and, given ``digest`` / ``head_fn``, their content digests
+        and compact heads) is cached and extended as the transcript grows, so a checkpoint
+        encodes just the tail and the store rewrites only rows whose digest changed.
+        ``state`` is replaced, not mutated, by snapshots, so its encoding is cached per object.
         """
         dumps = lambda value: json.dumps(value, ensure_ascii=False, allow_nan=False)
         messages = live["messages"]
         head = max(len(messages) - 1, 0)
         cached = live.get("encoded_head")
-        if cached is None or cached[0] > head or (digest is None) != (cached[2] is None):
-            cached = (0, [], None if digest is None else [], 0)
+        if (cached is None or cached[0] > head
+                or (digest is None) != (cached[2] is None)
+                or (head_fn is None) != (cached[3] is None)):
+            cached = (0, [], None if digest is None else [], None if head_fn is None else [], 0)
         if cached[0] < head:
-            fresh = [dumps(m) for m in messages[cached[0]:head]]
+            slice_ = messages[cached[0]:head]
+            fresh = [dumps(m) for m in slice_]
             cached = (head, cached[1] + fresh,
                       None if digest is None else cached[2] + [digest(b) for b in fresh],
-                      cached[3] + sum(len(b) for b in fresh))
+                      None if head_fn is None else cached[3] + [head_fn(m) for m in slice_],
+                      cached[4] + sum(len(b) for b in fresh))
         live["encoded_head"] = cached
-        bodies, digests, size = cached[1], cached[2], cached[3]
+        bodies, digests, heads, size = cached[1], cached[2], cached[3], cached[4]
         if messages:
             tail = dumps(messages[-1])
             bodies = bodies + [tail]
             if digests is not None:
                 digests = digests + [digest(tail)]
+            if heads is not None:
+                heads = heads + [head_fn(messages[-1])]
             size += len(tail)
         state = live["state"]
         cached = live.get("encoded_state")
         if cached is None or cached[0] is not state:
             cached = live["encoded_state"] = (state, dumps(state))
-        return bodies, cached[1], digests, size + len(cached[1])
+        return bodies, cached[1], digests, heads, size + len(cached[1])
 
     def _checkpoint(self, db, live):
         # A None title keeps the stored one, so a checkpoint no longer re-reads and
         # decodes the whole session just to write it back.
-        bodies, state_json, digests, size = self._encode(live, getattr(self.sessions, "_digest", None))
+        bodies, state_json, digests, heads, size = self._encode(
+            live, getattr(self.sessions, "_digest", None), getattr(self.sessions, "_head_json", None)
+        )
         self.sessions._write(db, {"id": live["session_id"], "title": None}, live["messages"], live["state"],
-                             encoded=(bodies, state_json, digests))
+                             encoded=(bodies, state_json, digests, heads))
         live["flush_interval"] = min(STREAM_FLUSH_MAX_SECONDS, STREAM_FLUSH_SECONDS + size / STREAM_FLUSH_BYTES)
         live["dirty"], live["flushed"] = False, time.monotonic()
 

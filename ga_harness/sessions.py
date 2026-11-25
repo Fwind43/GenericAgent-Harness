@@ -173,7 +173,10 @@ class Sessions:
             # messages that changed instead of the whole JSON array. sessions.messages='' marks a
             # migrated chat; a non-empty value is a legacy transcript, migrated on its next write.
             db.execute("CREATE TABLE IF NOT EXISTS session_messages (session_id TEXT NOT NULL, idx INTEGER NOT NULL,"
-                       " digest BLOB NOT NULL, body TEXT NOT NULL, PRIMARY KEY (session_id, idx))")
+                       " digest BLOB NOT NULL, body TEXT NOT NULL, head TEXT, PRIMARY KEY (session_id, idx))")
+            msg_columns = {r[1] for r in db.execute("PRAGMA table_info(session_messages)")}
+            if "head" not in msg_columns:
+                db.execute("ALTER TABLE session_messages ADD COLUMN head TEXT")
             db.execute("CREATE INDEX IF NOT EXISTS session_message_digest ON session_messages (session_id, idx, digest)")
             db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, updated REAL NOT NULL, messages TEXT NOT NULL, state TEXT NOT NULL, deleted INTEGER NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -229,8 +232,49 @@ class Sessions:
                 last = time.monotonic()
                 startup.progress("sessions", f"recover {i}/{total}")
 
+    OUTLINE_TEXT = 200
+
+    @classmethod
+    def _clip(cls, text):
+        return text[:cls.OUTLINE_TEXT] if isinstance(text, str) and len(text) > cls.OUTLINE_TEXT else text
+
+    @classmethod
+    def _head_turn(cls, turn):
+        if not isinstance(turn, dict):
+            return turn
+        out = {k: v for k, v in turn.items() if k not in ("thinking", "prompt", "tools")}
+        for key in ("summary", "reply"):
+            if key in out:
+                out[key] = cls._clip(out[key])
+        tools = turn.get("tools")
+        if isinstance(tools, list):
+            out["tools"] = [
+                {k: v for k, v in t.items() if k not in ("data", "args", "data_lazy", "data_chars")}
+                if isinstance(t, dict) else t for t in tools
+            ]
+        return out
+
+    @classmethod
+    def _head_json(cls, message):
+        """Compact JSON for an older message row, or None when body itself is already light.
+
+        Keeps top-level fields (including full ``text`` so worldline hashes stay exact) while
+        stripping heavy turn payloads and marking ``partial=True``.
+        """
+        if not isinstance(message, dict) or not isinstance(message.get("turns"), list) or not message["turns"]:
+            return None
+        out = dict(message, partial=True)
+        out["turns"] = [cls._head_turn(t) for t in message["turns"]]
+        return json.dumps(out, ensure_ascii=False, allow_nan=False)
+
     @staticmethod
-    def _bodies(messages):
+    def _reject_partial(messages):
+        if any(isinstance(m, dict) and m.get("partial") for m in messages):
+            raise ValueError("cannot persist partial message outlines")
+
+    @classmethod
+    def _bodies(cls, messages):
+        cls._reject_partial(messages)
         return [json.dumps(m, ensure_ascii=False, allow_nan=False) for m in messages]
 
     @staticmethod
@@ -238,35 +282,69 @@ class Sessions:
         return hashlib.blake2b(body.encode("utf-8", "surrogatepass"), digest_size=8).digest()
 
     @staticmethod
-    def _joined(db, sid, legacy=None):
-        """One chat's transcript as JSON text: the legacy column while set, else its message rows."""
+    def _joined(db, sid, legacy=None, *, tail=None):
+        """One chat's transcript as JSON text: the legacy column while set, else its message rows.
+
+        When ``tail`` is an integer, only the newest ``tail`` rows read full ``body``; earlier rows
+        prefer the compact ``head`` column (falling back to ``body`` when NULL).
+        """
         if legacy is None:
             row = db.execute("SELECT messages FROM sessions WHERE id=?", (sid,)).fetchone()
             legacy = row[0] if row is not None else ""
         if legacy:
             return legacy
-        return "[" + ",".join(r[0] for r in db.execute(
-            "SELECT body FROM session_messages WHERE session_id=? ORDER BY idx", (sid,))) + "]"
+        if tail is None:
+            rows = db.execute("SELECT body FROM session_messages WHERE session_id=? ORDER BY idx", (sid,))
+        else:
+            keep = max(0, int(tail))
+            if keep == 0:
+                rows = db.execute(
+                    "SELECT COALESCE(head, body) FROM session_messages WHERE session_id=? ORDER BY idx",
+                    (sid,),
+                )
+            else:
+                count = db.execute("SELECT COUNT(*) FROM session_messages WHERE session_id=?", (sid,)).fetchone()[0]
+                cut = count - keep
+                if cut <= 0:
+                    rows = db.execute("SELECT body FROM session_messages WHERE session_id=? ORDER BY idx", (sid,))
+                else:
+                    rows = db.execute(
+                        "SELECT CASE WHEN idx < ? THEN COALESCE(head, body) ELSE body END "
+                        "FROM session_messages WHERE session_id=? ORDER BY idx",
+                        (cut, sid),
+                    )
+        return "[" + ",".join(r[0] for r in rows) + "]"
 
     @classmethod
-    def _load(cls, db, sid, legacy=None):
-        return json.loads(cls._joined(db, sid, legacy))
+    def _load(cls, db, sid, legacy=None, *, tail=None):
+        return json.loads(cls._joined(db, sid, legacy, tail=tail))
 
     @classmethod
-    def _store_messages(cls, db, sid, bodies, digests=None):
+    def _store_messages(cls, db, sid, bodies, digests=None, heads=None, messages=None):
         """Store a transcript as one row per message, writing only rows whose content changed.
 
         Unchanged messages cost an 8-byte digest read (covered by session_message_digest), so a
         checkpoint of a long chat whose tail grows no longer rewrites the whole history.
         """
+        if messages is not None:
+            cls._reject_partial(messages)
         old = dict(db.execute("SELECT idx, digest FROM session_messages WHERE session_id=?", (sid,)).fetchall())
         rows = []
         for i, body in enumerate(bodies):
             digest = digests[i] if digests is not None else cls._digest(body)
             if old.get(i) != digest:
-                rows.append((sid, i, digest, body))
+                if heads is not None:
+                    head = heads[i]
+                elif messages is not None:
+                    head = cls._head_json(messages[i])
+                else:
+                    head = None
+                rows.append((sid, i, digest, body, head))
         if rows:
-            db.executemany("INSERT OR REPLACE INTO session_messages (session_id,idx,digest,body) VALUES (?,?,?,?)", rows)
+            db.executemany(
+                "INSERT OR REPLACE INTO session_messages (session_id,idx,digest,body,head) VALUES (?,?,?,?,?)",
+                rows,
+            )
         if old and max(old) >= len(bodies):
             db.execute("DELETE FROM session_messages WHERE session_id=? AND idx>=?", (sid, len(bodies)))
         db.execute("UPDATE sessions SET messages='' WHERE id=? AND messages<>''", (sid,))
@@ -279,7 +357,7 @@ class Sessions:
         return db.execute("SELECT 1 FROM session_messages WHERE session_id=? LIMIT 1", (sid,)).fetchone() is None
 
     @classmethod
-    def _decode(cls, row, db=None):
+    def _decode(cls, row, db=None, *, tail=None):
         """Row -> dict; a migrated transcript is read from session_messages through ``db``."""
         if row is None:
             raise ValueError("session not found")
@@ -288,7 +366,7 @@ class Sessions:
             legacy = result["messages"]
             if not legacy and db is None:
                 raise RuntimeError("decoding a migrated transcript needs the open connection")
-            result["messages"] = json.loads(legacy) if legacy else cls._load(db, result["id"], legacy)
+            result["messages"] = json.loads(legacy) if legacy else cls._load(db, result["id"], legacy, tail=tail)
         if "state" in result:
             result["state"] = json.loads(result["state"])
         return result
@@ -296,14 +374,14 @@ class Sessions:
     # Scalar columns only: skips parsing the (possibly huge) transcript and agent state.
     LIGHT = "id,title,updated,workspace,project_id,parent_id,pinned,read_at,deleted"
 
-    def current(self, light=False):
+    def current(self, light=False, *, tail=None):
         with self.lock:
             self._init()
             cols = self.LIGHT if light else "*"
             table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
                 return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0",
-                                               (self._current_id(db),)).fetchone(), db)
+                                               (self._current_id(db),)).fetchone(), db, tail=tail)
 
     # Small per-user UI preferences (e.g. sidebar layout) kept next to the chats so every
     # client of this host -- local or remote -- sees the same state. Values are JSON.
@@ -331,13 +409,68 @@ class Sessions:
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", ("pref:" + key, text))
 
-    def get(self, sid, light=False):
+    def get(self, sid, light=False, *, tail=None):
         with self.lock:
             self._init()
             cols = self.LIGHT if light else "*"
             table = "sessions INDEXED BY session_lookup" if light else "sessions"
             with self._db() as db:
-                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0", (sid,)).fetchone(), db)
+                return self._decode(db.execute(f"SELECT {cols} FROM {table} WHERE id=? AND deleted=0", (sid,)).fetchone(), db, tail=tail)
+
+    def message_range(self, sid, start, end):
+        """Return (total_count, full_messages[start:end]) for one live chat."""
+        start = max(0, int(start))
+        end = max(start, int(end))
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                row = db.execute("SELECT messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+                if row is None:
+                    raise ValueError("session not found")
+                legacy = row["messages"]
+                if legacy:
+                    text = legacy
+                    total = None
+                else:
+                    total = db.execute("SELECT COUNT(*) FROM session_messages WHERE session_id=?", (sid,)).fetchone()[0]
+                    rows = db.execute(
+                        "SELECT body FROM session_messages WHERE session_id=? AND idx>=? AND idx<? ORDER BY idx",
+                        (sid, start, end),
+                    ).fetchall()
+                    text = "[" + ",".join(r[0] for r in rows) + "]"
+        if total is None:
+            all_msgs = json.loads(text)
+            return len(all_msgs), all_msgs[start:end]
+        return total, json.loads(text)
+
+    def message_at(self, sid, index):
+        """Return one full message by 0-based index, or None if out of range."""
+        index = int(index)
+        with self.lock:
+            self._init()
+            with self._db() as db:
+                row = db.execute("SELECT messages FROM sessions WHERE id=? AND deleted=0", (sid,)).fetchone()
+                if row is None:
+                    raise ValueError("session not found")
+                legacy = row["messages"]
+                if legacy:
+                    text = legacy
+                    single = False
+                else:
+                    if index < 0:
+                        return None
+                    mrow = db.execute(
+                        "SELECT body FROM session_messages WHERE session_id=? AND idx=?",
+                        (sid, index),
+                    ).fetchone()
+                    if mrow is None:
+                        return None
+                    text = mrow[0]
+                    single = True
+        if single:
+            return json.loads(text)
+        all_msgs = json.loads(text)
+        return all_msgs[index] if 0 <= index < len(all_msgs) else None
 
     def state_of(self, sid):
         """Agent state of one chat, without reading or parsing its transcript."""
@@ -395,9 +528,10 @@ class Sessions:
         return {"id": row["id"], "title": row["title"], "updated": row["updated"], "messages": messages}
 
     def _write(self, db, current, messages, state, *, encoded=None):
-        # ``encoded`` is an optional pre-serialized (message_bodies, state_json[, digests]) tuple:
-        # run checkpoints pass it so a long transcript is not re-encoded on every flush. A legacy
-        # (messages_json, state_json) pair is still accepted; its messages are re-encoded per row.
+        # ``encoded`` is an optional pre-serialized (message_bodies, state_json[, digests[, heads]])
+        # tuple: run checkpoints pass it so a long transcript is not re-encoded on every flush. A
+        # legacy (messages_json, state_json) pair is still accepted; its messages are re-encoded per row.
+        self._reject_partial(messages)
         title = current["title"]
         if title == "\u65b0\u4f1a\u8bdd":
             first = next((m.get("text", "") for m in messages if m.get("role") == "user"), "")
@@ -408,18 +542,20 @@ class Sessions:
         if encoded and not isinstance(encoded[0], str):
             bodies, state_json = encoded[0], encoded[1]
             digests = encoded[2] if len(encoded) > 2 else None
+            heads = encoded[3] if len(encoded) > 3 else None
         else:
-            bodies, digests = self._bodies(messages), None
+            bodies, digests, heads = self._bodies(messages), None, None
             state_json = encoded[1] if encoded else json.dumps(state, ensure_ascii=False, allow_nan=False)
         db.execute("UPDATE sessions SET title=COALESCE(?,title),updated=?,state=?,"
                    "read_at=CASE WHEN id=(SELECT value FROM meta WHERE key='current') THEN ? ELSE read_at END WHERE id=?",
                    (title, now, state_json, now, current["id"]))
-        self._store_messages(db, current["id"], bodies, digests)
+        self._store_messages(db, current["id"], bodies, digests, heads=heads, messages=messages)
 
     def save(self, messages):
         """Legacy single-agent API. Background workers must use save_for()."""
         with self.lock:
             self._idle()
+            self._reject_partial(messages)
             current = self.current()
             if current["id"] in self.active:
                 raise RuntimeError("session is running")
@@ -484,7 +620,7 @@ class Sessions:
                            (sid, title or "\u65b0\u4f1a\u8bdd", float(updated),
                             json.dumps(state, ensure_ascii=False, allow_nan=False),
                             workspace or "", project_id or "", float(pinned or 0), float(updated)))
-                self._store_messages(db, sid, self._bodies(messages))
+                self._store_messages(db, sid, self._bodies(messages), messages=messages)
             return True
 
     def exists(self, sid):
@@ -522,7 +658,7 @@ class Sessions:
                 restore(self.agent, selected["state"])
             return selected
 
-    def change(self, action, sid=None, title=None, *, workspace=None, project_id=None, parent_id=None):
+    def change(self, action, sid=None, title=None, *, workspace=None, project_id=None, parent_id=None, tail=None):
         with self.lock:
             if not self.parallel:
                 self._idle()
@@ -569,7 +705,7 @@ class Sessions:
                         self._select(db, row[0] if row else self._new(db, *fallback), view=shown)
                 else:
                     self._select(db, sid)
-            selected = self.current()
+            selected = self.current(tail=tail)
             if selected["id"] != current["id"]:
                 restore(self.agent, selected["state"])
             return selected

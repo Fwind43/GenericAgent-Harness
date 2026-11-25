@@ -153,7 +153,16 @@ def _outline_turn(turn):
 
 
 def _outline_message(message):
-    if not isinstance(message, dict) or message.get("partial"):
+    if not isinstance(message, dict):
+        return message
+    if message.get("partial"):
+        # Stored message heads keep full text so snapshot hooks (e.g. worldline hashing)
+        # see the real transcript; clip long assistant text right before sending to pages.
+        if message.get("role") == "assistant":
+            text = message.get("text")
+            clipped = _clip(text)
+            if clipped is not text:
+                return dict(message, text=clipped)
         return message
     out = dict(message, partial=True)
     if isinstance(message.get("turns"), list):
@@ -537,7 +546,11 @@ class WebFrontend:
         self.runs = ctx.get("runs")
         self.models = ctx.get("models")
         self.plugins = ctx.get("plugin.manager")
-        self.messages = self.sessions.current()["messages"] if self.sessions else []
+        self.MESSAGES_FULL_TAIL = MESSAGES_FULL_TAIL
+        self.messages = (
+            self.sessions.current(tail=MESSAGES_FULL_TAIL if self.runs else None)["messages"]
+            if self.sessions else []
+        )
         self.persistence_error = None
         self.running = False
         self.aborting = False
@@ -645,7 +658,7 @@ class WebFrontend:
                             and "messages" in row and "state" in row):
                         selected = row
                     else:
-                        selected = self.sessions.current()
+                        selected = self.sessions.current(tail=MESSAGES_FULL_TAIL)
                     messages, selected_state = selected["messages"], selected["state"]
                 private_messages = True
                 data.update(session_id=selected["id"], messages=messages,
@@ -748,7 +761,8 @@ class WebFrontend:
                 selected = self.sessions.change(
                     body.get("action"), body.get("id"), body.get("title"),
                     workspace=body.get("workspace"), project_id=body.get("project_id"),
-                    parent_id=body.get("parent_id"))
+                    parent_id=body.get("parent_id"),
+                    tail=MESSAGES_FULL_TAIL if self.runs else None)
                 self.messages = selected["messages"]
                 self.persistence_error = None
                 snap = self.snapshot(selected)
@@ -1113,6 +1127,22 @@ class WebFrontend:
         except (TypeError, ValueError):
             return 400, {"error": "start and end must be integers"}
         sid = query.get("session_id", [None])[0]
+        if sid and self.sessions:
+            try:
+                live = self.runs.live_snapshot(sid) if self.runs else None
+                if live:
+                    messages = live["messages"]
+                    end = max(start, min(end, len(messages), start + MESSAGES_PAGE_MAX))
+                    return 200, {"session_id": sid, "start": start, "total": len(messages),
+                                 "messages": _slim_messages(messages[start:end])}
+                capped = max(start, min(end, start + MESSAGES_PAGE_MAX))
+                total, page = self.sessions.message_range(sid, start, capped)
+                return 200, {"session_id": sid, "start": start, "total": total,
+                             "messages": _slim_messages(page)}
+            except ValueError as e:
+                return 404, {"error": str(e)}
+            except Exception as e:  # noqa: BLE001
+                return 503, {"error": f"session storage could not be read: {e}"}
         status, messages = self._transcript(sid)
         if status != 200:
             return status, messages
@@ -1134,12 +1164,28 @@ class WebFrontend:
             index, number, position = (int(query.get(k, [None])[0]) for k in ("index", "turn", "tool"))
         except (TypeError, ValueError):
             return 400, {"error": "index, turn and tool must be integers"}
-        status, messages = self._transcript(query.get("session_id", [None])[0])
-        if status != 200:
-            return status, messages
-        if not isinstance(messages, list) or not 0 <= index < len(messages):
-            return 404, {"error": "message not found"}
-        message = messages[index]
+        sid = query.get("session_id", [None])[0]
+        if sid and self.sessions:
+            try:
+                live = self.runs.live_snapshot(sid) if self.runs else None
+                if live:
+                    messages = live["messages"]
+                    message = messages[index] if isinstance(messages, list) and 0 <= index < len(messages) else None
+                else:
+                    message = self.sessions.message_at(sid, index)
+            except ValueError as e:
+                return 404, {"error": str(e)}
+            except Exception as e:  # noqa: BLE001
+                return 503, {"error": f"session storage could not be read: {e}"}
+            if message is None:
+                return 404, {"error": "message not found"}
+        else:
+            status, messages = self._transcript(sid)
+            if status != 200:
+                return status, messages
+            if not isinstance(messages, list) or not 0 <= index < len(messages):
+                return 404, {"error": "message not found"}
+            message = messages[index]
         for turn in (message.get("turns") if isinstance(message, dict) else None) or []:
             if isinstance(turn, dict) and turn.get("turn") == number:
                 tools = turn.get("tools")

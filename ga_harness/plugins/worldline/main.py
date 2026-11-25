@@ -227,7 +227,7 @@ def apply(ctx, config):
             sid, messages = data.get("session_id"), data.get("messages") or []
             idx = max((i for i in _user_indexes(messages)), default=None)
             if sid and idx is not None:
-                store.checkpoint(sid, idx, _hash(messages[:idx]), sessions.get(sid)["state"])
+                store.checkpoint(sid, idx, _hash(messages[:idx]), sessions.state_of(sid))
         except Exception:
             logging.getLogger(__name__).exception("worldline checkpoint failed")
         return nxt(data) if nxt else None
@@ -245,7 +245,7 @@ def apply(ctx, config):
     def _refresh(sid, messages):
         """Push the rewritten conversation to the open page."""
         try:
-            if sessions.current()["id"] == sid:
+            if sessions.current(light=True)["id"] == sid:
                 frontend.messages = messages
         except Exception:
             pass
@@ -345,7 +345,7 @@ def apply(ctx, config):
         sid = body.get("session_id")
         if not sid:
             raise ValueError("session_id required")
-        return {"variants": variants(store, sid, sessions.get(sid)["messages"])}
+        return {"variants": variants(store, sid, sessions.get(sid, tail=0)["messages"])}
 
     ctx.on("run.started", started)
     ctx.on("web.snapshot", snapshot)

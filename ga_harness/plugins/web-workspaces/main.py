@@ -25,7 +25,8 @@ def apply(ctx, config):
                 # runs persist their own transcript, so only the legacy path saves here.
                 if not getattr(frontend, "runs", None):
                     store.sessions.save(frontend.messages)
-                selected = store.change(request["body"])
+                tail = getattr(frontend, "MESSAGES_FULL_TAIL", None) if getattr(frontend, "runs", None) else None
+                selected = store.change(request["body"], tail=tail)
                 frontend.messages = selected["messages"]
                 frontend.persistence_error = None
                 data = frontend.snapshot(selected)

@@ -180,7 +180,7 @@ class Workspaces:
         store._select(db, sid)
         return sid
 
-    def change(self, body):
+    def change(self, body, *, tail=None):
         """Must be called while idle; web callers also hold the frontend lock."""
         store = self.sessions
         with store.lock:
@@ -229,7 +229,7 @@ class Workspaces:
                         raise ValueError("project not found")
             elif action == "workspace":
                 directory = self.directory(body.get("workspace"))
-                store.change("new", workspace=directory, project_id="")
+                return store.change("new", workspace=directory, project_id="", tail=tail)
             elif action == "enter":
                 # Conversation-level scope: an empty conversation is rebound in place;
                 # one with history stays untouched and a new conversation is opened.
@@ -247,9 +247,11 @@ class Workspaces:
                     directory = self.default_workspace
                 with store._db() as db:
                     self._enter(db, directory, pid)
+                selected = store.current(tail=tail)
                 from .sessions import restore
-                if not store.current()["messages"]:
+                if not selected["messages"]:
                     restore(store.agent, {})
+                return selected
             elif action == "delete":
                 # Unlink chats (they move to the no-project list); memory files are kept.
                 pid = body.get("id")
@@ -284,13 +286,12 @@ class Workspaces:
                     raise ValueError("project not found")
                 target = next((s for s in store.listing() if s["project_id"] == pid), None)
                 if target:
-                    store.change("select", target["id"])
-                else:
-                    store.change("new", workspace=self.project_workspace(project),
-                                 project_id=pid)
+                    return store.change("select", target["id"], tail=tail)
+                return store.change("new", workspace=self.project_workspace(project),
+                                    project_id=pid, tail=tail)
             else:
                 raise ValueError("unknown workspace action")
-            return store.current()
+            return store.current(tail=tail)
 
     def request(self, request, nxt):
         """Reserve selection BEFORE queueing; keep it reserved until GA really stops.
