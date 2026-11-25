@@ -88,6 +88,7 @@ name = "web-channels"
 # session "Trace" view: timeline of inputs, model calls, tool calls and timings
 [[plugins]]
 name = "web-trace"
+disabled = true
 
 # "Context" view: the saved LLM context of the chat (messages by block type, working memory)
 [[plugins]]
