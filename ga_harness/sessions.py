@@ -556,20 +556,20 @@ class Sessions:
         with self.lock:
             self._idle()
             self._reject_partial(messages)
-            current = self.current()
+            current = self.current(light=True)
             if current["id"] in self.active:
                 raise RuntimeError("session is running")
-            state = {**(current.get("state") or {}), **capture(self.agent)}
+            state = {**(self.state_of(current["id"]) or {}), **capture(self.agent)}
             with self._db() as db:
                 self._write(db, current, messages, state)
 
     def remember(self, **values):
         """Persist per-conversation settings (model/effort) without touching the transcript."""
         with self.lock:
-            current = self.current()
+            current = self.current(light=True)
             if current["id"] in self.active:
                 raise RuntimeError("session is running")
-            state = dict(current["state"] or {})
+            state = dict(self.state_of(current["id"]) or {})
             state.update(values)
             with self._db() as db:
                 db.execute("UPDATE sessions SET state=? WHERE id=?",
@@ -578,10 +578,10 @@ class Sessions:
     def remember_for(self, sid, **values):
         """remember() for an explicitly identified session (e.g. a channel chat)."""
         with self.lock:
-            session = self.get(sid)
+            session = self.get(sid, light=True)
             if session["id"] in self.active:
                 raise RuntimeError("session is running")
-            state = dict(session["state"] or {})
+            state = dict(self.state_of(sid) or {})
             state.update(values)
             with self._db() as db:
                 db.execute("UPDATE sessions SET state=? WHERE id=?",
@@ -594,7 +594,8 @@ class Sessions:
         record in the same transaction as the write.
         """
         with self.lock:
-            current = self.get(sid)
+            # _write needs only the id and stored title: skip decoding the transcript and state.
+            current = self.get(sid, light=True)
             with self._db() as db:
                 if sid in self.active:
                     owner = db.execute("SELECT id FROM runs WHERE session_id=? AND status IN ('running','cancelling')", (sid,)).fetchone()

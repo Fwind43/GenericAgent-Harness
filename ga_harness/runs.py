@@ -656,7 +656,7 @@ class Runs:
             if text is not None and messages and not messages[-1].get("turns"):
                 messages[-1]["text"] = text
             settle(messages, status, error)
-            session = self.sessions.get(record["session_id"])
+            session = self.sessions.get(record["session_id"], light=True)
             state = {**live["state"], **state} if isinstance(state, dict) else live["state"]
             with self.sessions._db() as db:
                 self.sessions._write(db, session, messages, state)
@@ -779,7 +779,7 @@ class Runs:
             settle(messages, status, error)
             with self.lock:
                 if self.get(rid)["status"] in ACTIVE:
-                    session = self.sessions.get(live["session_id"])
+                    session = self.sessions.get(live["session_id"], light=True)
                     with self.sessions._db() as db:
                         self.sessions._write(db, session, messages, live["state"])
                         self._append(db, rid, "run.finished", {"status": status, "error": error})

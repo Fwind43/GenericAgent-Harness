@@ -298,7 +298,7 @@ def apply(ctx, config):
         except Exception:
             # The run never started: put the conversation back instead of leaving it cut off.
             with sessions._db() as db:
-                sessions._write(db, sessions.get(sid), messages, before)
+                sessions._write(db, sessions.get(sid, light=True), messages, before)
             _refresh(sid, messages)
             raise
         return {"ok": True, "run": run}
