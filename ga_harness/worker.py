@@ -104,6 +104,12 @@ def recipe_for(ctx, extra=(), mode=()):
         if name not in wanted or handle.state != "active":
             continue
         add(manifests[name], copy.deepcopy(handle.config))
+    # The full prompt text (llm.prompt) is large and only the trace view shows it:
+    # record it only while web-trace is active, unless ga-events was configured.
+    trace = ctx.runtime.handles.get("web-trace")
+    for manifest, config in recipe:
+        if manifest.name == "ga-events":
+            config.setdefault("record_prompt", trace is not None and trace.state == "active")
     if not any(manifest.name == "ga-core" for manifest, _ in recipe):
         raise RuntimeError("ga-core must be active before run-store")
     # Worker-only plugins requested by a host plugin (run-store.worker_plugins or

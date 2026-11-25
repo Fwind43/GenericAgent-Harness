@@ -28,6 +28,8 @@ are literal reply content. A frontend can append ``text`` to the matching field.
 config:
   max_data  truncate string results to this many chars (default 20000, 0 = no limit)
   max_prompt  truncate each ``llm.prompt`` to this many chars (default 100000, 0 = no limit)
+  record_prompt  emit ``llm.prompt`` at all (default true; runs set it from whether
+              web-trace is active)
 
 ``llm.prompt`` reports what one LLM call actually sends: the argument GA passes to
 ``client.backend.ask`` (tapped once per call, like ``client.chat``). Text-protocol
@@ -201,6 +203,7 @@ def _prompt(arg, backend, seen):
 def apply(ctx, config):
     limit = int(config.get("max_data", 20000) or 0)
     prompt_limit = int(config.get("max_prompt", 100000) or 0)
+    record_prompt = bool(config.get("record_prompt", True))
     seen: dict = {}
     started: dict[int, float] = {}
 
@@ -272,7 +275,8 @@ def apply(ctx, config):
         client, turn = g.get("client"), g.get("turn")
         llm.update(t0=time.monotonic(), w0=time.time(), first=None)
         ctx.emit("llm.start", {"turn": turn, "started": round(llm["w0"], 3)})
-        tap_ask(client, turn)
+        if record_prompt:
+            tap_ask(client, turn)
         orig = getattr(client, "chat", None)
         if callable(orig) and not getattr(orig, "_ga_events_tap", False):
             def chat(*a, **k):
