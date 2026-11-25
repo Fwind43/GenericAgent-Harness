@@ -25,6 +25,14 @@ TERMINAL = ("done", "error", "aborted", "interrupted")
 # High-frequency fragments; the final assistant.text/turn events are durable.
 STREAM_EVENTS = ("assistant.delta", "agent.chunk")
 STREAM_FLUSH_SECONDS = 1.0
+# Event rows of runs that ended longer ago than this are deleted. The session
+# transcript keeps the conversation; the event log only serves SSE catch-up of a
+# live run and debug exports, and old prompts/tool results make it grow without
+# bound. The run rows themselves are kept.
+EVENT_RETENTION_SECONDS = 7 * 24 * 3600
+EVENT_PRUNE_DELAY_SECONDS = 60.0
+EVENT_PRUNE_INTERVAL_SECONDS = 6 * 3600
+EVENT_PRUNE_BATCH = 2000
 # A checkpoint rewrites the session's whole stored transcript, so long transcripts
 # are checkpointed less often: one extra second per STREAM_FLUSH_BYTES stored, up to
 # STREAM_FLUSH_MAX_SECONDS. Completion always saves in full regardless.
@@ -52,8 +60,11 @@ class RpcCall:
 class Runs:
     def __init__(self, sessions, workspaces, recipe, *, emit=None,
                  cancel_grace=5.0, process_context=None, worker=run_worker,
-                 plugin_handler=None):
+                 plugin_handler=None, event_retention=EVENT_RETENTION_SECONDS):
         self.sessions, self.workspaces, self.recipe = sessions, workspaces, recipe
+        # Seconds after a run ends before its events are pruned; None/0 keeps them.
+        self.event_retention = event_retention
+        self._prune_wake = threading.Event()
         # Host-side handler for plugin requests raised by a worker's agent tool.
         self.plugin_handler = plugin_handler
         self.rpc = {}
@@ -68,6 +79,8 @@ class Runs:
         if plugin_handler is not None:
             self.register_rpc("plugin_control", lambda body, call: plugin_handler(body))
         self._init()
+        if self.event_retention:
+            threading.Thread(target=self._prune_loop, name="run-event-prune", daemon=True).start()
 
     # -- extension points for plugins ------------------------------------------------
 
@@ -178,6 +191,47 @@ class Runs:
                         current = self.sessions._decode(session)
                         settle(current["messages"], status, error)
                         self.sessions._write(db, current, current["messages"], current["state"])
+
+    def _prune_loop(self):
+        delay = EVENT_PRUNE_DELAY_SECONDS
+        while not self._prune_wake.wait(delay) and not self.closed:
+            try:
+                self.prune_events()
+            except Exception:
+                log.exception("run event pruning failed")
+            delay = EVENT_PRUNE_INTERVAL_SECONDS
+
+    def prune_events(self, *, now=None):
+        """Delete events of runs that ended more than ``event_retention`` ago.
+
+        Works in small batches and releases the storage lock between them, so a
+        large first cleanup does not stall live runs or requests. Returns the
+        number of deleted rows. Freed pages are reused; the file does not shrink
+        without a VACUUM.
+        """
+        if not self.event_retention:
+            return 0
+        cutoff = (time.time() if now is None else now) - self.event_retention
+        with self.lock, self.sessions._db() as db:
+            ids = [row[0] for row in db.execute(
+                "SELECT id FROM runs WHERE ended IS NOT NULL AND ended < ? "
+                "AND status NOT IN ('running','cancelling') "
+                "AND EXISTS(SELECT 1 FROM run_events WHERE run_id=runs.id)", (cutoff,))]
+        deleted = 0
+        for rid in ids:
+            while not self.closed:
+                with self.lock, self.sessions._db() as db:
+                    count = db.execute(
+                        "DELETE FROM run_events WHERE rowid IN "
+                        "(SELECT rowid FROM run_events WHERE run_id=? LIMIT ?)",
+                        (rid, EVENT_PRUNE_BATCH)).rowcount
+                deleted += count
+                if count < EVENT_PRUNE_BATCH:
+                    break
+                time.sleep(0.01)
+        if deleted:
+            log.info("pruned %d run events of %d runs ended before the retention window", deleted, len(ids))
+        return deleted
 
     def _append(self, db, rid, kind, data):
         seq = self._next_seq(db, rid)
@@ -752,6 +806,7 @@ class Runs:
         with self.lock:
             self.closed = True
             items = list(self.live.items())
+        self._prune_wake.set()
         for rid, _ in items:
             try:
                 self.cancel(rid)
