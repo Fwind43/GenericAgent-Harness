@@ -429,3 +429,80 @@ def test_parser_load_failure_is_plain_text(output_app, browser):
     assert page.locator(".body.md-plain").inner_text() == BODY
     assert page.locator(".body script, .body img").count() == 0
     page.close()
+
+
+def test_swarm_steer_note_and_reply_to_render_as_wake_card(output_app, browser):
+    fe, _, base = output_app
+    steer_swarm = (
+        "[Swarm] You were mentioned in 4 board posts (#10-#15). 2 older ones are omitted below: "
+        "call board_read(since=9) and handle them together in one pass.\n"
+        "#12 @alice: Please check the build\n"
+        "#15 @bob (re #12): Confirmed, fix is ready\n"
+        "Catch up with board_read if needed, do your part, then board_post the result "
+        "(pass reply_to=<post id> to keep it in that thread; mention only who must act) and end your turn."
+    )
+    wake_user = (
+        "[Swarm] You were mentioned on the board.\n"
+        "#20 @carol (re #15): Looks good to ship\n"
+        "Catch up with board_read if needed, do your part, then board_post the result "
+        "(pass reply_to=<post id> to keep it in that thread; mention only who must act) and end your turn."
+    )
+    fe.messages = [
+        {"role": "user", "status": "done", "text": wake_user, "source": "swarm"},
+        {
+            "role": "assistant",
+            "status": "done",
+            "text": "",
+            "turns": [
+                {"turn": 1, "summary": "处理中", "status": "done", "reply": "正在处理", "tools": []},
+                {"turn": 2, "summary": "", "status": "done", "reply": "已完成。", "tools": []},
+            ],
+            "notes": [
+                {"kind": "steer", "turn": 1, "text": steer_swarm},
+                {"kind": "steer", "turn": 1, "text": "用户手动补充的引导"},
+            ],
+        },
+    ]
+    page = browser.new_page(locale="zh-CN", viewport={"width": 1280, "height": 844})
+    errors = []
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.goto(base)
+    page.wait_for_selector(".msg-note.steer.swarm-wake")
+
+    # Steered [Swarm] note renders as a collapsed SwarmWake card, not a raw dashed steer bubble.
+    steered_card = page.locator(".msg-note.steer.conductor-wake.swarm-wake")
+    assert steered_card.count() == 1
+    assert steered_card.locator(".note-body").count() == 0
+    assert steered_card.locator(".cw-label").inner_text() == "\u8702\u7fa4"
+    assert "\u8fd0\u884c\u4e2d\u6709\u4eba\u5728\u770b\u677f\u63d0\u5230\u4e86\u4f60" in steered_card.locator(".cw-head").inner_text()
+    assert "\u53e6\u7701\u7565 2 \u6761\u8f83\u65e9\u63d0\u53ca" in steered_card.locator(".cw-still").inner_text()
+    items = steered_card.locator(".cw-tasks li")
+    assert items.count() == 2
+    assert items.nth(0).locator(".sw-author").inner_text() == "@alice"
+    assert items.nth(0).locator(".cw-title").inner_text() == "Please check the build"
+    assert items.nth(0).locator(".cw-id").inner_text() == "#12"
+    assert items.nth(1).locator(".sw-author").inner_text() == "@bob"
+    assert items.nth(1).locator(".cw-title").inner_text() == "Confirmed, fix is ready"
+    assert items.nth(1).locator(".cw-id").inner_text() == "#15"
+    assert steered_card.locator(".cw-details[open]").count() == 0
+    steered_card.locator(".cw-details > summary").click()
+    assert steered_card.locator(".cw-details[open]").count() == 1
+    assert "#15 @bob (re #12): Confirmed, fix is ready" in steered_card.locator(".cw-text").inner_text()
+    align = steered_card.evaluate("el => getComputedStyle(el).alignItems")
+    assert align == "stretch", align
+
+    # Plain user steer note still uses the regular .note-body bubble.
+    plain_steer = page.locator(".msg-note.steer:not(.swarm-wake)")
+    assert plain_steer.count() == 1
+    assert plain_steer.locator(".note-kind").inner_text() == "\u5f15\u5bfc"
+    assert plain_steer.locator(".note-body").inner_text() == "\u7528\u6237\u624b\u52a8\u8865\u5145\u7684\u5f15\u5bfc"
+
+    # Regular user-role SwarmWake also parses (re #N) cleanly.
+    user_wake = page.locator(".msg.conductor-wake.swarm-wake")
+    assert user_wake.count() == 1
+    assert user_wake.locator(".cw-tasks li").count() == 1
+    assert user_wake.locator(".cw-tasks .sw-author").inner_text() == "@carol"
+    assert user_wake.locator(".cw-tasks .cw-title").inner_text() == "Looks good to ship"
+    assert user_wake.locator(".cw-tasks .cw-id").inner_text() == "#20"
+    assert not errors, errors
+    page.close()

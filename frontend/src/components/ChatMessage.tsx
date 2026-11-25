@@ -151,6 +151,7 @@ function Note({ note }: { note: MessageNote }) {
   const label = note.kind === 'steer' ? T('引导', 'Steer') : note.kind === 'files' ? T('修改的文件', 'Files changed') : note.kind;
   const files = note.kind === 'files' ? filesData(note.data) : null;
   if (files) return <FileChanges data={files} label={label} />;
+  if (note.kind === 'steer' && note.text?.startsWith(SWARM_HEAD)) return <SwarmWake text={note.text} steered />;
   return <div className={'msg-note ' + note.kind}><span className="note-kind">{label}</span><div className="note-body">{note.text}</div></div>;
 }
 // Machine-written wake-ups are notices, not user bubbles. Child task objectives also
@@ -217,22 +218,27 @@ export function isSwarmWake(m: Message) {
   if (m.source === 'swarm') return true;
   return !m.source && !!m.text?.startsWith(SWARM_HEAD);
 }
-function SwarmWake({ m }: { m: Message }) {
-  const text = m.text || '';
+function SwarmWake({ m, text: rawText, steered }: { m?: Message; text?: string; steered?: boolean }) {
+  const text = rawText ?? m?.text ?? '';
   const lines = text.split('\n');
   const mentioned = lines[0].startsWith('[Swarm] You were mentioned');
+  const omitted = Number(/(\d+) older ones are omitted/.exec(lines[0])?.[1] || 0);
   const posts: { id: string; author: string; body: string }[] = [];
   for (const line of lines.slice(1)) {
     if (line.startsWith(SWARM_TAIL)) break;
-    const hit = /^#(\d+) @(\S+?): ?(.*)$/.exec(line);
+    const hit = /^#(\d+) @(\S+?)(?: \(re #\d+\))?: ?(.*)$/.exec(line);
     if (hit) posts.push({ id: hit[1], author: hit[2], body: hit[3] });
     else if (posts.length) posts.at(-1)!.body += '\n' + line;
   }
-  return <div className="msg conductor-wake swarm-wake">
+  const description = steered
+    ? (mentioned ? T('运行中有人在看板提到了你', 'Mentioned on the board mid-run') : T('运行中看板有新动态', 'Board update delivered mid-run'))
+    : (mentioned ? T('看板上有人提到了你', 'You were mentioned on the board') : T('看板有新动态', 'The board has news for you'));
+  return <div className={steered ? 'msg-note steer conductor-wake swarm-wake' : 'msg conductor-wake swarm-wake'}>
     <div className="cw-head">
       <span className="cw-label">{T('蜂群', 'Swarm')}</span>
-      <span>{mentioned ? T('看板上有人提到了你', 'You were mentioned on the board') : T('看板有新动态', 'The board has news for you')}</span>
-      <MessageTime message={m} />
+      <span>{description}</span>
+      {omitted > 0 && <span className="cw-still">{T(`另省略 ${omitted} 条较早提及`, `${omitted} older omitted`)}</span>}
+      {m && <MessageTime message={m} />}
     </div>
     {posts.length ? <ul className="cw-tasks">{posts.map(p => <li key={p.id} title={p.body}>
       <span className="cw-status sw-author">@{p.author}</span>
