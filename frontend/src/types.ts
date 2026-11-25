@@ -12,6 +12,8 @@ export interface LlmTiming { seconds?: number; ttft?: number | null; started?: n
 export interface Message {
   role: 'user' | 'assistant'; text?: string; status?: Status; error?: string;
   turns?: Turn[]; usage?: Usage; model?: string; reasoning_effort?: string; run_id?: string;
+  /** Outline-only stub for an older message; fetch `/api/messages` for full turns. */
+  partial?: boolean;
   /** Unix seconds at message creation; absent for historical messages. */
   created_at?: number;
   /** Plugin-provided transcript notes, e.g. steered user messages, placed after ``turn``. */

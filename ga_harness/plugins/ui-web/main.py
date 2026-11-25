@@ -125,13 +125,59 @@ def _slim_messages(messages):
     return [_slim_message(m) for m in messages] if isinstance(messages, list) else messages
 
 
+# Opening a long conversation used to ship every turn of every message. Pages render only
+# the newest messages, so older ones go out as outlines: same position in the list (every
+# index the page sends back stays absolute), enough for counters, navigation and branch
+# signatures, while the bodies come from ``GET /api/messages`` once they are scrolled to.
+MESSAGES_FULL_TAIL = 40
+OUTLINE_TEXT = 200
+MESSAGES_PAGE_MAX = 200
+
+
+def _clip(text):
+    return text[:OUTLINE_TEXT] if isinstance(text, str) and len(text) > OUTLINE_TEXT else text
+
+
+def _outline_turn(turn):
+    if not isinstance(turn, dict):
+        return turn
+    out = {k: v for k, v in turn.items() if k not in ("thinking", "prompt", "tools")}
+    for key in ("summary", "reply"):
+        if key in out:
+            out[key] = _clip(out[key])
+    tools = turn.get("tools")
+    if isinstance(tools, list):
+        out["tools"] = [{k: v for k, v in t.items() if k not in ("data", "args", "data_lazy", "data_chars")}
+                        if isinstance(t, dict) else t for t in tools]
+    return out
+
+
+def _outline_message(message):
+    if not isinstance(message, dict) or message.get("partial"):
+        return message
+    out = dict(message, partial=True)
+    if isinstance(message.get("turns"), list):
+        out["turns"] = [_outline_turn(t) for t in message["turns"]]
+    if message.get("role") == "assistant":
+        out["text"] = _clip(message.get("text"))
+    return out
+
+
+def _outline_messages(messages, tail=MESSAGES_FULL_TAIL):
+    """Pages' transcript: the newest ``tail`` messages whole, older ones as outlines."""
+    if not isinstance(messages, list) or len(messages) <= tail:
+        return messages
+    cut = len(messages) - tail
+    return [_outline_message(m) for m in messages[:cut]] + messages[cut:]
+
+
 def _slim_event(data):
     """A run event as sent to pages: same envelope, prompt text left out."""
     if not isinstance(data, dict):
         return data
     out = dict(data)
     if "messages" in out:
-        out["messages"] = _slim_messages(out["messages"])
+        out["messages"] = _outline_messages(_slim_messages(out["messages"]))
     if "message" in out:
         out["message"] = _slim_message(out["message"])
     patch = out.get("patch")
@@ -626,7 +672,7 @@ class WebFrontend:
             data["messages"] = fresh
         data["web_plugins"] = self.web.manifest()
         data = self.ctx.waterfall("web.snapshot", data)
-        data["messages"] = _slim_messages(data.get("messages"))
+        data["messages"] = _outline_messages(_slim_messages(data.get("messages")))
         # HTTP replies and their SSE broadcast share this identity. A new snapshot
         # always gets a new id, including after reconnect or a backend restart.
         data["_snapshot_id"] = os.urandom(16).hex()
@@ -1041,6 +1087,41 @@ class WebFrontend:
                                     "clipped": clipped, "lines": hits})
         return result
 
+    def _transcript(self, sid):
+        """(200, messages) of session ``sid`` (or the transcript this host holds), else (status, error)."""
+        if not sid or not self.sessions:
+            with self.lock:
+                return 200, list(self.messages)
+        try:
+            # A running session's newest turns exist only in the live transcript.
+            live = self.runs.live_snapshot(sid) if self.runs else None
+            return 200, live["messages"] if live else (self.sessions.get(sid) or {}).get("messages")
+        except ValueError as e:
+            return 404, {"error": str(e)}
+        except Exception as e:  # noqa: BLE001
+            return 503, {"error": f"session storage could not be read: {e}"}
+
+    def message_page(self, query):
+        """GET /api/messages?session_id=SID&start=I&end=J: whole messages ``[I, J)`` of a transcript.
+
+        Snapshots carry older messages as outlines (see ``_outline_messages``); pages fetch
+        the bodies of the ones they show from here. At most ``MESSAGES_PAGE_MAX`` per call.
+        """
+        try:
+            start = max(0, int(query.get("start", ["0"])[0]))
+            end = int(query.get("end", [None])[0])
+        except (TypeError, ValueError):
+            return 400, {"error": "start and end must be integers"}
+        sid = query.get("session_id", [None])[0]
+        status, messages = self._transcript(sid)
+        if status != 200:
+            return status, messages
+        if not isinstance(messages, list):
+            return 404, {"error": "session has no messages"}
+        end = max(start, min(end, len(messages), start + MESSAGES_PAGE_MAX))
+        return 200, {"session_id": sid, "start": start, "total": len(messages),
+                     "messages": _slim_messages(messages[start:end])}
+
     def tool_data(self, query):
         """GET /api/tool-data?session_id=SID&index=I&turn=N&tool=K: one full tool result.
 
@@ -1053,19 +1134,9 @@ class WebFrontend:
             index, number, position = (int(query.get(k, [None])[0]) for k in ("index", "turn", "tool"))
         except (TypeError, ValueError):
             return 400, {"error": "index, turn and tool must be integers"}
-        sid = query.get("session_id", [None])[0]
-        if not sid or not self.sessions:
-            with self.lock:
-                messages = list(self.messages)
-        else:
-            try:
-                # A running session's newest turns exist only in the live transcript.
-                live = self.runs.live_snapshot(sid) if self.runs else None
-                messages = live["messages"] if live else (self.sessions.get(sid) or {}).get("messages")
-            except ValueError as e:
-                return 404, {"error": str(e)}
-            except Exception as e:  # noqa: BLE001
-                return 503, {"error": f"session storage could not be read: {e}"}
+        status, messages = self._transcript(query.get("session_id", [None])[0])
+        if status != 200:
+            return status, messages
         if not isinstance(messages, list) or not 0 <= index < len(messages):
             return 404, {"error": "message not found"}
         message = messages[index]

@@ -3,6 +3,17 @@ import { isServerSnapshot, markServerSnapshot, request, setViewing, viewHeaders,
 import { T, errorText } from './i18n';
 import type { HostSnapshot, HostState, Message, Turn, Usage, WebManifest, RunEvent } from './types';
 
+/** Keep messages already loaded in full when a fresh snapshot only carries outline stubs for them. */
+export function keepLoaded(prev: Message[], next: Message[]): Message[] {
+  return next.map((item, i) => {
+    const old = prev[i];
+    // Outlines clip assistant text, so match on identity fields; user text is never clipped.
+    return item?.partial && old && !old.partial && old.role === item.role
+      && (old.run_id ?? '') === (item.run_id ?? '') && old.created_at === item.created_at
+      && (item.role !== 'user' || (old.text ?? '') === (item.text ?? '')) ? old : item;
+  });
+}
+
 const PARTS = ['summary', 'reply', 'thinking'] as const;
 type Part = typeof PARTS[number];
 /** Mirror of ``ga_harness.run_output.apply_event`` for streamed fragments, plus turn patches. */
@@ -85,6 +96,9 @@ export class HostStore {
     ++this.refreshVersion;
     setViewing(state.session_id);
     this.runSeq = new Map((state.runs ?? []).map(run => [run.id, run.seq]));
+    const prev = this.snapshot.state;
+    if (prev.session_id === state.session_id && Array.isArray(state.messages) && Array.isArray(prev.messages))
+      state = { ...state, messages: keepLoaded(prev.messages, state.messages) };
     this.update({ state });
   };
   // The latest navigation owns the indicator; an older request's cleanup cannot dismiss it.
@@ -140,7 +154,7 @@ export class HostStore {
     const runs = record ? [record, ...(state.runs ?? []).filter(run => run.id !== record.id)] : state.runs;
     let next: HostState = { ...state, runs };
     if (current) {
-      if (event.messages) next = { ...next, messages: event.messages };
+      if (event.messages) next = { ...next, messages: keepLoaded(state.messages, event.messages) };
       else if (folds) {
         const old = state.messages[index], message = event.message ?? fold(old, event);
         if (message !== old) next.messages = state.messages.map((item, i) => i === index ? message : item);
@@ -305,6 +319,32 @@ export class HostStore {
     return flight.promise;
   }
   report(error: unknown) { this.notice(errorText(error)); }
+  private loadingPages = new Set<string>();
+  /** Replace outline stubs in ``[start, end)`` with full messages from ``/api/messages``. */
+  loadMessages(start: number, end: number) {
+    const sid = this.snapshot.state.session_id ?? '';
+    const key = `${sid}:${start}:${end}`;
+    if (end <= start || this.loadingPages.has(key)) return;
+    this.loadingPages.add(key);
+    const query = new URLSearchParams({ start: String(start), end: String(end) });
+    if (sid) query.set('session_id', sid);
+    let replaced = false;
+    request<{ session_id?: string; start: number; total: number; messages: Message[] }>(`/api/messages?${query}`).then(page => {
+      const state = this.snapshot.state;
+      if ((state.session_id ?? '') !== sid || !Array.isArray(page.messages)) return;
+      const messages = state.messages.map((item, i) => {
+        const full = page.messages[i - page.start];
+        if (!item?.partial || !full || full.partial || full.role !== item.role || (full.run_id ?? '') !== (item.run_id ?? '')) return item;
+        replaced = true;
+        return full;
+      });
+      if (replaced) this.update({ state: { ...state, messages } });
+    }, error => this.report(error)).finally(() => {
+      // Back off failed or mismatched pages so a re-render loop cannot hammer the server.
+      if (replaced) this.loadingPages.delete(key);
+      else setTimeout(() => this.loadingPages.delete(key), 5000);
+    });
+  }
 }
 export const host = new HostStore();
 export const useHost = () => useSyncExternalStore(host.subscribe, host.getSnapshot, host.getSnapshot);

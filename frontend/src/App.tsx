@@ -111,6 +111,13 @@ export function App() {
   const first = Math.max(0, (state.messages?.length ?? 0) - limit);
   const currentSession = switchingSession ?? state.sessions?.find((session) => session.id === state.session_id);
   const sessionTitle = !currentSession ? '' : !currentSession.title || currentSession.title === NEW_TITLE ? T(NEW_TITLE, 'New chat') : currentSession.title;
+  // Older messages arrive as outline stubs; fetch full bodies only for the ones inside the render window.
+  useEffect(() => {
+    const messages = state.messages ?? [];
+    let from = -1, to = -1;
+    for (let i = first; i < messages.length; i++) if (messages[i]?.partial) { if (from < 0) from = i; to = i + 1; }
+    if (from >= 0) host.loadMessages(from, Math.min(to, from + 200));
+  }, [state.messages, first]);
   useEffect(() => host.connect(), []);
   useEffect(() => {
     plugins.sync(state.web_plugins ?? []);
