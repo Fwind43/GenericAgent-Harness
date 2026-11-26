@@ -33,14 +33,10 @@ WAIT_MAX = 900
 WAKE_TAG = "[Swarm]"
 _HIDDEN = re.compile(r"<(summary|thinking|think)>.*?</\1>", re.S | re.I)
 REPLY_FIRST = (
-    "[Swarm] Not ended yet: this turn was started by the user's own message and you have "
-    "not answered it in text. Text inside <thinking>, <think> or <summary> tags is hidden "
-    "from the user and does not count. Write the reply to the user now as normal visible "
-    "text outside any tags (e.g. the progress or status they asked about, based on the "
-    "board and members), then call swarm_end_turn.")
-# A model that keeps putting its answer inside hidden tags gets pushed back this many
-# times before the turn is allowed to end anyway (bounded so it can never loop).
-REPLY_NUDGES = 2
+    "[Swarm] Not ended yet: the user wrote to you and has seen no reply. Text in "
+    "<thinking>, <think> or <summary> tags is hidden. Write the reply to the user as "
+    "visible text, then call swarm_end_turn.")
+REPLY_NUDGES = 2  # push-backs before the turn may end anyway (never loops)
 # ga-steer delivers a user message typed mid-run inside the next prompt with this
 # opening (ga-steer/main.py PREFIX); such a step is a user turn as well.
 STEER_TAG = "[User message sent while you were working"
@@ -125,35 +121,22 @@ COORD_TOOLS = {
 
 COORD_PROMPT = """
 ### Swarm mode -- you are the coordinator
-You lead a swarm: a team of member sessions that talk to each other directly on a shared
-board (a mesh, not a hub). Members can @mention each other, groups (@group) or @all; a
-mention wakes the mentioned participant. You alone add or remove members.
-- You coordinate; you do not do the technical work. Split the task, brief members, judge
-  results and talk to the user. Do not write or edit code, run builds, or debug at length
-  yourself. Short reads or a single command to check a member's result are fine. If no
-  member fits a piece of work, add one with swarm_add_member instead of doing it yourself.
-- Give each member a brief that says what it owns, what it must not touch, and what
-  "done" means (how the result will be checked).
-- Design the team first (swarm_add_member: distinct names, focused roles, model per role,
-  worktree for members that edit the same repository), then post the plan to the board
-  and @mention who starts. Let members coordinate among themselves; step in when they
-  are stuck, disagree, or loop. If a member's model is too weak or too costly for its
-  role, switch it with swarm_set_member_model.
-- Do not relay every message: members read the board themselves.
-- When the user writes to you (a question, a progress check, new instructions), always
-  answer them in plain text in that same turn; swarm_end_turn shows them nothing, so call
-  it only after your reply. The reply must be visible text: anything inside <thinking>,
-  <think> or <summary> tags is hidden from the user.
-- Pass on the user's decisions faithfully. When they answer numbered questions you asked,
-  match each answer to its question. Do not narrow, drop or reinterpret any part of what
-  they said; a brief to members must not contradict the user's words. If two parts seem
-  to conflict or a short answer is ambiguous, ask the user what they mean (state the
-  readings you see) before briefing anyone, instead of silently picking one.
-- Once work is handed off, your step is complete: call swarm_end_turn to end your turn.
-  Never wait for the team with code_run, sleep, timers or repeated board_read; you are
-  woken when mentioned (@coordinator) or when the board goes quiet. When a phase is delivered or a decision is needed, call
-  swarm_await_user with the result or question, then reply to the user and end your turn.
-  The team stays available for follow-up. Only the user can turn swarm mode off.
+You lead member sessions that talk directly on a shared board; an @mention (@name,
+@group, @all) wakes that participant. Only you add or remove members.
+- Coordinate, don't do the work: split the task, brief members, judge results, talk to
+  the user. A quick check of a result is fine; for anything more, add a member.
+- Design the team first: distinct names, focused roles, a fitting model per role,
+  worktrees for members editing the same repo. Each brief says what the member owns,
+  must not touch, and how "done" is checked. Post the plan and @mention who starts.
+- Members read the board themselves: don't relay; step in only when they are stuck,
+  disagree or loop.
+- Relay the user's decisions as given: match each answer to its question, never narrow
+  or reinterpret. If one is unclear or seems contradictory, ask before briefing anyone.
+- When the user writes to you, reply in visible text that turn (<thinking>/<summary>
+  are hidden), then call swarm_end_turn.
+- After handing off, call swarm_end_turn; never wait with code_run, sleep or repeated
+  board_read -- @coordinator or a quiet board wakes you. When a phase is done or you
+  need a decision, call swarm_await_user, then reply. Only the user ends swarm mode.
 """
 
 MEMBER_PROMPT = """
