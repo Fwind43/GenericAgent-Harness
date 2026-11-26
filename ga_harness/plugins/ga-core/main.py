@@ -114,12 +114,15 @@ def _inject_images(client, paths):
         return None
     had_own = "ask" in vars(backend)
 
+    # Write the instance dict directly: facades such as llmcore's MixinSession
+    # reject assignments to node-owned names ("MixinSession.ask is node-specific
+    # and read-only"). An instance attribute shadows the class method either way.
     def undo():
         if vars(backend).get("ask") is patched:
             if had_own:
-                backend.ask = original
+                object.__setattr__(backend, "ask", original)
             else:
-                del backend.ask
+                object.__delattr__(backend, "ask")
 
     def patched(msg, *args, **kwargs):
         undo()
@@ -127,7 +130,7 @@ def _inject_images(client, paths):
             msg["content"].extend(blocks)
         return (yield from original(msg, *args, **kwargs))
 
-    backend.ask = patched
+    object.__setattr__(backend, "ask", patched)
     return undo
 
 

@@ -374,7 +374,10 @@ def run_worker(connection, recipe, payload):
                 state = capture(raw)
             except Exception:
                 state = None
-        # Tracebacks/config values can contain credentials; persist only the class.
+        # Keep the traceback in the local worker log (data/logs/worker-*.log) so the
+        # failure can be diagnosed; it may contain config values, so the run
+        # record and UI still get only the exception class.
+        logging.getLogger("gah.worker").exception("run %s failed", payload.get("run_id"))
         send("error", error=f"Worker failed ({type(error).__name__})", state=state)
     finally:
         runtime.dispose()
