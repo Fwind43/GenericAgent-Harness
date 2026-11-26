@@ -471,11 +471,14 @@ def test_worker_end_turn_answers_user_first(load, world, worker_mod, monkeypatch
     reply = lambda text: SimpleNamespace(content=text)
     end = lambda resp: tools["swarm_end_turn"](None, {}, resp)
 
-    # user asks for progress, model answers only with the tool -> pushed back once
+    # user asks for progress, model answers only with the tool or only inside hidden
+    # tags -> pushed back twice, then the third call always ends
     start("what is the progress?")
     out = end(reply("<summary>checking</summary>"))
-    assert out.next_prompt and "Reply to the user" in out.next_prompt
-    assert end(reply("")).next_prompt is None  # second call always ends
+    assert out.next_prompt and "Write the reply to the user" in out.next_prompt
+    assert "<thinking>" in out.next_prompt
+    assert end(reply("<thinking>Alice is done.</thinking>")).next_prompt
+    assert end(reply("")).next_prompt is None
 
     # visible text in the same response is enough
     start("status?")

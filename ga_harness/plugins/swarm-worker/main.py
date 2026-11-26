@@ -34,8 +34,13 @@ WAKE_TAG = "[Swarm]"
 _HIDDEN = re.compile(r"<(summary|thinking|think)>.*?</\1>", re.S | re.I)
 REPLY_FIRST = (
     "[Swarm] Not ended yet: this turn was started by the user's own message and you have "
-    "not answered it in text. Reply to the user now in plain text (e.g. the progress or "
-    "status they asked about, based on the board and members), then call swarm_end_turn.")
+    "not answered it in text. Text inside <thinking>, <think> or <summary> tags is hidden "
+    "from the user and does not count. Write the reply to the user now as normal visible "
+    "text outside any tags (e.g. the progress or status they asked about, based on the "
+    "board and members), then call swarm_end_turn.")
+# A model that keeps putting its answer inside hidden tags gets pushed back this many
+# times before the turn is allowed to end anyway (bounded so it can never loop).
+REPLY_NUDGES = 2
 # ga-steer delivers a user message typed mid-run inside the next prompt with this
 # opening (ga-steer/main.py PREFIX); such a step is a user turn as well.
 STEER_TAG = "[User message sent while you were working"
@@ -137,7 +142,13 @@ mention wakes the mentioned participant. You alone add or remove members.
 - Do not relay every message: members read the board themselves.
 - When the user writes to you (a question, a progress check, new instructions), always
   answer them in plain text in that same turn; swarm_end_turn shows them nothing, so call
-  it only after your reply.
+  it only after your reply. The reply must be visible text: anything inside <thinking>,
+  <think> or <summary> tags is hidden from the user.
+- Pass on the user's decisions faithfully. When they answer numbered questions you asked,
+  match each answer to its question. Do not narrow, drop or reinterpret any part of what
+  they said; a brief to members must not contradict the user's words. If two parts seem
+  to conflict or a short answer is ambiguous, ask the user what they mean (state the
+  readings you see) before briefing anyone, instead of silently picking one.
 - Once work is handed off, your step is complete: call swarm_end_turn to end your turn.
   Never wait for the team with code_run, sleep, timers or repeated board_read; you are
   woken when mentioned (@coordinator) or when the board goes quiet. When a phase is delivered or a decision is needed, call
@@ -183,7 +194,7 @@ def apply(ctx, config):
     if host is None or tools is None:
         return
     state = {"role": None, "checked": False, "tries": 0, "info": {},
-             "user_turn": False, "replied": False, "nudged": False, "batched": False}
+             "user_turn": False, "replied": False, "nudged": 0, "batched": False}
 
     def _visible(response):
         text = getattr(response, "content", None)
@@ -224,10 +235,12 @@ def apply(ctx, config):
             # any call after this one never runs. Push back once.
             state["batched"] = True
             return StepOutcome(END_ALONE, next_prompt=END_ALONE + "\n")
-        if state["user_turn"] and not state["nudged"] and not (state["replied"] or _visible(response)):
-            # Asked "how is it going?" and answered only with this tool: the user saw
-            # nothing. Push back once; a second call ends the turn regardless.
-            state["nudged"] = True
+        if (state["user_turn"] and state["nudged"] < REPLY_NUDGES
+                and not (state["replied"] or _visible(response))):
+            # Asked "how is it going?" and answered only with this tool (or only inside
+            # hidden <thinking>/<summary> tags): the user saw nothing. Push back up to
+            # REPLY_NUDGES times, then end the turn regardless.
+            state["nudged"] += 1
             return StepOutcome(REPLY_FIRST, next_prompt=REPLY_FIRST + "\n")
         msg = "Turn ended; waiting to be woken by a mention or a quiet board."
         if note:
@@ -271,7 +284,8 @@ def apply(ctx, config):
             setup()
         text = gactx.get("user_input") if isinstance(gactx, dict) else None
         state["user_turn"] = isinstance(text, str) and not text.lstrip().startswith(WAKE_TAG)
-        state["replied"] = state["nudged"] = state["batched"] = False
+        state["replied"] = state["batched"] = False
+        state["nudged"] = 0
         return nxt(gactx)
 
     def llm_before(gactx, nxt):
@@ -285,7 +299,7 @@ def apply(ctx, config):
             text = "\n".join(p.get("text", "") for p in text if isinstance(p, dict))
         if isinstance(text, str) and STEER_TAG in text:
             state["user_turn"] = True
-            state["replied"] = state["nudged"] = False
+            state["replied"], state["nudged"] = False, 0
         return nxt(gactx)
 
     def llm_after(gactx, nxt):
