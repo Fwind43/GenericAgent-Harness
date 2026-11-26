@@ -36,6 +36,13 @@ REPLY_FIRST = (
     "[Swarm] Not ended yet: this turn was started by the user's own message and you have "
     "not answered it in text. Reply to the user now in plain text (e.g. the progress or "
     "status they asked about, based on the board and members), then call swarm_end_turn.")
+# ga-steer delivers a user message typed mid-run inside the next prompt with this
+# opening (ga-steer/main.py PREFIX); such a step is a user turn as well.
+STEER_TAG = "[User message sent while you were working"
+END_ALONE = (
+    "[Swarm] Not ended yet: swarm_end_turn was batched with other tool calls. Ending the "
+    "turn there would drop their results. Read the results above, answer the user in text "
+    "if they wrote to you, then call swarm_end_turn on its own.")
 
 
 def _tool(name, description, properties=None, required=()):
@@ -77,7 +84,8 @@ END_TURN_TOOL = _tool(END_TURN,
     "waiting in code_run while teammates work: the host wakes you when you are "
     "@mentioned or when the board goes quiet. Waiting for the team counts as finishing "
     "your current step. If the user wrote to you this turn, answer them in text first: "
-    "this tool ends the turn and shows the user nothing.",
+    "this tool ends the turn and shows the user nothing. Call it on its own, never in "
+    "the same step as other tools: their results would be lost.",
     {"note": {"type": "string", "description": "Optional short note on what you are waiting for."}})
 
 COORD_TOOLS = {
@@ -175,7 +183,7 @@ def apply(ctx, config):
     if host is None or tools is None:
         return
     state = {"role": None, "checked": False, "tries": 0, "info": {},
-             "user_turn": False, "replied": False, "nudged": False}
+             "user_turn": False, "replied": False, "nudged": False, "batched": False}
 
     def _visible(response):
         text = getattr(response, "content", None)
@@ -209,6 +217,13 @@ def apply(ctx, config):
     def end_turn(handler, args, response):
         StepOutcome = importlib.import_module("agent_loop").StepOutcome
         note = str((args or {}).get("note") or "").strip() if isinstance(args, dict) else ""
+        calls = getattr(response, "tool_calls", None) or []
+        if len(calls) > 1 and not state["batched"]:
+            # GA's loop stops at the first call without next_prompt and never sends the
+            # batch's results, so the next run sees them as "(error)" placeholders and
+            # any call after this one never runs. Push back once.
+            state["batched"] = True
+            return StepOutcome(END_ALONE, next_prompt=END_ALONE + "\n")
         if state["user_turn"] and not state["nudged"] and not (state["replied"] or _visible(response)):
             # Asked "how is it going?" and answered only with this tool: the user saw
             # nothing. Push back once; a second call ends the turn regardless.
@@ -256,7 +271,21 @@ def apply(ctx, config):
             setup()
         text = gactx.get("user_input") if isinstance(gactx, dict) else None
         state["user_turn"] = isinstance(text, str) and not text.lstrip().startswith(WAKE_TAG)
-        state["replied"] = state["nudged"] = False
+        state["replied"] = state["nudged"] = state["batched"] = False
+        return nxt(gactx)
+
+    def llm_before(gactx, nxt):
+        # A user message steered into a running turn (e.g. a progress question while the
+        # coordinator was woken by the board) makes the rest of the turn a user turn:
+        # the earlier text answered someone else, so a fresh reply is owed.
+        msgs = gactx.get("messages") if isinstance(gactx, dict) else None
+        last = msgs[-1] if isinstance(msgs, list) and msgs and isinstance(msgs[-1], dict) else {}
+        text = last.get("content") if last.get("role") == "user" else None
+        if isinstance(text, list):
+            text = "\n".join(p.get("text", "") for p in text if isinstance(p, dict))
+        if isinstance(text, str) and STEER_TAG in text:
+            state["user_turn"] = True
+            state["replied"] = state["nudged"] = False
         return nxt(gactx)
 
     def llm_after(gactx, nxt):
@@ -284,5 +313,6 @@ def apply(ctx, config):
         return text
 
     ctx.on("ga.agent_before", before)
+    ctx.on("ga.llm_before", llm_before)
     ctx.on("ga.llm_after", llm_after)
     ctx.on("ga.system_prompt", prompt)
