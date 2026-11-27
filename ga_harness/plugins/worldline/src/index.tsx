@@ -13,8 +13,23 @@ function button(label: string, title: string, onClick: () => void, disabled = fa
   return b;
 }
 
+const pending = new Set<string>();
+
 async function act(api: PluginAPI, path: string, body: Record<string, unknown>) {
-  try { await api.post(path, body); return true; } catch (error) { host.report(error); return false; }
+  const sid = body.session_id;
+  if (typeof sid !== 'string' || pending.has(sid)) return false;
+  pending.add(sid);
+  repaint();
+  try {
+    await api.post(path, body);
+    return true;
+  } catch (error) {
+    host.report(error);
+    return false;
+  } finally {
+    pending.delete(sid);
+    repaint();
+  }
 }
 
 // The message being edited in place. It lives outside React so that repaints (state pushes,
@@ -119,6 +134,7 @@ function Worldline({ api }: { api: PluginAPI }) {
     const paint = () => {
       observer.disconnect();
       // The host only renders the latest window of messages, so DOM position != message index.
+      const busy = state.running || pending.has(sid);
       const nodes = Array.from(thread.children).filter(node => node.classList.contains('msg'));
       const offset = Math.max(0, state.messages.length - nodes.length);
       // The turn an assistant reply belongs to may start above the rendered window.
@@ -134,12 +150,12 @@ function Worldline({ api }: { api: PluginAPI }) {
         if (!mine && open) open.remove();
         node.classList.toggle('gah-wl-editing', mine);
         if (mine && editing) {
-          if (open) open.gahSync?.(state.running);
-          else node.append(editor(api, editing, state.running));
+          if (open) open.gahSync?.(busy);
+          else node.append(editor(api, editing, busy));
         }
         if (message?.role === 'assistant' && lastUser >= 0 && !state.running) {
           const actions = node.querySelector('.message-actions');
-          if (actions) actions.append(branchButton(api, sid, lastUser, state.running));
+          if (actions) actions.append(branchButton(api, sid, lastUser, busy));
           return;
         }
         if (message?.role !== 'user') return;
@@ -147,7 +163,7 @@ function Worldline({ api }: { api: PluginAPI }) {
         lastUser = index;
         if (!node.classList.contains('user')) return;
         node.classList.add(MARK);
-        node.append(bar(api, sid, index, textOf(message), variants[String(index)], state.running));
+        node.append(bar(api, sid, index, textOf(message), variants[String(index)], busy));
       });
       observer.observe(thread, { childList: true, subtree: !state.running });
     };

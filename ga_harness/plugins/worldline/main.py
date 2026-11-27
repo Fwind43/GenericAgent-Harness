@@ -68,6 +68,9 @@ CREATE TABLE branches(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
 INSERT INTO branches SELECT id,session_id,idx,prefix,full,messages,state,created FROM branches_old;
 DROP TABLE branches_old;
 """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(branches)")}
+            if "origin_message" not in columns:
+                db.execute("ALTER TABLE branches ADD COLUMN origin_message TEXT")
             # Branch metadata is used on every snapshot; do not scan archived
             # messages/state (or sort them) just to populate the branch controls.
             db.execute("CREATE INDEX IF NOT EXISTS branch_listing ON branches "
@@ -92,10 +95,11 @@ DROP TABLE branches_old;
     def archive(self, sid, idx, messages, state):
         """Keep a conversation as a variant at user message ``idx`` (idempotent)."""
         with self.lock, self._db() as db:
-            db.execute("INSERT OR IGNORE INTO branches(session_id,idx,prefix,full,messages,state,created) "
-                       "VALUES(?,?,?,?,?,?,?)",
+            db.execute("INSERT OR IGNORE INTO branches(session_id,idx,prefix,full,messages,state,created,origin_message) "
+                       "VALUES(?,?,?,?,?,?,?,?)",
                        (sid, idx, _hash(messages[:idx]), _full(messages),
-                        json.dumps(messages, ensure_ascii=False), json.dumps(state, ensure_ascii=False), time.time()))
+                        json.dumps(messages, ensure_ascii=False), json.dumps(state, ensure_ascii=False), time.time(),
+                        json.dumps(messages[idx], ensure_ascii=False)))
 
     def rows(self, sid):
         with self.lock, self._db() as db:
@@ -107,11 +111,15 @@ DROP TABLE branches_old;
         cache = self.__dict__.setdefault("_origins", {})
         if row["id"] not in cache:
             with self.lock, self._db() as db:
-                found = db.execute("SELECT messages FROM branches WHERE id=?", (row["id"],)).fetchone()
-            try:
-                message = json.loads(found[0])[row["idx"]]
-            except Exception:
-                message = None
+                found = db.execute("SELECT origin_message FROM branches WHERE id=?", (row["id"],)).fetchone()
+                try:
+                    if found is not None and found[0] is not None:
+                        message = json.loads(found[0])
+                    else:
+                        found = db.execute("SELECT messages FROM branches WHERE id=?", (row["id"],)).fetchone()
+                        message = json.loads(found[0])[row["idx"]]
+                except (TypeError, ValueError, IndexError, KeyError):
+                    message = None
             cache[row["id"]] = _origin(message, row)
         return cache[row["id"]]
 
