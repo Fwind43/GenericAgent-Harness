@@ -271,10 +271,16 @@ def apply(ctx, config):
 
 
     def _guard(fn):
+        # Only the storage mutation runs under the session lock. A route may return a
+        # callable to finish outside it: snapshots (web.snapshot runs other plugins'
+        # hooks, e.g. conductor/swarm, which take their own lock and then the session
+        # lock) and runs.start (run.started subscribers) must not run while we hold it,
+        # or the opposite lock order on their background threads deadlocks the host.
         def route(request):
             try:
                 with sessions.lock:
-                    return fn(request.get("body") or {})
+                    result = fn(request.get("body") or {})
+                return result() if callable(result) else result
             except ValueError as error:
                 return 400, {"error": str(error)}
             except RuntimeError as error:
@@ -300,16 +306,22 @@ def apply(ctx, config):
         before = current["state"]
         with sessions._db() as db:
             sessions._write(db, current, messages[:idx], _keep_settings(state, before))
-        _refresh(sid, messages[:idx])
-        try:
-            run = runs.start(text, session_id=sid, source="worldline", attachments=attachments)
-        except Exception:
-            # The run never started: put the conversation back instead of leaving it cut off.
-            with sessions._db() as db:
-                sessions._write(db, sessions.get(sid, light=True), messages, before)
-            _refresh(sid, messages)
-            raise
-        return {"ok": True, "run": run}
+
+        def finish():
+            _refresh(sid, messages[:idx])
+            try:
+                run = runs.start(text, session_id=sid, source="worldline", attachments=attachments)
+            except Exception:
+                # The run never started: put the conversation back instead of leaving it
+                # cut off, unless another run took the session over in the meantime.
+                with sessions.lock:
+                    if not runs.active_for(sid):
+                        with sessions._db() as db:
+                            sessions._write(db, sessions.get(sid, light=True), messages, before)
+                _refresh(sid, messages)
+                raise
+            return {"ok": True, "run": run}
+        return finish
 
 
     def switch(body):
@@ -326,7 +338,7 @@ def apply(ctx, config):
         store.archive(sid, idx, live, current["state"])
         with sessions._db() as db:
             sessions._write(db, current, messages, _keep_settings(state, current["state"]))
-        return _refresh(sid, messages)
+        return lambda: _refresh(sid, messages)
 
     def branch(body):
         """Open a new child session holding the conversation up to the end of this turn."""
@@ -347,7 +359,7 @@ def apply(ctx, config):
             sessions._write(db, child, kept, _keep_settings(state, current["state"]))
         store.copy_checkpoints(sid, child["id"], end)
         sessions.change("select", child["id"])
-        return _refresh(child["id"], kept)
+        return lambda: _refresh(child["id"], kept)
 
     def listing(body):
         sid = body.get("session_id")
